@@ -1,37 +1,48 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Navbar from "../components/Navbar";
 
 export default function MainLayout() {
   const [darkMode, setDarkMode] = useState(() => {
-    return localStorage.getItem("theme") === "light" ? false : true;
+    const savedTheme = localStorage.getItem("theme");
+    return savedTheme ? savedTheme === "dark" : true;
   });
 
   useEffect(() => {
+    const root = document.documentElement;
+
     if (darkMode) {
-      document.documentElement.classList.add("dark");
+      root.classList.add("dark");
       localStorage.setItem("theme", "dark");
     } else {
-      document.documentElement.classList.remove("dark");
+      root.classList.remove("dark");
       localStorage.setItem("theme", "light");
     }
   }, [darkMode]);
 
-  const toggleTheme = () => {
+  // useCallback prevents unnecessary re-renders in Sidebar
+  const toggleTheme = useCallback(() => {
     setDarkMode((prev) => !prev);
-  };
+  }, []);
 
   return (
-    <div className="min-h-screen flex bg-gray-100 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-gray-100 dark:bg-slate-950">
+
+      {/* SIDEBAR */}
       <Sidebar toggleTheme={toggleTheme} darkMode={darkMode} />
 
-      <div className="flex-1 flex flex-col min-h-screen text-gray-900 dark:text-white transition-colors duration-300">
+      {/* RIGHT SIDE */}
+      <div className="flex-1 flex flex-col text-gray-900 dark:text-white">
+
+        {/* NAVBAR */}
         <Navbar />
 
-        <main className="p-6 flex-1">
+        {/* SCROLLABLE CONTENT */}
+        <main className="flex-1 overflow-y-auto p-6 will-change-scroll">
           <Outlet />
         </main>
+
       </div>
     </div>
   );
