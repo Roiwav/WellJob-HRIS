@@ -34,7 +34,7 @@ function App() {
         <Route path="/employees" element={<Employees />} />
         <Route path="/deployment" element={<Deployment />} />
         <Route path="/incidents" element={<Incidents />} />
-        <Route path="/KPIs" element={<KPIs />} />
+        <Route path="/kpi" element={<KPIs />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/users" element={<UserManagement />} />
       </Route>

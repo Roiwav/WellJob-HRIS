@@ -181,6 +181,24 @@ export default function Dashboard() {
         <KpiCard title="Total Employees" value={data.kpis.total} />
         <KpiCard title="Deployed" value={data.kpis.deployed} />
         <KpiCard
+          title="Total Employees"
+          value={data.kpis.total}
+          onClick={() => navigate("/employees")}
+        />
+        <KpiCard
+          title="Deployed"
+          value={data.kpis.deployed}
+          onClick={() => navigate("/deployment")}
+        />
+        <KpiCard
+          title="Available"
+          value={data.kpis.available}
+          onClick={() => navigate("/deployment")}
+        />
+        <KpiCard
+          title="Attrition Rate"
+          value={data.kpis.attrition}
+          onClick={() => navigate("/kpi")}
           title="Utilization Rate (%)"
           value={utilizationRate}
           description="Percentage of employees deployed"
