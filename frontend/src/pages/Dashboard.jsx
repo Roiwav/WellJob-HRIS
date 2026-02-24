@@ -136,7 +136,7 @@ export default function Dashboard() {
         <KpiCard
           title="Attrition Rate"
           value={data.kpis.attrition}
-          onClick={() => navigate("/reports")}
+          onClick={() => navigate("/kpi")}
         />
       </div>
 
