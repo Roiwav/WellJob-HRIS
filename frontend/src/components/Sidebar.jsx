@@ -1,5 +1,4 @@
 import logo from "../assets/logo.png";
-
 import { NavLink } from "react-router-dom";
 import { useState } from "react";
 import {
@@ -18,44 +17,44 @@ export default function Sidebar({ toggleTheme, darkMode }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div
+    <aside
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
       className={`
-        ${expanded ? "w-64" : "w-20"}
+        ${expanded ? "w-60" : "w-20"}
+        sticky top-0
+        h-screen
         bg-white dark:bg-slate-950
         border-r border-gray-200 dark:border-white/10
-        h-screen
-        flex flex-col
-        justify-between
-        transition-all duration-300
+        flex flex-col justify-between
+        transition-[width] duration-200 ease-out
+        overflow-hidden
       `}
     >
-      {/* LOGO */}
+      {/* ================= TOP ================= */}
       <div>
+        {/* LOGO */}
         <div className="p-4 flex items-center gap-3">
-          <div className="flex items-center justify-center">
-  <img
-    src={logo}
-    alt="Welljob Logo"
-    className={`
-      ${expanded ? "h-10" : "h-8"}
-      object-contain
-      transition-all duration-300
-      select-none
-    `}
-    draggable="false"
-  />
-</div>
-          {expanded && (
-            <span className="font-semibold text-gray-900 dark:text-white text-lg">
-              HR System
-            </span>
-          )}
+          <img
+            src={logo}
+            alt="Welljob Logo"
+            draggable="false"
+            className="h-9 object-contain select-none"
+          />
+
+          <span
+            className={`
+              text-lg font-semibold text-gray-900 dark:text-white
+              whitespace-nowrap transition-all duration-150
+              ${expanded ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 absolute"}
+            `}
+          >
+            HR System
+          </span>
         </div>
 
-        {/* MENU */}
-        <nav className="mt-6 flex flex-col gap-2">
+        {/* NAVIGATION */}
+        <nav className="mt-6 flex flex-col gap-1">
           <SidebarItem to="/" icon={<FiHome />} label="Dashboard" expanded={expanded} />
           <SidebarItem to="/employees" icon={<FiUsers />} label="Employee Records" expanded={expanded} />
           <SidebarItem to="/deployment" icon={<FiMapPin />} label="Deployment Tracking" expanded={expanded} />
@@ -66,37 +65,35 @@ export default function Sidebar({ toggleTheme, darkMode }) {
         </nav>
       </div>
 
-      {/* BOTTOM SECTION */}
-      <div className="p-4 border-t border-gray-200 dark:border-white/10">
+      {/* ================= BOTTOM ================= */}
+      <div className="p-4 border-t border-gray-200 dark:border-white/10 space-y-4">
+
+        {/* THEME TOGGLE */}
         <button
           onClick={toggleTheme}
-          className="flex items-center gap-3 w-full hover:bg-gray-200 dark:hover:bg-white/10 p-2 rounded-lg transition"
+          className="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 transition-colors duration-150"
         >
-          {darkMode ? <FiSun /> : <FiMoon />}
-          {expanded && (
-            <span className="text-gray-900 dark:text-white">
-              {darkMode ? "Light Mode" : "Dark Mode"}
-            </span>
-          )}
+          <span
+            className={`text-xl ${
+              darkMode ? "text-yellow-400" : "text-slate-700 dark:text-gray-300"
+            }`}
+          >
+            {darkMode ? <FiSun /> : <FiMoon />}
+          </span>
+
+          <span
+            className={`
+              text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap
+              transition-all duration-150
+              ${expanded ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 absolute"}
+            `}
+          >
+            {darkMode ? "Light Mode" : "Dark Mode"}
+          </span>
         </button>
 
-        {expanded && (
-          <div className="mt-4 flex items-center gap-3 bg-gray-100 dark:bg-white/5 p-3 rounded-xl">
-            <div className="bg-indigo-500 w-10 h-10 rounded-full flex items-center justify-center text-white font-bold">
-              A
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                Admin User
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                HR Manager
-              </p>
-            </div>
-          </div>
-        )}
       </div>
-    </div>
+    </aside>
   );
 }
 
@@ -106,18 +103,27 @@ function SidebarItem({ to, icon, label, expanded }) {
       to={to}
       className={({ isActive }) =>
         `
-        flex items-center gap-4 mx-3 p-3 rounded-xl
-        transition-all duration-200
+        flex items-center gap-4 mx-3 p-3 rounded-lg
+        transition-colors duration-150
         ${
           isActive
-            ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg"
+            ? "bg-indigo-600 text-white"
             : "text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10 hover:text-black dark:hover:text-white"
         }
       `
       }
     >
       <span className="text-xl">{icon}</span>
-      {expanded && <span className="text-sm font-medium">{label}</span>}
+
+      <span
+        className={`
+          text-sm font-medium whitespace-nowrap
+          transition-all duration-150
+          ${expanded ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 absolute"}
+        `}
+      >
+        {label}
+      </span>
     </NavLink>
   );
 }
