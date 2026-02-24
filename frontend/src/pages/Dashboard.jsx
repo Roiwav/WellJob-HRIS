@@ -49,6 +49,7 @@ export default function Dashboard() {
   const currentYear = new Date().getFullYear().toString();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState("");
 
   const [data, setData] = useState({
     kpis: {},
@@ -59,6 +60,7 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
+
     const mockData = {
       kpis: {
         total: 1624,
@@ -91,8 +93,21 @@ export default function Dashboard() {
 
     setTimeout(() => {
       setData(mockData);
+
+      const now = new Date();
+      const formatted = now.toLocaleString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      });
+
+      setLastUpdated(formatted);
       setLoading(false);
     }, 300);
+
   }, []);
 
   const isCurrentYear = selectedYear === currentYear;
@@ -123,7 +138,7 @@ export default function Dashboard() {
     doc.setFontSize(12);
     doc.text("Executive Workforce Intelligence Report", 14, 30);
     doc.text(`Year: ${selectedYear}`, 14, 38);
-    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 46);
+    doc.text(`Generated: ${lastUpdated}`, 14, 46);
 
     autoTable(doc, {
       startY: 55,
@@ -131,6 +146,7 @@ export default function Dashboard() {
       body: [
         ["Total Employees", data.kpis.total],
         ["Deployed", data.kpis.deployed],
+        ["Available", data.kpis.available],
         ["Utilization Rate (%)", utilizationRate + "%"],
         ["Active Incidents", data.kpis.activeIncidents],
         ["Expiring Documents", data.kpis.expiringDocs],
@@ -152,12 +168,21 @@ export default function Dashboard() {
     <div className="space-y-10">
 
       {/* HEADER */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+
         <h1 className="text-2xl font-semibold">
-          Enterprise Workforce Intelligence Dashboard
+          Workforce Dashboard
         </h1>
 
-        <div className="flex gap-3 items-center">
+        <div className="flex flex-wrap items-center gap-4">
+
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Last Updated:
+            <span className="ml-2 font-medium text-gray-700 dark:text-gray-200">
+              {lastUpdated}
+            </span>
+          </div>
+
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
@@ -173,53 +198,52 @@ export default function Dashboard() {
           >
             Export PDF
           </button>
+
         </div>
       </div>
 
-      {/* ================= ROW 1 – KPI ================= */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-        <KpiCard title="Total Employees" value={data.kpis.total} />
+      {/* KPI ROW */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <KpiCard title="Total" value={data.kpis.total} />
         <KpiCard title="Deployed" value={data.kpis.deployed} />
-        <KpiCard
-          title="Total Employees"
-          value={data.kpis.total}
-          onClick={() => navigate("/employees")}
-        />
-        <KpiCard
-          title="Deployed"
-          value={data.kpis.deployed}
-          onClick={() => navigate("/deployment")}
-        />
-        <KpiCard
-          title="Available"
-          value={data.kpis.available}
-          onClick={() => navigate("/deployment")}
-        />
-        <KpiCard
-          title="Attrition Rate"
-          value={data.kpis.attrition}
-          onClick={() => navigate("/kpi")}
-          title="Utilization Rate (%)"
-          value={utilizationRate}
-          description="Percentage of employees deployed"
-        />
-        <KpiCard title="Active Incidents" value={data.kpis.activeIncidents} />
-        <KpiCard title="Expiring Docs" value={data.kpis.expiringDocs} alert />
+        <KpiCard title="Available" value={data.kpis.available} />
+        <KpiCard title="Utilization %" value={utilizationRate} />
+        <KpiCard title="Incidents" value={data.kpis.activeIncidents} />
+        <KpiCard title="Expiring" value={data.kpis.expiringDocs} alert />
       </div>
 
-      {/* ================= ROW 2 – FULL WIDTH TREND ================= */}
+      {/* DEPLOYMENT TREND (NEON) */}
       <ChartCard title="Deployment Trend">
         <LineChart data={workforceTrend}>
+          <defs>
+            <filter id="neonGlow">
+              <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+
           <CartesianGrid strokeDasharray="3 3" opacity={0.05} />
           <XAxis dataKey="label" />
           <YAxis />
           <Tooltip />
-          <Line type="monotone" dataKey="value" stroke="#4f46e5" strokeWidth={2} />
+
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke="#00f5ff"
+            strokeWidth={3}
+            dot={false}
+            filter="url(#neonGlow)"
+          />
         </LineChart>
       </ChartCard>
 
-      {/* ================= ROW 3 – RISK & COMPLIANCE ================= */}
+      {/* RISK & COMPLIANCE */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
         <ChartCard title="Incident Trend">
           <BarChart data={incidentTrend}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.05} />
@@ -233,6 +257,7 @@ export default function Dashboard() {
         <PieCard title="Incident Severity" data={data.severity} />
 
         <BarSimple title="Case Aging Distribution" data={data.aging} />
+
       </div>
 
     </div>
@@ -241,31 +266,15 @@ export default function Dashboard() {
 
 /* ================= COMPONENTS ================= */
 
-function KpiCard({ title, value, alert, description }) {
-
+function KpiCard({ title, value, alert }) {
   const isPercent = title.includes("%");
-
-  // Dynamic color for utilization
-  let valueColor = "text-gray-900 dark:text-white";
-  if (isPercent) {
-    if (value >= 85) valueColor = "text-green-600";
-    else if (value >= 60) valueColor = "text-indigo-600";
-    else valueColor = "text-red-500";
-  }
 
   return (
     <div className={`bg-white dark:bg-slate-900 p-4 rounded-xl border ${alert ? "border-red-400" : ""}`}>
       <p className="text-xs text-gray-500 uppercase">{title}</p>
-
-      <h2 className={`text-2xl font-semibold mt-2 ${valueColor}`}>
+      <h2 className="text-2xl font-semibold mt-2">
         {isPercent ? `${value}%` : <CountUp end={Number(value)} duration={1} />}
       </h2>
-
-      {description && (
-        <p className="text-xs text-gray-500 mt-2">
-          {description}
-        </p>
-      )}
     </div>
   );
 }

@@ -29,28 +29,7 @@ export default function Navbar({ title = "Dashboard" }) {
       {/* RIGHT SIDE */}
       <div className="flex items-center gap-6">
 
-        {/* Search */}
-        <div className="
-          hidden md:flex items-center gap-2
-          px-3 py-2
-          bg-gray-100 dark:bg-white/10
-          rounded-lg
-          focus-within:ring-2 focus-within:ring-indigo-500
-        ">
-          <FiSearch className="text-gray-500 dark:text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search employees, incidents..."
-            className="
-              bg-transparent
-              outline-none
-              text-sm
-              text-gray-800 dark:text-white
-              placeholder-gray-400
-              w-48
-            "
-          />
-        </div>
+ 
 
         {/* Notification */}
         <div className="relative">
