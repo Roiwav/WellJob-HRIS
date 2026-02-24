@@ -1,6 +1,16 @@
-import { FiSearch, FiBell } from "react-icons/fi";
+import { useState } from "react";
+import { FiSearch, FiBell, FiChevronDown } from "react-icons/fi";
 
-export default function Navbar() {
+export default function Navbar({ title = "Dashboard" }) {
+  const [openNotif, setOpenNotif] = useState(false);
+  const [openProfile, setOpenProfile] = useState(false);
+
+  const notifications = [
+    "5 Pending Incident Investigations",
+    "12 Expiring Documents",
+    "3 Overdue Case Resolutions"
+  ];
+
   return (
     <div
       className="
@@ -13,7 +23,7 @@ export default function Navbar() {
     >
       {/* LEFT SIDE */}
       <h2 className="font-semibold text-lg text-gray-900 dark:text-white">
-        Dashboard
+        {title}
       </h2>
 
       {/* RIGHT SIDE */}
@@ -25,39 +35,112 @@ export default function Navbar() {
           px-3 py-2
           bg-gray-100 dark:bg-white/10
           rounded-lg
+          focus-within:ring-2 focus-within:ring-indigo-500
         ">
           <FiSearch className="text-gray-500 dark:text-gray-400" />
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search employees, incidents..."
             className="
               bg-transparent
               outline-none
               text-sm
               text-gray-800 dark:text-white
+              placeholder-gray-400
+              w-48
             "
           />
         </div>
 
-        {/* Notification Icon */}
-        <div className="relative cursor-pointer">
-          <FiBell className="text-xl text-gray-600 dark:text-gray-300" />
-          <span className="
-            absolute -top-1 -right-1
-            bg-red-500
-            text-white
-            text-xs
-            w-4 h-4
-            flex items-center justify-center
-            rounded-full
-          ">
-            3
-          </span>
+        {/* Notification */}
+        <div className="relative">
+          <button
+            onClick={() => {
+              setOpenNotif(!openNotif);
+              setOpenProfile(false);
+            }}
+            className="relative"
+          >
+            <FiBell className="text-xl text-gray-600 dark:text-gray-300" />
+
+            <span className="
+              absolute -top-1 -right-1
+              bg-red-500
+              text-white
+              text-xs
+              w-4 h-4
+              flex items-center justify-center
+              rounded-full
+            ">
+              {notifications.length}
+            </span>
+          </button>
+
+          {openNotif && (
+            <div className="
+              absolute right-0 mt-3 w-72
+              bg-white dark:bg-slate-900
+              border border-gray-200 dark:border-white/10
+              rounded-xl shadow-lg
+              z-50
+            ">
+              <div className="p-4 border-b dark:border-white/10 font-medium text-sm">
+                Notifications
+              </div>
+
+              <div className="max-h-60 overflow-y-auto">
+                {notifications.map((item, index) => (
+                  <div
+                    key={index}
+                    className="px-4 py-3 text-sm hover:bg-gray-100 dark:hover:bg-white/10 cursor-pointer"
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* User */}
-        <div className="text-sm text-gray-600 dark:text-gray-300">
-          Admin User
+        {/* Profile */}
+        <div className="relative">
+          <button
+            onClick={() => {
+              setOpenProfile(!openProfile);
+              setOpenNotif(false);
+            }}
+            className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300"
+          >
+            <div className="
+              w-8 h-8
+              bg-indigo-600
+              text-white
+              flex items-center justify-center
+              rounded-full
+              font-semibold
+            ">
+              A
+            </div>
+            Admin User
+            <FiChevronDown className="text-xs" />
+          </button>
+
+          {openProfile && (
+            <div className="
+              absolute right-0 mt-3 w-48
+              bg-white dark:bg-slate-900
+              border border-gray-200 dark:border-white/10
+              rounded-xl shadow-lg
+              z-50
+            ">
+              <button className="w-full text-left px-4 py-3 text-sm hover:bg-gray-100 dark:hover:bg-white/10">
+                Profile Settings
+              </button>
+              <button className="w-full text-left px-4 py-3 text-sm hover:bg-gray-100 dark:hover:bg-white/10">
+                Logout
+              </button>
+            </div>
+          )}
         </div>
 
       </div>
