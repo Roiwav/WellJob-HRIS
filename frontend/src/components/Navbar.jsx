@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FiSearch, FiBell, FiChevronDown } from "react-icons/fi";
 
-export default function Navbar({ title = "Dashboard" }) {
+export default function Navbar({ title = "Welljob Solutions & General Services" }) {
   const [openNotif, setOpenNotif] = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
 

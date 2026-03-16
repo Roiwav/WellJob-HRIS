@@ -57,11 +57,11 @@ export default function Sidebar({ toggleTheme, darkMode }) {
         <nav className="mt-6 flex flex-col gap-1">
           <SidebarItem to="/" icon={<FiHome />} label="Dashboard" expanded={expanded} />
           <SidebarItem to="/employees" icon={<FiUsers />} label="Employee Records" expanded={expanded} />
-          <SidebarItem to="/deployment" icon={<FiMapPin />} label="Deployment Tracking" expanded={expanded} />
+          <SidebarItem to="/deployments" icon={<FiMapPin />} label="Deployment Tracking" expanded={expanded} />
           <SidebarItem to="/kpi" icon={<FiBarChart2 />} label="KPI & Reports" expanded={expanded} />
           <SidebarItem to="/incidents" icon={<FiAlertTriangle />} label="Incidents & Disciplinary" expanded={expanded} />
           <SidebarItem to="/notifications" icon={<FiBell />} label="Notifications" expanded={expanded} />
-          <SidebarItem to="/users" icon={<FiSettings />} label="User Management" expanded={expanded} />
+          <SidebarItem to="/settings" icon={<FiSettings />} label="Settings" expanded={expanded} />
         </nav>
       </div>
 
