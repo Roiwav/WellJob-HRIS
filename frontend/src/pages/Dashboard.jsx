@@ -1,12 +1,19 @@
 import { useState, useEffect, useMemo } from "react";
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid,
-  BarChart, Bar, PieChart, Pie, Cell
-} from "recharts";
-import CountUp from "react-countup";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+
+/* DASHBOARD COMPONENTS */
+
+import DashboardHeader from "../components/dashboard/DashboardHeader";
+import KPICards from "../components/dashboard/KPICards";
+import DeploymentTrendChart from "../components/dashboard/DeploymentTrendChart";
+import IncidentTrendChart from "../components/dashboard/IncidentTrendChart";
+import SeverityPieChart from "../components/dashboard/SeverityPieChart";
+import CaseAgingChart from "../components/dashboard/CaseAgingChart";
+
+import ViolationTrendChart from "../components/dashboard/ViolationTrendChart";
+import ComplianceTrendChart from "../components/dashboard/ComplianceTrendChart";
+import UtilizationTrendChart from "../components/dashboard/UtilizationTrendChart";
 
 /* ================= CONSTANTS ================= */
 
@@ -15,15 +22,15 @@ const monthList = [
   "Jul","Aug","Sep","Oct","Nov","Dec"
 ];
 
-const COLORS = ["#4f46e5", "#ef4444", "#f59e0b"];
-
-/* ================= UTILITIES ================= */
+/* ================= UTIL ================= */
 
 function aggregateByMonth(dataset, key, year, isCurrentYear) {
+
   const currentMonthIndex = new Date().getMonth();
 
   return monthList
     .map((month, index) => {
+
       const monthNumber = String(index + 1).padStart(2, "0");
 
       const monthItems = dataset.filter(
@@ -38,6 +45,7 @@ function aggregateByMonth(dataset, key, year, isCurrentYear) {
       );
 
       return { label: month, value: total, index };
+
     })
     .filter(item => !isCurrentYear || item.index <= currentMonthIndex);
 }
@@ -47,6 +55,7 @@ function aggregateByMonth(dataset, key, year, isCurrentYear) {
 export default function Dashboard() {
 
   const currentYear = new Date().getFullYear().toString();
+
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
@@ -59,9 +68,12 @@ export default function Dashboard() {
     aging: []
   });
 
+  /* ================= FETCH DATA ================= */
+
   useEffect(() => {
 
     const mockData = {
+
       kpis: {
         total: 1624,
         deployed: 1000,
@@ -69,46 +81,57 @@ export default function Dashboard() {
         activeIncidents: 7,
         expiringDocs: 12,
       },
+
       workforce: [
         { date: "2026-01-10", employees: 50 },
         { date: "2026-02-10", employees: 120 },
         { date: "2026-03-10", employees: 200 },
       ],
+
       incidents: [
         { date: "2026-01-12", incidents: 3 },
         { date: "2026-02-18", incidents: 5 },
         { date: "2026-03-10", incidents: 8 },
       ],
+
       severity: [
         { name: "Minor", value: 10 },
         { name: "Major", value: 5 },
         { name: "Critical", value: 2 },
       ],
+
       aging: [
         { name: "0-7 Days", value: 4 },
         { name: "8-30 Days", value: 2 },
         { name: "30+ Days", value: 1 },
       ]
+
     };
 
     setTimeout(() => {
+
       setData(mockData);
 
       const now = new Date();
-      const formatted = now.toLocaleString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true
-      });
 
-      setLastUpdated(formatted);
+      setLastUpdated(
+        now.toLocaleString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true
+        })
+      );
+
       setLoading(false);
+
     }, 300);
 
   }, []);
+
+  /* ================= CALCULATIONS ================= */
 
   const isCurrentYear = selectedYear === currentYear;
 
@@ -123,13 +146,45 @@ export default function Dashboard() {
   );
 
   const utilizationRate = useMemo(() => {
+
     if (!data.kpis.total) return 0;
-    return Number(((data.kpis.deployed / data.kpis.total) * 100).toFixed(1));
+
+    return Number(
+      ((data.kpis.deployed / data.kpis.total) * 100).toFixed(1)
+    );
+
   }, [data.kpis]);
+
+  /* ================= ANALYTICS MOCK DATA ================= */
+
+  const violationTrend = [
+    { month: "Jan", violations: 3 },
+    { month: "Feb", violations: 5 },
+    { month: "Mar", violations: 8 },
+    { month: "Apr", violations: 4 },
+    { month: "May", violations: 6 },
+  ];
+
+  const complianceTrend = [
+    { month: "Jan", compliance: 90 },
+    { month: "Feb", compliance: 92 },
+    { month: "Mar", compliance: 95 },
+    { month: "Apr", compliance: 93 },
+    { month: "May", compliance: 96 },
+  ];
+
+  const utilizationTrend = [
+    { month: "Jan", utilization: 60 },
+    { month: "Feb", utilization: 70 },
+    { month: "Mar", utilization: 80 },
+    { month: "Apr", utilization: 75 },
+    { month: "May", utilization: 85 },
+  ];
 
   /* ================= PDF EXPORT ================= */
 
   const handleExportPDF = () => {
+
     const doc = new jsPDF();
 
     doc.setFontSize(16);
@@ -154,7 +209,10 @@ export default function Dashboard() {
     });
 
     doc.save(`Welljob_Executive_Report_${selectedYear}.pdf`);
+
   };
+
+  /* ================= LOADING ================= */
 
   if (loading) {
     return (
@@ -164,163 +222,65 @@ export default function Dashboard() {
     );
   }
 
+  /* ================= UI ================= */
+
   return (
+
     <div className="space-y-10">
 
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+      <DashboardHeader
+        selectedYear={selectedYear}
+        setSelectedYear={setSelectedYear}
+        handleExportPDF={handleExportPDF}
+        lastUpdated={lastUpdated}
+      />
 
-        <h1 className="text-2xl font-semibold">
-          Workforce Dashboard
-        </h1>
+      <KPICards
+        kpis={data.kpis}
+        utilizationRate={utilizationRate}
+      />
 
-        <div className="flex flex-wrap items-center gap-4">
+      <DeploymentTrendChart
+        data={workforceTrend}
+      />
 
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Last Updated:
-            <span className="ml-2 font-medium text-gray-700 dark:text-gray-200">
-              {lastUpdated}
-            </span>
-          </div>
-
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value)}
-            className="px-4 py-2 rounded-lg border bg-white dark:bg-slate-900"
-          >
-            <option value="2026">2026</option>
-            <option value="2025">2025</option>
-          </select>
-
-          <button
-            onClick={handleExportPDF}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-          >
-            Export PDF
-          </button>
-
-        </div>
-      </div>
-
-      {/* KPI ROW */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard title="Total" value={data.kpis.total} />
-        <KpiCard title="Deployed" value={data.kpis.deployed} />
-        <KpiCard title="Available" value={data.kpis.available} />
-        <KpiCard title="Utilization %" value={utilizationRate} />
-        <KpiCard title="Incidents" value={data.kpis.activeIncidents} />
-        <KpiCard title="Expiring" value={data.kpis.expiringDocs} alert />
-      </div>
-
-      {/* DEPLOYMENT TREND (NEON) */}
-      <ChartCard title="Deployment Trend">
-        <LineChart data={workforceTrend}>
-          <defs>
-            <filter id="neonGlow">
-              <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-              <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-          </defs>
-
-          <CartesianGrid strokeDasharray="3 3" opacity={0.05} />
-          <XAxis dataKey="label" />
-          <YAxis />
-          <Tooltip />
-
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="#00f5ff"
-            strokeWidth={3}
-            dot={false}
-            filter="url(#neonGlow)"
-          />
-        </LineChart>
-      </ChartCard>
-
-      {/* RISK & COMPLIANCE */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        <ChartCard title="Incident Trend">
-          <BarChart data={incidentTrend}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.05} />
-            <XAxis dataKey="label" />
-            <YAxis />
-            <Tooltip />
-            <Bar dataKey="value" fill="#ef4444" />
-          </BarChart>
-        </ChartCard>
+        <IncidentTrendChart
+          data={incidentTrend}
+        />
 
-        <PieCard title="Incident Severity" data={data.severity} />
+        <SeverityPieChart
+          data={data.severity}
+        />
 
-        <BarSimple title="Case Aging Distribution" data={data.aging} />
+        <CaseAgingChart
+          data={data.aging}
+        />
+
+      </div>
+
+      {/* ================= ADVANCED ANALYTICS ================= */}
+
+      <div className="space-y-6">
+
+        <h2 className="text-xl font-semibold">
+          Workforce Analytics
+        </h2>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          <ViolationTrendChart data={violationTrend} />
+
+          <ComplianceTrendChart data={complianceTrend} />
+
+          <UtilizationTrendChart data={utilizationTrend} />
+
+        </div>
 
       </div>
 
     </div>
-  );
-}
 
-/* ================= COMPONENTS ================= */
-
-function KpiCard({ title, value, alert }) {
-  const isPercent = title.includes("%");
-
-  return (
-    <div className={`bg-white dark:bg-slate-900 p-4 rounded-xl border ${alert ? "border-red-400" : ""}`}>
-      <p className="text-xs text-gray-500 uppercase">{title}</p>
-      <h2 className="text-2xl font-semibold mt-2">
-        {isPercent ? `${value}%` : <CountUp end={Number(value)} duration={1} />}
-      </h2>
-    </div>
-  );
-}
-
-function ChartCard({ title, children }) {
-  return (
-    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border">
-      <h3 className="mb-4 font-medium">{title}</h3>
-      <ResponsiveContainer width="100%" height={350}>
-        {children}
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function PieCard({ title, data }) {
-  return (
-    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border">
-      <h3 className="mb-4 font-medium">{title}</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <PieChart>
-          <Pie data={data} dataKey="value" outerRadius={100}>
-            {data.map((entry, index) => (
-              <Cell key={index} fill={COLORS[index % COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip />
-        </PieChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function BarSimple({ title, data }) {
-  return (
-    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border">
-      <h3 className="mb-4 font-medium">{title}</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.05} />
-          <XAxis dataKey="name" />
-          <YAxis />
-          <Tooltip />
-          <Bar dataKey="value" fill="#4f46e5" />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
   );
 }
