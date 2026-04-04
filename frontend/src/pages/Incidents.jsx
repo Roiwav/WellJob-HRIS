@@ -40,11 +40,11 @@ export default function Incidents() {
     <div className="space-y-8">
 
       <div>
-        <h1 className="text-2xl font-bold">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           Incident & Disciplinary Management
         </h1>
 
-        <p className="text-gray-500 text-sm">
+        <p className="text-gray-500 dark:text-gray-400 text-sm">
           Track employee violations and disciplinary actions
         </p>
       </div>

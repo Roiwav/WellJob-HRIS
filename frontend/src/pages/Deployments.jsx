@@ -42,11 +42,11 @@ export default function Deployments() {
 
       <div>
 
-        <h1 className="text-2xl font-bold">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           Deployment Tracking
         </h1>
 
-        <p className="text-gray-500 text-sm">
+        <p className="text-gray-500 dark:text-gray-400 text-sm">
           Monitor employee deployments across client companies
         </p>
 

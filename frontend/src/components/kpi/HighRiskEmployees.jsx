@@ -9,11 +9,11 @@ export default function HighRiskEmployees({ employees }) {
   if (highRiskEmployees.length === 0) {
     return (
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
-        <h3 className="text-lg font-semibold mb-4">
+        <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
           High Risk Employees
         </h3>
 
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           No high risk employees detected.
         </p>
       </div>
@@ -24,7 +24,7 @@ export default function HighRiskEmployees({ employees }) {
 
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
 
-      <h3 className="text-lg font-semibold mb-6 flex items-center gap-2 text-red-500">
+      <h3 className="text-lg font-semibold mb-6 flex items-center gap-2 text-red-500 dark:text-red-400">
 
         <FiAlertTriangle />
 

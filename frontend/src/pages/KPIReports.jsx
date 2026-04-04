@@ -74,11 +74,11 @@ export default function KPIReports() {
 
       <div>
 
-        <h1 className="text-3xl font-semibold">
+        <h1 className="text-3xl font-semibold text-gray-900 dark:text-white">
           KPI & Reports Center
         </h1>
 
-        <p className="text-gray-500 text-sm">
+        <p className="text-gray-500 dark:text-gray-400 text-sm">
           Strategic Employee Risk & Compliance Monitoring
         </p>
 

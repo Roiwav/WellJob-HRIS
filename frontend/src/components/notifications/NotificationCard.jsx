@@ -21,8 +21,8 @@ export default function NotificationCard({ type, message, date }) {
         <span className="text-xl">{icons[type]}</span>
 
         <div>
-          <p className="text-sm font-medium">{message}</p>
-          <p className="text-xs text-gray-500">{date}</p>
+          <p className="text-sm font-medium text-gray-900 dark:text-white">{message}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{date}</p>
         </div>
       </div>
 
