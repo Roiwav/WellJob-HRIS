@@ -26,7 +26,7 @@ export default function ReportGenerator({ employees }) {
 
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
 
-      <h3 className="font-semibold text-lg mb-4">
+      <h3 className="font-semibold text-lg mb-4 text-gray-900 dark:text-white">
         Reports Center
       </h3>
 

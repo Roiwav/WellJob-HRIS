@@ -63,9 +63,9 @@ export default function IncidentTable({ incidents, openModal }) {
 function SeverityBadge({ level }) {
 
   const colors = {
-    Minor: "bg-blue-100 text-blue-600",
-    Major: "bg-amber-100 text-amber-600",
-    Critical: "bg-red-100 text-red-600",
+    Minor: "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400",
+    Major: "bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-400",
+    Critical: "bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-400",
   };
 
   return (
@@ -78,9 +78,9 @@ function SeverityBadge({ level }) {
 function StatusBadge({ status }) {
 
   const colors = {
-    Open: "bg-red-100 text-red-600",
-    Investigating: "bg-amber-100 text-amber-600",
-    Resolved: "bg-green-100 text-green-600",
+    Open: "bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-400",
+    Investigating: "bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-400",
+    Resolved: "bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400",
   };
 
   return (

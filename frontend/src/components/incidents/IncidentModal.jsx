@@ -16,7 +16,7 @@ export default function IncidentModal({ incident, close }) {
             Incident Details
           </h2>
 
-          <button onClick={close}>
+          <button onClick={close} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
             <FiX />
           </button>
 
@@ -64,8 +64,8 @@ export default function IncidentModal({ incident, close }) {
 function Info({ label, value }) {
   return (
     <div>
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="font-medium">{value}</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="font-medium text-gray-900 dark:text-white">{value}</p>
     </div>
   );
 }
