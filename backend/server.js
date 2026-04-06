@@ -9,7 +9,7 @@ const db = mysql.createConnection({
     host: "localhost",
     user: 'root',
     password: '',
-    database: ''
+    database: 'welljob_db'
 })
 
 app.get('/', (re, res)=> {
