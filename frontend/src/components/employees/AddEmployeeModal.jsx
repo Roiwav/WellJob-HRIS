@@ -180,7 +180,7 @@ export default function AddEmployeeModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-gray-300 rounded-lg"
+                className="px-4 py-2 bg-gray-300 rounded-lg text-black"
               >
                 Cancel
               </button>
@@ -215,7 +215,7 @@ export default function AddEmployeeModal({
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowConfirm(false)}
-                className="px-4 py-2 bg-gray-300 rounded-lg"
+                className="px-4 py-2 bg-gray-300 rounded-lg text-black"
               >
                 Cancel
               </button>

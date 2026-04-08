@@ -12,9 +12,7 @@ function ToastPortal({ show, message }) {
   return createPortal(
     <div
       className={`fixed bottom-6 right-6 z-[99999] pointer-events-none transform transition-all duration-500 ${
-        show
-          ? "opacity-100 translate-y-0"
-          : "opacity-0 translate-y-10"
+        show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
       }`}
     >
       <div className="bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg">
@@ -24,7 +22,6 @@ function ToastPortal({ show, message }) {
     document.body
   );
 }
-
 
 export default function Employees() {
   const [search, setSearch] = useState("");
@@ -36,7 +33,6 @@ export default function Employees() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
-  // 🔥 FIX: LOAD FROM LOCAL STORAGE
   const [employees, setEmployees] = useState(() => {
     const stored = localStorage.getItem("employees");
     return stored
@@ -59,7 +55,6 @@ export default function Employees() {
         ];
   });
 
-  // 🔥 AUTO SAVE
   useEffect(() => {
     localStorage.setItem("employees", JSON.stringify(employees));
   }, [employees]);
@@ -108,7 +103,7 @@ export default function Employees() {
     setEditingEmployee(null);
   };
 
-  // 🔥 FINAL SYSTEM LOGIC
+  // 🔥 FINAL FIXED LOGIC (UPDATED)
   const handleSaveEmployee = (employeeData) => {
     let savedEmployee;
 
@@ -133,16 +128,21 @@ export default function Employees() {
       setEmployees((prev) => [...prev, savedEmployee]);
     }
 
-    // 🔥 DEPLOYMENT SYNC
+    // 🔥 DEPLOYMENT SYNC (FINAL FIX)
     let deployments =
       JSON.parse(localStorage.getItem("deployments")) || [];
 
-    if (savedEmployee.status === "Deployed") {
-      const exists = deployments.find(
-        (d) => d.employee === savedEmployee.name
-      );
+    const index = deployments.findIndex(
+      (d) => d.employee === savedEmployee.name
+    );
 
-      if (!exists) {
+    if (savedEmployee.status === "Deployed") {
+      if (index !== -1) {
+        deployments[index] = {
+          ...deployments[index],
+          company: savedEmployee.company || "N/A"
+        };
+      } else {
         deployments.push({
           id: Date.now(),
           employee: savedEmployee.name,
@@ -154,6 +154,7 @@ export default function Employees() {
         });
       }
     } else {
+      // 🔥 IMPORTANT FIX: REMOVE DEPLOYMENT
       deployments = deployments.filter(
         (d) => d.employee !== savedEmployee.name
       );
