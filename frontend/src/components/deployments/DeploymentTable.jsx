@@ -1,6 +1,18 @@
-import { FiEye } from "react-icons/fi";
+import { FiEye, FiEdit2 } from "react-icons/fi";
 
-export default function DeploymentTable({ deployments, openModal }) {
+export default function DeploymentTable({
+  deployments,
+  openView,
+  openEdit
+}) {
+
+  const getRowColor = (status) => {
+    if (status === "Completed")
+      return "bg-green-50 dark:bg-green-900/20";
+    if (status === "Cancelled")
+      return "bg-red-50 dark:bg-red-900/20";
+    return "hover:bg-gray-50 dark:hover:bg-white/5";
+  };
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-white/10 overflow-x-auto">
@@ -25,7 +37,7 @@ export default function DeploymentTable({ deployments, openModal }) {
 
             <tr
               key={deployment.id}
-              className="border-t border-gray-200 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5"
+              className={`border-t border-gray-200 dark:border-white/5 ${getRowColor(deployment.status)}`}
             >
 
               <td className="px-6 py-4 font-medium">
@@ -53,12 +65,23 @@ export default function DeploymentTable({ deployments, openModal }) {
               </td>
 
               <td className="px-6 py-4 text-right">
-                <button
-                  onClick={() => openModal(deployment)}
-                  className="text-indigo-500 hover:text-indigo-700"
-                >
-                  <FiEye />
-                </button>
+                <div className="flex justify-end gap-3">
+
+                  <button
+                    onClick={() => openView(deployment)}
+                    className="text-indigo-500 hover:text-indigo-700"
+                  >
+                    <FiEye />
+                  </button>
+
+                  <button
+                    onClick={() => openEdit(deployment)}
+                    className="text-blue-500 hover:text-blue-700"
+                  >
+                    <FiEdit2 />
+                  </button>
+
+                </div>
               </td>
 
             </tr>
@@ -74,7 +97,6 @@ export default function DeploymentTable({ deployments, openModal }) {
 }
 
 function StatusBadge({ status }) {
-
   const colors = {
     Active: "bg-green-100 text-green-600",
     Completed: "bg-blue-100 text-blue-600",
