@@ -83,9 +83,7 @@ function App() {
 
           <Route
             element={
-              <ProtectedRoute
-                allowedRoles={[ROLES.SUPER_ADMIN, ROLES.IT_SUPPORT]}
-              />
+              <ProtectedRoute allowedRoles={[ROLES.IT_SUPPORT]} />
             }
           >
             <Route path="/settings" element={<Settings />} />
