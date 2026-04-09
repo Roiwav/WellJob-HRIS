@@ -1,9 +1,18 @@
 import { useState } from "react";
-import { FiSearch, FiBell, FiChevronDown } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
+import { FiBell, FiChevronDown } from "react-icons/fi";
 
 export default function Navbar({ title = "Welljob Solutions & General Services" }) {
   const [openNotif, setOpenNotif] = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
+
+  const navigate = useNavigate();
+
+  // 🔥 LOGOUT FUNCTION
+  const handleLogout = () => {
+    localStorage.removeItem("user"); // clear login data
+    navigate("/login", { replace: true }); // redirect to login
+  };
 
   const notifications = [
     "5 Pending Incident Investigations",
@@ -29,9 +38,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
       {/* RIGHT SIDE */}
       <div className="flex items-center gap-6">
 
- 
-
-        {/* Notification */}
+        {/* 🔔 NOTIFICATIONS */}
         <div className="relative">
           <button
             onClick={() => {
@@ -81,7 +88,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
           )}
         </div>
 
-        {/* Profile */}
+        {/* 👤 PROFILE */}
         <div className="relative">
           <button
             onClick={() => {
@@ -115,7 +122,12 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
               <button className="w-full text-left px-4 py-3 text-sm hover:bg-gray-100 dark:hover:bg-white/10">
                 Profile Settings
               </button>
-              <button className="w-full text-left px-4 py-3 text-sm hover:bg-gray-100 dark:hover:bg-white/10">
+
+              {/* 🔥 LOGOUT BUTTON */}
+              <button
+                onClick={handleLogout}
+                className="w-full text-left px-4 py-3 text-sm hover:bg-gray-100 dark:hover:bg-white/10 text-red-500"
+              >
                 Logout
               </button>
             </div>

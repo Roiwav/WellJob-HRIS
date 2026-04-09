@@ -1,35 +1,52 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
+import { useAuth } from "../context/useAuth";
 
 export default function Login() {
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
+  // 🔥 MOCK USERS (for now)
+  const users = [
+    { username: "admin", password: "123456", role: "SUPER_ADMIN", name: "Super Admin" },
+    { username: "manager1", password: "123456", role: "HR_MANAGER", name: "HR Manager" },
+    { username: "staff1", password: "123456", role: "HR_STAFF", name: "HR Staff" },
+    { username: "it1", password: "123456", role: "IT_SUPPORT", name: "IT Support" },
+  ];
+
   const handleLogin = (e) => {
     e.preventDefault();
 
-    // MOCK LOGIN
-    if (username === "admin" && password === "123456") {
-      localStorage.setItem(
-        "user",
-        JSON.stringify({ name: "Admin User", role: "SUPER_ADMIN" })
-      );
-      navigate("/super-admin");
+    const user = users.find(
+      (u) => u.username === username && u.password === password
+    );
+
+    if (!user) {
+      setError("Invalid username or password");
       return;
     }
 
-    setError("Invalid username or password");
+    // 🔥 SAVE USER
+    localStorage.setItem("user", JSON.stringify(user));
+    setUser(user); // 🔥 IMPORTANT (fix ng system mo)
+
+    // 🔥 ROLE-BASED REDIRECT
+    if (user.role === "SUPER_ADMIN") return navigate("/super-admin");
+    if (user.role === "HR_MANAGER") return navigate("/");
+    if (user.role === "HR_STAFF") return navigate("/employees");
+    if (user.role === "IT_SUPPORT") return navigate("/settings");
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#020617]">
 
-      {/* TOP BAR */}
+      {/* HEADER */}
       <div className="px-6 py-4 border-b border-slate-700">
         <h1 className="text-lg font-semibold text-white">
           Welljob Solutions & General Services
@@ -52,9 +69,7 @@ export default function Login() {
 
             {/* USERNAME */}
             <div>
-              <label className="text-sm text-gray-300">
-                Username
-              </label>
+              <label className="text-sm text-gray-300">Username</label>
               <input
                 type="text"
                 required
@@ -64,11 +79,9 @@ export default function Login() {
               />
             </div>
 
-            {/* PASSWORD WITH EYE */}
+            {/* PASSWORD */}
             <div>
-              <label className="text-sm text-gray-300">
-                Password
-              </label>
+              <label className="text-sm text-gray-300">Password</label>
 
               <div className="relative mt-1">
                 <input
@@ -79,7 +92,6 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                 />
 
-                {/* 👁 ICON */}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
