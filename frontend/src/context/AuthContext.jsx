@@ -6,7 +6,7 @@ import { AuthContext } from "./auth-context";
 export function AuthProvider({ children }) {
   const [user, setUser] = useState({
     name: "Admin User",
-    role: ROLES.IT_SUPPORT,
+    role: ROLES.HR_MANAGER,
     isFirstLogin: false,
   });
 
