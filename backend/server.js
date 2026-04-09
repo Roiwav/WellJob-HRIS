@@ -6,15 +6,14 @@ const jwt = require("jsonwebtoken");
 
 const app = express();
 
-// 🔥 MIDDLEWARE
 app.use(cors());
 app.use(express.json());
 
-// 🔥 DATABASE CONNECTION
+// 🔥 DB CONNECTION
 const db = mysql.createConnection({
-  host: "192.168.1.13",   
+  host: "192.168.1.13",
   user: "remoteuser",
-  password: "",        
+  password: "",
   database: "welljob_db",
 });
 
@@ -26,12 +25,11 @@ db.connect((err) => {
   }
 });
 
-// 🔥 TEST ROUTE
+// 🔥 TEST
 app.get("/", (req, res) => {
-  return res.json("Backend is running 🚀");
+  res.json("Backend is running 🚀");
 });
 
-// 🔐 LOGIN API
 app.post("/api/login", (req, res) => {
   const { username, password } = req.body;
 
@@ -46,21 +44,28 @@ app.post("/api/login", (req, res) => {
 
     const user = result[0];
 
-    // 🔥 COMPARE PASSWORD
+    // 🔥 CRITICAL FIX — BLOCK INACTIVE USER FIRST
+    if (user.status === "Inactive") {
+      return res.status(403).json({
+        message: "Account is inactive. Please contact admin.",
+      });
+    }
+
+    // 🔐 CHECK PASSWORD
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid password" });
     }
 
-    // 🔐 CREATE TOKEN
+    // 🔐 GENERATE TOKEN
     const token = jwt.sign(
       { id: user.id, role: user.role },
       "secretkey",
       { expiresIn: "1d" }
     );
 
-    return res.json({
+    res.json({
       token,
       user: {
         id: user.id,
@@ -71,6 +76,7 @@ app.post("/api/login", (req, res) => {
   });
 });
 
+// 🔥 GET USERS (FIXED STATUS)
 app.get("/api/users", (req, res) => {
   const sql = `
     SELECT 
@@ -79,17 +85,13 @@ app.get("/api/users", (req, res) => {
       email,
       username,
       role,
-      'Active' AS status
+      status
     FROM users
     WHERE role != 'SUPER_ADMIN'
   `;
 
   db.query(sql, (err, result) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json(err);
-    }
-
+    if (err) return res.status(500).json(err);
     res.json(result);
   });
 });
@@ -102,28 +104,57 @@ app.post("/api/users", async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const sql = `
-      INSERT INTO users (full_name, email, username, password, role)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO users (full_name, email, username, password, role, status)
+      VALUES (?, ?, ?, ?, ?, 'Active')
     `;
 
     db.query(
       sql,
       [name, email, username, hashedPassword, role],
-      (err, result) => {
-        if (err) {
-          console.error(err);
-          return res.status(500).json({ message: "Error creating user" });
-        }
-
-        res.json({ message: "User created successfully" });
+      (err) => {
+        if (err) return res.status(500).json(err);
+        res.json({ message: "User created" });
       }
     );
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
+  } catch {
+    res.status(500).json({ message: "Error" });
   }
 });
 
-// 🔥 START SERVER (IMPORTANT PORT)
+// 🔥 RESET PASSWORD
+app.put("/api/users/reset/:id", async (req, res) => {
+  const { password } = req.body;
+  const { id } = req.params;
+
+  const hashed = await bcrypt.hash(password, 10);
+
+  db.query(
+    "UPDATE users SET password=? WHERE id=?",
+    [hashed, id],
+    (err) => {
+      if (err) return res.status(500).json(err);
+      res.json({ message: "Password updated" });
+    }
+  );
+});
+
+// 🔥 TOGGLE STATUS
+app.put("/api/users/toggle/:id", (req, res) => {
+  const { id } = req.params;
+
+  const sql = `
+    UPDATE users
+    SET status = IF(status='Active','Inactive','Active')
+    WHERE id = ?
+  `;
+
+  db.query(sql, [id], (err) => {
+    if (err) return res.status(500).json(err);
+    res.json({ message: "Status toggled" });
+  });
+});
+
+// 🔥 START
 app.listen(5000, () => {
   console.log("Server running on port 5000 🔥");
 });
