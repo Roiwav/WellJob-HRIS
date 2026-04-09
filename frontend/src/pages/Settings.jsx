@@ -40,6 +40,7 @@ export default function Settings() {
           {isSuperAdmin
             ? "View-only technical settings overview for Super Admin."
             : "Maintain user accounts and technical access settings."}
+          Maintain user accounts and technical access settings.
         </p>
       </div>
 
