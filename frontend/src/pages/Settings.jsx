@@ -1,34 +1,54 @@
+import { useEffect, useState } from "react";
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 
-const userAccounts = [
-  {
-    id: "USR-001",
-    name: "Maria HR Manager",
-    username: "maria.manager",
-    role: "HR_MANAGER",
-    status: "Active",
-  },
-  {
-    id: "USR-002",
-    name: "John HR Staff",
-    username: "john.staff",
-    role: "HR_STAFF",
-    status: "Active",
-  },
-  {
-    id: "USR-003",
-    name: "Paul IT Support",
-    username: "paul.it",
-    role: "IT_SUPPORT",
-    status: "Inactive",
-  },
-];
-
 export default function Settings() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
+
+  const [accounts, setAccounts] = useState([]);
+
+  // 🔥 MODALS
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [showView, setShowView] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+
+  const [newPassword, setNewPassword] = useState("");
+
+  // 🔥 FETCH USERS
+  const fetchUsers = () => {
+    fetch("http://localhost:5000/api/users")
+      .then((res) => res.json())
+      .then((data) => setAccounts(data))
+      .catch((err) => console.error(err));
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  // 🔥 RESET PASSWORD
+  const handleResetPassword = async () => {
+    await fetch(`http://localhost:5000/api/users/reset/${selectedUser.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: newPassword }),
+    });
+
+    alert("Password updated");
+    setShowReset(false);
+    setNewPassword("");
+  };
+
+  // 🔥 TOGGLE STATUS
+  const handleToggle = async (id) => {
+    await fetch(`http://localhost:5000/api/users/toggle/${id}`, {
+      method: "PUT",
+    });
+
+    fetchUsers();
+  };
 
   return (
     <div className="p-8 space-y-6">
@@ -40,7 +60,6 @@ export default function Settings() {
           {isSuperAdmin
             ? "View-only technical settings overview for Super Admin."
             : "Maintain user accounts and technical access settings."}
-          Maintain user accounts and technical access settings.
         </p>
       </div>
 
@@ -65,7 +84,7 @@ export default function Settings() {
             </thead>
 
             <tbody className="text-gray-700 dark:text-gray-200">
-              {userAccounts.map((account) => (
+              {accounts.map((account) => (
                 <tr
                   key={account.id}
                   className="border-t border-gray-200 dark:border-gray-700"
@@ -74,21 +93,49 @@ export default function Settings() {
                   <td className="px-6 py-4">{account.name}</td>
                   <td className="px-6 py-4">{account.username}</td>
                   <td className="px-6 py-4">{account.role}</td>
-                  <td className="px-6 py-4">{account.status}</td>
+
+                  {/* 🔥 STATUS WITH COLOR (ONLY CHANGE) */}
+                  <td className="px-6 py-4">
+                    <span
+                      className={`px-2 py-1 rounded text-xs font-medium ${
+                        account.status === "Active"
+                          ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                          : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                      }`}
+                    >
+                      {account.status}
+                    </span>
+                  </td>
+
                   <td className="px-6 py-4">
                     <div className="flex justify-end gap-2">
-                      <button className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-600">
+                      <button
+                        onClick={() => {
+                          setSelectedUser(account);
+                          setShowView(true);
+                        }}
+                        className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-600"
+                      >
                         View
                       </button>
 
                       <RoleGuard permission={PERMISSIONS.CAN_MAINTAIN_IT_USERS}>
-                        <button className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700">
+                        <button
+                          onClick={() => {
+                            setSelectedUser(account);
+                            setShowReset(true);
+                          }}
+                          className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                        >
                           Reset Password
                         </button>
                       </RoleGuard>
 
                       <RoleGuard permission={PERMISSIONS.CAN_MAINTAIN_IT_USERS}>
-                        <button className="px-3 py-1 rounded-md bg-amber-500 text-white hover:bg-amber-600">
+                        <button
+                          onClick={() => handleToggle(account.id)}
+                          className="px-3 py-1 rounded-md bg-amber-500 text-white hover:bg-amber-600"
+                        >
                           Toggle Status
                         </button>
                       </RoleGuard>
@@ -100,6 +147,62 @@ export default function Settings() {
           </table>
         </div>
       </div>
+
+      {/* 🔥 VIEW MODAL */}
+      {showView && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 text-gray-900 dark:text-white p-6 rounded-xl w-96 shadow-xl border dark:border-gray-700">
+            <h2 className="font-bold text-lg mb-4">User Details</h2>
+
+            <div className="space-y-2 text-sm">
+              <p><b>Name:</b> {selectedUser.name}</p>
+              <p><b>Username:</b> {selectedUser.username}</p>
+              <p><b>Role:</b> {selectedUser.role}</p>
+              <p><b>Status:</b> {selectedUser.status}</p>
+            </div>
+
+            <button
+              onClick={() => setShowView(false)}
+              className="mt-6 w-full px-4 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 🔥 RESET PASSWORD MODAL */}
+      {showReset && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 text-gray-900 dark:text-white p-6 rounded-xl w-96 shadow-xl border dark:border-gray-700">
+            <h2 className="font-bold text-lg mb-4">Reset Password</h2>
+
+            <input
+              type="password"
+              placeholder="New Password"
+              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white p-2 rounded-md mb-4"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleResetPassword}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Save
+              </button>
+
+              <button
+                onClick={() => setShowReset(false)}
+                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
