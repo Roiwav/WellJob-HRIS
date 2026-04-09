@@ -12,7 +12,7 @@ export const sidebarItems = [
   {
     title: "Employees",
     path: "/employees",
-    allowedRoles: [ROLES.SUPER_ADMIN, ROLES.HR_STAFF, ROLES.HR_MANAGER],
+    allowedRoles: [ROLES.SUPER_ADMIN, ROLES.HR_MANAGER, ROLES.HR_STAFF],
   },
   {
     title: "Deployments",
