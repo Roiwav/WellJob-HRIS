@@ -2,6 +2,20 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/useAuth";
 import { ROLES } from "../../constants/roles";
 
+function getDefaultRouteByRole(role) {
+  switch (role) {
+    case ROLES.HR_STAFF:
+      return "/";
+    case ROLES.HR_MANAGER:
+      return "/";
+    case ROLES.IT_SUPPORT:
+      return "/settings";
+    case ROLES.SUPER_ADMIN:
+    default:
+      return "/";
+  }
+}
+
 export default function ProtectedRoute({ allowedRoles }) {
   const { user } = useAuth();
   const location = useLocation();
@@ -11,9 +25,7 @@ export default function ProtectedRoute({ allowedRoles }) {
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    if (user.role === ROLES.HR_STAFF) return <Navigate to="/employees" replace />;
-    if (user.role === ROLES.IT_SUPPORT) return <Navigate to="/settings" replace />;
-    return <Navigate to="/" replace />;
+    return <Navigate to={getDefaultRouteByRole(user.role)} replace />;
   }
 
   return <Outlet />;

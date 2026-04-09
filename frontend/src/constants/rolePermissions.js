@@ -1,25 +1,23 @@
-import { ROLES } from './roles';
-import { PERMISSIONS } from './permissions';
+import { ROLES } from "./roles";
+import { PERMISSIONS } from "./permissions";
 
 export const ROLE_PERMISSIONS = {
   [ROLES.SUPER_ADMIN]: [
-    // SUPER_ADMIN is explicitly view-only for operational data.
-    // They have no HR action permissions here.
+    PERMISSIONS.CAN_CREATE_SYSTEM_USERS,
+    // view-only siya sa operational pages
   ],
+
   [ROLES.HR_MANAGER]: [
-    PERMISSIONS.CAN_ADD_EMPLOYEE,
-    PERMISSIONS.CAN_EDIT_EMPLOYEE,
-    PERMISSIONS.CAN_DELETE_EMPLOYEE,
-    PERMISSIONS.CAN_ADD_INCIDENT,
-    PERMISSIONS.CAN_EDIT_INCIDENT,
     PERMISSIONS.CAN_EXPORT_PDF,
   ],
+
   [ROLES.HR_STAFF]: [
     PERMISSIONS.CAN_ADD_EMPLOYEE,
     PERMISSIONS.CAN_EDIT_EMPLOYEE,
     PERMISSIONS.CAN_ADD_INCIDENT,
     PERMISSIONS.CAN_EDIT_INCIDENT,
   ],
+
   [ROLES.IT_SUPPORT]: [
     PERMISSIONS.CAN_MAINTAIN_IT_USERS,
   ],

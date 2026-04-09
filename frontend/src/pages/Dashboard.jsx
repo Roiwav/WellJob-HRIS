@@ -1,59 +1,52 @@
 import { useState, useEffect, useMemo } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import RoleGuard from "../components/auth/RoleGuard";
+import { PERMISSIONS } from "../constants/permissions";
 
-/* DASHBOARD COMPONENTS */
-
-import DashboardHeader from "../components/dashboard/DashboardHeader";
 import KPICards from "../components/dashboard/KPICards";
 import DeploymentTrendChart from "../components/dashboard/DeploymentTrendChart";
 import IncidentTrendChart from "../components/dashboard/IncidentTrendChart";
 import SeverityPieChart from "../components/dashboard/SeverityPieChart";
 import CaseAgingChart from "../components/dashboard/CaseAgingChart";
-
 import ViolationTrendChart from "../components/dashboard/ViolationTrendChart";
 import ComplianceTrendChart from "../components/dashboard/ComplianceTrendChart";
 import UtilizationTrendChart from "../components/dashboard/UtilizationTrendChart";
 
-/* ================= CONSTANTS ================= */
-
 const monthList = [
-  "Jan","Feb","Mar","Apr","May","Jun",
-  "Jul","Aug","Sep","Oct","Nov","Dec"
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
-/* ================= UTIL ================= */
-
 function aggregateByMonth(dataset, key, year, isCurrentYear) {
-
   const currentMonthIndex = new Date().getMonth();
 
   return monthList
     .map((month, index) => {
-
       const monthNumber = String(index + 1).padStart(2, "0");
 
       const monthItems = dataset.filter(
-        (d) =>
-          d.date.startsWith(year) &&
-          d.date.slice(5, 7) === monthNumber
+        (d) => d.date.startsWith(year) && d.date.slice(5, 7) === monthNumber
       );
 
-      const total = monthItems.reduce(
-        (sum, item) => sum + item[key],
-        0
-      );
+      const total = monthItems.reduce((sum, item) => sum + item[key], 0);
 
       return { label: month, value: total, index };
-
     })
-    .filter(item => !isCurrentYear || item.index <= currentMonthIndex);
+    .filter((item) => !isCurrentYear || item.index <= currentMonthIndex);
 }
 
-/* ================= DASHBOARD ================= */
-
 export default function Dashboard() {
-
   const currentYear = new Date().getFullYear().toString();
 
   const [selectedYear, setSelectedYear] = useState(currentYear);
@@ -65,15 +58,11 @@ export default function Dashboard() {
     workforce: [],
     incidents: [],
     severity: [],
-    aging: []
+    aging: [],
   });
 
-  /* ================= FETCH DATA ================= */
-
   useEffect(() => {
-
     const mockData = {
-
       kpis: {
         total: 1624,
         deployed: 1000,
@@ -104,12 +93,10 @@ export default function Dashboard() {
         { name: "0-7 Days", value: 4 },
         { name: "8-30 Days", value: 2 },
         { name: "30+ Days", value: 1 },
-      ]
-
+      ],
     };
 
     setTimeout(() => {
-
       setData(mockData);
 
       const now = new Date();
@@ -121,41 +108,32 @@ export default function Dashboard() {
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
-          hour12: true
+          hour12: true,
         })
       );
 
       setLoading(false);
-
     }, 300);
-
   }, []);
-
-  /* ================= CALCULATIONS ================= */
 
   const isCurrentYear = selectedYear === currentYear;
 
-  const workforceTrend = useMemo(() =>
-    aggregateByMonth(data.workforce, "employees", selectedYear, isCurrentYear),
+  const workforceTrend = useMemo(
+    () =>
+      aggregateByMonth(data.workforce, "employees", selectedYear, isCurrentYear),
     [data.workforce, selectedYear, isCurrentYear]
   );
 
-  const incidentTrend = useMemo(() =>
-    aggregateByMonth(data.incidents, "incidents", selectedYear, isCurrentYear),
+  const incidentTrend = useMemo(
+    () =>
+      aggregateByMonth(data.incidents, "incidents", selectedYear, isCurrentYear),
     [data.incidents, selectedYear, isCurrentYear]
   );
 
   const utilizationRate = useMemo(() => {
-
     if (!data.kpis.total) return 0;
-
-    return Number(
-      ((data.kpis.deployed / data.kpis.total) * 100).toFixed(1)
-    );
-
+    return Number(((data.kpis.deployed / data.kpis.total) * 100).toFixed(1));
   }, [data.kpis]);
-
-  /* ================= ANALYTICS MOCK DATA ================= */
 
   const violationTrend = [
     { month: "Jan", violations: 3 },
@@ -181,10 +159,7 @@ export default function Dashboard() {
     { month: "May", utilization: 85 },
   ];
 
-  /* ================= PDF EXPORT ================= */
-
   const handleExportPDF = () => {
-
     const doc = new jsPDF();
 
     doc.setFontSize(16);
@@ -202,17 +177,14 @@ export default function Dashboard() {
         ["Total Employees", data.kpis.total],
         ["Deployed", data.kpis.deployed],
         ["Available", data.kpis.available],
-        ["Utilization Rate (%)", utilizationRate + "%"],
+        ["Utilization Rate (%)", `${utilizationRate}%`],
         ["Active Incidents", data.kpis.activeIncidents],
         ["Expiring Documents", data.kpis.expiringDocs],
       ],
     });
 
     doc.save(`Welljob_Executive_Report_${selectedYear}.pdf`);
-
   };
-
-  /* ================= LOADING ================= */
 
   if (loading) {
     return (
@@ -222,65 +194,61 @@ export default function Dashboard() {
     );
   }
 
-  /* ================= UI ================= */
-
   return (
-
     <div className="space-y-10">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Workforce Dashboard
+          </h1>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            Last Updated: {lastUpdated}
+          </p>
+        </div>
 
-      <DashboardHeader
-        selectedYear={selectedYear}
-        setSelectedYear={setSelectedYear}
-        handleExportPDF={handleExportPDF}
-        lastUpdated={lastUpdated}
-      />
+        <div className="flex items-center gap-3">
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white px-4 py-2"
+          >
+            <option value="2026">2026</option>
+            <option value="2025">2025</option>
+            <option value="2024">2024</option>
+          </select>
 
-      <KPICards
-        kpis={data.kpis}
-        utilizationRate={utilizationRate}
-      />
-
-      <DeploymentTrendChart
-        data={workforceTrend}
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        <IncidentTrendChart
-          data={incidentTrend}
-        />
-
-        <SeverityPieChart
-          data={data.severity}
-        />
-
-        <CaseAgingChart
-          data={data.aging}
-        />
-
+          <RoleGuard permission={PERMISSIONS.CAN_EXPORT_PDF}>
+            <button
+              onClick={handleExportPDF}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+            >
+              Export PDF
+            </button>
+          </RoleGuard>
+        </div>
       </div>
 
-      {/* ================= ADVANCED ANALYTICS ================= */}
+      <KPICards kpis={data.kpis} utilizationRate={utilizationRate} />
+
+      <DeploymentTrendChart data={workforceTrend} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <IncidentTrendChart data={incidentTrend} />
+        <SeverityPieChart data={data.severity} />
+        <CaseAgingChart data={data.aging} />
+      </div>
 
       <div className="space-y-6">
-
-        <h2 className="text-xl font-semibold">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
           Workforce Analytics
         </h2>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
           <ViolationTrendChart data={violationTrend} />
-
           <ComplianceTrendChart data={complianceTrend} />
-
           <UtilizationTrendChart data={utilizationTrend} />
-
         </div>
-
       </div>
-
     </div>
-
   );
 }
