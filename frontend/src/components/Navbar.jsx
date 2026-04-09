@@ -1,15 +1,30 @@
 import { useState } from "react";
-import { FiSearch, FiBell, FiChevronDown } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
+import { FiBell, FiChevronDown } from "react-icons/fi";
+import { useAuth } from "../context/useAuth";
 
 export default function Navbar({ title = "Welljob Solutions & General Services" }) {
   const [openNotif, setOpenNotif] = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
+
+  const navigate = useNavigate();
+  const { user, setUser } = useAuth();
 
   const notifications = [
     "5 Pending Incident Investigations",
     "12 Expiring Documents",
     "3 Overdue Case Resolutions"
   ];
+
+  // 🔥 LOGOUT FUNCTION
+  const handleLogout = () => {
+    localStorage.removeItem("user"); // clear storage
+    setUser(null); // clear context
+    navigate("/login", { replace: true }); // redirect
+  };
+
+  // 🔥 GET INITIAL (first letter)
+  const initial = user?.name?.charAt(0)?.toUpperCase() || "U";
 
   return (
     <div
@@ -29,9 +44,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
       {/* RIGHT SIDE */}
       <div className="flex items-center gap-6">
 
- 
-
-        {/* Notification */}
+        {/* 🔔 NOTIFICATIONS */}
         <div className="relative">
           <button
             onClick={() => {
@@ -81,7 +94,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
           )}
         </div>
 
-        {/* Profile */}
+        {/* 👤 PROFILE */}
         <div className="relative">
           <button
             onClick={() => {
@@ -98,9 +111,10 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
               rounded-full
               font-semibold
             ">
-              A
+              {initial}
             </div>
-            Admin User
+
+            {user?.name || "User"}
             <FiChevronDown className="text-xs" />
           </button>
 
@@ -115,7 +129,12 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
               <button className="w-full text-left px-4 py-3 text-sm hover:bg-gray-100 dark:hover:bg-white/10">
                 Profile Settings
               </button>
-              <button className="w-full text-left px-4 py-3 text-sm hover:bg-gray-100 dark:hover:bg-white/10">
+
+              {/* 🔥 LOGOUT */}
+              <button
+                onClick={handleLogout}
+                className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-gray-100 dark:hover:bg-white/10"
+              >
                 Logout
               </button>
             </div>
