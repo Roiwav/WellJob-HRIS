@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 
 import MainLayout from "./layout/MainLayout";
 
@@ -9,28 +9,69 @@ import Incidents from "./pages/Incidents";
 import KPIReports from "./pages/KPIReports";
 import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
+import SuperAdminPortal from "./pages/SuperAdminPortal";
+
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
+import { ROLES } from "./constants/roles";
 
 function App() {
   return (
-    <Routes>
-      <Route element={<MainLayout />}>
+    <AuthProvider>
+      <Routes>
+        <Route element={<MainLayout />}>
+          <Route
+            element={
+              <ProtectedRoute
+                allowedRoles={[ROLES.SUPER_ADMIN, ROLES.HR_MANAGER]}
+              />
+            }
+          >
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/kpi" element={<KPIReports />} />
+          </Route>
 
-        <Route path="/" element={<Dashboard />} />
+          <Route
+            element={
+              <ProtectedRoute
+                allowedRoles={[
+                  ROLES.SUPER_ADMIN,
+                  ROLES.HR_MANAGER,
+                  ROLES.HR_STAFF,
+                ]}
+              />
+            }
+          >
+            <Route path="/employees" element={<Employees />} />
+            <Route path="/deployments" element={<Deployments />} />
+            <Route path="/incidents" element={<Incidents />} />
+            <Route path="/notifications" element={<Notifications />} />
+          </Route>
 
-        <Route path="/employees" element={<Employees />} />
+          <Route
+            element={
+              <ProtectedRoute
+                allowedRoles={[
+                  ROLES.SUPER_ADMIN,
+                  ROLES.HR_MANAGER,
+                  ROLES.IT_SUPPORT,
+                ]}
+              />
+            }
+          >
+            <Route path="/settings" element={<Settings />} />
+          </Route>
 
-        <Route path="/deployments" element={<Deployments />} />
+          <Route
+            element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]} />}
+          >
+            <Route path="/super-admin" element={<SuperAdminPortal />} />
+          </Route>
 
-        <Route path="/incidents" element={<Incidents />} />
-
-        <Route path="/kpi" element={<KPIReports />} />
-
-        <Route path="/notifications" element={<Notifications />} />
-
-        <Route path="/settings" element={<Settings />} />
-
-      </Route>
-    </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </AuthProvider>
   );
 }
 

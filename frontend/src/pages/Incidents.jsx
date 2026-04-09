@@ -1,64 +1,21 @@
-import { useState } from "react";
-import IncidentTable from "../components/incidents/IncidentTable";
-import IncidentModal from "../components/incidents/IncidentModal";
+import RoleGuard from "../components/auth/RoleGuard";
+import { PERMISSIONS } from "../constants/permissions";
 
 export default function Incidents() {
-
-  const [selectedIncident, setSelectedIncident] = useState(null);
-
-  const incidents = [
-    {
-      id: 1,
-      employee: "Juan Dela Cruz",
-      company: "ABC Security",
-      violation: "Absenteeism",
-      severity: "Minor",
-      status: "Open",
-      date: "2026-03-01",
-    },
-    {
-      id: 2,
-      employee: "Maria Santos",
-      company: "XYZ Corp",
-      violation: "Late Attendance",
-      severity: "Major",
-      status: "Investigating",
-      date: "2026-03-05",
-    },
-    {
-      id: 3,
-      employee: "Pedro Reyes",
-      company: "Delta Inc",
-      violation: "Misconduct",
-      severity: "Critical",
-      status: "Resolved",
-      date: "2026-02-20",
-    },
-  ];
-
   return (
-    <div className="space-y-8">
-
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Incident & Disciplinary Management
-        </h1>
-
-        <p className="text-gray-500 dark:text-gray-400 text-sm">
-          Track employee violations and disciplinary actions
-        </p>
+    <div className="p-8">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Incident Reports</h1>
+        
+        <RoleGuard permission={PERMISSIONS.CAN_ADD_INCIDENT}>
+          <button className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">
+            + Add Incident Report
+          </button>
+        </RoleGuard>
       </div>
-
-      <IncidentTable
-        incidents={incidents}
-        openModal={setSelectedIncident}
-      />
-
-      <IncidentModal
-        incident={selectedIncident}
-        close={() => setSelectedIncident(null)}
-      />
-
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 p-6 text-gray-600 dark:text-gray-300">
+        <p>Incident history goes here.</p>
+      </div>
     </div>
   );
 }
