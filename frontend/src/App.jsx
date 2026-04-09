@@ -23,12 +23,26 @@ function App() {
           <Route
             element={
               <ProtectedRoute
-                allowedRoles={[ROLES.SUPER_ADMIN, ROLES.HR_MANAGER]}
+                allowedRoles={[
+                  ROLES.SUPER_ADMIN,
+                  ROLES.HR_MANAGER,
+                  ROLES.HR_STAFF,
+                  ROLES.IT_SUPPORT,
+                ]}
               />
             }
           >
             <Route path="/" element={<Dashboard />} />
-            <Route path="/kpi" element={<KPIReports />} />
+          </Route>
+
+          <Route
+            element={
+              <ProtectedRoute
+                allowedRoles={[ROLES.SUPER_ADMIN, ROLES.HR_STAFF]}
+              />
+            }
+          >
+            <Route path="/employees" element={<Employees />} />
           </Route>
 
           <Route
@@ -42,7 +56,6 @@ function App() {
               />
             }
           >
-            <Route path="/employees" element={<Employees />} />
             <Route path="/deployments" element={<Deployments />} />
             <Route path="/incidents" element={<Incidents />} />
             <Route path="/notifications" element={<Notifications />} />
@@ -51,11 +64,17 @@ function App() {
           <Route
             element={
               <ProtectedRoute
-                allowedRoles={[
-                  ROLES.SUPER_ADMIN,
-                  ROLES.HR_MANAGER,
-                  ROLES.IT_SUPPORT,
-                ]}
+                allowedRoles={[ROLES.SUPER_ADMIN, ROLES.HR_MANAGER]}
+              />
+            }
+          >
+            <Route path="/kpi" element={<KPIReports />} />
+          </Route>
+
+          <Route
+            element={
+              <ProtectedRoute
+                allowedRoles={[ROLES.SUPER_ADMIN, ROLES.IT_SUPPORT]}
               />
             }
           >

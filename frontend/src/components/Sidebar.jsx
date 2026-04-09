@@ -1,6 +1,6 @@
 import logo from "../assets/logo.png";
 import { NavLink } from "react-router-dom";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   FiHome,
   FiUsers,
@@ -11,10 +11,30 @@ import {
   FiSettings,
   FiSun,
   FiMoon,
+  FiShield,
 } from "react-icons/fi";
+import { sidebarItems } from "../config/sidebarItems";
+import { useAuth } from "../context/useAuth";
+
+const iconMap = {
+  Dashboard: <FiHome />,
+  Employees: <FiUsers />,
+  Deployments: <FiMapPin />,
+  "KPI Reports": <FiBarChart2 />,
+  Incidents: <FiAlertTriangle />,
+  Notifications: <FiBell />,
+  Settings: <FiSettings />,
+  "Super Admin Portal": <FiShield />,
+};
 
 export default function Sidebar({ toggleTheme, darkMode }) {
   const [expanded, setExpanded] = useState(false);
+  const { user } = useAuth();
+
+  const filteredItems = useMemo(() => {
+    if (!user?.role) return [];
+    return sidebarItems.filter((item) => item.allowedRoles.includes(user.role));
+  }, [user]);
 
   return (
     <aside
@@ -31,9 +51,7 @@ export default function Sidebar({ toggleTheme, darkMode }) {
         overflow-hidden
       `}
     >
-      {/* ================= TOP ================= */}
       <div>
-        {/* LOGO */}
         <div className="p-4 flex items-center gap-3">
           <img
             src={logo}
@@ -46,29 +64,31 @@ export default function Sidebar({ toggleTheme, darkMode }) {
             className={`
               text-lg font-semibold text-gray-900 dark:text-white
               whitespace-nowrap transition-all duration-150
-              ${expanded ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 absolute"}
+              ${
+                expanded
+                  ? "opacity-100 translate-x-0"
+                  : "opacity-0 -translate-x-2 absolute"
+              }
             `}
           >
             HR System
           </span>
         </div>
 
-        {/* NAVIGATION */}
         <nav className="mt-6 flex flex-col gap-1">
-          <SidebarItem to="/" icon={<FiHome />} label="Dashboard" expanded={expanded} />
-          <SidebarItem to="/employees" icon={<FiUsers />} label="Employee Records" expanded={expanded} />
-          <SidebarItem to="/deployments" icon={<FiMapPin />} label="Deployment Tracking" expanded={expanded} />
-          <SidebarItem to="/kpi" icon={<FiBarChart2 />} label="KPI & Reports" expanded={expanded} />
-          <SidebarItem to="/incidents" icon={<FiAlertTriangle />} label="Incidents & Disciplinary" expanded={expanded} />
-          <SidebarItem to="/notifications" icon={<FiBell />} label="Notifications" expanded={expanded} />
-          <SidebarItem to="/settings" icon={<FiSettings />} label="Settings" expanded={expanded} />
+          {filteredItems.map((item) => (
+            <SidebarItem
+              key={item.path}
+              to={item.path}
+              icon={iconMap[item.title] || <FiHome />}
+              label={item.title}
+              expanded={expanded}
+            />
+          ))}
         </nav>
       </div>
 
-      {/* ================= BOTTOM ================= */}
       <div className="p-4 border-t border-gray-200 dark:border-white/10 space-y-4">
-
-        {/* THEME TOGGLE */}
         <button
           onClick={toggleTheme}
           className="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 transition-colors duration-150"
@@ -85,13 +105,16 @@ export default function Sidebar({ toggleTheme, darkMode }) {
             className={`
               text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap
               transition-all duration-150
-              ${expanded ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 absolute"}
+              ${
+                expanded
+                  ? "opacity-100 translate-x-0"
+                  : "opacity-0 -translate-x-2 absolute"
+              }
             `}
           >
             {darkMode ? "Light Mode" : "Dark Mode"}
           </span>
         </button>
-
       </div>
     </aside>
   );
@@ -119,7 +142,11 @@ function SidebarItem({ to, icon, label, expanded }) {
         className={`
           text-sm font-medium whitespace-nowrap
           transition-all duration-150
-          ${expanded ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 absolute"}
+          ${
+            expanded
+              ? "opacity-100 translate-x-0"
+              : "opacity-0 -translate-x-2 absolute"
+          }
         `}
       >
         {label}
