@@ -39,7 +39,7 @@ export const sidebarItems = [
   {
     title: "Settings",
     path: "/settings",
-    allowedRoles: [ROLES.SUPER_ADMIN, ROLES.IT_SUPPORT],
+    allowedRoles: [ROLES.IT_SUPPORT],
   },
   {
     title: "Super Admin Portal",
