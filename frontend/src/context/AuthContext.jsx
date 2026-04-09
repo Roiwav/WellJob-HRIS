@@ -1,20 +1,22 @@
-import { useCallback, useMemo, useState } from "react";
-import { ROLES } from "../constants/roles";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { hasPermission as checkPermission } from "../utils/hasPermission";
 import { AuthContext } from "./auth-context";
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState({
-    name: "Admin User",
-    role: ROLES.SUPER_ADMIN,
-    isFirstLogin: false,
-  });
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("user");
+    if (stored) {
+      setUser(JSON.parse(stored));
+    }
+  }, []);
 
   const hasPermission = useCallback(
     (permission) => {
       return checkPermission(user?.role, permission);
     },
-    [user?.role]
+    [user]
   );
 
   const value = useMemo(
@@ -23,7 +25,7 @@ export function AuthProvider({ children }) {
       setUser,
       hasPermission,
     }),
-    [user, hasPermission]
+    [user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

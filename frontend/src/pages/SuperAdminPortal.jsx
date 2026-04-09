@@ -1,64 +1,70 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ROLES } from "../constants/roles";
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 
-const initialAccounts = [
-  {
-    id: "ACC-001",
-    name: "Maria Cruz",
-    email: "maria@example.com",
-    username: "maria.manager",
-    role: ROLES.HR_MANAGER,
-    status: "Active",
-  },
-  {
-    id: "ACC-002",
-    name: "John Reyes",
-    email: "john@example.com",
-    username: "john.staff",
-    role: ROLES.HR_STAFF,
-    status: "Active",
-  },
-  {
-    id: "ACC-003",
-    name: "Paul Santos",
-    email: "paul@example.com",
-    username: "paul.it",
-    role: ROLES.IT_SUPPORT,
-    status: "Inactive",
-  },
-];
-
 export default function SuperAdminPortal() {
-  const [accounts, setAccounts] = useState(initialAccounts);
+  const [accounts, setAccounts] = useState([]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState(ROLES.HR_STAFF);
 
-  const handleCreateAccount = (e) => {
+  // 🔥 FETCH USERS FROM DATABASE
+  const fetchUsers = () => {
+    fetch("http://localhost:5000/api/users")
+      .then((res) => res.json())
+      .then((data) => {
+        setAccounts(data);
+      })
+      .catch((err) => console.error("Fetch error:", err));
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  // 🔥 CREATE USER (SAVE TO DATABASE)
+  const handleCreateAccount = async (e) => {
     e.preventDefault();
 
-    const newAccount = {
-      id: `ACC-${String(accounts.length + 1).padStart(3, "0")}`,
-      name,
-      email,
-      username,
-      role,
-      status: "Active",
-    };
+    try {
+      const res = await fetch("http://localhost:5000/api/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          username,
+          password,
+          role,
+        }),
+      });
 
-    setAccounts((prev) => [newAccount, ...prev]);
+      const data = await res.json();
 
-    setName("");
-    setEmail("");
-    setUsername("");
-    setPassword("");
-    setRole(ROLES.HR_STAFF);
+      if (!res.ok) {
+        alert(data.message);
+        return;
+      }
 
-    alert("User successfully created. First login password reset is required.");
+      alert("User successfully created!");
+
+      // 🔥 refresh table
+      fetchUsers();
+
+      setName("");
+      setEmail("");
+      setUsername("");
+      setPassword("");
+      setRole(ROLES.HR_STAFF);
+    } catch (err) {
+      console.error(err);
+      alert("Error creating user");
+    }
   };
 
   return (
@@ -161,6 +167,7 @@ export default function SuperAdminPortal() {
         </div>
       </RoleGuard>
 
+      {/* 🔥 TABLE (UNCHANGED UI, DATABASE DATA NA) */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">

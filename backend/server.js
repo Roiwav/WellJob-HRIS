@@ -71,6 +71,58 @@ app.post("/api/login", (req, res) => {
   });
 });
 
+app.get("/api/users", (req, res) => {
+  const sql = `
+    SELECT 
+      id,
+      full_name AS name,
+      email,
+      username,
+      role,
+      'Active' AS status
+    FROM users
+    WHERE role != 'SUPER_ADMIN'
+  `;
+
+  db.query(sql, (err, result) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json(err);
+    }
+
+    res.json(result);
+  });
+});
+
+// 🔥 CREATE USER
+app.post("/api/users", async (req, res) => {
+  const { name, email, username, password, role } = req.body;
+
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const sql = `
+      INSERT INTO users (full_name, email, username, password, role)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+
+    db.query(
+      sql,
+      [name, email, username, hashedPassword, role],
+      (err, result) => {
+        if (err) {
+          console.error(err);
+          return res.status(500).json({ message: "Error creating user" });
+        }
+
+        res.json({ message: "User created successfully" });
+      }
+    );
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // 🔥 START SERVER (IMPORTANT PORT)
 app.listen(5000, () => {
   console.log("Server running on port 5000 🔥");
