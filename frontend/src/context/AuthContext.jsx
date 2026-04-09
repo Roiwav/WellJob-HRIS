@@ -1,14 +1,18 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { ROLES } from "../constants/roles";
 import { hasPermission as checkPermission } from "../utils/hasPermission";
 import { AuthContext } from "./auth-context";
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState({
-    name: "Admin User",
-    role: ROLES.IT_SUPPORT,
-    isFirstLogin: false,
-  });
+  const [user, setUser] = useState(null);
+
+  // 🔥 LOAD USER FROM LOCAL STORAGE
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+  }, []);
 
   const hasPermission = useCallback(
     (permission) => {
