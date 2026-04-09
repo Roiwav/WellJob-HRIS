@@ -9,9 +9,6 @@ import DeploymentTrendChart from "../components/dashboard/DeploymentTrendChart";
 import IncidentTrendChart from "../components/dashboard/IncidentTrendChart";
 import SeverityPieChart from "../components/dashboard/SeverityPieChart";
 import CaseAgingChart from "../components/dashboard/CaseAgingChart";
-import ViolationTrendChart from "../components/dashboard/ViolationTrendChart";
-import ComplianceTrendChart from "../components/dashboard/ComplianceTrendChart";
-import UtilizationTrendChart from "../components/dashboard/UtilizationTrendChart";
 
 const monthList = [
   "Jan",
@@ -135,30 +132,6 @@ export default function Dashboard() {
     return Number(((data.kpis.deployed / data.kpis.total) * 100).toFixed(1));
   }, [data.kpis]);
 
-  const violationTrend = [
-    { month: "Jan", violations: 3 },
-    { month: "Feb", violations: 5 },
-    { month: "Mar", violations: 8 },
-    { month: "Apr", violations: 4 },
-    { month: "May", violations: 6 },
-  ];
-
-  const complianceTrend = [
-    { month: "Jan", compliance: 90 },
-    { month: "Feb", compliance: 92 },
-    { month: "Mar", compliance: 95 },
-    { month: "Apr", compliance: 93 },
-    { month: "May", compliance: 96 },
-  ];
-
-  const utilizationTrend = [
-    { month: "Jan", utilization: 60 },
-    { month: "Feb", utilization: 70 },
-    { month: "Mar", utilization: 80 },
-    { month: "Apr", utilization: 75 },
-    { month: "May", utilization: 85 },
-  ];
-
   const handleExportPDF = () => {
     const doc = new jsPDF();
 
@@ -236,18 +209,6 @@ export default function Dashboard() {
         <IncidentTrendChart data={incidentTrend} />
         <SeverityPieChart data={data.severity} />
         <CaseAgingChart data={data.aging} />
-      </div>
-
-      <div className="space-y-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-          Workforce Analytics
-        </h2>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <ViolationTrendChart data={violationTrend} />
-          <ComplianceTrendChart data={complianceTrend} />
-          <UtilizationTrendChart data={utilizationTrend} />
-        </div>
       </div>
     </div>
   );
