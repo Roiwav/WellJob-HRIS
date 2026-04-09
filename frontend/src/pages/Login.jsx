@@ -1,29 +1,50 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
+import { useAuth } from "../context/useAuth";
 
 export default function Login() {
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
 
-    // MOCK LOGIN
-    if (username === "admin" && password === "123456") {
-      localStorage.setItem(
-        "user",
-        JSON.stringify({ name: "Admin User", role: "SUPER_ADMIN" })
-      );
-      navigate("/super-admin");
-      return;
-    }
+    try {
+      const res = await fetch("http://localhost:5000/api/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
 
-    setError("Invalid username or password");
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.message || "Login failed");
+        return;
+      }
+
+      // 🔥 SAVE USER
+      localStorage.setItem("user", JSON.stringify(data.user));
+      setUser(data.user);
+
+      // 🔥 ROLE-BASED REDIRECT
+      if (data.user.role === "SUPER_ADMIN") navigate("/super-admin");
+      else if (data.user.role === "HR_MANAGER") navigate("/");
+      else if (data.user.role === "HR_STAFF") navigate("/employees");
+      else if (data.user.role === "IT_SUPPORT") navigate("/settings");
+
+    } catch (err) {
+      console.error(err);
+      setError("Server error");
+    }
   };
 
   return (
@@ -58,13 +79,13 @@ export default function Login() {
               <input
                 type="text"
                 required
-                className="mt-1 w-full px-3 py-2 rounded-md border border-slate-600 bg-slate-700 text-white focus:ring-indigo-500 focus:border-indigo-500"
+                className="mt-1 w-full px-3 py-2 rounded-md border border-slate-600 bg-slate-700 text-white"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
             </div>
 
-            {/* PASSWORD WITH EYE */}
+            {/* PASSWORD */}
             <div>
               <label className="text-sm text-gray-300">
                 Password
@@ -74,12 +95,11 @@ export default function Login() {
                 <input
                   type={showPassword ? "text" : "password"}
                   required
-                  className="w-full px-3 py-2 pr-10 rounded-md border border-slate-600 bg-slate-700 text-white focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full px-3 py-2 pr-10 rounded-md border border-slate-600 bg-slate-700 text-white"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
 
-                {/* 👁 ICON */}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -98,7 +118,7 @@ export default function Login() {
             {/* BUTTON */}
             <button
               type="submit"
-              className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition"
+              className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700"
             >
               Sign In
             </button>
