@@ -47,7 +47,7 @@ app.post("/api/login", (req, res) => {
     // 🔥 CRITICAL FIX — BLOCK INACTIVE USER FIRST
     if (user.status === "Inactive") {
       return res.status(403).json({
-        message: "Account is inactive. Please contact admin.",
+        message: "Account is inactive. Please contact IT support.",
       });
     }
 

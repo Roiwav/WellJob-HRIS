@@ -11,7 +11,6 @@ export default function Settings() {
 
   // 🔥 MODALS
   const [selectedUser, setSelectedUser] = useState(null);
-  const [showView, setShowView] = useState(false);
   const [showReset, setShowReset] = useState(false);
 
   const [newPassword, setNewPassword] = useState("");
@@ -94,7 +93,7 @@ export default function Settings() {
                   <td className="px-6 py-4">{account.username}</td>
                   <td className="px-6 py-4">{account.role}</td>
 
-                  {/* 🔥 STATUS WITH COLOR (ONLY CHANGE) */}
+                  {/* 🔥 STATUS WITH COLOR */}
                   <td className="px-6 py-4">
                     <span
                       className={`px-2 py-1 rounded text-xs font-medium ${
@@ -109,15 +108,6 @@ export default function Settings() {
 
                   <td className="px-6 py-4">
                     <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedUser(account);
-                          setShowView(true);
-                        }}
-                        className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-600"
-                      >
-                        View
-                      </button>
 
                       <RoleGuard permission={PERMISSIONS.CAN_MAINTAIN_IT_USERS}>
                         <button
@@ -139,6 +129,7 @@ export default function Settings() {
                           Toggle Status
                         </button>
                       </RoleGuard>
+
                     </div>
                   </td>
                 </tr>
@@ -147,29 +138,6 @@ export default function Settings() {
           </table>
         </div>
       </div>
-
-      {/* 🔥 VIEW MODAL */}
-      {showView && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 text-gray-900 dark:text-white p-6 rounded-xl w-96 shadow-xl border dark:border-gray-700">
-            <h2 className="font-bold text-lg mb-4">User Details</h2>
-
-            <div className="space-y-2 text-sm">
-              <p><b>Name:</b> {selectedUser.name}</p>
-              <p><b>Username:</b> {selectedUser.username}</p>
-              <p><b>Role:</b> {selectedUser.role}</p>
-              <p><b>Status:</b> {selectedUser.status}</p>
-            </div>
-
-            <button
-              onClick={() => setShowView(false)}
-              className="mt-6 w-full px-4 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* 🔥 RESET PASSWORD MODAL */}
       {showReset && (
