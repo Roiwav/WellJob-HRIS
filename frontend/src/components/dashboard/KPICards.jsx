@@ -27,7 +27,7 @@ export default function KPICards({ kpis, utilizationRate }) {
           </p>
 
           <h2 className="text-2xl font-semibold mt-2">
-            <CountUp end={Number(card.value)} duration={1} />
+            <CountUp end={Number(card.value) || 0} duration={1} />
           </h2>
 
         </div>
