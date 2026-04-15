@@ -1,6 +1,6 @@
 import logo from "../assets/logo.png";
 import { NavLink } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import {
   FiHome,
   FiUsers,
@@ -30,16 +30,35 @@ const iconMap = {
 export default function Sidebar({ toggleTheme, darkMode }) {
   const [expanded, setExpanded] = useState(false);
   const { user } = useAuth();
+  const hoverTimeoutRef = useRef(null);
 
   const filteredItems = useMemo(() => {
     if (!user?.role) return [];
     return sidebarItems.filter((item) => item.allowedRoles.includes(user.role));
   }, [user]);
 
+  const handleMouseEnter = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    hoverTimeoutRef.current = setTimeout(() => {
+      setExpanded(true);
+    }, 100); // Small delay to prevent accidental triggers
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    hoverTimeoutRef.current = setTimeout(() => {
+      setExpanded(false);
+    }, 150); // Slightly longer delay for better UX
+  }, []);
+
   return (
     <aside
-      onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className={`
         ${expanded ? "w-60" : "w-20"}
         sticky top-0
@@ -47,7 +66,7 @@ export default function Sidebar({ toggleTheme, darkMode }) {
         bg-white dark:bg-slate-950
         border-r border-gray-200 dark:border-white/10
         flex flex-col justify-between
-        transition-[width] duration-200 ease-out
+        transition-[width] duration-300 ease-out will-change-[width]
         overflow-hidden
       `}
     >
@@ -63,7 +82,7 @@ export default function Sidebar({ toggleTheme, darkMode }) {
           <span
             className={`
               text-lg font-semibold text-gray-900 dark:text-white
-              whitespace-nowrap transition-all duration-150
+              whitespace-nowrap transition-opacity duration-200
               ${
                 expanded
                   ? "opacity-100 translate-x-0"
@@ -104,7 +123,7 @@ export default function Sidebar({ toggleTheme, darkMode }) {
           <span
             className={`
               text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap
-              transition-all duration-150
+              transition-opacity duration-200
               ${
                 expanded
                   ? "opacity-100 translate-x-0"
@@ -127,7 +146,7 @@ function SidebarItem({ to, icon, label, expanded }) {
       className={({ isActive }) =>
         `
         flex items-center gap-4 mx-3 p-3 rounded-lg
-        transition-colors duration-150
+        transition-colors duration-200
         ${
           isActive
             ? "bg-indigo-600 text-white"
@@ -141,7 +160,7 @@ function SidebarItem({ to, icon, label, expanded }) {
       <span
         className={`
           text-sm font-medium whitespace-nowrap
-          transition-all duration-150
+          transition-opacity duration-200
           ${
             expanded
               ? "opacity-100 translate-x-0"

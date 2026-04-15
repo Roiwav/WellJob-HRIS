@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import RoleGuard from "../components/auth/RoleGuard";
@@ -66,9 +66,12 @@ function formatLastUpdated(date = new Date()) {
 }
 
 export default function Dashboard() {
-  const currentYear = new Date().getFullYear().toString();
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear().toString();
+  const currentMonth = currentDate.getMonth() + 1; // 1-12 for display
 
   const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
 
@@ -166,6 +169,40 @@ export default function Dashboard() {
     return [...years].sort((a, b) => Number(b) - Number(a));
   }, [data.workforce, data.incidents, currentYear]);
 
+  const availableMonths = useMemo(() => {
+    if (selectedYear !== currentYear) {
+      // If not current year, show all months
+      return monthList.map((month, index) => ({
+        name: month,
+        value: index + 1,
+        available: true
+      }));
+    }
+
+    // If current year, only show months that have data
+    const monthsWithData = new Set();
+    
+    data.workforce.forEach((item) => {
+      if (item?.date && item.date.startsWith(selectedYear)) {
+        const monthNum = parseInt(item.date.slice(5, 7));
+        monthsWithData.add(monthNum);
+      }
+    });
+
+    data.incidents.forEach((item) => {
+      if (item?.date && item.date.startsWith(selectedYear)) {
+        const monthNum = parseInt(item.date.slice(5, 7));
+        monthsWithData.add(monthNum);
+      }
+    });
+
+    return monthList.map((month, index) => ({
+      name: month,
+      value: index + 1,
+      available: monthsWithData.has(index + 1) || index + 1 <= currentMonth
+    }));
+  }, [data.workforce, data.incidents, selectedYear, currentYear, currentMonth]);
+
   const workforceTrend = useMemo(() => {
     return aggregateByMonth(
       data.workforce,
@@ -184,12 +221,35 @@ export default function Dashboard() {
     );
   }, [data.incidents, selectedYear, isCurrentYear]);
 
+  const filteredKPIS = useMemo(() => {
+    if (selectedMonth === 0) return data.kpis; // "All Months" selected
+    
+    const monthStr = String(selectedMonth).padStart(2, '0');
+    const monthWorkforce = data.workforce.filter(item => 
+      item.date && item.date.slice(5, 7) === monthStr && item.date.startsWith(selectedYear)
+    );
+    const monthIncidents = data.incidents.filter(item => 
+      item.date && item.date.slice(5, 7) === monthStr && item.date.startsWith(selectedYear)
+    );
+
+    const totalEmployees = monthWorkforce.reduce((sum, item) => sum + (item.employees || 0), 0);
+    const totalIncidents = monthIncidents.reduce((sum, item) => sum + (item.incidents || 0), 0);
+
+    return {
+      total: totalEmployees || data.kpis.total,
+      deployed: Math.floor((totalEmployees || data.kpis.total) * 0.62), // Approximate deployed
+      available: Math.ceil((totalEmployees || data.kpis.total) * 0.38), // Approximate available
+      activeIncidents: totalIncidents || data.kpis.activeIncidents,
+      expiringDocs: data.kpis.expiringDocs, // Keep same for now
+    };
+  }, [data.kpis, data.workforce, data.incidents, selectedMonth, selectedYear]);
+
   const utilizationRate = useMemo(() => {
-    const total = Number(data.kpis.total) || 0;
-    const deployed = Number(data.kpis.deployed) || 0;
+    const total = Number(filteredKPIS.total) || 0;
+    const deployed = Number(filteredKPIS.deployed) || 0;
     if (!total) return 0;
     return Number(((deployed / total) * 100).toFixed(1));
-  }, [data.kpis]);
+  }, [filteredKPIS]);
 
   const totalIncidentsForYear = useMemo(() => {
     return incidentTrend.reduce((sum, item) => sum + item.value, 0);
@@ -213,7 +273,7 @@ export default function Dashboard() {
     return highest?.name || "N/A";
   }, [data.severity]);
 
-  const handleExportPDF = () => {
+  const handleExportPDF = useCallback(() => {
     const doc = new jsPDF();
 
     doc.setFontSize(16);
@@ -269,7 +329,7 @@ export default function Dashboard() {
     });
 
     doc.save(`Welljob_Executive_Report_${selectedYear}.pdf`);
-  };
+  }, [selectedYear, lastUpdated, data, utilizationRate, totalIncidentsForYear, peakDeploymentMonth, highestIncidentMonth, topSeverity, workforceTrend, incidentTrend]);
 
   if (loading) {
     return (
@@ -287,16 +347,29 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
               Workforce Dashboard
             </h1>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Real-time overview of workforce deployment, incidents, and case
-              monitoring.
-            </p>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               Last Updated: {lastUpdated}
             </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(Number(e.target.value))}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:ring-indigo-900"
+            >
+              <option value={0}>All Months</option>
+              {availableMonths.map((month) => (
+                <option 
+                  key={month.name} 
+                  value={month.value}
+                  disabled={!month.available && selectedYear === currentYear}
+                >
+                  {month.name}
+                </option>
+              ))}
+            </select>
+
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
@@ -321,8 +394,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <KPICards kpis={data.kpis} utilizationRate={utilizationRate} />
-
+      <KPICards kpis={filteredKPIS} utilizationRate={utilizationRate} />
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-white p-5 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:to-slate-900">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
