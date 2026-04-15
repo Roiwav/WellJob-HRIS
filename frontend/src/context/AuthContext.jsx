@@ -1,16 +1,12 @@
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { hasPermission as checkPermission } from "../utils/hasPermission";
 import { AuthContext } from "./auth-context";
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-
-  useEffect(() => {
+  const [user, setUser] = useState(() => {
     const stored = localStorage.getItem("user");
-    if (stored) {
-      setUser(JSON.parse(stored));
-    }
-  }, []);
+    return stored ? JSON.parse(stored) : null;
+  });
 
   const hasPermission = useCallback(
     (permission) => {
@@ -25,7 +21,7 @@ export function AuthProvider({ children }) {
       setUser,
       hasPermission,
     }),
-    [user]
+    [user, hasPermission]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
