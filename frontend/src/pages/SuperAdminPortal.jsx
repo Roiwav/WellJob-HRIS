@@ -14,7 +14,7 @@ export default function SuperAdminPortal() {
 
   const [showPassword, setShowPassword] = useState(false);
 
-  // 🔥 FETCH USERS FROM DATABASE
+  // FETCH USERS FROM DATABASE
   const fetchUsers = () => {
     fetch("http://localhost:5000/api/users")
       .then((res) => res.json())
@@ -28,11 +28,11 @@ export default function SuperAdminPortal() {
     fetchUsers();
   }, []);
 
-  // 🔥 CREATE USER
+  // CREATE USER
   const handleCreateAccount = async (e) => {
     e.preventDefault();
 
-    // 🔥 NAME VALIDATION
+    // NAME VALIDATION
     if (!/^[A-Za-z\s]+$/.test(name)) {
       alert("Name must contain letters only (no numbers or symbols)");
       return;

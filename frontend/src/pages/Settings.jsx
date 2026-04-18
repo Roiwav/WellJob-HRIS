@@ -9,13 +9,13 @@ export default function Settings() {
 
   const [accounts, setAccounts] = useState([]);
 
-  // 🔥 MODALS
+  // MODALS
   const [selectedUser, setSelectedUser] = useState(null);
   const [showReset, setShowReset] = useState(false);
 
   const [newPassword, setNewPassword] = useState("");
 
-  // 🔥 FETCH USERS
+  // FETCH USERS
   const fetchUsers = () => {
     fetch("http://localhost:5000/api/users")
       .then((res) => res.json())
@@ -27,7 +27,7 @@ export default function Settings() {
     fetchUsers();
   }, []);
 
-  // 🔥 RESET PASSWORD
+  // RESET PASSWORD
   const handleResetPassword = async () => {
     await fetch(`http://localhost:5000/api/users/reset/${selectedUser.id}`, {
       method: "PUT",
@@ -40,7 +40,7 @@ export default function Settings() {
     setNewPassword("");
   };
 
-  // 🔥 TOGGLE STATUS
+  // TOGGLE STATUS
   const handleToggle = async (id) => {
     await fetch(`http://localhost:5000/api/users/toggle/${id}`, {
       method: "PUT",
@@ -93,7 +93,7 @@ export default function Settings() {
                   <td className="px-6 py-4">{account.username}</td>
                   <td className="px-6 py-4">{account.role}</td>
 
-                  {/* 🔥 STATUS WITH COLOR */}
+                  {/* STATUS WITH COLOR */}
                   <td className="px-6 py-4">
                     <span
                       className={`px-2 py-1 rounded text-xs font-medium ${
@@ -139,7 +139,7 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* 🔥 RESET PASSWORD MODAL */}
+      {/* RESET PASSWORD MODAL */}
       {showReset && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-slate-800 text-gray-900 dark:text-white p-6 rounded-xl w-96 shadow-xl border dark:border-gray-700">

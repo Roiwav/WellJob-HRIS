@@ -11,7 +11,7 @@ app.use(express.json());
 
 // 🔥 DB CONNECTION
 const db = mysql.createConnection({
-  host: "192.168.1.13",
+  host: "localhost",
   user: "remoteuser",
   password: "",
   database: "welljob_db",

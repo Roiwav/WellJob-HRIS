@@ -52,11 +52,11 @@ export default function Login() {
         return;
       }
 
-      // 🔥 SAVE USER
+      // SAVE USER
       localStorage.setItem("user", JSON.stringify(data.user));
       setUser(data.user);
 
-      // 🔥 ROLE-BASED REDIRECT
+      // ROLE-BASED REDIRECT
       if (data.user.role === "SUPER_ADMIN") navigate("/super-admin");
       else if (data.user.role === "HR_MANAGER") navigate("/");
       else if (data.user.role === "HR_STAFF") navigate("/employees");
