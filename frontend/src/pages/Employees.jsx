@@ -18,6 +18,10 @@ export default function Employees() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  // 🔥 NEW STATES
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("All");
+
   useEffect(() => {
     const stored = localStorage.getItem("employees");
     if (stored) setEmployees(JSON.parse(stored));
@@ -82,13 +86,25 @@ export default function Employees() {
     setDeleteTarget(null);
   };
 
-  // 🔥 COMPUTE COMPLIANCE
   const getCompliance = (docs) => {
     const REQUIRED = ["NBI", "Police Clearance", "Health Card"];
     return REQUIRED.every(doc => docs?.includes(doc))
       ? "Complete"
       : "Incomplete";
   };
+
+  // 🔥 FILTER LOGIC
+  const filteredEmployees = employees.filter((emp) => {
+    const matchSearch =
+      emp.name.toLowerCase().includes(search.toLowerCase()) ||
+      emp.id.toLowerCase().includes(search.toLowerCase()) ||
+      (emp.company || "").toLowerCase().includes(search.toLowerCase());
+
+    const matchStatus =
+      filterStatus === "All" || emp.status === filterStatus;
+
+    return matchSearch && matchStatus;
+  });
 
   return (
     <div className="p-8 space-y-6">
@@ -117,6 +133,29 @@ export default function Employees() {
         )}
       </div>
 
+      {/* 🔥 SEARCH + FILTER */}
+      <div className="flex flex-col md:flex-row gap-4 mb-4">
+
+        <input
+          type="text"
+          placeholder="Search employee..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800 text-white"
+        />
+
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800 text-white"
+        >
+          <option value="All">All Status</option>
+          <option value="Deployed">Deployed</option>
+          <option value="Floating / Standby">Floating / Standby</option>
+        </select>
+
+      </div>
+
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -126,13 +165,13 @@ export default function Employees() {
                 <th className="px-6 py-4">Full Name</th>
                 <th className="px-6 py-4">Company</th>
                 <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Compliance</th> {/* 🔥 NEW */}
+                <th className="px-6 py-4">Compliance</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {employees.map((emp) => {
+              {filteredEmployees.map((emp) => {
                 const compliance = getCompliance(emp.documents);
 
                 return (
@@ -142,7 +181,6 @@ export default function Employees() {
                     <td className="px-6 py-4">{emp.company || "-"}</td>
                     <td className="px-6 py-4">{emp.status}</td>
 
-                    {/* 🔥 COMPLIANCE COLUMN */}
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 text-xs rounded ${
                         compliance === "Complete"
@@ -193,6 +231,7 @@ export default function Employees() {
         </div>
       </div>
 
+      {/* MODALS (unchanged) */}
       {showModal && !isSuperAdmin && (
         <AddEmployeeModal
           generatedId={generatedId}
@@ -202,6 +241,7 @@ export default function Employees() {
         />
       )}
 
+      {/* VIEW MODAL */}
       {viewEmployee && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
           <div className="bg-white dark:bg-slate-800 p-6 rounded-xl w-96">
@@ -222,6 +262,7 @@ export default function Employees() {
         </div>
       )}
 
+      {/* DELETE MODAL (unchanged) */}
       {deleteTarget && !isSuperAdmin && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
           <div className="bg-white dark:bg-slate-800 p-6 rounded-xl w-96">
