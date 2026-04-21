@@ -28,9 +28,17 @@ export default function Employees() {
     localStorage.setItem("employees", JSON.stringify(data));
   };
 
-  const generateId = () => {
-    return "EMP-" + Math.floor(1000 + Math.random() * 9000);
-  };
+const generateId = () => {
+  const stored = JSON.parse(localStorage.getItem("employees")) || [];
+
+  if (stored.length === 0) return "EMP001";
+
+  const lastId = stored[stored.length - 1].id;
+
+  const number = parseInt(lastId.replace("EMP", ""), 10) + 1;
+
+  return "EMP" + number.toString().padStart(3, "0");
+};
 
   const handleOpenModal = () => {
     if (isSuperAdmin) return; // block
