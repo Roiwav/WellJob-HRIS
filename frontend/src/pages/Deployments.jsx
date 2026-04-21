@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import DeploymentTable from "../components/deployments/DeploymentTable";
 import DeploymentModal from "../components/deployments/DeploymentModal";
 
-/* 🔥 TOAST */
+/*TOAST */
 function Toast({ show, message }) {
   if (typeof document === "undefined") return null;
 
@@ -30,11 +30,33 @@ export default function Deployments() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
+  // LOAD FROM EMPLOYEES
   useEffect(() => {
-    const stored =
-      JSON.parse(localStorage.getItem("deployments")) || [];
-    setDeployments(stored);
+    loadDeployments();
   }, []);
+
+  const loadDeployments = () => {
+    const stored = JSON.parse(localStorage.getItem("employees")) || [];
+
+    // FILTER + MAP
+    const mapped = stored
+      .filter(
+        (emp) =>
+          emp.status &&
+          emp.status.toLowerCase() === "deployed" 
+      )
+      .map((emp) => ({
+        id: emp.id,
+        employee: emp.name,
+        company: emp.company || "-",
+        location: emp.location || "-",
+        start: emp.start || "-",
+        end: emp.end || "-",
+        status: emp.status || "Deployed",
+      }));
+
+    setDeployments(mapped);
+  };
 
   const openView = (deployment) => {
     setModalMode("view");
@@ -46,16 +68,28 @@ export default function Deployments() {
     setSelectedDeployment(deployment);
   };
 
-  // 🔥 FIX: UPDATE FUNCTION
+  // UPDATE (SYNC TO EMPLOYEES)
   const updateDeployment = (updated) => {
-    const updatedList = deployments.map((d) =>
-      d.id === updated.id ? updated : d
+    const employees = JSON.parse(localStorage.getItem("employees")) || [];
+
+    const updatedEmployees = employees.map((emp) =>
+      emp.id === updated.id
+        ? {
+            ...emp,
+            status: updated.status,
+            location: updated.location,
+            start: updated.start,
+            end: updated.end,
+          }
+        : emp
     );
 
-    setDeployments(updatedList);
-    localStorage.setItem("deployments", JSON.stringify(updatedList));
+    localStorage.setItem("employees", JSON.stringify(updatedEmployees));
 
-    // 🔥 TOAST
+    // RELOAD TABLE
+    loadDeployments();
+
+    // TOAST
     setShowToast(false);
 
     setTimeout(() => {
@@ -89,7 +123,7 @@ export default function Deployments() {
         <DeploymentModal
           deployment={selectedDeployment}
           mode={modalMode}
-          onUpdate={updateDeployment} // 🔥 IMPORTANT
+          onUpdate={updateDeployment}
           close={() => setSelectedDeployment(null)}
         />
 

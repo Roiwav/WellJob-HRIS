@@ -16,14 +16,14 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
     "3 Overdue Case Resolutions"
   ];
 
-  // 🔥 LOGOUT FUNCTION
+  // LOGOUT FUNCTION
   const handleLogout = () => {
     localStorage.removeItem("user"); // clear storage
     setUser(null); // clear context
     navigate("/login", { replace: true }); // redirect
   };
 
-  // 🔥 GET INITIAL (first letter)
+  // GET INITIAL (first letter)
   const initial = user?.name?.charAt(0)?.toUpperCase() || "U";
 
   return (
@@ -94,7 +94,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
           )}
         </div>
 
-        {/* 👤 PROFILE */}
+        {/* PROFILE */}
         <div className="relative">
           <button
             onClick={() => {
@@ -130,7 +130,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
                 Profile Settings
               </button>
 
-              {/* 🔥 LOGOUT */}
+              {/* LOGOUT */}
               <button
                 onClick={handleLogout}
                 className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-gray-100 dark:hover:bg-white/10"

@@ -33,12 +33,15 @@ export default function Employees() {
   };
 
   const handleOpenModal = () => {
+    if (isSuperAdmin) return; // block
     setGeneratedId(generateId());
     setEditingEmployee(null);
     setShowModal(true);
   };
 
   const handleSave = (data) => {
+    if (isSuperAdmin) return; // block
+
     if (editingEmployee) {
       const updated = employees.map((emp) =>
         emp.id === editingEmployee.id ? { ...emp, ...data } : emp
@@ -55,6 +58,7 @@ export default function Employees() {
   };
 
   const handleEdit = (emp) => {
+    if (isSuperAdmin) return; // block
     setEditingEmployee(emp);
     setGeneratedId(emp.id);
     setShowModal(true);
@@ -65,6 +69,8 @@ export default function Employees() {
   };
 
   const handleDelete = (id) => {
+    if (isSuperAdmin) return; // block
+
     const updated = employees.filter((emp) => emp.id !== id);
     saveToStorage(updated);
     setDeleteTarget(null);
@@ -85,14 +91,17 @@ export default function Employees() {
           </p>
         </div>
 
-        <RoleGuard permission={PERMISSIONS.CAN_ADD_EMPLOYEE}>
-          <button
-            onClick={handleOpenModal}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-          >
-            + Add Employee
-          </button>
-        </RoleGuard>
+        {/* ADD BUTTON (HIDE FOR SUPER ADMIN) */}
+        {!isSuperAdmin && (
+          <RoleGuard permission={PERMISSIONS.CAN_ADD_EMPLOYEE}>
+            <button
+              onClick={handleOpenModal}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+            >
+              + Add Employee
+            </button>
+          </RoleGuard>
+        )}
       </div>
 
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 overflow-hidden">
@@ -119,6 +128,7 @@ export default function Employees() {
                   <td className="px-6 py-4">
                     <div className="flex justify-end gap-2">
 
+                      {/* VIEW ALWAYS */}
                       <button
                         onClick={() => handleView(emp)}
                         className="px-3 py-1 border rounded"
@@ -126,22 +136,27 @@ export default function Employees() {
                         View
                       </button>
 
-                      <RoleGuard permission={PERMISSIONS.CAN_EDIT_EMPLOYEE}>
-                        <button
-                          onClick={() => handleEdit(emp)}
-                          className="px-3 py-1 bg-amber-500 text-white rounded"
-                        >
-                          Edit
-                        </button>
-                      </RoleGuard>
+                      {/* EDIT (HIDE FOR SUPER ADMIN) */}
+                      {!isSuperAdmin && (
+                        <RoleGuard permission={PERMISSIONS.CAN_EDIT_EMPLOYEE}>
+                          <button
+                            onClick={() => handleEdit(emp)}
+                            className="px-3 py-1 bg-amber-500 text-white rounded"
+                          >
+                            Edit
+                          </button>
+                        </RoleGuard>
+                      )}
 
-                      {/* 🔥 DELETE FIXED */}
-                      <button
-                        onClick={() => setDeleteTarget(emp)}
-                        className="px-3 py-1 bg-red-600 text-white rounded"
-                      >
-                        Delete
-                      </button>
+                      {/* DELETE (HIDE FOR SUPER ADMIN) */}
+                      {!isSuperAdmin && (
+                        <button
+                          onClick={() => setDeleteTarget(emp)}
+                          className="px-3 py-1 bg-red-600 text-white rounded"
+                        >
+                          Delete
+                        </button>
+                      )}
 
                     </div>
                   </td>
@@ -153,7 +168,7 @@ export default function Employees() {
       </div>
 
       {/* ADD / EDIT MODAL */}
-      {showModal && (
+      {showModal && !isSuperAdmin && (
         <AddEmployeeModal
           generatedId={generatedId}
           onClose={() => setShowModal(false)}
@@ -184,7 +199,7 @@ export default function Employees() {
       )}
 
       {/* DELETE CONFIRM */}
-      {deleteTarget && (
+      {deleteTarget && !isSuperAdmin && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
           <div className="bg-white dark:bg-slate-800 p-6 rounded-xl w-96">
             <h2 className="text-lg font-bold mb-4 text-red-600">
