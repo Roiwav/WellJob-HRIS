@@ -1,74 +1,457 @@
-import { FiX } from "react-icons/fi";
+import {
+  FiAlertTriangle,
+  FiBriefcase,
+  FiCalendar,
+  FiCheckCircle,
+  FiClock,
+  FiFileText,
+  FiShield,
+  FiUser,
+  FiX,
+} from "react-icons/fi";
+
+const REQUIRED_DOCUMENTS = ["NBI", "Police Clearance", "Health Card"];
+
+function formatDate(dateString) {
+  if (!dateString) return "Not Set";
+
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "Invalid date";
+
+  return date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function getDocumentStatus(expirationDate) {
+  if (!expirationDate) return "No Data";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const exp = new Date(expirationDate);
+  exp.setHours(0, 0, 0, 0);
+
+  const diffTime = exp.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return "Expired";
+  if (diffDays <= 30) return "Expiring Soon";
+  return "Valid";
+}
+
+function getDaysLabel(expirationDate) {
+  if (!expirationDate) return "No expiration date recorded";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const exp = new Date(expirationDate);
+  exp.setHours(0, 0, 0, 0);
+
+  if (Number.isNaN(exp.getTime())) return "Invalid expiration date";
+
+  const diffTime = exp.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return `Expired ${Math.abs(diffDays)} day${Math.abs(diffDays) > 1 ? "s" : ""} ago`;
+  }
+
+  if (diffDays === 0) {
+    return "Expires today";
+  }
+
+  return `Expires in ${diffDays} day${diffDays > 1 ? "s" : ""}`;
+}
+
+function getStatusClasses(status) {
+  const styles = {
+    Valid:
+      "bg-green-100 text-green-700 border border-green-200 dark:bg-green-500/20 dark:text-green-300 dark:border-green-500/30",
+    "Expiring Soon":
+      "bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30",
+    Expired:
+      "bg-red-100 text-red-700 border border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/30",
+    "No Data":
+      "bg-gray-100 text-gray-700 border border-gray-200 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/30",
+    Missing:
+      "bg-orange-100 text-orange-700 border border-orange-200 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30",
+    Inactive:
+      "bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-500/20 dark:text-slate-300 dark:border-slate-500/30",
+  };
+
+  return styles[status] || styles["No Data"];
+}
+
+function getOverallCompliance(documents) {
+  const statuses = documents.map((doc) => doc.status);
+
+  if (statuses.includes("Expired")) return "Expired";
+  if (statuses.includes("Expiring Soon")) return "Expiring Soon";
+  if (statuses.includes("Missing")) return "Incomplete";
+  if (statuses.includes("No Data")) return "No Data";
+  if (statuses.every((status) => status === "Valid")) return "Valid";
+
+  return "Incomplete";
+}
 
 export default function EmployeeModal({ employee, onClose }) {
   if (!employee) return null;
 
+  const employeeDocs = Array.isArray(employee.documents) ? employee.documents : [];
+
+  const normalizedDocuments = REQUIRED_DOCUMENTS.map((requiredDoc) => {
+    const found = employeeDocs.find((doc) => doc.name === requiredDoc);
+
+    if (!found) {
+      return {
+        name: requiredDoc,
+        expirationDate: "",
+        status: "Missing",
+      };
+    }
+
+    return {
+      ...found,
+      status: getDocumentStatus(found.expirationDate),
+    };
+  });
+
+  const overallCompliance = getOverallCompliance(normalizedDocuments);
+
+  const expiringDocs = normalizedDocuments.filter(
+    (doc) => doc.status === "Expiring Soon"
+  );
+
+  const expiredDocs = normalizedDocuments.filter(
+    (doc) => doc.status === "Expired"
+  );
+
+  const missingDocs = normalizedDocuments.filter(
+    (doc) => doc.status === "Missing"
+  );
+
+  const hasAttentionNeeded =
+    expiredDocs.length > 0 || expiringDocs.length > 0 || missingDocs.length > 0;
+
+  const companyDisplay =
+    employee.status === "Floating / Standby" || employee.status === "Inactive"
+      ? "Not Assigned"
+      : employee.company || "Not Assigned";
+
+  const employeeInitials = String(employee.name || "E")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
   return (
     <div
-      className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-6"
-      onClick={onClose}
+className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4"      
+onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl overflow-hidden"
+className="w-full max-w-5xl h-[92vh] sm:h-[88vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-white/10 flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center px-8 py-5 border-b border-gray-200 dark:border-white/10">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Employee Profile
-          </h2>
-
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-          >
-            <FiX size={20} />
-          </button>
-        </div>
-
-        <div className="p-8 space-y-6 text-sm text-gray-900 dark:text-white">
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 mb-1">Name</p>
-            <p className="font-medium">{employee.name}</p>
-          </div>
-
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 mb-1">Employee ID</p>
-            <p className="font-medium">{employee.id}</p>
-          </div>
-
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 mb-1">Status</p>
-            <p className="font-medium">{employee.status}</p>
-          </div>
-
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 mb-2">
-              Compliance Documents
-            </p>
-
-            {employee.documents && employee.documents.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {employee.documents.map((doc, index) => (
-                  <span
-                    key={index}
-                    className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300 text-xs font-medium"
-                  >
-                    {doc}
-                  </span>
-                ))}
+        {/* HEADER */}
+<div className="shrink-0 px-4 sm:px-6 lg:px-8 py-4 sm:py-5 border-b border-gray-200 dark:border-white/10 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-900">          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="h-16 w-16 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xl font-bold">
+                {employeeInitials || "E"}
               </div>
-            ) : (
-              <p className="font-medium text-gray-500 dark:text-gray-400">
-                No Data
-              </p>
-            )}
+
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {employee.name}
+                </h2>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border border-gray-200 bg-white text-gray-700 dark:bg-slate-800 dark:text-gray-200 dark:border-slate-700">
+                    {employee.id}
+                  </span>
+
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getStatusClasses(
+                      employee.status === "Inactive" ? "Inactive" : employee.status
+                    )}`}
+                  >
+                    {employee.status === "Inactive" && <FiShield className="text-sm" />}
+                    {employee.status}
+                  </span>
+
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getStatusClasses(
+                      overallCompliance
+                    )}`}
+                  >
+                    {(overallCompliance === "Expired" ||
+                      overallCompliance === "Expiring Soon") && (
+                      <FiAlertTriangle className="text-sm" />
+                    )}
+                    Overall Compliance: {overallCompliance}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
+            >
+              <FiX size={22} />
+            </button>
           </div>
         </div>
 
-        <div className="px-8 py-5 border-t border-gray-200 dark:border-white/10 flex justify-end">
-          <button
+        {/* BODY */}
+<div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-6 text-gray-900 dark:text-white">          {/* ALERT SUMMARY */}
+          {hasAttentionNeeded && (
+            <div
+              className={`rounded-2xl p-5 border ${
+                expiredDocs.length > 0
+                  ? "border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30"
+                  : "border-amber-300 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/30"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <FiAlertTriangle
+                  className={`mt-0.5 ${
+                    expiredDocs.length > 0
+                      ? "text-red-600 dark:text-red-300"
+                      : "text-amber-600 dark:text-amber-300"
+                  }`}
+                  size={18}
+                />
+
+                <div>
+                  <p
+                    className={`font-semibold ${
+                      expiredDocs.length > 0
+                        ? "text-red-700 dark:text-red-300"
+                        : "text-amber-700 dark:text-amber-300"
+                    }`}
+                  >
+                    Compliance Attention Needed
+                  </p>
+
+                  <div
+                    className={`text-sm mt-1 space-y-1 ${
+                      expiredDocs.length > 0
+                        ? "text-red-700/90 dark:text-red-200"
+                        : "text-amber-700/90 dark:text-amber-200"
+                    }`}
+                  >
+                    {expiredDocs.length > 0 && (
+                      <p>
+                        {expiredDocs.length} document
+                        {expiredDocs.length > 1 ? "s are" : " is"} already expired.
+                      </p>
+                    )}
+
+                    {expiringDocs.length > 0 && (
+                      <p>
+                        {expiringDocs.length} document
+                        {expiringDocs.length > 1 ? "s are" : " is"} expiring soon.
+                      </p>
+                    )}
+
+                    {missingDocs.length > 0 && (
+                      <p>
+                        {missingDocs.length} required document
+                        {missingDocs.length > 1 ? "s are" : " is"} missing.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* BASIC INFORMATION */}
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-4">
+              Basic Information
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-2xl border border-gray-200 dark:border-white/10 p-5 bg-white dark:bg-slate-900/40">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
+                  <FiUser size={16} />
+                  <span className="text-sm">Employee Name</span>
+                </div>
+                <p className="font-semibold text-base">{employee.name}</p>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 dark:border-white/10 p-5 bg-white dark:bg-slate-900/40">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
+                  <FiShield size={16} />
+                  <span className="text-sm">Employee ID</span>
+                </div>
+                <p className="font-semibold text-base">{employee.id}</p>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 dark:border-white/10 p-5 bg-white dark:bg-slate-900/40">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
+                  <FiBriefcase size={16} />
+                  <span className="text-sm">Company Assignment</span>
+                </div>
+                <p className="font-semibold text-base">{companyDisplay}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* EMPLOYMENT / STATUS */}
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-4">
+              Employment Status
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-gray-200 dark:border-white/10 p-5 bg-white dark:bg-slate-900/40">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                  Current Status
+                </p>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getStatusClasses(
+                    employee.status === "Inactive" ? "Inactive" : employee.status
+                  )}`}
+                >
+                  {employee.status === "Inactive" && <FiShield className="text-sm" />}
+                  {employee.status}
+                </span>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 dark:border-white/10 p-5 bg-white dark:bg-slate-900/40">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                  Compliance Summary
+                </p>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getStatusClasses(
+                    overallCompliance
+                  )}`}
+                >
+                  {(overallCompliance === "Expired" ||
+                    overallCompliance === "Expiring Soon") && (
+                    <FiAlertTriangle className="text-sm" />
+                  )}
+                  {overallCompliance}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* COMPLIANCE DOCUMENTS */}
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-4">
+              Compliance Documents
+            </h3>
+
+            <div className="space-y-4">
+              {normalizedDocuments.map((doc) => {
+                const isExpired = doc.status === "Expired";
+                const isExpiringSoon = doc.status === "Expiring Soon";
+                const isMissing = doc.status === "Missing";
+
+                return (
+                  <div
+                    key={doc.name}
+                    className={`rounded-2xl border p-5 ${
+                      isExpired
+                        ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
+                        : isExpiringSoon
+                        ? "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
+                        : isMissing
+                        ? "border-orange-300 bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10"
+                        : "border-gray-200 bg-white dark:border-white/10 dark:bg-slate-900/40"
+                    }`}
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`mt-1 ${
+                            isExpired
+                              ? "text-red-500"
+                              : isExpiringSoon
+                              ? "text-amber-500"
+                              : isMissing
+                              ? "text-orange-500"
+                              : "text-indigo-500"
+                          }`}
+                        >
+                          <FiFileText size={18} />
+                        </div>
+
+                        <div>
+                          <p className="font-semibold text-base text-gray-900 dark:text-white">
+                            {doc.name}
+                          </p>
+
+                          <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                            <div className="flex items-center gap-2">
+                              <FiCalendar size={14} />
+                              <span>
+                                Expiration Date:{" "}
+                                {doc.expirationDate
+                                  ? formatDate(doc.expirationDate)
+                                  : "Not Set"}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <FiClock size={14} />
+                              <span>
+                                {isMissing
+                                  ? "Required document is missing"
+                                  : getDaysLabel(doc.expirationDate)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-start lg:items-end gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1.5 w-fit px-3 py-1 rounded-full text-xs font-semibold ${getStatusClasses(
+                            doc.status
+                          )}`}
+                        >
+                          {(isExpired || isExpiringSoon) && (
+                            <FiAlertTriangle className="text-sm" />
+                          )}
+                          {isMissing && <FiAlertTriangle className="text-sm" />}
+                          {doc.status}
+                        </span>
+
+                        {!isMissing && doc.status === "Valid" && (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-300">
+                            <FiCheckCircle size={14} />
+                            Document is active and up to date
+                          </span>
+                        )}
+
+                        {isMissing && (
+                          <span className="text-xs text-orange-700 dark:text-orange-300 font-medium">
+                            Immediate update recommended
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* FOOTER */}
+<div className="shrink-0 px-4 sm:px-6 lg:px-8 py-4 border-t border-gray-200 dark:border-white/10 flex justify-end bg-white dark:bg-slate-900">          <button
             onClick={onClose}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+            className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition font-medium"
           >
             Close
           </button>

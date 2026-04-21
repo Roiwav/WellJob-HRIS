@@ -4,6 +4,7 @@ import MainLayout from "./layout/MainLayout";
 
 import Dashboard from "./pages/Dashboard";
 import Employees from "./pages/Employees";
+import ArchivedEmployees from "./pages/ArchivedEmployees";
 import Deployments from "./pages/Deployments";
 import Incidents from "./pages/Incidents";
 import KPIReports from "./pages/KPIReports";
@@ -20,14 +21,9 @@ function App() {
   return (
     <AuthProvider>
       <Routes>
-
-        {/* 🔓 PUBLIC ROUTE */}
         <Route path="/login" element={<Login />} />
 
-        {/* 🔐 PROTECTED ROUTES */}
         <Route element={<MainLayout />}>
-
-          {/* Dashboard + KPI */}
           <Route
             element={
               <ProtectedRoute
@@ -51,9 +47,9 @@ function App() {
             }
           >
             <Route path="/employees" element={<Employees />} />
+            <Route path="/employees/archive" element={<ArchivedEmployees />} />
           </Route>
 
-          {/* Employees, Deployments, Incidents */}
           <Route
             element={
               <ProtectedRoute
@@ -70,7 +66,6 @@ function App() {
             <Route path="/notifications" element={<Notifications />} />
           </Route>
 
-          {/* Settings */}
           <Route
             element={
               <ProtectedRoute
@@ -82,24 +77,19 @@ function App() {
           </Route>
 
           <Route
-            element={
-              <ProtectedRoute allowedRoles={[ROLES.IT_SUPPORT]} />
-            }
+            element={<ProtectedRoute allowedRoles={[ROLES.IT_SUPPORT]} />}
           >
             <Route path="/settings" element={<Settings />} />
           </Route>
 
-          {/* Super Admin Portal */}
           <Route
             element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]} />}
           >
             <Route path="/super-admin" element={<SuperAdminPortal />} />
           </Route>
-
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />
-
       </Routes>
     </AuthProvider>
   );
