@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import DeploymentTable from "../components/deployments/DeploymentTable";
 import DeploymentModal from "../components/deployments/DeploymentModal";
 
-/*TOAST */
+/* TOAST */
 function Toast({ show, message }) {
   if (typeof document === "undefined") return null;
 
@@ -22,7 +22,6 @@ function Toast({ show, message }) {
 }
 
 export default function Deployments() {
-
   const [selectedDeployment, setSelectedDeployment] = useState(null);
   const [modalMode, setModalMode] = useState("view");
   const [deployments, setDeployments] = useState([]);
@@ -30,20 +29,44 @@ export default function Deployments() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
-  // LOAD FROM EMPLOYEES
+  // 🔥 SEARCH + DATE FILTER
+  const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+
   useEffect(() => {
     loadDeployments();
   }, []);
 
   const loadDeployments = () => {
-    const stored = JSON.parse(localStorage.getItem("employees")) || [];
+    let employees = JSON.parse(localStorage.getItem("employees")) || [];
 
-    // FILTER + MAP
-    const mapped = stored
+    let updated = false;
+
+    // AUTO START DATE
+    employees = employees.map((emp) => {
+      if (
+        emp.status &&
+        emp.status.toLowerCase() === "deployed" &&
+        !emp.start
+      ) {
+        updated = true;
+        return {
+          ...emp,
+          start: new Date().toISOString().split("T")[0],
+        };
+      }
+      return emp;
+    });
+
+    if (updated) {
+      localStorage.setItem("employees", JSON.stringify(employees));
+    }
+
+    const mapped = employees
       .filter(
         (emp) =>
           emp.status &&
-          emp.status.toLowerCase() === "deployed" 
+          emp.status.toLowerCase() === "deployed"
       )
       .map((emp) => ({
         id: emp.id,
@@ -52,7 +75,7 @@ export default function Deployments() {
         location: emp.location || "-",
         start: emp.start || "-",
         end: emp.end || "-",
-        status: emp.status || "Deployed",
+        status: emp.status || "Active",
       }));
 
     setDeployments(mapped);
@@ -68,7 +91,6 @@ export default function Deployments() {
     setSelectedDeployment(deployment);
   };
 
-  // UPDATE (SYNC TO EMPLOYEES)
   const updateDeployment = (updated) => {
     const employees = JSON.parse(localStorage.getItem("employees")) || [];
 
@@ -78,7 +100,9 @@ export default function Deployments() {
             ...emp,
             status: updated.status,
             location: updated.location,
-            start: updated.start,
+            start:
+              updated.start ||
+              new Date().toISOString().split("T")[0],
             end: updated.end,
           }
         : emp
@@ -86,10 +110,8 @@ export default function Deployments() {
 
     localStorage.setItem("employees", JSON.stringify(updatedEmployees));
 
-    // RELOAD TABLE
     loadDeployments();
 
-    // TOAST
     setShowToast(false);
 
     setTimeout(() => {
@@ -99,6 +121,21 @@ export default function Deployments() {
       setTimeout(() => setShowToast(false), 2000);
     }, 50);
   };
+
+  // 🔥 FILTER LOGIC (NO END DATE)
+  const filteredDeployments = deployments.filter((d) => {
+    const matchSearch =
+      d.employee.toLowerCase().includes(search.toLowerCase()) ||
+      d.company.toLowerCase().includes(search.toLowerCase()) ||
+      d.location.toLowerCase().includes(search.toLowerCase());
+
+    const startDate = new Date(d.start);
+
+    const matchFrom =
+      !fromDate || startDate >= new Date(fromDate);
+
+    return matchSearch && matchFrom;
+  });
 
   return (
     <>
@@ -114,8 +151,28 @@ export default function Deployments() {
           </p>
         </div>
 
+        {/* 🔥 SEARCH + FROM DATE ONLY */}
+        <div className="flex flex-col md:flex-row gap-4">
+
+          <input
+            type="text"
+            placeholder="Search deployment..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800 text-white"
+          />
+
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800 text-white"
+          />
+
+        </div>
+
         <DeploymentTable
-          deployments={deployments}
+          deployments={filteredDeployments}
           openView={openView}
           openEdit={openEdit}
         />
