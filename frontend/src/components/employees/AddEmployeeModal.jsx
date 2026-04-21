@@ -1,6 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
 import { FiAlertTriangle } from "react-icons/fi";
 
+const COMPANY_OPTIONS = [
+  "SM Supermalls",
+  "Robinsons Retail Holdings",
+  "Ayala Land Inc.",
+  "Jollibee Foods Corporation",
+  "San Miguel Corporation",
+  "PLDT Inc.",
+  "Globe Telecom",
+  "BDO Unibank",
+  "Metrobank",
+  "Puregold Price Club",
+  "Wilcon Depot",
+  "DMCI Holdings",
+  "Megaworld Corporation",
+  "Unilab Inc.",
+  "Nestlé Philippines",
+  "Coca-Cola Philippines",
+  "Pepsi-Cola Products Philippines",
+  "Toyota Philippines",
+  "Honda Philippines",
+  "Accenture Philippines",
+  "IBM Philippines",
+  "Teleperformance Philippines",
+  "Concentrix Philippines",
+  "Sitel Philippines",
+];
+
 const DOCUMENT_OPTIONS = ["NBI", "Police Clearance", "Health Card"];
 
 const createDefaultDocuments = (existingDocs = []) => {
@@ -92,6 +119,9 @@ export default function AddEmployeeModal({
     documents: {},
   });
 
+  const [filteredCompanies, setFilteredCompanies] = useState(COMPANY_OPTIONS);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   useEffect(() => {
     const resetForm = () => {
       setFormData({
@@ -100,7 +130,7 @@ export default function AddEmployeeModal({
         company: editingEmployee ? editingEmployee.company : "",
         documents: createDefaultDocuments(editingEmployee?.documents || []),
       });
-      
+
       setShowReview(false);
       setErrors({
         name: "",
@@ -109,6 +139,9 @@ export default function AddEmployeeModal({
         duplicateId: "",
         documents: {},
       });
+
+      setFilteredCompanies(COMPANY_OPTIONS);
+      setShowSuggestions(false);
     };
 
     resetForm();
@@ -148,7 +181,19 @@ export default function AddEmployeeModal({
         ...prev,
         company: "",
       }));
+
+      setFilteredCompanies(COMPANY_OPTIONS);
+      setShowSuggestions(false);
       return;
+    }
+
+    if (name === "company") {
+      const filtered = COMPANY_OPTIONS.filter((company) =>
+        company.toLowerCase().includes(value.toLowerCase())
+      );
+
+      setFilteredCompanies(filtered);
+      setShowSuggestions(true);
     }
 
     setFormData((prev) => ({
@@ -161,6 +206,25 @@ export default function AddEmployeeModal({
       [name]: "",
       duplicateName: name === "name" ? "" : prev.duplicateName,
     }));
+  };
+
+  const handleSelectCompany = (company) => {
+    setFormData((prev) => ({
+      ...prev,
+      company,
+    }));
+
+    setErrors((prev) => ({
+      ...prev,
+      company: "",
+    }));
+
+    setFilteredCompanies(
+      COMPANY_OPTIONS.filter((item) =>
+        item.toLowerCase().includes(company.toLowerCase())
+      )
+    );
+    setShowSuggestions(false);
   };
 
   const handleDocumentCheck = (docName) => {
@@ -230,16 +294,23 @@ export default function AddEmployeeModal({
 
     const duplicateName = employees.some((emp) => {
       if (editingEmployee && emp.id === editingEmployee.id) return false;
-      return String(emp.name || "").trim().toLowerCase() === trimmedName.toLowerCase();
+      return (
+        String(emp.name || "").trim().toLowerCase() ===
+        trimmedName.toLowerCase()
+      );
     });
 
     if (trimmedName && duplicateName) {
-      nextErrors.duplicateName = "An employee with the same full name already exists.";
+      nextErrors.duplicateName =
+        "An employee with the same full name already exists.";
     }
 
     const duplicateId = employees.some((emp) => {
       if (editingEmployee && emp.id === editingEmployee.id) return false;
-      return String(emp.id || "").trim().toLowerCase() === String(generatedId || "").trim().toLowerCase();
+      return (
+        String(emp.id || "").trim().toLowerCase() ===
+        String(generatedId || "").trim().toLowerCase()
+      );
     });
 
     if (generatedId && duplicateId) {
@@ -310,7 +381,10 @@ export default function AddEmployeeModal({
             </div>
 
             <div>
-              <label className="block text-sm mb-1">Full Name <span className="text-gray-400">(Firstname MI. Lastname)</span>  </label>
+              <label className="block text-sm mb-1">
+                Full Name{" "}
+                <span className="text-gray-400">(Firstname MI. Lastname)</span>
+              </label>
               <input
                 type="text"
                 name="name"
@@ -342,18 +416,52 @@ export default function AddEmployeeModal({
             {formData.status === "Deployed" && (
               <div>
                 <label className="block text-sm mb-1">Company Name</label>
-                <input
-                  type="text"
-                  name="company"
-                  value={formData.company}
-                  onChange={handleChange}
-                  placeholder="Enter company name"
-                  className={`w-full rounded-lg border px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white ${
-                    errors.company
-                      ? "border-red-500"
-                      : "border-gray-300 dark:border-gray-600"
-                  }`}
-                />
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    name="company"
+                    value={formData.company}
+                    onChange={handleChange}
+                    onFocus={() => {
+                      setFilteredCompanies(
+                        COMPANY_OPTIONS.filter((company) =>
+                          company
+                            .toLowerCase()
+                            .includes(formData.company.toLowerCase())
+                        )
+                      );
+                      setShowSuggestions(true);
+                    }}
+                    onBlur={() =>
+                      setTimeout(() => setShowSuggestions(false), 150)
+                    }
+                    placeholder="Type company name..."
+                    autoComplete="off"
+                    className={`w-full rounded-lg border px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white ${
+                      errors.company
+                        ? "border-red-500"
+                        : "border-gray-300 dark:border-gray-600"
+                    }`}
+                  />
+
+                  {showSuggestions && filteredCompanies.length > 0 && (
+                    <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-900 shadow-lg">
+                      {filteredCompanies.map((company) => (
+                        <button
+                          key={company}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => handleSelectCompany(company)}
+                          className="w-full text-left px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-slate-800 text-sm text-gray-900 dark:text-white"
+                        >
+                          {company}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <ErrorText>{errors.company}</ErrorText>
               </div>
             )}

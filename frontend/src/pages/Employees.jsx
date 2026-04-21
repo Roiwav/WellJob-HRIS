@@ -95,27 +95,46 @@ export default function Employees() {
     setShowModal(true);
   };
 
-  const handleSave = (data) => {
-    if (isSuperAdmin) return;
+const handleSave = (data) => {
+  if (isSuperAdmin) return;
 
-    if (editingEmployee) {
-      const updated = employees.map((emp) =>
-        emp.id === editingEmployee.id ? { ...emp, ...data } : emp
-      );
-      saveToStorage(updated);
-      setSuccessMessage("Employee information updated successfully.");
-    } else {
-      const newEmployee = {
-        id: generatedId,
-        uid: Date.now(),
-        createdAt: new Date().toISOString(),
-        archived: false,
-        ...data,
-      };
-      saveToStorage([...employees, newEmployee]);
-      setSuccessMessage("Employee saved successfully.");
-    }
-  };
+  if (editingEmployee) {
+    const updated = employees.map((emp) =>
+      emp.id === editingEmployee.id
+        ? {
+            ...emp,
+            ...data,
+            deployment: emp.deployment || {
+              location: "",
+              start: "",
+              end: "",
+              status: "Active",
+            },
+          }
+        : emp
+    );
+
+    saveToStorage(updated);
+    setSuccessMessage("Employee information updated successfully.");
+  } else {
+    const newEmployee = {
+      id: generatedId,
+      uid: Date.now(),
+      createdAt: new Date().toISOString(),
+      archived: false,
+      deployment: {
+        location: "",
+        start: "",
+        end: "",
+        status: "Active",
+      },
+      ...data,
+    };
+
+    saveToStorage([...employees, newEmployee]);
+    setSuccessMessage("Employee saved successfully.");
+  }
+};
 
   const handleEdit = (emp) => {
     if (isSuperAdmin) return;

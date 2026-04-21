@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FiArrowLeft, FiEye, FiInbox, FiRotateCcw } from "react-icons/fi";
+import { FiArrowLeft, FiEye, FiInbox, FiRotateCcw, FiTrash2 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import ComplianceBadge from "../components/employees/ComplianceBadge";
 import EmployeeModal from "../components/employees/EmployeeModal";
@@ -14,6 +14,7 @@ export default function ArchivedEmployees() {
 
   const [viewEmployee, setViewEmployee] = useState(null);
   const [restoreTarget, setRestoreTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
 
   const saveToStorage = (data) => {
@@ -70,6 +71,13 @@ export default function ArchivedEmployees() {
     saveToStorage(updated);
     setRestoreTarget(null);
     setSuccessMessage("Employee restored successfully.");
+  };
+
+  const handleDelete = (id) => {
+    const updated = employees.filter((emp) => emp.id !== id);
+    saveToStorage(updated);
+    setDeleteTarget(null);
+    setSuccessMessage("Employee permanently deleted.");
   };
 
   return (
@@ -138,6 +146,14 @@ export default function ArchivedEmployees() {
                           >
                             <FiRotateCcw />
                           </button>
+
+                          <button
+                            onClick={() => setDeleteTarget(emp)}
+                            className="inline-flex items-center justify-center rounded-lg bg-red-600 px-3 py-2 text-white hover:bg-red-700"
+                            title="Permanently delete employee"
+                          >
+                            <FiTrash2 />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -192,6 +208,37 @@ export default function ArchivedEmployees() {
 
               <button
                 onClick={() => setRestoreTarget(null)}
+                className="flex-1 bg-gray-500 text-white py-2 rounded"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl w-full max-w-md">
+            <h2 className="text-lg font-bold mb-4 text-red-700 dark:text-white">
+              Permanently Delete Employee
+            </h2>
+
+            <p className="text-sm mb-6 text-gray-900 dark:text-white">
+              Are you sure you want to permanently delete <b>{deleteTarget.name}</b>?
+              This action cannot be undone and all employee data will be lost.
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleDelete(deleteTarget.id)}
+                className="flex-1 bg-red-600 text-white py-2 rounded hover:bg-red-700"
+              >
+                Yes, Delete
+              </button>
+
+              <button
+                onClick={() => setDeleteTarget(null)}
                 className="flex-1 bg-gray-500 text-white py-2 rounded"
               >
                 Cancel
