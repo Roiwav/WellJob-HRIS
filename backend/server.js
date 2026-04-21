@@ -9,7 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔥 DB CONNECTION
+// DB CONNECTION
 const db = mysql.createConnection({
   host: "localhost",
   user: "remoteuser",
@@ -25,7 +25,7 @@ db.connect((err) => {
   }
 });
 
-// 🔥 TEST
+// TEST
 app.get("/", (req, res) => {
   res.json("Backend is running 🚀");
 });
@@ -44,7 +44,7 @@ app.post("/api/login", (req, res) => {
 
     const user = result[0];
 
-    // 🔥 CRITICAL FIX — BLOCK INACTIVE USER FIRST
+    // CRITICAL FIX — BLOCK INACTIVE USER FIRST
     if (user.status === "Inactive") {
       return res.status(403).json({
         message: "Account is inactive. Please contact IT support.",
@@ -76,7 +76,7 @@ app.post("/api/login", (req, res) => {
   });
 });
 
-// 🔥 GET USERS (FIXED STATUS)
+// GET USERS (FIXED STATUS)
 app.get("/api/users", (req, res) => {
   const sql = `
     SELECT 
@@ -96,7 +96,7 @@ app.get("/api/users", (req, res) => {
   });
 });
 
-// 🔥 CREATE USER
+// CREATE USER
 app.post("/api/users", async (req, res) => {
   const { name, email, username, password, role } = req.body;
 
@@ -121,7 +121,7 @@ app.post("/api/users", async (req, res) => {
   }
 });
 
-// 🔥 RESET PASSWORD
+// RESET PASSWORD
 app.put("/api/users/reset/:id", async (req, res) => {
   const { password } = req.body;
   const { id } = req.params;
@@ -138,7 +138,7 @@ app.put("/api/users/reset/:id", async (req, res) => {
   );
 });
 
-// 🔥 TOGGLE STATUS
+// TOGGLE STATUS
 app.put("/api/users/toggle/:id", (req, res) => {
   const { id } = req.params;
 
@@ -154,7 +154,7 @@ app.put("/api/users/toggle/:id", (req, res) => {
   });
 });
 
-// 🔥 START
+// START
 app.listen(5000, () => {
-  console.log("Server running on port 5000 🔥");
+  console.log("Server running on port 5000 ");
 });

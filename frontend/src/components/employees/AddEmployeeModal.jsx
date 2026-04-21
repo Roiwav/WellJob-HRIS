@@ -12,7 +12,7 @@ export default function AddEmployeeModal({
     name: "",
     status: "Deployed",
     documents: [],
-    company: "" // 🔥 NEW FIELD
+    company: "" // NEW FIELD
   });
 
   const [showConfirm, setShowConfirm] = useState(false);
@@ -23,7 +23,7 @@ export default function AddEmployeeModal({
         name: editingEmployee.name || "",
         status: editingEmployee.status || "Deployed",
         documents: editingEmployee.documents || [],
-        company: editingEmployee.company || "" // 🔥 EDIT SUPPORT
+        company: editingEmployee.company || "" // EDIT SUPPORT
       });
     } else {
       setFormData({
@@ -35,7 +35,7 @@ export default function AddEmployeeModal({
     }
   }, [editingEmployee]);
 
-  // 🔥 AUTO CLEAR COMPANY
+  // AUTO CLEAR COMPANY
   useEffect(() => {
     if (formData.status !== "Deployed") {
       setFormData((prev) => ({
@@ -81,7 +81,7 @@ export default function AddEmployeeModal({
       name: formData.name.trim(),
       status: formData.status,
       documents: formData.documents,
-      company: formData.company // 🔥 SAVE COMPANY
+      company: formData.company // SAVE COMPANY
     });
 
     setShowConfirm(false);
@@ -137,7 +137,7 @@ export default function AddEmployeeModal({
               </select>
             </div>
 
-            {/* 🔥 COMPANY FIELD (CONDITIONAL) */}
+            {/* COMPANY FIELD (CONDITIONAL) */}
             {formData.status === "Deployed" && (
               <div>
                 <label className="block text-sm mb-1">

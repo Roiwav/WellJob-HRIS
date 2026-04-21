@@ -1,10 +1,14 @@
 import { FiEye, FiEdit2 } from "react-icons/fi";
+import { useAuth } from "../../context/useAuth";
 
 export default function DeploymentTable({
   deployments,
   openView,
   openEdit
 }) {
+
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
   const getRowColor = (status) => {
     if (status === "Completed")
@@ -67,6 +71,7 @@ export default function DeploymentTable({
               <td className="px-6 py-4 text-right">
                 <div className="flex justify-end gap-3">
 
+                  {/* VIEW ALWAYS */}
                   <button
                     onClick={() => openView(deployment)}
                     className="text-indigo-500 hover:text-indigo-700"
@@ -74,12 +79,15 @@ export default function DeploymentTable({
                     <FiEye />
                   </button>
 
-                  <button
-                    onClick={() => openEdit(deployment)}
-                    className="text-blue-500 hover:text-blue-700"
-                  >
-                    <FiEdit2 />
-                  </button>
+                  {/* EDIT DISABLED FOR SUPER ADMIN */}
+                  {!isSuperAdmin && (
+                    <button
+                      onClick={() => openEdit(deployment)}
+                      className="text-blue-500 hover:text-blue-700"
+                    >
+                      <FiEdit2 />
+                    </button>
+                  )}
 
                 </div>
               </td>
