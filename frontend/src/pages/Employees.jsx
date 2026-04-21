@@ -28,27 +28,29 @@ export default function Employees() {
     localStorage.setItem("employees", JSON.stringify(data));
   };
 
-const generateId = () => {
-  const stored = JSON.parse(localStorage.getItem("employees")) || [];
+  const generateId = () => {
+    const stored = JSON.parse(localStorage.getItem("employees")) || [];
+    if (stored.length === 0) return "EMP001";
 
-  if (stored.length === 0) return "EMP001";
+    const numbers = stored.map(emp =>
+      parseInt(emp.id.replace("EMP", ""), 10)
+    );
 
-  const lastId = stored[stored.length - 1].id;
+    const max = Math.max(...numbers);
+    const next = max + 1;
 
-  const number = parseInt(lastId.replace("EMP", ""), 10) + 1;
-
-  return "EMP" + number.toString().padStart(3, "0");
-};
+    return "EMP" + next.toString().padStart(3, "0");
+  };
 
   const handleOpenModal = () => {
-    if (isSuperAdmin) return; // block
+    if (isSuperAdmin) return;
     setGeneratedId(generateId());
     setEditingEmployee(null);
     setShowModal(true);
   };
 
   const handleSave = (data) => {
-    if (isSuperAdmin) return; // block
+    if (isSuperAdmin) return;
 
     if (editingEmployee) {
       const updated = employees.map((emp) =>
@@ -60,28 +62,32 @@ const generateId = () => {
         id: generatedId,
         ...data,
       };
-      const updated = [...employees, newEmployee];
-      saveToStorage(updated);
+      saveToStorage([...employees, newEmployee]);
     }
   };
 
   const handleEdit = (emp) => {
-    if (isSuperAdmin) return; // block
+    if (isSuperAdmin) return;
     setEditingEmployee(emp);
     setGeneratedId(emp.id);
     setShowModal(true);
   };
 
-  const handleView = (emp) => {
-    setViewEmployee(emp);
-  };
+  const handleView = (emp) => setViewEmployee(emp);
 
   const handleDelete = (id) => {
-    if (isSuperAdmin) return; // block
-
+    if (isSuperAdmin) return;
     const updated = employees.filter((emp) => emp.id !== id);
     saveToStorage(updated);
     setDeleteTarget(null);
+  };
+
+  // 🔥 COMPUTE COMPLIANCE
+  const getCompliance = (docs) => {
+    const REQUIRED = ["NBI", "Police Clearance", "Health Card"];
+    return REQUIRED.every(doc => docs?.includes(doc))
+      ? "Complete"
+      : "Incomplete";
   };
 
   return (
@@ -99,7 +105,6 @@ const generateId = () => {
           </p>
         </div>
 
-        {/* ADD BUTTON (HIDE FOR SUPER ADMIN) */}
         {!isSuperAdmin && (
           <RoleGuard permission={PERMISSIONS.CAN_ADD_EMPLOYEE}>
             <button
@@ -121,61 +126,73 @@ const generateId = () => {
                 <th className="px-6 py-4">Full Name</th>
                 <th className="px-6 py-4">Company</th>
                 <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4">Compliance</th> {/* 🔥 NEW */}
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {employees.map((emp) => (
-                <tr key={emp.id} className="border-t">
-                  <td className="px-6 py-4">{emp.id}</td>
-                  <td className="px-6 py-4">{emp.name}</td>
-                  <td className="px-6 py-4">{emp.company || "-"}</td>
-                  <td className="px-6 py-4">{emp.status}</td>
+              {employees.map((emp) => {
+                const compliance = getCompliance(emp.documents);
 
-                  <td className="px-6 py-4">
-                    <div className="flex justify-end gap-2">
+                return (
+                  <tr key={emp.id} className="border-t">
+                    <td className="px-6 py-4">{emp.id}</td>
+                    <td className="px-6 py-4">{emp.name}</td>
+                    <td className="px-6 py-4">{emp.company || "-"}</td>
+                    <td className="px-6 py-4">{emp.status}</td>
 
-                      {/* VIEW ALWAYS */}
-                      <button
-                        onClick={() => handleView(emp)}
-                        className="px-3 py-1 border rounded"
-                      >
-                        View
-                      </button>
+                    {/* 🔥 COMPLIANCE COLUMN */}
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 text-xs rounded ${
+                        compliance === "Complete"
+                          ? "bg-green-100 text-green-600"
+                          : "bg-red-100 text-red-600"
+                      }`}>
+                        {compliance}
+                      </span>
+                    </td>
 
-                      {/* EDIT (HIDE FOR SUPER ADMIN) */}
-                      {!isSuperAdmin && (
-                        <RoleGuard permission={PERMISSIONS.CAN_EDIT_EMPLOYEE}>
-                          <button
-                            onClick={() => handleEdit(emp)}
-                            className="px-3 py-1 bg-amber-500 text-white rounded"
-                          >
-                            Edit
-                          </button>
-                        </RoleGuard>
-                      )}
+                    <td className="px-6 py-4">
+                      <div className="flex justify-end gap-2">
 
-                      {/* DELETE (HIDE FOR SUPER ADMIN) */}
-                      {!isSuperAdmin && (
                         <button
-                          onClick={() => setDeleteTarget(emp)}
-                          className="px-3 py-1 bg-red-600 text-white rounded"
+                          onClick={() => handleView(emp)}
+                          className="px-3 py-1 border rounded"
                         >
-                          Delete
+                          View
                         </button>
-                      )}
 
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {!isSuperAdmin && (
+                          <RoleGuard permission={PERMISSIONS.CAN_EDIT_EMPLOYEE}>
+                            <button
+                              onClick={() => handleEdit(emp)}
+                              className="px-3 py-1 bg-amber-500 text-white rounded"
+                            >
+                              Edit
+                            </button>
+                          </RoleGuard>
+                        )}
+
+                        {!isSuperAdmin && (
+                          <button
+                            onClick={() => setDeleteTarget(emp)}
+                            className="px-3 py-1 bg-red-600 text-white rounded"
+                          >
+                            Delete
+                          </button>
+                        )}
+
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* ADD / EDIT MODAL */}
       {showModal && !isSuperAdmin && (
         <AddEmployeeModal
           generatedId={generatedId}
@@ -185,7 +202,6 @@ const generateId = () => {
         />
       )}
 
-      {/* VIEW MODAL */}
       {viewEmployee && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
           <div className="bg-white dark:bg-slate-800 p-6 rounded-xl w-96">
@@ -206,7 +222,6 @@ const generateId = () => {
         </div>
       )}
 
-      {/* DELETE CONFIRM */}
       {deleteTarget && !isSuperAdmin && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
           <div className="bg-white dark:bg-slate-800 p-6 rounded-xl w-96">
