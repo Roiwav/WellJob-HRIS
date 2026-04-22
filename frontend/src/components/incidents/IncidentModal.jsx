@@ -37,23 +37,6 @@ export default function IncidentModal({ incident, close }) {
           <Info label="Reported Date" value={incident.date} />
 
         </div>
-
-        <div className="mt-6 flex justify-end gap-3">
-
-          <button className="px-4 py-2 bg-amber-500 text-white rounded">
-            Issue Warning
-          </button>
-
-          <button className="px-4 py-2 bg-red-500 text-white rounded">
-            Suspend
-          </button>
-
-          <button className="px-4 py-2 bg-green-600 text-white rounded">
-            Resolve Case
-          </button>
-
-        </div>
-
       </div>
 
     </div>

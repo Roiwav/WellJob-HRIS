@@ -10,12 +10,30 @@ export default function Notifications() {
 
   useEffect(() => {
     loadNotifications();
+
+    // 🔥 REAL-TIME UPDATE
+    const reload = () => loadNotifications();
+    window.addEventListener("dataUpdated", reload);
+
+    return () => window.removeEventListener("dataUpdated", reload);
   }, []);
 
   const loadNotifications = () => {
     const incidents = JSON.parse(localStorage.getItem(INCIDENTS_KEY)) || [];
+    const employees = JSON.parse(localStorage.getItem("employees")) || [];
 
-    const mapped = incidents.map((incident) => ({
+    // 🔥 FILTER ACTIVE EMPLOYEES
+    const activeEmployees = employees.filter(emp => !emp.archived);
+
+    const filteredIncidents = incidents.filter(incident =>
+      activeEmployees.some(
+        emp =>
+          emp.id === incident.employeeId ||
+          emp.name === incident.employee
+      )
+    );
+
+    const mapped = filteredIncidents.map((incident) => ({
       id: incident.id,
       reportedBy: incident.reportedBy || "Unknown",
       employee: incident.employee,
