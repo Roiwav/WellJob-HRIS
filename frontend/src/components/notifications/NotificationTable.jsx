@@ -1,34 +1,84 @@
-import { FiAlertTriangle, FiClock, FiCheckCircle } from "react-icons/fi";
-
-export default function NotificationCard({ type, message, date }) {
-
-  const styles = {
-    High: "border-red-500 text-red-500",
-    Medium: "border-amber-500 text-amber-500",
-    Low: "border-green-500 text-green-500"
-  };
-
-  const icons = {
-    High: <FiAlertTriangle />,
-    Medium: <FiClock />,
-    Low: <FiCheckCircle />
-  };
-
+export default function NotificationTable({ notifications }) {
   return (
-    <div className={`p-4 border-l-4 rounded-lg bg-white dark:bg-slate-900 shadow-sm flex justify-between items-center ${styles[type]}`}>
+    <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 overflow-hidden">
 
-      <div className="flex items-center gap-3">
-        <span className="text-xl">{icons[type]}</span>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm text-left">
 
-        <div>
-          <p className="text-sm font-medium">{message}</p>
-          <p className="text-xs text-gray-500">{date}</p>
-        </div>
+          <thead className="bg-gray-50 dark:bg-slate-900/70">
+            <tr>
+              <th className="px-6 py-4">Reported By</th>
+              <th className="px-6 py-4">Employee</th>
+              <th className="px-6 py-4">Violation</th>
+              <th className="px-6 py-4">Severity</th>
+              <th className="px-6 py-4">Status</th>
+              <th className="px-6 py-4">Reported Date</th> {/* 🔥 NEW */}
+            </tr>
+          </thead>
+
+          <tbody>
+            {notifications.length === 0 ? (
+              <tr>
+                <td colSpan="6" className="px-6 py-8 text-center">
+                  No notifications found.
+                </td>
+              </tr>
+            ) : (
+              notifications.map((item) => (
+                <tr key={item.id} className="border-t">
+
+                  <td className="px-6 py-4">
+                    {item.reportedBy || "Unknown"}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {item.employee}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {item.violation}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <span
+                      className={`px-2 py-1 rounded text-xs ${
+                        item.severity === "Critical"
+                          ? "bg-red-100 text-red-600"
+                          : item.severity === "Major"
+                          ? "bg-amber-100 text-amber-600"
+                          : "bg-blue-100 text-blue-600"
+                      }`}
+                    >
+                      {item.severity}
+                    </span>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <span
+                      className={`px-2 py-1 rounded text-xs ${
+                        item.status === "Resolved"
+                          ? "bg-green-100 text-green-600"
+                          : item.status === "Investigating"
+                          ? "bg-amber-100 text-amber-600"
+                          : "bg-red-100 text-red-600"
+                      }`}
+                    >
+                      {item.status}
+                    </span>
+                  </td>
+
+                  {/* 🔥 REPORTED DATE */}
+                  <td className="px-6 py-4">
+                    {item.reportedDate || item.date || "-"}
+                  </td>
+
+                </tr>
+              ))
+            )}
+          </tbody>
+
+        </table>
       </div>
-
-      <span className="text-xs font-semibold">
-        {type}
-      </span>
 
     </div>
   );

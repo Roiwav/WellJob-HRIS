@@ -31,7 +31,7 @@ function getDeploymentsFromStorage() {
       employee: emp.name,
       company: emp.company || "-",
 
-      // 🔥 CONNECTED NA SA EMPLOYEE DEPLOYMENT
+      // CONNECTED NA SA EMPLOYEE DEPLOYMENT
       location: emp.deployment?.location || "-",
       start: emp.deployment?.start || new Date().toISOString().split("T")[0],
       end: emp.deployment?.end || "-",
