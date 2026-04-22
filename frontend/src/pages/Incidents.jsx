@@ -4,7 +4,7 @@ import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 import AddIncidentModal from "../components/incidents/AddIncidentModal";
 import IncidentModal from "../components/incidents/IncidentModal";
-import { FiEye, FiEdit2 } from "react-icons/fi"; // 🔥 NEW
+import { FiEye, FiEdit2, FiSearch } from "react-icons/fi";
 
 const INCIDENTS_KEY = "incidents";
 const EMPLOYEES_KEY = "employees";
@@ -106,39 +106,40 @@ window.dispatchEvent(new Event("dataUpdated"));
         </RoleGuard>
       </div>
 
-      {/* 🔥 FILTER (UNCHANGED) */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="flex flex-col xl:flex-row gap-3 mb-4 items-start xl:items-center">
+        <div className="relative w-full max-w-xs">
+          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+
           <input
             type="text"
-            placeholder="Search incident ID, employee, violation, company..."
+            placeholder="Search incident ID, employee, violation..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-4 py-2 text-sm outline-none"
+            className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition"
           />
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-4 py-2 text-sm outline-none"
-          >
-            <option value="ALL">All Status</option>
-            <option value="Open">Open</option>
-            <option value="Investigating">Investigating</option>
-            <option value="Resolved">Resolved</option>
-          </select>
-
-          <select
-            value={severityFilter}
-            onChange={(e) => setSeverityFilter(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-4 py-2 text-sm outline-none"
-          >
-            <option value="ALL">All Severity</option>
-            <option value="Minor">Minor</option>
-            <option value="Major">Major</option>
-            <option value="Critical">Critical</option>
-          </select>
         </div>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
+        >
+          <option value="ALL">All Status</option>
+          <option value="Open">Open</option>
+          <option value="Investigating">Investigating</option>
+          <option value="Resolved">Resolved</option>
+        </select>
+
+        <select
+          value={severityFilter}
+          onChange={(e) => setSeverityFilter(e.target.value)}
+          className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
+        >
+          <option value="ALL">All Severity</option>
+          <option value="Minor">Minor</option>
+          <option value="Major">Major</option>
+          <option value="Critical">Critical</option>
+        </select>
       </div>
 
       {/* 🔥 TABLE (ONLY CHANGE = ACTION COLUMN) */}
