@@ -69,10 +69,13 @@ export default function Employees() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
 
-  const saveToStorage = (data) => {
-    setEmployees(data);
-    localStorage.setItem("employees", JSON.stringify(data));
-  };
+const saveToStorage = (data) => {
+  setEmployees(data);
+  localStorage.setItem("employees", JSON.stringify(data));
+
+  // 🔥 REAL-TIME TRIGGER
+  window.dispatchEvent(new Event("dataUpdated"));
+};
 
   const generateId = () => {
     const stored = JSON.parse(localStorage.getItem("employees")) || [];

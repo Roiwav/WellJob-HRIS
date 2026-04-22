@@ -118,6 +118,9 @@ export default function Deployments() {
   );
 
     localStorage.setItem("employees", JSON.stringify(updatedEmployees));
+
+    // 🔥 REAL-TIME TRIGGER
+    window.dispatchEvent(new Event("dataUpdated"));
     setDeployments(getDeploymentsFromStorage());
 
     setShowToast(false);

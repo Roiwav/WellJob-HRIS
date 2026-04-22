@@ -10,6 +10,10 @@ import IncidentTrendChart from "../components/dashboard/IncidentTrendChart";
 import SeverityPieChart from "../components/dashboard/SeverityPieChart";
 import CaseAgingChart from "../components/dashboard/CaseAgingChart";
 
+const EMPLOYEES_KEY = "employees";
+const INCIDENTS_KEY = "incidents";
+const DEPLOYMENTS_KEY = "deployments";
+
 const monthList = [
   "Jan",
   "Feb",
@@ -25,6 +29,17 @@ const monthList = [
   "Dec",
 ];
 
+function safeParse(key) {
+  try {
+    const value = localStorage.getItem(key);
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error(`Failed to parse localStorage key: ${key}`, error);
+    return [];
+  }
+}
+
 function aggregateByMonth(dataset = [], key, year, isCurrentYear) {
   const currentMonthIndex = new Date().getMonth();
 
@@ -34,6 +49,7 @@ function aggregateByMonth(dataset = [], key, year, isCurrentYear) {
 
       const monthItems = dataset.filter((item) => {
         if (!item?.date) return false;
+
         return (
           item.date.startsWith(year) &&
           item.date.slice(5, 7) === monthNumber
@@ -65,13 +81,27 @@ function formatLastUpdated(date = new Date()) {
   });
 }
 
+function getCaseAgeInDays(dateString) {
+  if (!dateString) return null;
+
+  const incidentDate = new Date(dateString);
+  if (Number.isNaN(incidentDate.getTime())) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  incidentDate.setHours(0, 0, 0, 0);
+
+  const diffMs = today.getTime() - incidentDate.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
 export default function Dashboard() {
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear().toString();
-  const currentMonth = currentDate.getMonth() + 1; // 1-12 for display
+  const currentMonth = currentDate.getMonth() + 1;
 
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [selectedMonth, setSelectedMonth] = useState(0);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
 
@@ -90,65 +120,132 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    const mockData = {
-      kpis: {
-        total: 1624,
-        deployed: 1000,
-        available: 624,
-        activeIncidents: 7,
-        expiringDocs: 12,
-      },
+    const loadData = () => {
+      const employeesRaw = safeParse(EMPLOYEES_KEY);
+      const incidentsRaw = safeParse(INCIDENTS_KEY);
+      const deploymentsRaw = safeParse(DEPLOYMENTS_KEY);
 
-      workforce: [
-        { date: "2024-01-10", employees: 40 },
-        { date: "2024-02-10", employees: 70 },
-        { date: "2024-03-10", employees: 90 },
+      const totalEmployees = employeesRaw.filter((emp) => !emp.archived).length;
 
-        { date: "2025-01-10", employees: 60 },
-        { date: "2025-02-10", employees: 110 },
-        { date: "2025-03-10", employees: 160 },
+      const deployedCount = deploymentsRaw.length;
+      const availableCount = Math.max(totalEmployees - deployedCount, 0);
 
-        { date: "2026-01-10", employees: 50 },
-        { date: "2026-02-10", employees: 120 },
-        { date: "2026-03-10", employees: 200 },
-        { date: "2026-04-10", employees: 260 },
-      ],
+      const activeIncidentsCount = incidentsRaw.filter(
+        (incident) =>
+          incident.status === "Open" || incident.status === "Investigating"
+      ).length;
 
-      incidents: [
-        { date: "2024-01-12", incidents: 1 },
-        { date: "2024-02-18", incidents: 2 },
-        { date: "2024-03-10", incidents: 3 },
+      const expiringDocs = employeesRaw.reduce((count, emp) => {
+        const docs = Array.isArray(emp.documents) ? emp.documents : [];
 
-        { date: "2025-01-12", incidents: 2 },
-        { date: "2025-02-18", incidents: 4 },
-        { date: "2025-03-10", incidents: 6 },
+        const expiringOrExpired = docs.filter((doc) => {
+          if (!doc?.expirationDate) return false;
 
-        { date: "2026-01-12", incidents: 3 },
-        { date: "2026-02-18", incidents: 5 },
-        { date: "2026-03-10", incidents: 8 },
-        { date: "2026-04-05", incidents: 4 },
-      ],
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
 
-      severity: [
-        { name: "Minor", value: 10 },
-        { name: "Major", value: 5 },
-        { name: "Critical", value: 2 },
-      ],
+          const exp = new Date(doc.expirationDate);
+          if (Number.isNaN(exp.getTime())) return false;
+          exp.setHours(0, 0, 0, 0);
 
-      aging: [
-        { name: "0-7 Days", value: 4 },
-        { name: "8-30 Days", value: 2 },
-        { name: "30+ Days", value: 1 },
-      ],
-    };
+          const diffDays = Math.ceil(
+            (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+          );
 
-    const timer = setTimeout(() => {
-      setData(mockData);
+          return diffDays <= 30;
+        });
+
+        return count + expiringOrExpired.length;
+      }, 0);
+
+      const workforce = deploymentsRaw
+        .map((deployment) => ({
+          date:
+            deployment.start ||
+            deployment.startDate ||
+            deployment.deploymentDate ||
+            deployment.date ||
+            "",
+          employees: 1,
+        }))
+        .filter((item) => item.date);
+
+      const incidents = incidentsRaw
+        .map((incident) => ({
+          date: incident.date || "",
+          incidents: 1,
+        }))
+        .filter((item) => item.date);
+
+      const severityMap = {
+        Minor: 0,
+        Major: 0,
+        Critical: 0,
+      };
+
+      incidentsRaw.forEach((incident) => {
+        const severity = incident.severity;
+        if (severityMap[severity] !== undefined) {
+          severityMap[severity] += 1;
+        }
+      });
+
+      const severity = Object.entries(severityMap)
+        .filter(([, value]) => value > 0)
+        .map(([name, value]) => ({
+          name,
+          value,
+        }));
+
+      const agingBuckets = {
+        "0-7 Days": 0,
+        "8-30 Days": 0,
+        "30+ Days": 0,
+      };
+
+      incidentsRaw.forEach((incident) => {
+        if (incident.status === "Resolved" || incident.status === "Closed") {
+          return;
+        }
+
+        const age = getCaseAgeInDays(incident.date);
+        if (age === null) return;
+
+        if (age <= 7) agingBuckets["0-7 Days"] += 1;
+        else if (age <= 30) agingBuckets["8-30 Days"] += 1;
+        else agingBuckets["30+ Days"] += 1;
+      });
+
+      const aging = Object.entries(agingBuckets).map(([name, value]) => ({
+        name,
+        value,
+      }));
+
+      setData({
+        kpis: {
+          total: totalEmployees,
+          deployed: deployedCount,
+          available: availableCount,
+          activeIncidents: activeIncidentsCount,
+          expiringDocs,
+        },
+        workforce,
+        incidents,
+        severity,
+        aging,
+      });
+
       setLastUpdated(formatLastUpdated());
       setLoading(false);
-    }, 300);
+    };
 
-    return () => clearTimeout(timer);
+    loadData();
+
+    window.addEventListener("dataUpdated", loadData);
+
+    return () => {
+      window.removeEventListener("dataUpdated", loadData);
+    };
   }, []);
 
   const isCurrentYear = selectedYear === currentYear;
@@ -171,27 +268,25 @@ export default function Dashboard() {
 
   const availableMonths = useMemo(() => {
     if (selectedYear !== currentYear) {
-      // If not current year, show all months
       return monthList.map((month, index) => ({
         name: month,
         value: index + 1,
-        available: true
+        available: true,
       }));
     }
 
-    // If current year, only show months that have data
     const monthsWithData = new Set();
-    
+
     data.workforce.forEach((item) => {
       if (item?.date && item.date.startsWith(selectedYear)) {
-        const monthNum = parseInt(item.date.slice(5, 7));
+        const monthNum = parseInt(item.date.slice(5, 7), 10);
         monthsWithData.add(monthNum);
       }
     });
 
     data.incidents.forEach((item) => {
       if (item?.date && item.date.startsWith(selectedYear)) {
-        const monthNum = parseInt(item.date.slice(5, 7));
+        const monthNum = parseInt(item.date.slice(5, 7), 10);
         monthsWithData.add(monthNum);
       }
     });
@@ -199,7 +294,7 @@ export default function Dashboard() {
     return monthList.map((month, index) => ({
       name: month,
       value: index + 1,
-      available: monthsWithData.has(index + 1) || index + 1 <= currentMonth
+      available: monthsWithData.has(index + 1) || index + 1 <= currentMonth,
     }));
   }, [data.workforce, data.incidents, selectedYear, currentYear, currentMonth]);
 
@@ -222,25 +317,40 @@ export default function Dashboard() {
   }, [data.incidents, selectedYear, isCurrentYear]);
 
   const filteredKPIS = useMemo(() => {
-    if (selectedMonth === 0) return data.kpis; // "All Months" selected
-    
-    const monthStr = String(selectedMonth).padStart(2, '0');
-    const monthWorkforce = data.workforce.filter(item => 
-      item.date && item.date.slice(5, 7) === monthStr && item.date.startsWith(selectedYear)
-    );
-    const monthIncidents = data.incidents.filter(item => 
-      item.date && item.date.slice(5, 7) === monthStr && item.date.startsWith(selectedYear)
+    if (selectedMonth === 0) return data.kpis;
+
+    const monthStr = String(selectedMonth).padStart(2, "0");
+
+    const monthDeployments = data.workforce.filter(
+      (item) =>
+        item.date &&
+        item.date.slice(5, 7) === monthStr &&
+        item.date.startsWith(selectedYear)
     );
 
-    const totalEmployees = monthWorkforce.reduce((sum, item) => sum + (item.employees || 0), 0);
-    const totalIncidents = monthIncidents.reduce((sum, item) => sum + (item.incidents || 0), 0);
+    const monthIncidents = data.incidents.filter(
+      (item) =>
+        item.date &&
+        item.date.slice(5, 7) === monthStr &&
+        item.date.startsWith(selectedYear)
+    );
+
+    const deployed = monthDeployments.reduce(
+      (sum, item) => sum + (item.employees || 0),
+      0
+    );
+
+    const activeIncidents = monthIncidents.reduce(
+      (sum, item) => sum + (item.incidents || 0),
+      0
+    );
 
     return {
-      total: totalEmployees || data.kpis.total,
-      deployed: Math.floor((totalEmployees || data.kpis.total) * 0.62), // Approximate deployed
-      available: Math.ceil((totalEmployees || data.kpis.total) * 0.38), // Approximate available
-      activeIncidents: totalIncidents || data.kpis.activeIncidents,
-      expiringDocs: data.kpis.expiringDocs, // Keep same for now
+      total: data.kpis.total,
+      deployed,
+      available: Math.max(data.kpis.total - deployed, 0),
+      activeIncidents,
+      expiringDocs: data.kpis.expiringDocs,
     };
   }, [data.kpis, data.workforce, data.incidents, selectedMonth, selectedYear]);
 
@@ -288,12 +398,12 @@ export default function Dashboard() {
       startY: 50,
       head: [["Metric", "Value"]],
       body: [
-        ["Total Employees", data.kpis.total],
-        ["Deployed", data.kpis.deployed],
-        ["Available", data.kpis.available],
+        ["Total Employees", filteredKPIS.total],
+        ["Deployed", filteredKPIS.deployed],
+        ["Available", filteredKPIS.available],
         ["Utilization Rate", `${utilizationRate}%`],
-        ["Active Incidents", data.kpis.activeIncidents],
-        ["Expiring Documents", data.kpis.expiringDocs],
+        ["Active Incidents", filteredKPIS.activeIncidents],
+        ["Expiring Documents", filteredKPIS.expiringDocs],
         ["Total Year Incidents", totalIncidentsForYear],
         ["Peak Deployment Month", peakDeploymentMonth],
         ["Highest Incident Month", highestIncidentMonth],
@@ -315,11 +425,7 @@ export default function Dashboard() {
 
           if (!deployment && !incident) return null;
 
-          return [
-            month,
-            deployment?.value ?? 0,
-            incident?.value ?? 0,
-          ];
+          return [month, deployment?.value ?? 0, incident?.value ?? 0];
         })
         .filter(Boolean),
       theme: "striped",
@@ -329,7 +435,18 @@ export default function Dashboard() {
     });
 
     doc.save(`Welljob_Executive_Report_${selectedYear}.pdf`);
-  }, [selectedYear, lastUpdated, data, utilizationRate, totalIncidentsForYear, peakDeploymentMonth, highestIncidentMonth, topSeverity, workforceTrend, incidentTrend]);
+  }, [
+    selectedYear,
+    lastUpdated,
+    filteredKPIS,
+    utilizationRate,
+    totalIncidentsForYear,
+    peakDeploymentMonth,
+    highestIncidentMonth,
+    topSeverity,
+    workforceTrend,
+    incidentTrend,
+  ]);
 
   if (loading) {
     return (
@@ -360,8 +477,8 @@ export default function Dashboard() {
             >
               <option value={0}>All Months</option>
               {availableMonths.map((month) => (
-                <option 
-                  key={month.name} 
+                <option
+                  key={month.name}
                   value={month.value}
                   disabled={!month.available && selectedYear === currentYear}
                 >
@@ -395,6 +512,7 @@ export default function Dashboard() {
       </section>
 
       <KPICards kpis={filteredKPIS} utilizationRate={utilizationRate} />
+
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-white p-5 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:to-slate-900">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">

@@ -42,6 +42,9 @@ export default function Incidents() {
     const updated = [newIncident, ...incidents];
     setIncidents(updated);
     localStorage.setItem(INCIDENTS_KEY, JSON.stringify(updated));
+
+// 🔥 REAL-TIME TRIGGER
+window.dispatchEvent(new Event("dataUpdated"));
     setOpenAddModal(false);
   };
 
