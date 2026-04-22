@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
@@ -10,44 +11,20 @@ import KPICards from "../components/kpi/KPICards";
 import HighRiskEmployees from "../components/kpi/HighRiskEmployees";
 import RiskTable from "../components/kpi/RiskTable";
 
-const employees = [
-  { id: 1, name: "Juan Dela Cruz", company: "ABC Corp", violationCount: 3 },
-  { id: 2, name: "Maria Santos", company: "XYZ Ltd", violationCount: 1 },
-  { id: 3, name: "Pedro Reyes", company: "DEF Inc", violationCount: 4 },
-  { id: 4, name: "Angela Cruz", company: "Northline Services", violationCount: 2 },
-  { id: 5, name: "Carlo Mendoza", company: "Prime Solutions", violationCount: 0 },
-  { id: 6, name: "Jessa Villanueva", company: "ABC Corp", violationCount: 3 },
-];
+const EMPLOYEES_KEY = "employees";
+const INCIDENTS_KEY = "incidents";
+const DEPLOYMENTS_KEY = "deployments";
 
-const violationTrend = [
-  { month: "Jan", violations: 3 },
-  { month: "Feb", violations: 5 },
-  { month: "Mar", violations: 8 },
-  { month: "Apr", violations: 4 },
-  { month: "May", violations: 6 },
-];
-
-const complianceTrend = [
-  { month: "Jan", compliance: 90 },
-  { month: "Feb", compliance: 92 },
-  { month: "Mar", compliance: 95 },
-  { month: "Apr", compliance: 93 },
-  { month: "May", compliance: 96 },
-];
-
-const utilizationTrend = [
-  { month: "Jan", utilization: 60 },
-  { month: "Feb", utilization: 70 },
-  { month: "Mar", utilization: 80 },
-  { month: "Apr", utilization: 75 },
-  { month: "May", utilization: 85 },
-];
-
-const criticalAlerts = [
-  { level: "HIGH", text: "3 overdue incident resolutions" },
-  { level: "MEDIUM", text: "5 expiring employee compliance documents" },
-  { level: "LOW", text: "2 deployment records need manager review" },
-];
+function safeParse(key) {
+  try {
+    const value = localStorage.getItem(key);
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error(`Failed to parse localStorage key: ${key}`, error);
+    return [];
+  }
+}
 
 function getSeverity(count) {
   if (count >= 4) return "Critical";
@@ -76,21 +53,184 @@ function getAlertClasses(level) {
   }
 }
 
+function getMonthLabel(dateString) {
+  if (!dateString) return "N/A";
+
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "N/A";
+
+  return date.toLocaleString("en-US", { month: "short" });
+}
+
 export default function KPIReports() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
+  const employeesRaw = useMemo(() => safeParse(EMPLOYEES_KEY), []);
+  const incidentsRaw = useMemo(() => safeParse(INCIDENTS_KEY), []);
+  const deploymentsRaw = useMemo(() => safeParse(DEPLOYMENTS_KEY), []);
+
+  const employees = useMemo(() => {
+    return employeesRaw.map((emp, index) => {
+      const employeeId =
+        emp.id || emp.employeeId || emp.employee_id || `EMP-${index + 1}`;
+      const employeeName = emp.name || emp.full_name || "Unknown Employee";
+
+      const relatedIncidents = incidentsRaw.filter(
+        (incident) =>
+          incident.employeeId === employeeId ||
+          incident.employee_id === employeeId ||
+          incident.employee === employeeName
+      );
+
+      const activeDeployment = deploymentsRaw.find(
+        (deployment) =>
+          deployment.employeeId === employeeId ||
+          deployment.employee_id === employeeId ||
+          deployment.employee === employeeName
+      );
+
+      return {
+        id: employeeId,
+        name: employeeName,
+        company:
+          activeDeployment?.company ||
+          activeDeployment?.clientCompany ||
+          emp.company ||
+          "Unassigned",
+        violationCount: relatedIncidents.length,
+      };
+    });
+  }, [employeesRaw, incidentsRaw, deploymentsRaw]);
+
   const totalEmployees = employees.length;
+
   const repeatOffenders = employees.filter(
-    (emp) => emp.violationCount >= 2 && emp.violationCount < 3
+    (emp) => emp.violationCount === 2
   ).length;
+
   const highRiskEmployees = employees.filter(
     (emp) => emp.violationCount >= 3
   ).length;
+
   const compliantEmployees = employees.filter(
     (emp) => emp.violationCount === 0
   ).length;
-  const complianceRate = Math.round((compliantEmployees / totalEmployees) * 100);
+
+  const complianceRate =
+    totalEmployees > 0
+      ? Math.round((compliantEmployees / totalEmployees) * 100)
+      : 0;
+
+  const criticalAlerts = useMemo(() => {
+    const openIncidents = incidentsRaw.filter(
+      (incident) => incident.status === "Open"
+    ).length;
+
+    const investigatingIncidents = incidentsRaw.filter(
+      (incident) => incident.status === "Investigating"
+    ).length;
+
+    const criticalIncidents = incidentsRaw.filter(
+      (incident) => incident.severity === "Critical"
+    ).length;
+
+    return [
+      {
+        level: "HIGH",
+        text: `${criticalIncidents} critical incident case(s) detected`,
+      },
+      {
+        level: "MEDIUM",
+        text: `${investigatingIncidents} incident(s) under investigation`,
+      },
+      {
+        level: "LOW",
+        text: `${openIncidents} open incident case(s) awaiting action`,
+      },
+    ];
+  }, [incidentsRaw]);
+
+  const violationTrend = useMemo(() => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    const monthMap = months.reduce((acc, month) => {
+      acc[month] = 0;
+      return acc;
+    }, {});
+
+    incidentsRaw.forEach((incident) => {
+      const month = getMonthLabel(incident.date);
+      if (monthMap[month] !== undefined) {
+        monthMap[month] += 1;
+      }
+    });
+
+    return months.map((month) => ({
+      month,
+      violations: monthMap[month],
+    }));
+  }, [incidentsRaw]);
+
+  const complianceTrend = useMemo(() => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    const running = [];
+    let cumulativeIncidents = 0;
+
+    months.forEach((month) => {
+      const monthViolations = violationTrend.find(
+        (item) => item.month === month
+      )?.violations || 0;
+
+      cumulativeIncidents += monthViolations;
+
+      const cleanEmployees =
+        totalEmployees > 0
+          ? Math.max(totalEmployees - cumulativeIncidents, 0)
+          : 0;
+
+      const compliance =
+        totalEmployees > 0
+          ? Math.round((cleanEmployees / totalEmployees) * 100)
+          : 0;
+
+      running.push({
+        month,
+        compliance,
+      });
+    });
+
+    return running;
+  }, [violationTrend, totalEmployees]);
+
+  const utilizationTrend = useMemo(() => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    const monthlyDeployments = months.map((month) => {
+      const count = deploymentsRaw.filter((deployment) => {
+        const rawDate =
+          deployment.startDate ||
+          deployment.deploymentDate ||
+          deployment.date ||
+          "";
+
+        return getMonthLabel(rawDate) === month;
+      }).length;
+
+      const utilization =
+        totalEmployees > 0
+          ? Math.round((count / totalEmployees) * 100)
+          : 0;
+
+      return {
+        month,
+        utilization,
+      };
+    });
+
+    return monthlyDeployments;
+  }, [deploymentsRaw, totalEmployees]);
 
   return (
     <div className="p-8 space-y-8">
