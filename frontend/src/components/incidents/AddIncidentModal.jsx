@@ -31,6 +31,7 @@ export default function AddIncidentModal({
   employees = [],
   deployments = [],
   existingIncidents = [],
+  editingIncident = null, // 🔥 NEW
 }) {
   const [formData, setFormData] = useState({
     id: "",
@@ -47,22 +48,26 @@ export default function AddIncidentModal({
   useEffect(() => {
     if (!isOpen) return;
 
-    const resetForm = () => {
-      setFormData({
-        id: generateIncidentId(existingIncidents),
-        employeeId: "",
-        employee: "",
-        company: "",
-        violation: "",
-        severity: "Minor",
-        status: "Open",
-        date: new Date().toISOString().split("T")[0],
-        description: "",
-      });
-    };
+    // 🔥 EDIT MODE
+    if (editingIncident) {
+      setFormData(editingIncident);
+      return;
+    }
 
-    resetForm();
-  }, [isOpen, existingIncidents]);
+    // 🔥 ADD MODE
+    setFormData({
+      id: generateIncidentId(existingIncidents),
+      employeeId: "",
+      employee: "",
+      company: "",
+      violation: "",
+      severity: "Minor",
+      status: "Open",
+      date: new Date().toISOString().split("T")[0],
+      description: "",
+    });
+
+  }, [isOpen, editingIncident, existingIncidents]);
 
   const employeeOptions = useMemo(() => {
     return employees.map((emp) => ({
@@ -112,7 +117,14 @@ export default function AddIncidentModal({
       return;
     }
 
-    onSave(formData);
+    const user = JSON.parse(localStorage.getItem("user"));
+
+    const newIncident = {
+      ...formData,
+      reportedBy: formData.reportedBy || user?.name || "Unknown",
+    };
+
+    onSave(newIncident);
   };
 
   if (!isOpen) return null;
@@ -120,9 +132,10 @@ export default function AddIncidentModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-slate-900 shadow-xl">
+
         <div className="flex items-center justify-between border-b border-gray-200 dark:border-white/10 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Add Incident Report
+            {editingIncident ? "Edit Incident Report" : "Add Incident Report"}
           </h2>
 
           <button
@@ -135,6 +148,9 @@ export default function AddIncidentModal({
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+
+          {/* UI UNCHANGED */}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Incident ID</label>
@@ -177,9 +193,6 @@ export default function AddIncidentModal({
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-gray-500">
-              Employee list comes from Employee Management records only.
-            </p>
           </div>
 
           <div>
@@ -190,7 +203,6 @@ export default function AddIncidentModal({
               value={formData.company}
               onChange={handleChange}
               className="w-full rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 bg-white dark:bg-slate-800"
-              placeholder="Auto-filled from deployment if available"
             />
           </div>
 
@@ -255,26 +267,19 @@ export default function AddIncidentModal({
               value={formData.description}
               onChange={handleChange}
               className="w-full rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 bg-white dark:bg-slate-800 resize-none"
-              placeholder="Enter incident details..."
             />
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700"
-            >
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border">
               Cancel
             </button>
 
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600"
-            >
-              Save Incident
+            <button type="submit" className="px-4 py-2 rounded-lg bg-red-500 text-white">
+              {editingIncident ? "Update Incident" : "Save Incident"}
             </button>
           </div>
+
         </form>
       </div>
     </div>

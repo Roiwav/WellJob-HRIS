@@ -1,38 +1,39 @@
+import { useEffect, useState } from "react";
 import NotificationCard from "../components/notifications/NotificationCard";
 import NotificationTable from "../components/notifications/NotificationTable";
 
+const INCIDENTS_KEY = "incidents";
+
 export default function Notifications() {
 
-  const notifications = [
+  const [notifications, setNotifications] = useState([]);
 
-    {
-      id: 1,
-      priority: "High",
-      message: "Employee Juan Dela Cruz has a disciplinary case.",
-      date: "Mar 15, 2026",
-      status: "Unread"
-    },
+  useEffect(() => {
+    loadNotifications();
+  }, []);
 
-    {
-      id: 2,
-      priority: "Medium",
-      message: "Maria Santos contract will expire soon.",
-      date: "Mar 18, 2026",
-      status: "Unread"
-    },
+  const loadNotifications = () => {
+    const incidents = JSON.parse(localStorage.getItem(INCIDENTS_KEY)) || [];
 
-    {
-      id: 3,
-      priority: "Low",
-      message: "New deployment assigned to Pedro Reyes.",
-      date: "Mar 20, 2026",
-      status: "Read"
-    }
+    const mapped = incidents.map((incident) => ({
+      id: incident.id,
+      reportedBy: incident.reportedBy || "Unknown",
+      employee: incident.employee,
+      violation: incident.violation,
+      severity: incident.severity,
+      status: incident.status,
+      date: incident.date
+    }));
 
-  ];
+    setNotifications(mapped.reverse());
+  };
+
+  // 🔥 COUNT CARDS
+  const highCount = notifications.filter(n => n.severity === "Critical").length;
+  const mediumCount = notifications.filter(n => n.severity === "Major").length;
+  const lowCount = notifications.filter(n => n.severity === "Minor").length;
 
   return (
-
     <div className="space-y-8">
 
       <div>
@@ -45,35 +46,30 @@ export default function Notifications() {
         </p>
       </div>
 
-      {/* ALERT CARDS */}
-
       <div className="grid md:grid-cols-3 gap-4">
 
         <NotificationCard
           type="High"
-          message="1 High Risk Employee Detected"
+          message={`${highCount} Critical Incidents`}
           date="Today"
         />
 
         <NotificationCard
           type="Medium"
-          message="3 Expiring Employee Documents"
+          message={`${mediumCount} Major Incidents`}
           date="Today"
         />
 
         <NotificationCard
           type="Low"
-          message="2 New Deployments Recorded"
+          message={`${lowCount} Minor Incidents`}
           date="Today"
         />
 
       </div>
 
-      {/* TABLE */}
-
       <NotificationTable notifications={notifications} />
 
     </div>
-
   );
 }
