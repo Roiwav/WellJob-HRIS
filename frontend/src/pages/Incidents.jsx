@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
@@ -14,13 +15,16 @@ export default function Incidents() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [incidents, setIncidents] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [deployments, setDeployments] = useState([]);
   const [openAddModal, setOpenAddModal] = useState(false);
 
-  const [selectedIncident, setSelectedIncident] = useState(null); // 🔥 NEW
-  const [editMode, setEditMode] = useState(false); // 🔥 NEW
+  const [selectedIncident, setSelectedIncident] = useState(null);
+  const [editMode, setEditMode] = useState(false);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -29,24 +33,52 @@ export default function Incidents() {
   useEffect(() => {
     const storedIncidents = JSON.parse(localStorage.getItem(INCIDENTS_KEY) || "[]");
     const storedEmployees = JSON.parse(localStorage.getItem(EMPLOYEES_KEY) || "[]");
-    const storedDeployments = JSON.parse(localStorage.getItem(DEPLOYMENTS_KEY) || "[]");
 
-    setIncidents(storedIncidents);
-    setEmployees(storedEmployees);
-    setDeployments(storedDeployments);
+    const activeEmployees = storedEmployees.filter(emp => !emp.archived);
+
+    const filteredIncidents = storedIncidents.filter(incident =>
+      activeEmployees.some(emp =>
+        emp.id === incident.employeeId ||
+        emp.name === incident.employee
+      )
+    );
+
+    setIncidents(filteredIncidents);
+    setEmployees(activeEmployees);
   }, []);
+
+  useEffect(() => {
+    if (!location.state?.incidentId) return;
+
+    const found = incidents.find(
+      (i) => i.id === location.state.incidentId
+    );
+
+    if (found) {
+      setSelectedIncident(found);
+
+      if (isSuperAdmin) {
+        setEditMode(false);
+      } else {
+        setEditMode(true);
+      }
+
+      navigate(location.pathname, {
+        replace: true,
+        state: {}
+      });
+    }
+  }, [location.state, incidents, isSuperAdmin, navigate, location.pathname]);
 
   const handleAddIncident = (newIncident) => {
     const updated = [newIncident, ...incidents];
     setIncidents(updated);
     localStorage.setItem(INCIDENTS_KEY, JSON.stringify(updated));
 
-// 🔥 REAL-TIME TRIGGER
-window.dispatchEvent(new Event("dataUpdated"));
+    window.dispatchEvent(new Event("dataUpdated"));
     setOpenAddModal(false);
   };
 
-  // 🔥 EDIT SAVE
   const handleUpdateIncident = (updatedIncident) => {
     const updated = incidents.map((item) =>
       item.id === updatedIncident.id ? updatedIncident : item
@@ -82,7 +114,7 @@ window.dispatchEvent(new Event("dataUpdated"));
   return (
     <div className="p-8 space-y-6">
 
-      {/* 🔥 HEADER (UNCHANGED) */}
+      {/* HEADER */}
       <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -142,7 +174,7 @@ window.dispatchEvent(new Event("dataUpdated"));
         </select>
       </div>
 
-      {/* 🔥 TABLE (ONLY CHANGE = ACTION COLUMN) */}
+      {/* TABLE */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -155,7 +187,11 @@ window.dispatchEvent(new Event("dataUpdated"));
                 <th className="px-6 py-4">Severity</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Reported Date</th>
-                <th className="px-6 py-4 text-right">Action</th> {/* 🔥 NEW */}
+
+                {/* 🔥 REMOVE COLUMN FOR SUPER ADMIN */}
+                {!isSuperAdmin && (
+                  <th className="px-6 py-4 text-right">Action</th>
+                )}
               </tr>
             </thead>
 
@@ -194,34 +230,20 @@ window.dispatchEvent(new Event("dataUpdated"));
 
                   <td className="px-6 py-4">{incident.date}</td>
 
-                  {/* 🔥 ICON ACTIONS */}
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-3">
-
+                  {/* 🔥 REMOVE BUTTON FOR SUPER ADMIN */}
+                  {!isSuperAdmin && (
+                    <td className="px-6 py-4 text-right">
                       <button
                         onClick={() => {
                           setSelectedIncident(incident);
-                          setEditMode(false);
+                          setEditMode(true);
                         }}
-                        className="text-indigo-500 hover:text-indigo-700"
+                        className="text-blue-500 hover:text-blue-700"
                       >
-                        <FiEye />
+                        <FiEdit2 />
                       </button>
-
-                      {!isSuperAdmin && (
-                        <button
-                          onClick={() => {
-                            setSelectedIncident(incident);
-                            setEditMode(true);
-                          }}
-                          className="text-blue-500 hover:text-blue-700"
-                        >
-                          <FiEdit2 />
-                        </button>
-                      )}
-
-                    </div>
-                  </td>
+                    </td>
+                  )}
 
                 </tr>
               ))}
@@ -231,16 +253,16 @@ window.dispatchEvent(new Event("dataUpdated"));
         </div>
       </div>
 
-      {/* VIEW */}
-      {!editMode && selectedIncident && (
+      {/* VIEW MODAL */}
+      {!editMode && selectedIncident && isSuperAdmin && (
         <IncidentModal
           incident={selectedIncident}
           close={() => setSelectedIncident(null)}
         />
       )}
 
-      {/* EDIT */}
-      {editMode && selectedIncident && (
+      {/* EDIT MODAL */}
+      {editMode && selectedIncident && !isSuperAdmin && (
         <AddIncidentModal
           isOpen={true}
           editingIncident={selectedIncident}
@@ -255,7 +277,7 @@ window.dispatchEvent(new Event("dataUpdated"));
         />
       )}
 
-      {/* ADD */}
+      {/* ADD MODAL */}
       <AddIncidentModal
         isOpen={openAddModal}
         onClose={() => setOpenAddModal(false)}
@@ -264,6 +286,7 @@ window.dispatchEvent(new Event("dataUpdated"));
         deployments={deployments}
         existingIncidents={incidents}
       />
+
     </div>
   );
 }
