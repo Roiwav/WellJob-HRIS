@@ -25,6 +25,7 @@ const iconMap = {
   Notifications: <FiBell />,
   Settings: <FiSettings />,
   "Super Admin Portal": <FiShield />,
+  "System Configuration": <FiSettings />,
 };
 
 export default function Sidebar({ toggleTheme, darkMode }) {

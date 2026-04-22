@@ -12,6 +12,8 @@ import Login from "./pages/Login";
 import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
 import SuperAdminPortal from "./pages/SuperAdminPortal";
+import ChangePassword from "./pages/ChangePassword";
+import SystemConfiguration from "./pages/SystemConfiguration";
 
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
@@ -22,6 +24,21 @@ function App() {
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
+
+        <Route
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                ROLES.SUPER_ADMIN,
+                ROLES.HR_MANAGER,
+                ROLES.HR_STAFF,
+                ROLES.IT_SUPPORT,
+              ]}
+            />
+          }
+        >
+          <Route path="/change-password" element={<ChangePassword />} />
+        </Route>
 
         <Route element={<MainLayout />}>
           <Route
@@ -42,7 +59,11 @@ function App() {
           <Route
             element={
               <ProtectedRoute
-                allowedRoles={[ROLES.SUPER_ADMIN, ROLES.HR_MANAGER, ROLES.HR_STAFF]}
+                allowedRoles={[
+                  ROLES.SUPER_ADMIN,
+                  ROLES.HR_MANAGER,
+                  ROLES.HR_STAFF,
+                ]}
               />
             }
           >
@@ -86,6 +107,12 @@ function App() {
             element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]} />}
           >
             <Route path="/super-admin" element={<SuperAdminPortal />} />
+          </Route>
+
+          <Route
+            element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]} />}
+          >
+            <Route path="/system-configuration" element={<SystemConfiguration />} />
           </Route>
         </Route>
 

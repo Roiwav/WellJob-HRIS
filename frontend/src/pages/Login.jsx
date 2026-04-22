@@ -56,15 +56,25 @@ export default function Login() {
       localStorage.setItem("user", JSON.stringify(data.user));
       setUser(data.user);
 
-      // ROLE-BASED REDIRECT
-      if (data.user.role === "SUPER_ADMIN") navigate("/super-admin");
-      else if (data.user.role === "HR_MANAGER") navigate("/");
-      else if (data.user.role === "HR_STAFF") navigate("/employees");
-      else if (data.user.role === "IT_SUPPORT") navigate("/settings");
+        // 🔥 FORCE CHANGE PASSWORD FIRST
+        if (data.user.mustChangePassword) {
+          navigate("/change-password");
+          return;
+        }
+
+        // ROLE-BASED REDIRECT
+        const redirectByRole = {
+          SUPER_ADMIN: "/",
+          HR_MANAGER: "/",
+          HR_STAFF: "/employees",
+          IT_SUPPORT: "/settings",
+        };
+
+        navigate(redirectByRole[data.user.role] || "/");
 
     } catch (err) {
-      console.error(err);
-      setError("Server error");
+      setError("Network error. Please try again.");
+      console.error("Login error:", err);
     }
   };
 

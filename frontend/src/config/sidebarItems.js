@@ -44,4 +44,9 @@ export const sidebarItems = [
     path: "/super-admin",
     allowedRoles: [ROLES.SUPER_ADMIN],
   },
+  {
+    title: "System Configuration",
+    path: "/system-configuration",
+    allowedRoles: [ROLES.SUPER_ADMIN],
+  },
 ];

@@ -83,6 +83,10 @@ export default function Navbar({ title = "Welljob Solutions & General Services" 
             >
               <button
                 type="button"
+                onClick={() => {
+                  setOpenProfile(false);
+                  navigate("/change-password");
+                }}
                 className="w-full text-left px-4 py-3 text-sm hover:bg-gray-100 dark:hover:bg-white/10"
               >
                 Profile Settings
