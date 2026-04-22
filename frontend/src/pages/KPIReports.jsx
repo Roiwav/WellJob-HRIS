@@ -12,6 +12,10 @@ import UtilizationTrendChart from "../components/dashboard/UtilizationTrendChart
 import KPICards from "../components/kpi/KPICards";
 import HighRiskEmployees from "../components/kpi/HighRiskEmployees";
 import RiskTable from "../components/kpi/RiskTable";
+import {
+  getKPILevel,
+  getSeverityWeight,
+} from "../utils/configStorage";
 
 const EMPLOYEES_KEY = "employees";
 const INCIDENTS_KEY = "incidents";
@@ -28,18 +32,17 @@ function safeParse(key) {
   }
 }
 
-function getSeverity(count) {
-  if (count >= 4) return "Critical";
-  if (count >= 2) return "Moderate";
-  if (count >= 1) return "Low";
-  return "None";
-}
-
-function getRiskLevel(count) {
-  if (count >= 3) return "High Risk";
-  if (count === 2) return "Repeat";
-  if (count === 1) return "Monitor";
-  return "Clean";
+function getRiskLevelByKPI(kpiLevel) {
+  switch (kpiLevel) {
+    case "High":
+      return "High Risk";
+    case "Medium":
+      return "Repeat";
+    case "Low":
+      return "Monitor";
+    default:
+      return "Clean";
+  }
 }
 
 function getAlertClasses(level) {
@@ -68,23 +71,22 @@ export default function KPIReports() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
-  // 🔥 FIX 1: REMOVE ARCHIVED EMPLOYEES
   const employeesRaw = useMemo(() => {
     const all = safeParse(EMPLOYEES_KEY);
-    return all.filter(emp => !emp.archived);
+    return all.filter((emp) => !emp.archived);
   }, []);
 
   const deploymentsRaw = useMemo(() => safeParse(DEPLOYMENTS_KEY), []);
 
-  // 🔥 FIX 2: REMOVE INCIDENTS OF ARCHIVED EMPLOYEES
   const incidentsRaw = useMemo(() => {
     const all = safeParse(INCIDENTS_KEY);
 
     return all.filter((incident) =>
-      employeesRaw.some((emp) =>
-        emp.id === incident.employeeId ||
-        emp.employee_id === incident.employeeId ||
-        emp.name === incident.employee
+      employeesRaw.some(
+        (emp) =>
+          emp.id === incident.employeeId ||
+          emp.employee_id === incident.employeeId ||
+          emp.name === incident.employee
       )
     );
   }, [employeesRaw]);
@@ -109,6 +111,13 @@ export default function KPIReports() {
           deployment.employee === employeeName
       );
 
+      const totalSeverityScore = relatedIncidents.reduce((sum, incident) => {
+        return sum + getSeverityWeight(incident.severity);
+      }, 0);
+
+      const kpiLevel =
+        relatedIncidents.length > 0 ? getKPILevel(totalSeverityScore) : "Clean";
+
       return {
         id: employeeId,
         name: employeeName,
@@ -118,6 +127,9 @@ export default function KPIReports() {
           emp.company ||
           "Unassigned",
         violationCount: relatedIncidents.length,
+        severityScore: totalSeverityScore,
+        kpiLevel,
+        riskLevel: getRiskLevelByKPI(kpiLevel),
       };
     });
   }, [employeesRaw, incidentsRaw, deploymentsRaw]);
@@ -125,11 +137,11 @@ export default function KPIReports() {
   const totalEmployees = employees.length;
 
   const repeatOffenders = employees.filter(
-    (emp) => emp.violationCount === 2
+    (emp) => emp.kpiLevel === "Medium"
   ).length;
 
   const highRiskEmployees = employees.filter(
-    (emp) => emp.violationCount >= 3
+    (emp) => emp.kpiLevel === "High"
   ).length;
 
   const compliantEmployees = employees.filter(
@@ -155,23 +167,34 @@ export default function KPIReports() {
     ).length;
 
     return [
-      { level: "HIGH", text: `${criticalIncidents} critical incident case(s) detected` },
-      { level: "MEDIUM", text: `${investigatingIncidents} incident(s) under investigation` },
-      { level: "LOW", text: `${openIncidents} open incident case(s) awaiting action` },
+      {
+        level: "HIGH",
+        text: `${criticalIncidents} critical incident case(s) detected`,
+      },
+      {
+        level: "MEDIUM",
+        text: `${investigatingIncidents} incident(s) under investigation`,
+      },
+      {
+        level: "LOW",
+        text: `${openIncidents} open incident case(s) awaiting action`,
+      },
     ];
   }, [incidentsRaw]);
 
   const violationTrend = useMemo(() => {
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-    const monthMap = months.reduce((acc, m) => {
-      acc[m] = 0;
+    const monthMap = months.reduce((acc, month) => {
+      acc[month] = 0;
       return acc;
     }, {});
 
     incidentsRaw.forEach((incident) => {
       const month = getMonthLabel(incident.date);
-      if (monthMap[month] !== undefined) monthMap[month]++;
+      if (monthMap[month] !== undefined) {
+        monthMap[month] += 1;
+      }
     });
 
     return months.map((month) => ({
@@ -181,7 +204,7 @@ export default function KPIReports() {
   }, [incidentsRaw]);
 
   const complianceTrend = useMemo(() => {
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     const running = [];
     let cumulativeIncidents = 0;
@@ -209,7 +232,7 @@ export default function KPIReports() {
   }, [violationTrend, totalEmployees]);
 
   const utilizationTrend = useMemo(() => {
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     return months.map((month) => {
       const count = deploymentsRaw.filter((deployment) => {
@@ -249,8 +272,8 @@ export default function KPIReports() {
       body: [
         ["Total Employees", totalEmployees],
         ["Compliance Rate", `${complianceRate}%`],
-        ["Repeat Offenders", repeatOffenders],
-        ["High Risk Employees", highRiskEmployees],
+        ["Medium KPI Employees", repeatOffenders],
+        ["High KPI Employees", highRiskEmployees],
       ],
       styles: { fontSize: 10 },
       headStyles: { fillColor: [22, 163, 74] },
@@ -270,13 +293,14 @@ export default function KPIReports() {
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 14,
-      head: [["Employee","Company","Violations","Severity","Risk Level"]],
+      head: [["Employee", "Company", "Violations", "Score", "KPI Level", "Risk Level"]],
       body: employees.map((emp) => [
         emp.name,
         emp.company,
         emp.violationCount,
-        getSeverity(emp.violationCount),
-        getRiskLevel(emp.violationCount),
+        emp.severityScore,
+        emp.kpiLevel,
+        emp.riskLevel,
       ]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [37, 99, 235] },
@@ -361,7 +385,7 @@ export default function KPIReports() {
             Risk Intelligence
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Identifies repeat offenders and high-risk employees based on recorded violations.
+            Identifies repeat offenders and high-risk employees based on configured KPI thresholds.
           </p>
         </div>
 
@@ -373,8 +397,8 @@ export default function KPIReports() {
           <div className="xl:col-span-2">
             <RiskTable
               employees={employees}
-              getSeverity={getSeverity}
-              getRiskLevel={getRiskLevel}
+              getSeverity={(employee) => employee.kpiLevel}
+              getRiskLevel={(employee) => employee.riskLevel}
             />
           </div>
         </div>
