@@ -13,7 +13,7 @@ app.use(express.json());
 // DB CONNECTION
 // =========================
 const db = mysql.createConnection({
-  host: "100.119.171.111",
+  host: "localhost",
   user: "remoteuser",
   password: "",
   database: "welljob_db",
@@ -145,12 +145,38 @@ app.post("/api/login", async (req, res) => {
 });
 
 // =========================
-// CREATE USER
+// 🔥 GET USERS (FIX)
+// =========================
+app.get("/api/users", async (req, res) => {
+  try {
+    const users = await query(
+      "SELECT id, user_id, full_name, username, role, status FROM users"
+    );
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ message: "Fetch users error" });
+  }
+});
+
+// =========================
+// CREATE USER (🔥 WITH DUPLICATE CHECK)
 // =========================
 app.post("/api/users", async (req, res) => {
   const { name, role } = req.body;
 
   try {
+    // 🔥 DUPLICATE NAME CHECK
+    const existing = await query(
+      "SELECT * FROM users WHERE full_name = ?",
+      [name]
+    );
+
+    if (existing.length > 0) {
+      return res.status(400).json({
+        message: "Employee with this name already exists",
+      });
+    }
+
     const prefix = ROLE_PREFIX[role];
     const userId = prefix + Date.now().toString().slice(-2);
     const username = prefix.toLowerCase() + Date.now().toString().slice(-2);
@@ -211,7 +237,7 @@ app.get("/api/audit-logs/:category", async (req, res) => {
 });
 
 // =========================
-// 🔥 FRONTEND AUDIT TRIGGER
+// FRONTEND AUDIT TRIGGER
 // =========================
 app.post("/api/audit-logs", async (req, res) => {
   await logAudit(req.body);
