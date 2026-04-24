@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FiActivity,
   FiClock,
-  FiDownload,
   FiRefreshCw,
   FiSearch,
   FiShield,
 } from "react-icons/fi";
 
 const API_BASE = "http://localhost:5000/api/audit-logs";
+const LOCAL_KEY = "operational_audit_logs";
 
 const ROLE_LABELS = {
   SUPER_ADMIN: "Super Admin",
@@ -18,25 +18,18 @@ const ROLE_LABELS = {
 };
 
 const ACTION_STYLE = {
-  LOGIN: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-  LOGIN_SUCCESS:
-    "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-  LOGIN_FAILED:
-    "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  CREATE_USER:
-    "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  RESET_PASSWORD:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  CHANGE_PASSWORD:
-    "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-  TOGGLE_USER_STATUS:
-    "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  ADD_EMPLOYEE:
-    "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  EDIT_EMPLOYEE:
-    "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
-  ARCHIVE_EMPLOYEE:
-    "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  LOGIN: "bg-green-100 text-green-700",
+  LOGIN_SUCCESS: "bg-green-100 text-green-700",
+  LOGIN_FAILED: "bg-red-100 text-red-700",
+  CREATE_USER: "bg-blue-100 text-blue-700",
+  RESET_PASSWORD: "bg-amber-100 text-amber-700",
+  CHANGE_PASSWORD: "bg-purple-100 text-purple-700",
+  TOGGLE_USER_STATUS: "bg-red-100 text-red-700",
+  ADD_EMPLOYEE: "bg-blue-100 text-blue-700",
+  EDIT_EMPLOYEE: "bg-indigo-100 text-indigo-700",
+  ARCHIVE_EMPLOYEE: "bg-red-100 text-red-700",
+  CREATE_INCIDENT: "bg-orange-100 text-orange-700",
+  UPDATE_INCIDENT: "bg-yellow-100 text-yellow-700",
 };
 
 export default function AuditLogsPage({ category, title, description }) {
@@ -44,37 +37,55 @@ export default function AuditLogsPage({ category, title, description }) {
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("All");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
+  // =========================
+  // FETCH LOGS (SMART)
+  // =========================
   const fetchLogs = useCallback(async () => {
+    setLoading(true);
+
     try {
-      setLoading(true);
-      setError("");
+      // 🔥 IF OPERATIONAL → LOCAL STORAGE
+      if (category === "OPERATIONAL") {
+        const localLogs =
+          JSON.parse(localStorage.getItem(LOCAL_KEY)) || [];
 
-      const res = await fetch(`${API_BASE}/${category}`);
-      if (!res.ok) throw new Error();
-
-      const data = await res.json();
-      setLogs(Array.isArray(data) ? data : []);
-    } catch {
-      setError("Failed to load audit logs.");
+        setLogs(localLogs);
+      } else {
+        // 🔥 IF TECHNICAL → BACKEND
+        const res = await fetch(`${API_BASE}/${category}`);
+        const data = await res.json();
+        setLogs(data);
+      }
+    } catch (err) {
+      console.error(err);
+      setLogs([]);
     } finally {
       setLoading(false);
     }
-  }, [category, setError, setLoading]);
+  }, [category]);
 
   useEffect(() => {
     fetchLogs();
+
+    // 🔥 auto refresh if local updated
+    const refresh = () => fetchLogs();
+    window.addEventListener("dataUpdated", refresh);
+
+    return () => window.removeEventListener("dataUpdated", refresh);
   }, [fetchLogs]);
 
+  // =========================
+  // FILTER
+  // =========================
   const filteredLogs = useMemo(() => {
     const keyword = search.toLowerCase();
 
     return logs.filter((log) => {
       const matchSearch =
         !keyword ||
-        log.username?.toLowerCase().includes(keyword) ||
-        log.description?.toLowerCase().includes(keyword);
+        (log.username || "").toLowerCase().includes(keyword) ||
+        (log.description || "").toLowerCase().includes(keyword);
 
       const matchRole = role === "All" || log.role === role;
 
@@ -86,6 +97,9 @@ export default function AuditLogsPage({ category, title, description }) {
     return new Set(logs.map((l) => l.username)).size;
   }, [logs]);
 
+  // =========================
+  // UI
+  // =========================
   return (
     <div className="p-8 space-y-6">
 
@@ -131,8 +145,6 @@ export default function AuditLogsPage({ category, title, description }) {
           <option value="All">All Roles</option>
           <option value="HR_STAFF">HR Staff</option>
           <option value="HR_MANAGER">HR Manager</option>
-          <option value="IT_SUPPORT">IT Support</option>
-          <option value="SUPER_ADMIN">Super Admin</option>
         </select>
       </div>
 
@@ -141,10 +153,6 @@ export default function AuditLogsPage({ category, title, description }) {
         {loading ? (
           <div className="p-8 text-center text-gray-400">
             Loading audit logs...
-          </div>
-        ) : error ? (
-          <div className="p-8 text-center text-red-400">
-            {error}
           </div>
         ) : (
           <table className="w-full text-sm text-left text-white">
@@ -172,7 +180,11 @@ export default function AuditLogsPage({ category, title, description }) {
                     <td className="p-4">{log.username}</td>
                     <td className="p-4">{ROLE_LABELS[log.role]}</td>
                     <td className="p-4">
-                      <span className={`px-2 py-1 rounded text-xs ${ACTION_STYLE[log.action]}`}>
+                      <span
+                        className={`px-2 py-1 rounded text-xs ${
+                          ACTION_STYLE[log.action] || "bg-gray-200 text-black"
+                        }`}
+                      >
                         {log.action}
                       </span>
                     </td>
