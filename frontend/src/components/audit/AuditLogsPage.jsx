@@ -39,20 +39,17 @@ export default function AuditLogsPage({ category, title, description }) {
   const [loading, setLoading] = useState(true);
 
   // =========================
-  // FETCH LOGS (SMART)
+  // FETCH LOGS
   // =========================
   const fetchLogs = useCallback(async () => {
     setLoading(true);
 
     try {
-      // 🔥 IF OPERATIONAL → LOCAL STORAGE
       if (category === "OPERATIONAL") {
         const localLogs =
           JSON.parse(localStorage.getItem(LOCAL_KEY)) || [];
-
         setLogs(localLogs);
       } else {
-        // 🔥 IF TECHNICAL → BACKEND
         const res = await fetch(`${API_BASE}/${category}`);
         const data = await res.json();
         setLogs(data);
@@ -68,7 +65,6 @@ export default function AuditLogsPage({ category, title, description }) {
   useEffect(() => {
     fetchLogs();
 
-    // 🔥 auto refresh if local updated
     const refresh = () => fetchLogs();
     window.addEventListener("dataUpdated", refresh);
 
@@ -104,43 +100,53 @@ export default function AuditLogsPage({ category, title, description }) {
     <div className="p-8 space-y-6">
 
       {/* HEADER */}
-      <div className="flex justify-between">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">{title}</h1>
-          <p className="text-sm text-gray-400">{description}</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {title}
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {description}
+          </p>
         </div>
 
         <button
           onClick={fetchLogs}
-          className="flex items-center gap-2 bg-indigo-600 px-4 py-2 rounded-lg text-white"
+          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition"
         >
-          <FiRefreshCw /> Refresh
+          <FiRefreshCw />
+          Refresh Logs
         </button>
       </div>
 
-      {/* CARDS */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card icon={<FiActivity />} label="Total Logs" value={logs.length} />
-        <Card icon={<FiShield />} label="Users" value={uniqueUsers} />
-        <Card icon={<FiClock />} label="Filtered" value={filteredLogs.length} />
+      {/* SUMMARY CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <SummaryCard icon={<FiActivity />} label="Total Logs" value={logs.length} />
+        <SummaryCard icon={<FiShield />} label="Users" value={uniqueUsers} />
+        <SummaryCard icon={<FiClock />} label="Shown Records" value={filteredLogs.length} />
       </div>
 
-      {/* FILTER */}
-      <div className="flex gap-3">
-        <div className="relative w-80">
-          <FiSearch className="absolute left-3 top-3 text-gray-400" />
+      {/* FILTER BAR */}
+      <div className="flex flex-col xl:flex-row gap-3 items-start xl:items-center">
+
+        {/* SEARCH */}
+        <div className="relative w-full max-w-xs">
+          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+
           <input
-            className="pl-10 py-2 w-full rounded-lg bg-slate-800 border border-slate-600 text-white"
-            placeholder="Search..."
+            type="text"
+            placeholder="Search logs..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
           />
         </div>
 
+        {/* ROLE FILTER */}
         <select
           value={role}
           onChange={(e) => setRole(e.target.value)}
-          className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+          className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
         >
           <option value="All">All Roles</option>
           <option value="HR_STAFF">HR Staff</option>
@@ -149,69 +155,112 @@ export default function AuditLogsPage({ category, title, description }) {
       </div>
 
       {/* TABLE */}
-      <div className="bg-slate-800 rounded-xl overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
+
         {loading ? (
-          <div className="p-8 text-center text-gray-400">
+          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
             Loading audit logs...
           </div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+            No audit logs found.
+          </div>
         ) : (
-          <table className="w-full text-sm text-left text-white">
-            <thead className="bg-slate-900 text-gray-300">
-              <tr>
-                <th className="p-4">Date</th>
-                <th className="p-4">User</th>
-                <th className="p-4">Role</th>
-                <th className="p-4">Action</th>
-                <th className="p-4">Description</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredLogs.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-gray-50 dark:bg-slate-900/70 text-gray-700 dark:text-gray-300">
                 <tr>
-                  <td colSpan="5" className="p-8 text-center text-gray-400">
-                    No audit logs found.
-                  </td>
+                  <th className="px-6 py-4">Date & Time</th>
+                  <th className="px-6 py-4">User</th>
+                  <th className="px-6 py-4">Role</th>
+                  <th className="px-6 py-4">Action</th>
+                  <th className="px-6 py-4">Description</th>
                 </tr>
-              ) : (
-                filteredLogs.map((log) => (
-                  <tr key={log.id} className="border-t border-slate-700">
-                    <td className="p-4">{formatDate(log.created_at)}</td>
-                    <td className="p-4">{log.username}</td>
-                    <td className="p-4">{ROLE_LABELS[log.role]}</td>
-                    <td className="p-4">
-                      <span
-                        className={`px-2 py-1 rounded text-xs ${
-                          ACTION_STYLE[log.action] || "bg-gray-200 text-black"
-                        }`}
-                      >
-                        {log.action}
+              </thead>
+
+              <tbody className="text-gray-700 dark:text-gray-200">
+                {filteredLogs.map((log) => (
+                  <tr
+                    key={log.id}
+                    className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-900/40"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {formatDate(log.created_at)}
+                    </td>
+
+                    <td className="px-6 py-4">{log.username || "-"}</td>
+
+                    <td className="px-6 py-4">
+                      <span className="px-2 py-1 rounded text-xs bg-gray-100 dark:bg-slate-700">
+                        {ROLE_LABELS[log.role] || "-"}
                       </span>
                     </td>
-                    <td className="p-4">{log.description}</td>
+
+                    <td className="px-6 py-4">
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-semibold ${
+                          ACTION_STYLE[log.action] ||
+                          "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {formatAction(log.action)}
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-4 min-w-[280px]">
+                      {log.description}
+                    </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-function Card({ icon, label, value }) {
+// =========================
+// COMPONENTS
+// =========================
+
+function SummaryCard({ icon, label, value }) {
   return (
-    <div className="bg-slate-800 p-5 rounded-xl flex gap-3 items-center">
-      <div className="text-indigo-400 text-xl">{icon}</div>
-      <div>
-        <p className="text-gray-400 text-sm">{label}</p>
-        <h2 className="text-white text-xl font-bold">{value}</h2>
+    <div className="bg-white dark:bg-slate-800 rounded-xl shadow border border-gray-200 dark:border-gray-700 p-5">
+      <div className="flex items-center gap-4">
+        <div className="h-11 w-11 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-xl">
+          {icon}
+        </div>
+
+        <div>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {value}
+          </h2>
+        </div>
       </div>
     </div>
   );
 }
 
 function formatDate(date) {
-  return new Date(date).toLocaleString();
+  if (!date) return "-";
+
+  return new Date(date).toLocaleString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatAction(action) {
+  if (!action) return "-";
+
+  return String(action)
+    .split("_")
+    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+    .join(" ");
 }

@@ -17,7 +17,7 @@ import EmployeeModal from "../components/employees/EmployeeModal";
 import ComplianceBadge from "../components/employees/ComplianceBadge";
 
 const EMPLOYEES_KEY = "employees";
-const OPERATIONAL_AUDIT_KEY = "operationalAuditLogs";
+const OPERATIONAL_AUDIT_KEY = "operational_audit_logs";
 
 const REQUIRED_DOCUMENTS = ["NBI", "Police Clearance", "Health Card"];
 
