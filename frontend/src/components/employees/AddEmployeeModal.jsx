@@ -28,35 +28,34 @@ const COMPANY_OPTIONS = [
   "Sitel Philippines",
 ];
 
-const DOCUMENT_OPTIONS = ["NBI", "Police Clearance", "Health Card"];
+const DOCUMENT_OPTIONS = [
+  { name: "Resume", expirable: false },
+  { name: "NSO/PSA", expirable: false },
+  { name: "SSS (ID or E1 form)", expirable: false },
+  { name: "Pag-IBIG (ID or MDRF Form)", expirable: false },
+  { name: "PhilHealth (ID or MDF Form)", expirable: false },
+  { name: "Diploma", expirable: false },
+  { name: "Cedula", expirable: false },
+  { name: "Barangay Clearance", expirable: true },
+  { name: "NBI/Police Clearance", expirable: true },
+];
 
 const createDefaultDocuments = (existingDocs = []) => {
-  return DOCUMENT_OPTIONS.map((docName) => {
+  return DOCUMENT_OPTIONS.map((doc) => {
     const matched =
       existingDocs.find((item) =>
-        typeof item === "object" ? item.name === docName : item === docName
+        typeof item === "object" ? item.name === doc.name : item === doc.name
       ) || null;
 
-    if (matched && typeof matched === "object") {
-      return {
-        name: matched.name,
-        checked: true,
-        expirationDate: matched.expirationDate || "",
-      };
-    }
-
-    if (matched && typeof matched === "string") {
-      return {
-        name: matched,
-        checked: true,
-        expirationDate: "",
-      };
-    }
-
     return {
-      name: docName,
-      checked: false,
-      expirationDate: "",
+      name: doc.name,
+      expirable: doc.expirable,
+      checked: !!matched,
+      expirationDate:
+        matched && typeof matched === "object"
+          ? matched.expirationDate || ""
+          : "",
+      file: matched?.file || null,
     };
   });
 };
@@ -148,13 +147,14 @@ export default function AddEmployeeModal({
   }, [editingEmployee, generatedId]);
 
   const selectedDocuments = useMemo(() => {
-    return formData.documents
-      .filter((doc) => doc.checked)
-      .map((doc) => ({
-        name: doc.name,
-        expirationDate: doc.expirationDate,
-      }));
-  }, [formData.documents]);
+  return formData.documents
+    .filter((doc) => doc.checked)
+    .map((doc) => ({
+      name: doc.name,
+      expirationDate: doc.expirationDate,
+      file: doc.file || null,
+    }));
+}, [formData.documents]);
 
   const riskyDocuments = useMemo(() => {
     return selectedDocuments
@@ -228,49 +228,50 @@ export default function AddEmployeeModal({
   };
 
   const handleDocumentCheck = (docName) => {
-    setFormData((prev) => ({
-      ...prev,
-      documents: prev.documents.map((doc) =>
-        doc.name === docName
-          ? {
-              ...doc,
-              checked: !doc.checked,
-              expirationDate: !doc.checked ? doc.expirationDate : "",
-            }
-          : doc
-      ),
-    }));
+  setFormData((prev) => ({
+    ...prev,
+    documents: prev.documents.map((doc) =>
+      doc.name === docName
+        ? {
+            ...doc,
+            checked: !doc.checked,
+            expirationDate: !doc.checked ? doc.expirationDate : "",
+            file: !doc.checked ? doc.file : null, // 🔥 ADD THIS LINE
+          }
+        : doc
+    ),
+  }));
 
-    setErrors((prev) => ({
-      ...prev,
-      documents: {
-        ...prev.documents,
-        [docName]: "",
-      },
-    }));
-  };
+  setErrors((prev) => ({
+    ...prev,
+    documents: {
+      ...prev.documents,
+      [docName]: "",
+    },
+  }));
+};
 
   const handleDocumentDateChange = (docName, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      documents: prev.documents.map((doc) =>
-        doc.name === docName
-          ? {
-              ...doc,
-              expirationDate: value,
-            }
-          : doc
-      ),
-    }));
+  setFormData((prev) => ({
+    ...prev,
+    documents: prev.documents.map((doc) =>
+      doc.name === docName
+        ? { ...doc, expirationDate: value }
+        : doc
+    ),
+  }));
+};
 
-    setErrors((prev) => ({
-      ...prev,
-      documents: {
-        ...prev.documents,
-        [docName]: "",
-      },
-    }));
-  };
+  const handleDocumentFile = (docName, fileData) => {
+  setFormData((prev) => ({
+    ...prev,
+    documents: prev.documents.map((doc) =>
+      doc.name === docName
+        ? { ...doc, file: fileData }
+        : doc
+    ),
+  }));
+};
 
   const validateForm = () => {
     const nextErrors = {
@@ -317,11 +318,12 @@ export default function AddEmployeeModal({
       nextErrors.duplicateId = "This employee ID already exists.";
     }
 
-    formData.documents.forEach((doc) => {
-      if (doc.checked && !doc.expirationDate) {
-        nextErrors.documents[doc.name] = "Expiration date is required.";
-      }
+        formData.documents.forEach((doc) => {
+      if (doc.checked && doc.expirable && !doc.expirationDate) {
+        nextErrors.documents[doc.name] = "Required field";
+      }// 🔥 always allow review
     });
+    
 
     setErrors(nextErrors);
 
@@ -337,12 +339,19 @@ export default function AddEmployeeModal({
   };
 
   const handleSubmit = (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!validateForm()) return;
+  const isValid = validateForm();
 
-    setShowReview(true);
-  };
+  console.log("VALID:", isValid);
+
+  if (!isValid) {
+    console.log("ERRORS:", errors);
+    return;
+  }
+
+  setShowReview(true);
+};
 
   const handleConfirmSave = () => {
     onSave({
@@ -471,48 +480,196 @@ export default function AddEmployeeModal({
                 Compliance Documents
               </label>
 
-              <div className="space-y-3">
-                {formData.documents.map((doc) => (
-                  <div
-                    key={doc.name}
-                    className={`rounded-lg border p-3 ${
-                      errors.documents[doc.name]
-                        ? "border-red-500"
-                        : "border-gray-200 dark:border-gray-700"
-                    }`}
-                  >
-                    <label className="flex items-center gap-2 text-gray-900 dark:text-white font-medium">
-                      <input
-                        type="checkbox"
-                        checked={doc.checked}
-                        onChange={() => handleDocumentCheck(doc.name)}
-                      />
-                      {doc.name}
-                    </label>
+              <div className="flex gap-4">
 
-                    {doc.checked && (
-                      <div className="mt-3">
-                        <label className="block text-sm mb-1 text-gray-700 dark:text-gray-300">
-                          Expiration Date
-                        </label>
-                        <input
-                          type="date"
-                          value={doc.expirationDate}
-                          onChange={(e) =>
-                            handleDocumentDateChange(doc.name, e.target.value)
-                          }
-                          className={`w-full rounded-lg border px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white ${
-                            errors.documents[doc.name]
-                              ? "border-red-500"
-                              : "border-gray-300 dark:border-gray-600"
-                          }`}
-                        />
-                        <ErrorText>{errors.documents[doc.name]}</ErrorText>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+  {/* LEFT COLUMN */}
+  <div className="flex-1 space-y-4">
+    {formData.documents
+      .filter((_, i) => i % 2 === 0)
+      .map((doc) => (
+        <div key={doc.name} className="rounded-lg border p-3">
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={doc.checked}
+              onChange={() => handleDocumentCheck(doc.name)}
+            />
+            {doc.name}
+          </label>
+
+          {doc.checked && (
+            <div className="mt-3 space-y-2">
+
+              {doc.expirable && (
+                <input
+                  type="date"
+                  value={doc.expirationDate}
+                  onChange={(e) =>
+                    handleDocumentDateChange(doc.name, e.target.value)
+                  }
+                  className="w-full border px-3 py-2 rounded 
+                  bg-white text-black 
+                  dark:bg-slate-800 dark:text-white 
+                  dark:border-gray-600"
+                />
+              )}
+
+              <div>
+  <label className="block text-sm mb-1 text-gray-400">
+    Proof Upload
+  </label>
+
+  <label className="flex items-center justify-center w-full cursor-pointer rounded-xl border border-dashed border-gray-500 px-4 py-4 text-gray-300 hover:bg-gray-700/40 transition">
+
+    <div className="flex items-center gap-2">
+      <span>⬆</span>
+      <span>
+        {doc.file ? "Change file" : "Upload proof file"}
+      </span>
+    </div>
+
+    <input
+      type="file"
+      accept="image/png, image/jpeg"
+      className="hidden"
+      onChange={(e) => {
+        const file = e.target.files[0];
+
+        if (!file) return;
+
+        // 🔥 VALIDATE TYPE
+        const validTypes = ["image/png", "image/jpeg"];
+        if (!validTypes.includes(file.type)) {
+          alert("Only PNG and JPEG images are allowed.");
+          return;
+        }
+
+        // 🔥 VALIDATE SIZE (5MB)
+        const maxSize = 5 * 1024 * 1024;
+        if (file.size > maxSize) {
+          alert("File must be less than 5MB.");
+          return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onloadend = () => {
+          handleDocumentFile(doc.name, {
+            name: file.name,
+            data: reader.result,
+          });
+        };
+
+        reader.readAsDataURL(file);
+      }}
+    />
+  </label>
+
+  <p className="text-xs text-gray-400 mt-1">
+    Accepted files: PNG or JPEG (Max 5MB)
+  </p>
+
+  {doc.file && (
+    <p className="text-sm text-green-400 mt-1">
+      Selected file: {doc.file.name}
+    </p>
+  )}
+</div>
+
+            </div>
+          )}
+
+        </div>
+      ))}
+  </div>
+
+  {/* RIGHT COLUMN */}
+  <div className="flex-1 space-y-4">
+    {formData.documents
+      .filter((_, i) => i % 2 === 1)
+      .map((doc) => (
+        <div key={doc.name} className="rounded-lg border p-3">
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={doc.checked}
+              onChange={() => handleDocumentCheck(doc.name)}
+            />
+            {doc.name}
+          </label>
+
+          {doc.checked && (
+            <div className="mt-3 space-y-2">
+
+              {doc.expirable && (
+                <input
+                  type="date"
+                  value={doc.expirationDate}
+                  onChange={(e) =>
+                    handleDocumentDateChange(doc.name, e.target.value)
+                  }
+                  className="w-full border px-3 py-2 rounded required
+                  bg-white text-black 
+                  dark:bg-slate-800 dark:text-white 
+                  dark:border-gray-600"
+                />
+              )}
+
+              <div>
+  <label className="block text-sm mb-1 text-gray-400">
+    Proof Upload
+  </label>
+
+  <label className="flex items-center justify-center w-full cursor-pointer rounded-xl border border-dashed border-gray-500 px-4 py-4 text-gray-300 hover:bg-gray-700/40 transition">
+
+    <div className="flex items-center gap-2">
+      <span>⬆</span>
+      <span>
+        {doc.file ? "Change file" : "Upload proof file"}
+      </span>
+    </div>
+
+    <input
+      type="file"
+      accept="image/*,application/pdf"
+      className="hidden"
+      onChange={(e) => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+
+        reader.onloadend = () => {
+          handleDocumentFile(doc.name, {
+            name: file.name,
+            data: reader.result,
+          });
+        };
+
+        if (file) reader.readAsDataURL(file);
+      }}
+    />
+  </label>
+
+  <p className="text-xs text-gray-400 mt-1">
+    Accepted files: PNG or JPEG (Max 5MB)
+  </p>
+
+  {doc.file && (
+    <p className="text-sm text-green-400 mt-1">
+      Selected file: {doc.file.name}
+    </p>
+  )}
+</div>
+
+            </div>
+          )}
+
+        </div>
+      ))}
+  </div>
+
+</div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">

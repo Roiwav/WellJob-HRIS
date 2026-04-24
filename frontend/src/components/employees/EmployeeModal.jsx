@@ -9,6 +9,8 @@ import {
   FiUser,
   FiX,
 } from "react-icons/fi";
+import { useState } from "react";
+import { FiEye } from "react-icons/fi";
 
 const REQUIRED_DOCUMENTS = ["NBI", "Police Clearance", "Health Card"];
 const INCIDENTS_KEY = "incidents";
@@ -150,23 +152,11 @@ export default function EmployeeModal({ employee, onClose }) {
 
   const employeeDocs = Array.isArray(employee.documents) ? employee.documents : [];
   const employeeIncidents = getEmployeeIncidents(employee);
-
-  const normalizedDocuments = REQUIRED_DOCUMENTS.map((requiredDoc) => {
-    const found = employeeDocs.find((doc) => doc.name === requiredDoc);
-
-    if (!found) {
-      return {
-        name: requiredDoc,
-        expirationDate: "",
-        status: "Missing",
-      };
-    }
-
-    return {
-      ...found,
-      status: getDocumentStatus(found.expirationDate),
-    };
-  });
+  const [previewFile, setPreviewFile] = useState(null);
+  const normalizedDocuments = (employee.documents || []).map((doc) => ({
+  ...doc,
+  status: getDocumentStatus(doc.expirationDate),
+}));
 
   const overallCompliance = getOverallCompliance(normalizedDocuments);
 
@@ -596,6 +586,17 @@ export default function EmployeeModal({ employee, onClose }) {
                       </div>
 
                       <div className="flex flex-col items-start lg:items-end gap-2">
+
+                        {/* 🔥 VIEW BUTTON */}
+                        {doc.file && (
+                          <button
+                            onClick={() => setPreviewFile(doc.file)}
+                            className="flex items-center gap-1 text-indigo-500 hover:text-indigo-700 text-xs"
+                          >
+                            <FiEye /> View
+                          </button>
+                        )}
+
                         <span
                           className={`inline-flex items-center gap-1.5 w-fit px-3 py-1 rounded-full text-xs font-semibold ${getStatusClasses(
                             doc.status
@@ -626,6 +627,34 @@ export default function EmployeeModal({ employee, onClose }) {
                 );
               })}
             </div>
+            {previewFile && (
+              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl max-w-3xl w-full relative">
+
+                  <button
+                    onClick={() => setPreviewFile(null)}
+                    className="absolute top-3 right-3 text-gray-400 hover:text-white"
+                  >
+                    ✖
+                  </button>
+
+                  {previewFile.data?.includes("image") ? (
+                    <img
+                      src={previewFile.data}
+                      alt="preview"
+                      className="w-full max-h-[80vh] object-contain"
+                    />
+                  ) : (
+                    <iframe
+                      src={previewFile.data}
+                      title="file preview"
+                      className="w-full h-[80vh]"
+                    />
+                  )}
+
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
