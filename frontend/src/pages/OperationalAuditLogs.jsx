@@ -6,7 +6,6 @@ export default function OperationalAuditLogs() {
       category="OPERATIONAL"
       title="Operational Audit Logs"
       description="Monitor HR-related activities such as employee records, incidents, deployments, and operational updates."
-      emptyMessage="No operational audit logs found."
     />
   );
 }
