@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { FiBookOpen, FiInfo, FiSearch } from "react-icons/fi";
-import { VIOLATION_RULES } from "../../data/violationRules";
+import { NORMALIZED_VIOLATION_RULES as VIOLATION_RULES } from "../../data/violationRules";
 import ViolationTable from "./ViolationTable";
 
 export default function ViolationRulesTab() {
