@@ -59,12 +59,13 @@ const query = (sql, params = []) =>
 async function logAudit(data) {
   try {
     await query(
-      `INSERT INTO audit_logs (user_id, username, role, category, action, description)
+      `INSERT INTO audit_logs (user_id, username, full_name, role, category, action, description)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
         data.userId || null,
         data.username || null,
         data.role || null,
+        
         data.category,
         data.action,
         data.description,
@@ -122,6 +123,7 @@ app.post("/api/login", async (req, res) => {
     await logAudit({
       userId: user.user_id,
       username: user.username,
+      full_name: user.full_name,
       role: user.role,
       category: "TECHNICAL",
       action: "LOGIN_SUCCESS",
@@ -135,6 +137,7 @@ app.post("/api/login", async (req, res) => {
       user: {
         id: user.id,
         userId: user.user_id,
+        full_name: user.full_name,
         username: user.username,
         role: user.role,
       },
@@ -230,9 +233,17 @@ app.put("/api/users/reset/:id", async (req, res) => {
 // =========================
 app.get("/api/audit-logs/:category", async (req, res) => {
   const logs = await query(
-    "SELECT * FROM audit_logs WHERE category=? ORDER BY created_at DESC",
+    `SELECT 
+        audit_logs.*,
+        users.full_name
+     FROM audit_logs
+     LEFT JOIN users 
+     ON audit_logs.username = users.username
+     WHERE audit_logs.category = ?
+     ORDER BY audit_logs.created_at DESC`,
     [req.params.category]
   );
+
   res.json(logs);
 });
 
