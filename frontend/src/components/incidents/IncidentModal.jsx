@@ -163,12 +163,21 @@ export default function IncidentModal({ incident, close }) {
                   Penalties
                 </p>
                 <ul className="mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                  {(currentIncident.penalties || []).map((penalty, index) => (
-                    <li key={index} className="flex gap-2">
-                      <span className="text-red-500">•</span>
-                      <span>{penalty}</span>
-                    </li>
-                  ))}
+                  {(currentIncident.penalties || []).map((penalty, index) => {
+                    const penaltyLabel =
+                      typeof penalty === "string"
+                        ? penalty
+                        : `${penalty?.label || `${index + 1} offense`}: ${
+                            penalty?.action || "No penalty specified"
+                          }`;
+
+                    return (
+                      <li key={index} className="flex gap-2">
+                        <span className="text-red-500">•</span>
+                        <span>{penaltyLabel}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
