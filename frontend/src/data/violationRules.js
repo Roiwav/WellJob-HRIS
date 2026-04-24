@@ -2,36 +2,68 @@ export const VIOLATION_RULES = [
   {
     category: "I. ABSENCES AND TARDINESS",
     rows: [
-      {
-      section: "Sec. 1",
-      violation: "Absence Without Official Leave (Single Absence)",
-      description:
-        "Absence without permission, written authorization, and/or official leave for a <strong>day</strong>.",
-      penaltyLevel: "Warning / 1–7 Days Suspension",
-      severity: "Minor",
-      penalties: [
-        "1st offense: Written and Verbal Warning",
-        "2nd offense: 1 day suspension",
-        "3rd offense: 3 days suspension",
-        "4th offense: 5 days suspension and subject to commitment letter",
-      ],
-    },
-
+   {
+  section: "Sec. 1",
+  violation: "Absence Without Official Leave (Single Absence)",
+  description:
+    "Absence without permission, written authorization, and/or official leave for a <strong>day</strong>.",
+  penaltyLevel: "Warning / 1–7 Days Suspension",
+  severity: "Minor",
+  penalties: [
     {
-      section: "Sec. 2",
-      violation: "Absence Without Official Leave (Excessive Absences)",
-      description:
-        "Absence without permission, written authorization, and/or official leave for at least <strong>two consecutive days</strong>.",
-      penaltyLevel: "Warning / 1–7 Days Suspension",
-      severity: "Minor",
-      penalties: [
-        "1st offense: Written and Verbal Warning",
-        "2nd offense: 1 day suspension",
-        "3rd offense: 3 days suspension or equivalent number of suspensions from absences",
-        "4th offense: 5 days suspension and subject to commitment letter",
-      ],
+      offenseNo: 1,
+      label: "1st offense",
+      action: "Written and Verbal Warning",
     },
+    {
+      offenseNo: 2,
+      label: "2nd offense",
+      action: "1 day suspension",
+    },
+    {
+      offenseNo: 3,
+      label: "3rd offense",
+      action: "3 days suspension",
+    },
+    {
+      offenseNo: 4,
+      label: "4th offense",
+      action: "5 days suspension and subject to commitment letter",
+    },
+  ],
+},
 
+{
+  section: "Sec. 2",
+  violation: "Absence Without Official Leave (Excessive Absences)",
+  description:
+    "Absence without permission, written authorization, and/or official leave for at least <strong>two consecutive days</strong>.",
+  penaltyLevel: "Warning / 1–7 Days Suspension",
+  severity: "Minor",
+  penalties: [
+    {
+      offenseNo: 1,
+      label: "1st offense",
+      action: "Written and Verbal Warning",
+    },
+    {
+      offenseNo: 2,
+      label: "2nd offense",
+      action: "1 day suspension",
+    },
+    {
+      offenseNo: 3,
+      label: "3rd offense",
+      action:
+        "3 days suspension or equivalent number of suspensions from absences",
+    },
+    {
+      offenseNo: 4,
+      label: "4th offense",
+      action: "5 days suspension and subject to commitment letter",
+    },
+  ],
+},
     {
       section: "Sec. 3",
       violation: "Abandonment of Duty",
@@ -984,4 +1016,59 @@ export const VIOLATION_RULES = [
   ],
 }
 
-]
+];
+
+const getOrdinalLabel = (number) => {
+  if (number === 1) return "1st offense";
+  if (number === 2) return "2nd offense";
+  if (number === 3) return "3rd offense";
+  return `${number}th offense`;
+};
+
+const normalizePenalty = (penalty, index) => {
+  if (typeof penalty === "object" && penalty !== null) {
+    return penalty;
+  }
+
+  if (typeof penalty !== "string") {
+    return {
+      offenseNo: index + 1,
+      label: getOrdinalLabel(index + 1),
+      action: "No penalty specified",
+    };
+  }
+
+  const offenseMatch = penalty.match(/^(\d+(st|nd|rd|th)\s+offense):\s*(.+)$/i);
+
+  if (offenseMatch) {
+    return {
+      offenseNo: index + 1,
+      label: offenseMatch[1],
+      action: offenseMatch[3],
+    };
+  }
+
+  const splitIndex = penalty.indexOf(":");
+
+  if (splitIndex !== -1) {
+    return {
+      offenseNo: index + 1,
+      label: penalty.slice(0, splitIndex).trim(),
+      action: penalty.slice(splitIndex + 1).trim(),
+    };
+  }
+
+  return {
+    offenseNo: index + 1,
+    label: getOrdinalLabel(index + 1),
+    action: penalty,
+  };
+};
+
+export const NORMALIZED_VIOLATION_RULES = VIOLATION_RULES.map((category) => ({
+  ...category,
+  rows: category.rows.map((row) => ({
+    ...row,
+    penalties: row.penalties.map(normalizePenalty),
+  })),
+}));
