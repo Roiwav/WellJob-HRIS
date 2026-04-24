@@ -1,19 +1,23 @@
-import { FiSearch } from "react-icons/fi";
-import { useNavigate } from "react-router-dom";
 import { useCallback, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FiArchive,
-  FiFilter,
   FiEdit2,
   FiEye,
+  FiFilter,
   FiInbox,
+  FiSearch,
 } from "react-icons/fi";
+
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 import AddEmployeeModal from "../components/employees/AddEmployeeModal";
 import EmployeeModal from "../components/employees/EmployeeModal";
 import ComplianceBadge from "../components/employees/ComplianceBadge";
+
+const EMPLOYEES_KEY = "employees";
+const OPERATIONAL_AUDIT_KEY = "operationalAuditLogs";
 
 const REQUIRED_DOCUMENTS = ["NBI", "Police Clearance", "Health Card"];
 
@@ -32,9 +36,13 @@ function SuccessModal({ message, onClose }) {
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl">
         <h3 className="text-lg font-bold text-green-600 mb-2">Success</h3>
-        <p className="text-sm text-gray-700 dark:text-gray-300 mb-5">{message}</p>
+        <p className="text-sm text-gray-700 dark:text-gray-300 mb-5">
+          {message}
+        </p>
+
         <div className="flex justify-end">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700"
           >
@@ -46,16 +54,41 @@ function SuccessModal({ message, onClose }) {
   );
 }
 
+function safeParse(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getDocumentStatus(expirationDate) {
+  if (!expirationDate) return "No Data";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const exp = new Date(expirationDate);
+  exp.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.ceil(
+    (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (diffDays < 0) return "Expired";
+  if (diffDays <= 30) return "Expiring Soon";
+  return "Valid";
+}
+
 export default function Employees() {
   const navigate = useNavigate();
   const { user } = useAuth();
+
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const isHRManager = user?.role === "HR_MANAGER";
 
-  const [employees, setEmployees] = useState(() => {
-    const stored = localStorage.getItem("employees");
-    return stored ? JSON.parse(stored) : [];
-  });
-
+  const [employees, setEmployees] = useState(() => safeParse(EMPLOYEES_KEY));
   const [showModal, setShowModal] = useState(false);
   const [generatedId, setGeneratedId] = useState("");
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -69,121 +102,36 @@ export default function Employees() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
 
-const saveToStorage = (data) => {
-  setEmployees(data);
-  localStorage.setItem("employees", JSON.stringify(data));
+  const createOperationalLog = useCallback(
+    (action, description) => {
+      const existingLogs = safeParse(OPERATIONAL_AUDIT_KEY);
 
-  // 🔥 REAL-TIME TRIGGER
-  window.dispatchEvent(new Event("dataUpdated"));
-};
+      const newLog = {
+        id: Date.now(),
+        user_id: user?.userId || "-",
+        username: user?.username || "-",
+        role: user?.role || "-",
+        category: "OPERATIONAL",
+        action,
+        description,
+        created_at: new Date().toISOString(),
+      };
 
-  const generateId = () => {
-    const stored = JSON.parse(localStorage.getItem("employees")) || [];
-    if (stored.length === 0) return "EMP001";
+      localStorage.setItem(
+        OPERATIONAL_AUDIT_KEY,
+        JSON.stringify([newLog, ...existingLogs])
+      );
 
-    const numbers = stored.map((emp) =>
-      parseInt(String(emp.id).replace("EMP", ""), 10)
-    );
+      window.dispatchEvent(new Event("dataUpdated"));
+    },
+    [user]
+  );
 
-    const max = Math.max(...numbers);
-    const next = max + 1;
-
-    return "EMP" + next.toString().padStart(3, "0");
-  };
-
-  const handleOpenModal = () => {
-    if (isSuperAdmin) return;
-    setGeneratedId(generateId());
-    setEditingEmployee(null);
-    setShowModal(true);
-  };
-
-const handleSave = (data) => {
-  if (isSuperAdmin) return;
-
-  if (editingEmployee) {
-    const updated = employees.map((emp) =>
-      emp.id === editingEmployee.id
-        ? {
-            ...emp,
-            ...data,
-            deployment: emp.deployment || {
-              location: "",
-              start: "",
-              end: "",
-              status: "Active",
-            },
-          }
-        : emp
-    );
-
-    saveToStorage(updated);
-    setSuccessMessage("Employee information updated successfully.");
-  } else {
-    const newEmployee = {
-      id: generatedId,
-      uid: Date.now(),
-      createdAt: new Date().toISOString(),
-      archived: false,
-      deployment: {
-        location: "",
-        start: "",
-        end: "",
-        status: "Active",
-      },
-      ...data,
-    };
-
-    saveToStorage([...employees, newEmployee]);
-    setSuccessMessage("Employee saved successfully.");
-  }
-};
-
-  const handleEdit = (emp) => {
-    if (isSuperAdmin) return;
-    setEditingEmployee(emp);
-    setGeneratedId(emp.id);
-    setShowModal(true);
-  };
-
-  const handleView = (emp) => setViewEmployee(emp);
-
-  const handleArchive = (id) => {
-    if (isSuperAdmin) return;
-
-    const updated = employees.map((emp) =>
-      emp.id === id
-        ? {
-            ...emp,
-            archived: true,
-            archivedAt: new Date().toISOString(),
-            previousStatus: emp.status,
-            status: "Inactive",
-          }
-        : emp
-    );
-
-    saveToStorage(updated);
-    setArchiveTarget(null);
-    setSuccessMessage("Employee archived successfully.");
-  };
-
-  const getDocumentStatus = (expirationDate) => {
-    if (!expirationDate) return "No Data";
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const exp = new Date(expirationDate);
-    exp.setHours(0, 0, 0, 0);
-
-    const diffTime = exp.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) return "Expired";
-    if (diffDays <= 30) return "Expiring Soon";
-    return "Valid";
-  };
+  const saveToStorage = useCallback((data) => {
+    setEmployees(data);
+    localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(data));
+    window.dispatchEvent(new Event("dataUpdated"));
+  }, []);
 
   const getCompliance = useCallback((docs) => {
     if (!docs || docs.length === 0) return "No Data";
@@ -204,6 +152,122 @@ const handleSave = (data) => {
     return "Incomplete";
   }, []);
 
+  const generateId = () => {
+    const stored = safeParse(EMPLOYEES_KEY);
+    if (stored.length === 0) return "EMP001";
+
+    const numbers = stored
+      .map((emp) => parseInt(String(emp.id || "").replace("EMP", ""), 10))
+      .filter((num) => !Number.isNaN(num));
+
+    const next = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+    return `EMP${String(next).padStart(3, "0")}`;
+  };
+
+  const handleOpenModal = () => {
+    if (isSuperAdmin) return;
+
+    setGeneratedId(generateId());
+    setEditingEmployee(null);
+    setShowModal(true);
+  };
+
+  const handleSave = (data) => {
+    if (isSuperAdmin) return;
+
+    if (editingEmployee) {
+      const updated = employees.map((emp) =>
+        emp.id === editingEmployee.id
+          ? {
+              ...emp,
+              ...data,
+              deployment: emp.deployment || {
+                location: "",
+                start: "",
+                end: "",
+                status: "Active",
+              },
+            }
+          : emp
+      );
+
+      saveToStorage(updated);
+
+      createOperationalLog(
+        "EDIT_EMPLOYEE",
+        `${user?.username || "User"} edited employee record for ${
+          data.name || editingEmployee.name
+        }.`
+      );
+
+      setSuccessMessage("Employee information updated successfully.");
+    } else {
+      const newEmployee = {
+        id: generatedId,
+        uid: Date.now(),
+        createdAt: new Date().toISOString(),
+        archived: false,
+        deployment: {
+          location: "",
+          start: "",
+          end: "",
+          status: "Active",
+        },
+        ...data,
+      };
+
+      saveToStorage([...employees, newEmployee]);
+
+      createOperationalLog(
+        "ADD_EMPLOYEE",
+        `${user?.username || "User"} added employee record for ${data.name}.`
+      );
+
+      setSuccessMessage("Employee saved successfully.");
+    }
+
+    setShowModal(false);
+    setEditingEmployee(null);
+  };
+
+  const handleEdit = (employee) => {
+    if (isSuperAdmin) return;
+
+    setEditingEmployee(employee);
+    setGeneratedId(employee.id);
+    setShowModal(true);
+  };
+
+  const handleArchive = (id) => {
+    if (isSuperAdmin) return;
+
+    const target = employees.find((emp) => emp.id === id);
+
+    const updated = employees.map((emp) =>
+      emp.id === id
+        ? {
+            ...emp,
+            archived: true,
+            archivedAt: new Date().toISOString(),
+            previousStatus: emp.status,
+            status: "Inactive",
+          }
+        : emp
+    );
+
+    saveToStorage(updated);
+
+    createOperationalLog(
+      "ARCHIVE_EMPLOYEE",
+      `${user?.username || "User"} archived employee record for ${
+        target?.name || id
+      }.`
+    );
+
+    setArchiveTarget(null);
+    setSuccessMessage("Employee archived successfully.");
+  };
+
   const activeEmployees = useMemo(
     () => employees.filter((emp) => !emp.archived),
     [employees]
@@ -211,7 +275,7 @@ const handleSave = (data) => {
 
   const filteredEmployees = useMemo(() => {
     const filtered = activeEmployees.filter((emp) => {
-      const keyword = search.toLowerCase();
+      const keyword = search.toLowerCase().trim();
 
       const matchSearch =
         String(emp.name || "").toLowerCase().includes(keyword) ||
@@ -230,60 +294,40 @@ const handleSave = (data) => {
 
     const getSortPriority = (emp) => {
       const compliance = getCompliance(emp.documents);
+
       if (compliance === "Expired") return 1;
       if (compliance === "Expiring Soon") return 2;
       if (compliance === "Incomplete") return 3;
       if (compliance === "Valid") return 4;
+
       return 5;
     };
 
-    const sorted = [...filtered].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       switch (sortBy) {
         case "name-asc":
           return String(a.name || "").localeCompare(String(b.name || ""));
         case "name-desc":
           return String(b.name || "").localeCompare(String(a.name || ""));
         case "expired-first":
+        case "expiring-first":
           return getSortPriority(a) - getSortPriority(b);
-        case "expiring-first": {
-          const aStatus = getCompliance(a.documents);
-          const bStatus = getCompliance(b.documents);
-
-          const aScore =
-            aStatus === "Expiring Soon"
-              ? 1
-              : aStatus === "Expired"
-              ? 2
-              : aStatus === "Incomplete"
-              ? 3
-              : aStatus === "Valid"
-              ? 4
-              : 5;
-
-          const bScore =
-            bStatus === "Expiring Soon"
-              ? 1
-              : bStatus === "Expired"
-              ? 2
-              : bStatus === "Incomplete"
-              ? 3
-              : bStatus === "Valid"
-              ? 4
-              : 5;
-
-          return aScore - bScore;
-        }
         case "latest":
-        default: {
-          const aTime = new Date(a.createdAt || 0).getTime();
-          const bTime = new Date(b.createdAt || 0).getTime();
-          return bTime - aTime;
-        }
+        default:
+          return (
+            new Date(b.createdAt || 0).getTime() -
+            new Date(a.createdAt || 0).getTime()
+          );
       }
     });
-
-    return sorted;
-  }, [activeEmployees, search, filterStatus, filterCompliance, sortBy, getCompliance]);
+  }, [
+    activeEmployees,
+    search,
+    filterStatus,
+    filterCompliance,
+    sortBy,
+    getCompliance,
+  ]);
 
   const emptyStateTitle = search
     ? "No employees match your search"
@@ -312,18 +356,20 @@ const handleSave = (data) => {
         </div>
 
         <div className="flex items-center gap-2">
-            {user?.role === "HR_MANAGER" && (
-              <button
-                onClick={() => navigate("/employees/archive")}
-                className="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2 text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-slate-700"
-                title="Archive"
-              >
-                <FiArchive />
-              </button>
-            )}
+          {isHRManager && (
+            <button
+              type="button"
+              onClick={() => navigate("/employees/archive")}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2 text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-slate-700"
+              title="Archive"
+            >
+              <FiArchive />
+            </button>
+          )}
 
           <div className="relative">
             <button
+              type="button"
               onClick={() => setShowSortMenu((prev) => !prev)}
               className="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2 text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-slate-700"
               title="Sort employees"
@@ -339,6 +385,7 @@ const handleSave = (data) => {
 
                 {SORT_OPTIONS.map((option) => (
                   <button
+                    type="button"
                     key={option.value}
                     onClick={() => {
                       setSortBy(option.value);
@@ -360,6 +407,7 @@ const handleSave = (data) => {
           {!isSuperAdmin && (
             <RoleGuard permission={PERMISSIONS.CAN_ADD_EMPLOYEE}>
               <button
+                type="button"
                 onClick={handleOpenModal}
                 className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
               >
@@ -370,42 +418,42 @@ const handleSave = (data) => {
         </div>
       </div>
 
-    <div className="flex flex-col xl:flex-row gap-3 mb-4 items-start xl:items-center">
-      <div className="relative w-64">
-        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+      <div className="flex flex-col xl:flex-row gap-3 mb-4 items-start xl:items-center">
+        <div className="relative w-64">
+          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
 
-        <input
-          type="text"
-          placeholder="Search employee..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition"
-        />
+          <input
+            type="text"
+            placeholder="Search employee..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition"
+          />
+        </div>
+
+        <select
+          value={filterStatus}
+          onChange={(event) => setFilterStatus(event.target.value)}
+          className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
+        >
+          <option value="All">All Status</option>
+          <option value="Deployed">Deployed</option>
+          <option value="Floating / Standby">Floating / Standby</option>
+        </select>
+
+        <select
+          value={filterCompliance}
+          onChange={(event) => setFilterCompliance(event.target.value)}
+          className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
+        >
+          <option value="All">All Compliance</option>
+          <option value="Valid">Valid</option>
+          <option value="Expiring Soon">Expiring Soon</option>
+          <option value="Expired">Expired</option>
+          <option value="Incomplete">Incomplete</option>
+          <option value="No Data">No Data</option>
+        </select>
       </div>
-
-      <select
-        value={filterStatus}
-        onChange={(e) => setFilterStatus(e.target.value)}
-        className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
-      >
-        <option value="All">All Status</option>
-        <option value="Deployed">Deployed</option>
-        <option value="Floating / Standby">Floating / Standby</option>
-      </select>
-
-      <select
-        value={filterCompliance}
-        onChange={(e) => setFilterCompliance(e.target.value)}
-        className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
-      >
-        <option value="All">All Compliance</option>
-        <option value="Valid">Valid</option>
-        <option value="Expiring Soon">Expiring Soon</option>
-        <option value="Expired">Expired</option>
-        <option value="Incomplete">Incomplete</option>
-        <option value="No Data">No Data</option>
-      </select>
-    </div>
 
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
@@ -438,7 +486,8 @@ const handleSave = (data) => {
                       <td className="px-6 py-4">
                         <div className="flex justify-end gap-2">
                           <button
-                            onClick={() => handleView(emp)}
+                            type="button"
+                            onClick={() => setViewEmployee(emp)}
                             className="inline-flex items-center justify-center rounded-lg border px-3 py-2 hover:bg-gray-50 dark:hover:bg-blue-900/30"
                             title="View employee"
                           >
@@ -446,8 +495,11 @@ const handleSave = (data) => {
                           </button>
 
                           {!isSuperAdmin && (
-                            <RoleGuard permission={PERMISSIONS.CAN_EDIT_EMPLOYEE}>
+                            <RoleGuard
+                              permission={PERMISSIONS.CAN_EDIT_EMPLOYEE}
+                            >
                               <button
+                                type="button"
                                 onClick={() => handleEdit(emp)}
                                 className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-3 py-2 text-white hover:bg-amber-600"
                                 title="Edit employee"
@@ -457,15 +509,16 @@ const handleSave = (data) => {
                             </RoleGuard>
                           )}
 
-                            {user?.role === "HR_MANAGER" && (
-                              <button
-                                onClick={() => setArchiveTarget(emp)}
-                                className="inline-flex items-center justify-center rounded-lg bg-slate-700 px-3 py-2 text-white hover:bg-red-600 transition"
-                                title="Archive employee"
-                              >
-                                <FiArchive />
-                              </button>
-                            )}
+                          {isHRManager && (
+                            <button
+                              type="button"
+                              onClick={() => setArchiveTarget(emp)}
+                              className="inline-flex items-center justify-center rounded-lg bg-slate-700 px-3 py-2 text-white hover:bg-red-600 transition"
+                              title="Archive employee"
+                            >
+                              <FiArchive />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -494,7 +547,10 @@ const handleSave = (data) => {
       {showModal && !isSuperAdmin && (
         <AddEmployeeModal
           generatedId={generatedId}
-          onClose={() => setShowModal(false)}
+          onClose={() => {
+            setShowModal(false);
+            setEditingEmployee(null);
+          }}
           onSave={handleSave}
           editingEmployee={editingEmployee}
           employees={employees}
@@ -516,12 +572,14 @@ const handleSave = (data) => {
             </h2>
 
             <p className="text-sm mb-6 text-gray-900 dark:text-white">
-              Are you sure you want to archive <b>{archiveTarget.name}</b>?
-              This employee will be marked as <b>Inactive</b> and removed from the employee management table.
+              Are you sure you want to archive <b>{archiveTarget.name}</b>? This
+              employee will be marked as <b>Inactive</b> and removed from the
+              employee management table.
             </p>
 
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => handleArchive(archiveTarget.id)}
                 className="flex-1 bg-slate-700 text-white py-2 rounded hover:bg-red-600 transition"
               >
@@ -529,6 +587,7 @@ const handleSave = (data) => {
               </button>
 
               <button
+                type="button"
                 onClick={() => setArchiveTarget(null)}
                 className="flex-1 bg-gray-500 text-white py-2 rounded"
               >
