@@ -89,7 +89,7 @@ export default function Settings() {
                   className="border-t border-gray-200 dark:border-gray-700"
                 >
                   <td className="px-6 py-4">{account.id}</td>
-                  <td className="px-6 py-4">{account.name}</td>
+                  <td className="px-6 py-4">{account.full_name}</td>
                   <td className="px-6 py-4">{account.username}</td>
                   <td className="px-6 py-4">{account.role}</td>
 
