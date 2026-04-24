@@ -56,11 +56,11 @@ export default function Notifications() {
 
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Notifications Center
+          Incidents Notification
         </h1>
 
         <p className="text-gray-500 dark:text-gray-400 text-sm">
-          System alerts and employee compliance notifications
+          System alerts for incidents coming notifications
         </p>
       </div>
 

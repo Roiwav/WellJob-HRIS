@@ -13,7 +13,7 @@ app.use(express.json());
 // DB CONNECTION
 // =========================
 const db = mysql.createConnection({
-  host: "localhost",
+  host: "100.119.171.111",
   user: "remoteuser",
   password: "",
   database: "welljob_db",
