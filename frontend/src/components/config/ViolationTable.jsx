@@ -7,11 +7,26 @@ const severityStyle = {
 const penaltyLevelStyle = {
   Warning: "bg-sky-100 text-sky-700 border-sky-200",
   "Warning / 1–7 Days Suspension":
-    "bg-cyan-100 text-cyan-700 border-cyan-200",
+    "bg-emerald-100 text-emerald-700 border-emerald-200",
   "1–7 Days Suspension": "bg-cyan-100 text-cyan-700 border-cyan-200",
-  "15–30 Days Suspension": "bg-orange-100 text-orange-700 border-orange-200",
+  "1 to 7 Days Suspension": "bg-amber-100 text-amber-700 border-amber-200",
+  "7–30 Days Suspension": "bg-amber-100 text-amber-700 border-amber-200",
+  "7–30 Days Suspension / Dismissal / RTA": "bg-amber-100 text-amber-700 border-amber-200",
+  "15-30 Days Suspension": "bg-amber-100 text-amber-700 border-amber-200",
+  "15-30 Days Suspension / Dismissal": "bg-amber-100 text-amber-700 border-amber-200",
+  "15 to 30 Days Suspension": "bg-red-100 text-red-700 border-red-200",
   "30 Days Suspension": "bg-orange-100 text-orange-700 border-orange-200",
+   "30 Days Suspension / Dismissal": "bg-amber-100 text-amber-700 border-amber-200",
+  "30 Days Suspension / Dismissal / RTA": "bg-red-100 text-red-700 border-red-200",
   "Dismissal / RTA": "bg-red-100 text-red-700 border-red-200",
+  "Re-assignment or Dismissal / RTA": "bg-amber-100 text-amber-700 border-amber-200",
+  "15 to 30 Days Suspension / Dismissal / RTA":
+    "bg-amber-100 text-amber-700 border-amber-200",
+    "15-30 Days Suspension / Dismissal / RTA":
+    "bg-red-100 text-red-700 border-red-200",
+
+  "30 Days Suspension / Dismissal / RTA":
+    "bg-red-100 text-red-700 border-red-200",
 };
 
 export default function ViolationTable({ rules }) {
@@ -96,14 +111,22 @@ export default function ViolationTable({ rules }) {
                     </td>
 
                     <td className="border border-gray-300 px-3 py-4 align-top dark:border-white/10">
-                      <span
-                        className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${
-                          severityStyle[item.severity] ||
-                          "border-gray-200 bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {item.severity || "Not Set"}
-                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {(Array.isArray(item.severity)
+                          ? item.severity
+                          : [item.severity]
+                        ).map((sev, idx) => (
+                          <span
+                            key={idx}
+                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${
+                              severityStyle[sev] ||
+                              "border-gray-200 bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {sev || "Not Set"}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -114,4 +137,4 @@ export default function ViolationTable({ rules }) {
       ))}
     </div>
   );
-};
+}
