@@ -53,12 +53,12 @@ export default function Settings() {
     <div className="p-8 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Settings
+          IT Support Maintenance
         </h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           {isSuperAdmin
             ? "View-only technical settings overview for Super Admin."
-            : "Maintain user accounts and technical access settings."}
+            : "Manage user accounts, access control, and system maintenance operations."}
         </p>
       </div>
 

@@ -35,7 +35,7 @@ export const sidebarItems = [
     allowedRoles: [ROLES.SUPER_ADMIN, ROLES.HR_MANAGER, ROLES.HR_STAFF],
   },
   {
-    title: "Settings",
+    title: "User Management",
     path: "/settings",
     allowedRoles: [ROLES.IT_SUPPORT],
   },
@@ -48,5 +48,15 @@ export const sidebarItems = [
     title: "System Configuration",
     path: "/system-configuration",
     allowedRoles: [ROLES.SUPER_ADMIN],
+  },
+  {
+    title: "Technical Audit",
+    path: "/technical-audit-logs",
+    allowedRoles: ["IT_SUPPORT"],
+  },
+  {
+    title: "Operational Audit",
+    path: "/operational-audit-logs",
+    allowedRoles: ["SUPER_ADMIN"],
   },
 ];

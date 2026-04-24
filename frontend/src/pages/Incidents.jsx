@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { FiEdit2, FiSearch } from "react-icons/fi";
+
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 import AddIncidentModal from "../components/incidents/AddIncidentModal";
 import IncidentModal from "../components/incidents/IncidentModal";
-import { FiEdit2, FiSearch } from "react-icons/fi";
+
 import {
   getSeverityByViolation,
   getSanctionByViolation,
@@ -14,6 +16,7 @@ import {
 const INCIDENTS_KEY = "incidents";
 const EMPLOYEES_KEY = "employees";
 const DEPLOYMENTS_KEY = "deployments";
+const AUDIT_API_URL = "http://localhost:5000/api/audit-logs";
 
 function safeParse(key) {
   try {
@@ -45,33 +48,67 @@ export default function Incidents() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const storedIncidents = safeParse(INCIDENTS_KEY).map(normalizeIncidentWithRules);
-  const storedEmployees = safeParse(EMPLOYEES_KEY);
-  const storedDeployments = safeParse(DEPLOYMENTS_KEY);
-
-  const activeEmployees = storedEmployees.filter((emp) => !emp.archived);
-
-  const initialFilteredIncidents = storedIncidents.filter((incident) =>
-    activeEmployees.some(
-      (emp) => emp.id === incident.employeeId || emp.name === incident.employee
-    )
+  const storedIncidents = useMemo(
+    () => safeParse(INCIDENTS_KEY).map(normalizeIncidentWithRules),
+    []
   );
 
+  const storedEmployees = useMemo(() => safeParse(EMPLOYEES_KEY), []);
+  const storedDeployments = useMemo(() => safeParse(DEPLOYMENTS_KEY), []);
+
+  const activeEmployees = useMemo(
+    () => storedEmployees.filter((emp) => !emp.archived),
+    [storedEmployees]
+  );
+
+  const initialFilteredIncidents = useMemo(() => {
+    return storedIncidents.filter((incident) =>
+      activeEmployees.some(
+        (emp) =>
+          emp.id === incident.employeeId || emp.name === incident.employee
+      )
+    );
+  }, [storedIncidents, activeEmployees]);
+
   const initialIncident = location.state?.incidentId
-    ? initialFilteredIncidents.find((i) => i.id === location.state.incidentId)
+    ? initialFilteredIncidents.find((item) => item.id === location.state.incidentId)
     : null;
 
   const [incidents, setIncidents] = useState(initialFilteredIncidents);
   const [employees] = useState(activeEmployees);
   const [deployments] = useState(storedDeployments);
-  const [openAddModal, setOpenAddModal] = useState(false);
 
+  const [openAddModal, setOpenAddModal] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState(initialIncident);
   const [editMode, setEditMode] = useState(initialIncident ? !isSuperAdmin : false);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [severityFilter, setSeverityFilter] = useState("ALL");
+
+  const createOperationalLog = useCallback(
+    async (action, description) => {
+      try {
+        await fetch(AUDIT_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: user?.userId,
+            username: user?.username,
+            role: user?.role,
+            category: "OPERATIONAL",
+            action,
+            description,
+          }),
+        });
+      } catch (error) {
+        console.error("Audit log failed:", error);
+      }
+    },
+    [user]
+  );
 
   useEffect(() => {
     if (location.state?.incidentId) {
@@ -84,11 +121,18 @@ export default function Incidents() {
 
   useEffect(() => {
     const syncIncidentsFromStorage = () => {
-      const latestIncidents = safeParse(INCIDENTS_KEY).map(normalizeIncidentWithRules);
+      const latestIncidents = safeParse(INCIDENTS_KEY).map(
+        normalizeIncidentWithRules
+      );
+
+      const latestEmployees = safeParse(EMPLOYEES_KEY).filter(
+        (emp) => !emp.archived
+      );
 
       const visibleIncidents = latestIncidents.filter((incident) =>
-        activeEmployees.some(
-          (emp) => emp.id === incident.employeeId || emp.name === incident.employee
+        latestEmployees.some(
+          (emp) =>
+            emp.id === incident.employeeId || emp.name === incident.employee
         )
       );
 
@@ -102,7 +146,7 @@ export default function Incidents() {
       window.removeEventListener("dataUpdated", syncIncidentsFromStorage);
       window.removeEventListener("storage", syncIncidentsFromStorage);
     };
-  }, [activeEmployees]);
+  }, []);
 
   const persistIncidents = (updatedIncidents) => {
     setIncidents(updatedIncidents);
@@ -110,15 +154,27 @@ export default function Incidents() {
     window.dispatchEvent(new Event("dataUpdated"));
   };
 
-  const handleAddIncident = (newIncident) => {
+  const handleAddIncident = async (newIncident) => {
+    if (isSuperAdmin) return;
+
     const normalizedIncident = normalizeIncidentWithRules(newIncident);
     const updated = [normalizedIncident, ...incidents];
 
     persistIncidents(updated);
+
+    await createOperationalLog(
+      "CREATE_INCIDENT",
+      `${user?.username || "User"} created incident report ${
+        normalizedIncident.id ? `(${normalizedIncident.id})` : ""
+      } for ${normalizedIncident.employee || "an employee"}.`
+    );
+
     setOpenAddModal(false);
   };
 
-  const handleUpdateIncident = (updatedIncident) => {
+  const handleUpdateIncident = async (updatedIncident) => {
+    if (isSuperAdmin) return;
+
     const normalizedIncident = normalizeIncidentWithRules(updatedIncident);
 
     const updated = incidents.map((item) =>
@@ -126,6 +182,14 @@ export default function Incidents() {
     );
 
     persistIncidents(updated);
+
+    await createOperationalLog(
+      "UPDATE_INCIDENT",
+      `${user?.username || "User"} updated incident ${
+        normalizedIncident.id || ""
+      } for ${normalizedIncident.employee || "an employee"}.`
+    );
+
     setEditMode(false);
     setSelectedIncident(null);
   };
@@ -165,15 +229,17 @@ export default function Incidents() {
           </p>
         </div>
 
-        <RoleGuard permission={PERMISSIONS.CAN_ADD_INCIDENT}>
-          <button
-            type="button"
-            onClick={() => setOpenAddModal(true)}
-            className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
-          >
-            + Add Incident Report
-          </button>
-        </RoleGuard>
+        {!isSuperAdmin && (
+          <RoleGuard permission={PERMISSIONS.CAN_ADD_INCIDENT}>
+            <button
+              type="button"
+              onClick={() => setOpenAddModal(true)}
+              className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+            >
+              + Add Incident Report
+            </button>
+          </RoleGuard>
+        )}
       </div>
 
       <div className="flex flex-col xl:flex-row gap-3 mb-4 items-start xl:items-center">
@@ -184,14 +250,14 @@ export default function Incidents() {
             type="text"
             placeholder="Search incident ID, employee, violation..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(event) => setSearch(event.target.value)}
             className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition"
           />
         </div>
 
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(event) => setStatusFilter(event.target.value)}
           className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
         >
           <option value="ALL">All Status</option>
@@ -202,7 +268,7 @@ export default function Incidents() {
 
         <select
           value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value)}
+          onChange={(event) => setSeverityFilter(event.target.value)}
           className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
         >
           <option value="ALL">All Severity</option>
@@ -297,6 +363,7 @@ export default function Incidents() {
                             setEditMode(true);
                           }}
                           className="text-blue-500 hover:text-blue-700"
+                          title="Edit incident"
                         >
                           <FiEdit2 />
                         </button>
@@ -319,7 +386,7 @@ export default function Incidents() {
 
       {editMode && selectedIncident && !isSuperAdmin && (
         <AddIncidentModal
-          isOpen={true}
+          isOpen
           editingIncident={selectedIncident}
           onClose={() => {
             setEditMode(false);

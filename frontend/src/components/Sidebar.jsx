@@ -12,6 +12,7 @@ import {
   FiSun,
   FiMoon,
   FiShield,
+  FiFileText,
 } from "react-icons/fi";
 import { sidebarItems } from "../config/sidebarItems";
 import { useAuth } from "../context/useAuth";
@@ -23,9 +24,11 @@ const iconMap = {
   "KPI Reports": <FiBarChart2 />,
   Incidents: <FiAlertTriangle />,
   Notifications: <FiBell />,
-  Settings: <FiSettings />,
+  "User Management": <FiUsers />,
   "Super Admin Portal": <FiShield />,
   "System Configuration": <FiSettings />,
+  "Technical Audit": <FiShield/>,
+  "Operational Audit": <FiFileText />,
 };
 
 export default function Sidebar({ toggleTheme, darkMode }) {
