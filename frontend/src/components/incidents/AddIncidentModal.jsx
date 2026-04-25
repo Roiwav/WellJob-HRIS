@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FiAlertTriangle,
   FiBriefcase,
@@ -12,7 +12,14 @@ import {
   FiUser,
   FiX,
 } from "react-icons/fi";
-import { NORMALIZED_VIOLATION_RULES as VIOLATION_RULES } from "../../data/violationRules";
+import {
+  computeAutoSeverity,
+  enrichIncidentIntelligence,
+  flattenViolationRules,
+  getNextOffenseCount,
+  getPenaltyByOffense,
+  getPenaltyText,
+} from "../../utils/incidentIntelligence";
 
 const severityStyle = {
   Minor: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -39,24 +46,22 @@ function generateIncidentId(existingIncidents = []) {
   return `INC-${maxNumber + 1}`;
 }
 
-function flattenViolationRules() {
-  return VIOLATION_RULES.flatMap((group) =>
-    group.rows.map((rule) => ({
-      ...rule,
-      category: group.category,
-      key: `${group.category}-${rule.section}-${rule.violation}`,
-    }))
-  );
-}
-
 function getDateOnly(isoDate) {
-  return new Date(isoDate).toISOString().split("T")[0];
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString().split("T")[0];
+  }
+
+  return date.toISOString().split("T")[0];
 }
 
 function formatDateTime(isoDate) {
   if (!isoDate) return "-";
 
-  return new Date(isoDate).toLocaleString("en-PH", {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString("en-PH", {
     year: "numeric",
     month: "short",
     day: "2-digit",
@@ -65,54 +70,11 @@ function formatDateTime(isoDate) {
   });
 }
 
-function getEmployeeIncidentKey(incident) {
-  return String(
-    incident.employeeId ||
-      incident.employee_id ||
-      incident.employeeID ||
-      incident.employee ||
-      ""
-  ).trim();
-}
-
-function getViolationKey(incident) {
-  return String(
-    incident.violation ||
-      incident.violationType ||
-      incident.violation_type ||
-      ""
-  ).trim();
-}
-
-function getNextOffenseCount(existingIncidents = [], employeeId, violationName) {
-  const targetEmployee = String(employeeId || "").trim();
-  const targetViolation = String(violationName || "").trim();
-
-  if (!targetEmployee || !targetViolation) return 1;
-
-  const previousCount = existingIncidents.filter((incident) => {
-    const sameEmployee = getEmployeeIncidentKey(incident) === targetEmployee;
-    const sameViolation = getViolationKey(incident) === targetViolation;
-    return sameEmployee && sameViolation;
-  }).length;
-
-  return previousCount + 1;
-}
-
-function getPenaltyByOffense(penalties = [], offenseCount = 1) {
-  if (!Array.isArray(penalties) || penalties.length === 0) return null;
-
-  const exactPenalty = penalties.find(
-    (penalty) => Number(penalty.offenseNo) === Number(offenseCount)
-  );
-
-  return exactPenalty || penalties[penalties.length - 1];
-}
-
-function getPenaltyText(penalty) {
-  if (!penalty) return "";
-  if (typeof penalty === "string") return penalty;
-  return penalty.action || "";
+function getOrdinalSuffix(number) {
+  if (number === 1) return "st";
+  if (number === 2) return "nd";
+  if (number === 3) return "rd";
+  return "th";
 }
 
 export default function AddIncidentModal({
@@ -137,7 +99,7 @@ export default function AddIncidentModal({
     }));
   }, [employees]);
 
-  const createInitialFormData = () => {
+  const createInitialFormData = useCallback(() => {
     const now = new Date().toISOString();
 
     return {
@@ -161,27 +123,55 @@ export default function AddIncidentModal({
       description: "",
       actions: [],
       reviewComments: [],
+      timeline: [],
     };
-  };
+  }, [existingIncidents]);
 
-  const [formData, setFormData] = useState(createInitialFormData);
+  const [formData, setFormData] = useState(() => createInitialFormData());
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [violationSearch, setViolationSearch] = useState("");
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [showViolationDropdown, setShowViolationDropdown] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
 
+  const [customAlert, setCustomAlert] = useState({
+    show: false,
+    type: "error",
+    title: "",
+    message: "",
+  });
+
+  const showCustomAlert = ({ type = "error", title, message }) => {
+    setCustomAlert({
+      show: true,
+      type,
+      title,
+      message,
+    });
+  };
+
+  const closeCustomAlert = () => {
+    setCustomAlert((prev) => ({
+      ...prev,
+      show: false,
+    }));
+  };
+
   useEffect(() => {
     if (!isOpen) return;
 
-    const initial = createInitialFormData();
-    setFormData(initial);
-    setEmployeeSearch("");
-    setViolationSearch("");
-    setShowEmployeeDropdown(false);
-    setShowViolationDropdown(false);
-    setIsReviewing(false);
-  }, [isOpen, existingIncidents]);
+    const timeoutId = window.setTimeout(() => {
+      setFormData(createInitialFormData());
+      setEmployeeSearch("");
+      setViolationSearch("");
+      setShowEmployeeDropdown(false);
+      setShowViolationDropdown(false);
+      setIsReviewing(false);
+      closeCustomAlert();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen, createInitialFormData]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -200,7 +190,9 @@ export default function AddIncidentModal({
       }
     };
 
-    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
 
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
@@ -246,21 +238,37 @@ export default function AddIncidentModal({
       .slice(0, 12);
   }, [violationOptions, violationSearch]);
 
-  const computePenaltyData = ({ employeeId, violation, penalties }) => {
-    const offenseCount = getNextOffenseCount(
-      existingIncidents,
-      employeeId,
-      violation
-    );
+  const computePenaltyData = useCallback(
+    ({ employeeId, violation, penalties, description }) => {
+      const offenseCount = getNextOffenseCount(
+        existingIncidents,
+        employeeId,
+        violation
+      );
 
-    const selectedPenalty = getPenaltyByOffense(penalties, offenseCount);
+      const selectedPenalty = getPenaltyByOffense(penalties, offenseCount);
+      const sanction = getPenaltyText(selectedPenalty);
 
-    return {
-      offenseCount,
-      selectedPenalty,
-      sanction: getPenaltyText(selectedPenalty),
-    };
-  };
+      const selectedRule = violationOptions.find(
+        (rule) => rule.violation === violation
+      );
+
+      const severity = computeAutoSeverity({
+        baseSeverity: selectedRule?.severity || "Minor",
+        offenseCount,
+        sanction,
+        description,
+      });
+
+      return {
+        offenseCount,
+        selectedPenalty,
+        sanction,
+        severity,
+      };
+    },
+    [existingIncidents, violationOptions]
+  );
 
   const handleSelectEmployee = (selectedEmployee) => {
     const activeDeployment = deployments.find(
@@ -275,6 +283,7 @@ export default function AddIncidentModal({
         employeeId: selectedEmployee.id,
         violation: prev.violation,
         penalties: prev.penalties,
+        description: prev.description,
       });
 
       return {
@@ -295,8 +304,8 @@ export default function AddIncidentModal({
     setIsReviewing(false);
   };
 
-  const handleEmployeeInputChange = (e) => {
-    const value = e.target.value;
+  const handleEmployeeInputChange = (event) => {
+    const value = event.target.value;
 
     setEmployeeSearch(value);
     setShowEmployeeDropdown(true);
@@ -321,6 +330,7 @@ export default function AddIncidentModal({
         employeeId: prev.employeeId,
         violation: selectedRule.violation,
         penalties,
+        description: prev.description,
       });
 
       return {
@@ -331,7 +341,6 @@ export default function AddIncidentModal({
         violationDescription: selectedRule.description || "",
         penaltyLevel: selectedRule.penaltyLevel || "",
         penalties,
-        severity: selectedRule.severity || "",
         ...penaltyData,
       };
     });
@@ -341,8 +350,8 @@ export default function AddIncidentModal({
     setIsReviewing(false);
   };
 
-  const handleViolationInputChange = (e) => {
-    const value = e.target.value;
+  const handleViolationInputChange = (event) => {
+    const value = event.target.value;
 
     setViolationSearch(value);
     setShowViolationDropdown(true);
@@ -363,33 +372,65 @@ export default function AddIncidentModal({
     }));
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+
     setIsReviewing(false);
-    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    setFormData((prev) => {
+      const updated = { ...prev, [name]: value };
+
+      if (name === "description" && updated.violation) {
+        const penaltyData = computePenaltyData({
+          employeeId: updated.employeeId,
+          violation: updated.violation,
+          penalties: updated.penalties,
+          description: value,
+        });
+
+        return {
+          ...updated,
+          ...penaltyData,
+        };
+      }
+
+      return updated;
+    });
   };
 
   const validateForm = () => {
     if (!formData.employeeId || !formData.employee) {
-      alert("Please select an employee from the suggested list.");
+      showCustomAlert({
+        type: "error",
+        title: "Employee Required",
+        message: "Please select an employee from the suggested list.",
+      });
       return false;
     }
 
     if (!formData.violation) {
-      alert("Please select a violation from the suggested list.");
+      showCustomAlert({
+        type: "error",
+        title: "Violation Required",
+        message: "Please select a violation type from the suggested list.",
+      });
       return false;
     }
 
     if (!formData.description.trim()) {
-      alert("Please enter the incident description.");
+      showCustomAlert({
+        type: "error",
+        title: "Incident Description Required",
+        message: "Please enter the incident description before reviewing.",
+      });
       return false;
     }
 
     return true;
   };
 
-  const handleReview = (e) => {
-    e.preventDefault();
+  const handleReview = (event) => {
+    event.preventDefault();
 
     if (!validateForm()) return;
 
@@ -397,6 +438,7 @@ export default function AddIncidentModal({
       employeeId: formData.employeeId,
       violation: formData.violation,
       penalties: formData.penalties,
+      description: formData.description,
     });
 
     setFormData((prev) => ({
@@ -405,6 +447,13 @@ export default function AddIncidentModal({
     }));
 
     setIsReviewing(true);
+
+    showCustomAlert({
+      type: "success",
+      title: "Report Ready for Review",
+      message:
+        "Incident details have been validated. Please review the report before final saving.",
+    });
   };
 
   const handleFinalSave = () => {
@@ -412,26 +461,52 @@ export default function AddIncidentModal({
 
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     const now = formData.reportedAt || new Date().toISOString();
+    const createdBy = user?.name || user?.username || "Unknown";
 
     const penaltyData = computePenaltyData({
       employeeId: formData.employeeId,
       violation: formData.violation,
       penalties: formData.penalties,
+      description: formData.description,
     });
 
-    const finalIncident = {
-      ...formData,
-      ...penaltyData,
-      status: "Open",
-      date: getDateOnly(now),
-      reportedAt: now,
-      reportedBy: user?.name || user?.username || "Unknown",
-      sanction: penaltyData.sanction || formData.penaltyLevel || "",
-      actions: [],
-      reviewComments: [],
-    };
+    const finalIncident = enrichIncidentIntelligence(
+      {
+        ...formData,
+        ...penaltyData,
+        status: "Open",
+        date: getDateOnly(now),
+        reportedAt: now,
+        reportedBy: createdBy,
+        actions: [],
+        reviewComments: [],
+        timeline: [
+          {
+            id: `TL-${Date.now()}`,
+            title: "Incident Reported",
+            description: "Incident report was created and saved.",
+            createdAt: now,
+            createdBy,
+            status: "Open",
+          },
+        ],
+      },
+      existingIncidents
+    );
 
     onSave(finalIncident);
+
+    showCustomAlert({
+      type: "success",
+      title: "Incident Report Saved",
+      message:
+        "The incident report has been successfully saved and added to the report list.",
+    });
+
+    window.setTimeout(() => {
+      closeCustomAlert();
+      onClose();
+    }, 1200);
   };
 
   if (!isOpen) return null;
@@ -463,6 +538,7 @@ export default function AddIncidentModal({
               type="button"
               onClick={onClose}
               className="rounded-xl bg-white/10 p-2 text-white hover:bg-white/20"
+              aria-label="Close modal"
             >
               <FiX size={20} />
             </button>
@@ -660,18 +736,11 @@ export default function AddIncidentModal({
               )}
 
               {formData.violation && (
-                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
                   <p className="font-bold">Auto-selected Sanction</p>
                   <p className="mt-1">
                     {formData.offenseCount}
-                    {formData.offenseCount === 1
-                      ? "st"
-                      : formData.offenseCount === 2
-                      ? "nd"
-                      : formData.offenseCount === 3
-                      ? "rd"
-                      : "th"}{" "}
-                    offense:{" "}
+                    {getOrdinalSuffix(Number(formData.offenseCount))} offense:{" "}
                     <span className="font-semibold">
                       {formData.sanction || "No sanction selected yet"}
                     </span>
@@ -713,7 +782,7 @@ export default function AddIncidentModal({
           </form>
         ) : (
           <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-            <section className="rounded-2xl border border-green-200 bg-green-50 p-5 text-green-800">
+            <section className="rounded-2xl border border-green-200 bg-green-50 p-5 text-green-800 dark:border-green-900/40 dark:bg-green-950/30 dark:text-green-300">
               <div className="flex gap-3">
                 <FiCheckCircle className="mt-0.5 shrink-0" />
                 <div>
@@ -787,6 +856,15 @@ export default function AddIncidentModal({
         )}
       </div>
 
+      {customAlert.show && (
+        <CustomAlert
+          type={customAlert.type}
+          title={customAlert.title}
+          message={customAlert.message}
+          onClose={closeCustomAlert}
+        />
+      )}
+
       <style>{`
         .input-field {
           width: 100%;
@@ -813,6 +891,53 @@ export default function AddIncidentModal({
           color: rgb(148 163 184);
         }
       `}</style>
+    </div>
+  );
+}
+
+function CustomAlert({ type = "error", title, message, onClose }) {
+  const isSuccess = type === "success";
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900">
+        <div
+          className={`px-6 py-5 ${
+            isSuccess
+              ? "bg-gradient-to-r from-emerald-600 to-green-600"
+              : "bg-gradient-to-r from-red-600 to-rose-600"
+          }`}
+        >
+          <div className="flex items-start gap-4">
+            <div className="rounded-2xl bg-white/15 p-3 text-white ring-1 ring-white/20">
+              {isSuccess ? (
+                <FiCheckCircle size={24} />
+              ) : (
+                <FiAlertTriangle size={24} />
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-lg font-extrabold text-white">{title}</h3>
+              <p className="mt-1 text-sm text-white/85">{message}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-sm ${
+              isSuccess
+                ? "bg-emerald-600 hover:bg-emerald-700"
+                : "bg-red-600 hover:bg-red-700"
+            }`}
+          >
+            OK
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -870,9 +995,11 @@ function PolicyCard({ formData }) {
       <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
         Policy Reference
       </p>
+
       <p className="mt-2 text-sm font-bold text-gray-900 dark:text-white">
         {formData.violationCategory} • {formData.violationSection}
       </p>
+
       <p
         className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400"
         dangerouslySetInnerHTML={{
@@ -884,6 +1011,17 @@ function PolicyCard({ formData }) {
 }
 
 function PenaltiesCard({ penalties = [], offenseCount }) {
+  if (!Array.isArray(penalties) || penalties.length === 0) {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+        <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+          Penalties
+        </p>
+        <p className="mt-2 text-sm text-gray-500">No penalties configured.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
       <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
@@ -891,7 +1029,7 @@ function PenaltiesCard({ penalties = [], offenseCount }) {
       </p>
 
       <ul className="mt-2 space-y-2 text-sm text-gray-700 dark:text-gray-300">
-        {(penalties || []).map((penalty, index) => {
+        {penalties.map((penalty, index) => {
           const isSelected =
             Number(penalty?.offenseNo) === Number(offenseCount);
 

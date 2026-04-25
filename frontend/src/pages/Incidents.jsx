@@ -9,7 +9,6 @@ import {
   FiPlay,
   FiSearch,
   FiUpload,
-  FiUser,
   FiX,
   FiXCircle,
 } from "react-icons/fi";
@@ -18,11 +17,7 @@ import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 import AddIncidentModal from "../components/incidents/AddIncidentModal";
-
-import {
-  getSeverityByViolation,
-  getSanctionByViolation,
-} from "../utils/configStorage";
+import { enrichIncidentIntelligence } from "../utils/incidentIntelligence";
 
 const INCIDENTS_KEY = "incidents";
 const EMPLOYEES_KEY = "employees";
@@ -31,8 +26,7 @@ const AUDIT_API_URL = "http://localhost:5000/api/audit-logs";
 
 function safeParse(key) {
   try {
-    const raw = localStorage.getItem(key);
-    const parsed = JSON.parse(raw || "[]");
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -50,8 +44,10 @@ function getUserIdentity(user) {
 
 function formatDateTime(isoDate) {
   if (!isoDate) return "-";
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return "-";
 
-  return new Date(isoDate).toLocaleString("en-PH", {
+  return date.toLocaleString("en-PH", {
     year: "numeric",
     month: "short",
     day: "2-digit",
@@ -61,27 +57,55 @@ function formatDateTime(isoDate) {
 }
 
 function normalizeStatus(status) {
-  if (!status) return "Open";
-  if (status === "OPEN") return "Open";
-  if (status === "INVESTIGATING") return "Investigating";
-  if (status === "FOR_REVIEW") return "For Review";
-  if (status === "CLOSED") return "Closed";
-  return status;
+  const map = {
+    OPEN: "Open",
+    INVESTIGATING: "Investigating",
+    FOR_REVIEW: "For Review",
+    CLOSED: "Closed",
+    RESOLVED: "For Review",
+  };
+
+  return map[status] || status || "Open";
 }
 
-function normalizeIncidentWithRules(incident) {
-  const violation = incident?.violation || "";
-  const configuredSeverity = getSeverityByViolation(violation);
-  const configuredSanction = getSanctionByViolation(violation);
+function normalizeIncidentWithRules(incident, allIncidents = []) {
+  return enrichIncidentIntelligence(
+    {
+      ...incident,
+      status: normalizeStatus(incident.status),
+      investigation: incident.investigation || null,
+      resolution: incident.resolution || null,
+      review: incident.review || null,
+      timeline: Array.isArray(incident.timeline) ? incident.timeline : [],
+    },
+    allIncidents
+  );
+}
 
+function getVisibleIncidents(rawIncidents = [], rawEmployees = []) {
+  const activeEmployees = rawEmployees.filter((emp) => !emp.archived);
+  const enriched = rawIncidents.map((item) =>
+    normalizeIncidentWithRules(item, rawIncidents)
+  );
+
+  return enriched.filter((incident) =>
+    activeEmployees.some(
+      (emp) =>
+        String(emp.id || emp.employeeId || emp.name) ===
+          String(incident.employeeId || incident.employee) ||
+        String(emp.name) === String(incident.employee)
+    )
+  );
+}
+
+function createTimelineItem({ title, description, createdBy, status }) {
   return {
-    ...incident,
-    status: normalizeStatus(incident.status),
-    severity: configuredSeverity || incident.severity || "Minor",
-    sanction: incident.sanction || configuredSanction || "Warning",
-    investigation: incident.investigation || null,
-    resolution: incident.resolution || null,
-    review: incident.review || null,
+    id: `TL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title,
+    description,
+    createdAt: new Date().toISOString(),
+    createdBy,
+    status,
   };
 }
 
@@ -93,34 +117,23 @@ export default function Incidents() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const storedIncidents = useMemo(
-    () => safeParse(INCIDENTS_KEY).map(normalizeIncidentWithRules),
-    []
-  );
-
   const storedEmployees = useMemo(() => safeParse(EMPLOYEES_KEY), []);
   const storedDeployments = useMemo(() => safeParse(DEPLOYMENTS_KEY), []);
-
   const activeEmployees = useMemo(
     () => storedEmployees.filter((emp) => !emp.archived),
     [storedEmployees]
   );
 
-  const initialFilteredIncidents = useMemo(() => {
-    return storedIncidents.filter((incident) =>
-      activeEmployees.some(
-        (emp) => emp.id === incident.employeeId || emp.name === incident.employee
-      )
-    );
-  }, [storedIncidents, activeEmployees]);
+  const initialIncidents = useMemo(
+    () => getVisibleIncidents(safeParse(INCIDENTS_KEY), storedEmployees),
+    [storedEmployees]
+  );
 
   const initialIncident = location.state?.incidentId
-    ? initialFilteredIncidents.find(
-        (item) => item.id === location.state.incidentId
-      )
+    ? initialIncidents.find((item) => item.id === location.state.incidentId)
     : null;
 
-  const [incidents, setIncidents] = useState(initialFilteredIncidents);
+  const [incidents, setIncidents] = useState(initialIncidents);
   const [employees] = useState(activeEmployees);
   const [deployments] = useState(storedDeployments);
 
@@ -134,6 +147,12 @@ export default function Incidents() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [severityFilter, setSeverityFilter] = useState("ALL");
+
+  const [notice, setNotice] = useState(null);
+
+  const showNotice = useCallback((type, title, message) => {
+    setNotice({ type, title, message });
+  }, []);
 
   const createOperationalLog = useCallback(
     async (action, description) => {
@@ -165,21 +184,9 @@ export default function Incidents() {
 
   useEffect(() => {
     const syncIncidentsFromStorage = () => {
-      const latestIncidents = safeParse(INCIDENTS_KEY).map(
-        normalizeIncidentWithRules
+      setIncidents(
+        getVisibleIncidents(safeParse(INCIDENTS_KEY), safeParse(EMPLOYEES_KEY))
       );
-
-      const latestEmployees = safeParse(EMPLOYEES_KEY).filter(
-        (emp) => !emp.archived
-      );
-
-      const visibleIncidents = latestIncidents.filter((incident) =>
-        latestEmployees.some(
-          (emp) => emp.id === incident.employeeId || emp.name === incident.employee
-        )
-      );
-
-      setIncidents(visibleIncidents);
     };
 
     window.addEventListener("dataUpdated", syncIncidentsFromStorage);
@@ -191,45 +198,63 @@ export default function Incidents() {
     };
   }, []);
 
-  const persistIncidents = (updatedIncidents) => {
-    const normalized = updatedIncidents.map(normalizeIncidentWithRules);
-    setIncidents(normalized);
-    localStorage.setItem(INCIDENTS_KEY, JSON.stringify(normalized));
-    window.dispatchEvent(new Event("dataUpdated"));
-  };
-
-  const updateIncidentById = (incidentId, updater) => {
-    const updated = incidents.map((incident) =>
-      incident.id === incidentId
-        ? normalizeIncidentWithRules(updater(incident))
-        : incident
+  const persistIncidents = useCallback((updatedIncidents) => {
+    const enriched = updatedIncidents.map((item) =>
+      normalizeIncidentWithRules(item, updatedIncidents)
     );
 
-    persistIncidents(updated);
+    setIncidents(enriched);
+    localStorage.setItem(INCIDENTS_KEY, JSON.stringify(enriched));
+    window.dispatchEvent(new Event("dataUpdated"));
 
-    const updatedIncident = updated.find((incident) => incident.id === incidentId);
+    return enriched;
+  }, []);
 
-    if (selectedIncident?.id === incidentId) setSelectedIncident(updatedIncident);
-    if (startReviewIncident?.id === incidentId)
-      setStartReviewIncident(updatedIncident);
-    if (confirmStartIncident?.id === incidentId)
-      setConfirmStartIncident(updatedIncident);
-    if (resolutionIncident?.id === incidentId)
-      setResolutionIncident(updatedIncident);
-    if (reviewIncident?.id === incidentId) setReviewIncident(updatedIncident);
+  const updateIncidentById = useCallback(
+    (incidentId, updater) => {
+      const rawIncidents = safeParse(INCIDENTS_KEY);
+      const baseIncidents = rawIncidents.length > 0 ? rawIncidents : incidents;
 
-    return updatedIncident;
-  };
+      const updatedRaw = baseIncidents.map((incident) =>
+        incident.id === incidentId ? updater(incident) : incident
+      );
+
+      const enriched = persistIncidents(updatedRaw);
+      const updatedIncident = enriched.find((item) => item.id === incidentId);
+
+      const syncSelected = (setter, current) => {
+        if (current?.id === incidentId) setter(updatedIncident);
+      };
+
+      syncSelected(setSelectedIncident, selectedIncident);
+      syncSelected(setStartReviewIncident, startReviewIncident);
+      syncSelected(setConfirmStartIncident, confirmStartIncident);
+      syncSelected(setResolutionIncident, resolutionIncident);
+      syncSelected(setReviewIncident, reviewIncident);
+
+      return updatedIncident;
+    },
+    [
+      incidents,
+      persistIncidents,
+      selectedIncident,
+      startReviewIncident,
+      confirmStartIncident,
+      resolutionIncident,
+      reviewIncident,
+    ]
+  );
 
   const handleAddIncident = async (newIncident) => {
     if (isSuperAdmin) return;
 
-    const normalizedIncident = normalizeIncidentWithRules({
-      ...newIncident,
-      status: "Open",
-    });
+    const currentRaw = safeParse(INCIDENTS_KEY);
+    const normalizedIncident = normalizeIncidentWithRules(
+      { ...newIncident, status: "Open" },
+      currentRaw
+    );
 
-    persistIncidents([normalizedIncident, ...incidents]);
+    persistIncidents([normalizedIncident, ...currentRaw]);
 
     await createOperationalLog(
       "CREATE_INCIDENT",
@@ -237,10 +262,22 @@ export default function Incidents() {
     );
 
     setOpenAddModal(false);
+    showNotice(
+      "success",
+      "Incident Report Saved",
+      `Incident ${normalizedIncident.id} has been successfully added to the report list.`
+    );
   };
 
   const handleConfirmStartInvestigation = async (incident) => {
     if (isSuperAdmin) return;
+
+    const timelineItem = createTimelineItem({
+      title: "Investigation Started",
+      description: `${currentUser.name} started the investigation.`,
+      createdBy: currentUser.name,
+      status: "Investigating",
+    });
 
     updateIncidentById(incident.id, (item) => ({
       ...item,
@@ -252,6 +289,7 @@ export default function Incidents() {
         startedByUsername: currentUser.username,
         startedByRole: currentUser.role,
       },
+      timeline: [...(item.timeline || []), timelineItem],
     }));
 
     await createOperationalLog(
@@ -261,10 +299,23 @@ export default function Incidents() {
 
     setConfirmStartIncident(null);
     setStartReviewIncident(null);
+
+    showNotice(
+      "success",
+      "Investigation Started",
+      `Incident ${incident.id} is now marked as Investigating.`
+    );
   };
 
   const handleSubmitResolution = async (incident, resolutionData) => {
     if (isSuperAdmin) return;
+
+    const timelineItem = createTimelineItem({
+      title: "Resolution Proof Submitted",
+      description: `${currentUser.name} submitted proof for Super Admin review.`,
+      createdBy: currentUser.name,
+      status: "For Review",
+    });
 
     updateIncidentById(incident.id, (item) => ({
       ...item,
@@ -279,6 +330,7 @@ export default function Incidents() {
         remarks: resolutionData.remarks,
         proofFiles: resolutionData.proofFiles,
       },
+      timeline: [...(item.timeline || []), timelineItem],
     }));
 
     await createOperationalLog(
@@ -287,10 +339,23 @@ export default function Incidents() {
     );
 
     setResolutionIncident(null);
+
+    showNotice(
+      "success",
+      "Submitted for Review",
+      `Proof for incident ${incident.id} has been submitted to Super Admin.`
+    );
   };
 
   const handleApproveCase = async (incident) => {
     if (!isSuperAdmin) return;
+
+    const timelineItem = createTimelineItem({
+      title: "Case Approved and Closed",
+      description: `${currentUser.name} approved and closed the case.`,
+      createdBy: currentUser.name,
+      status: "Closed",
+    });
 
     updateIncidentById(incident.id, (item) => ({
       ...item,
@@ -304,6 +369,7 @@ export default function Incidents() {
         decision: "Approved",
         comments: "Proof reviewed and approved.",
       },
+      timeline: [...(item.timeline || []), timelineItem],
     }));
 
     await createOperationalLog(
@@ -312,10 +378,23 @@ export default function Incidents() {
     );
 
     setReviewIncident(null);
+
+    showNotice(
+      "success",
+      "Case Approved",
+      `Incident ${incident.id} has been approved and closed successfully.`
+    );
   };
 
   const handleRejectCase = async (incident, comments) => {
     if (!isSuperAdmin) return;
+
+    const timelineItem = createTimelineItem({
+      title: "Case Returned",
+      description: comments,
+      createdBy: currentUser.name,
+      status: "Investigating",
+    });
 
     updateIncidentById(incident.id, (item) => ({
       ...item,
@@ -329,6 +408,7 @@ export default function Incidents() {
         decision: "Rejected",
         comments,
       },
+      timeline: [...(item.timeline || []), timelineItem],
     }));
 
     await createOperationalLog(
@@ -337,18 +417,30 @@ export default function Incidents() {
     );
 
     setReviewIncident(null);
+
+    showNotice(
+      "success",
+      "Case Returned",
+      `Incident ${incident.id} has been returned for correction.`
+    );
   };
 
   const filteredIncidents = useMemo(() => {
-    return incidents.filter((incident) => {
-      const keyword = search.toLowerCase();
+    const keyword = search.trim().toLowerCase();
 
-      const matchesSearch =
-        String(incident.id || "").toLowerCase().includes(keyword) ||
-        String(incident.employee || "").toLowerCase().includes(keyword) ||
-        String(incident.violation || "").toLowerCase().includes(keyword) ||
-        String(incident.company || "").toLowerCase().includes(keyword) ||
-        String(incident.sanction || "").toLowerCase().includes(keyword);
+    return incidents.filter((incident) => {
+      const matchesSearch = [
+        incident.id,
+        incident.employee,
+        incident.employeeId,
+        incident.violation,
+        incident.company,
+        incident.sanction,
+        incident.recommendation,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword);
 
       const matchesStatus =
         statusFilter === "ALL" || incident.status === statusFilter;
@@ -399,28 +491,19 @@ export default function Incidents() {
           />
         </div>
 
-        <select
+        <FilterSelect
           value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value)}
-          className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-        >
-          <option value="ALL">All Status</option>
-          <option value="Open">Open</option>
-          <option value="Investigating">Investigating</option>
-          <option value="For Review">For Review</option>
-          <option value="Closed">Closed</option>
-        </select>
+          onChange={setStatusFilter}
+          options={["ALL", "Open", "Investigating", "For Review", "Closed"]}
+          labels={{ ALL: "All Status" }}
+        />
 
-        <select
+        <FilterSelect
           value={severityFilter}
-          onChange={(event) => setSeverityFilter(event.target.value)}
-          className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-        >
-          <option value="ALL">All Severity</option>
-          <option value="Minor">Minor</option>
-          <option value="Major">Major</option>
-          <option value="Critical">Critical</option>
-        </select>
+          onChange={setSeverityFilter}
+          options={["ALL", "Minor", "Major", "Critical"]}
+          labels={{ ALL: "All Severity" }}
+        />
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-white shadow dark:border-gray-700 dark:bg-slate-800">
@@ -428,25 +511,32 @@ export default function Incidents() {
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 text-gray-700 dark:bg-slate-900/70 dark:text-gray-300">
               <tr>
-                <th className="px-6 py-4">Incident ID</th>
-                <th className="px-6 py-4">Employee</th>
-                <th className="px-6 py-4">Company</th>
-                <th className="px-6 py-4">Violation Type</th>
-                <th className="px-6 py-4">Severity</th>
-                <th className="px-6 py-4">Sanction</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Reported Date</th>
-                <th className="px-6 py-4 text-right">Action</th>
+                {[
+                  "Incident ID",
+                  "Employee",
+                  "Violation",
+                  "Severity",
+                  "Status",
+                  "Case Age",
+                  "Alerts",
+                  "Action",
+                ].map((head) => (
+                  <th
+                    key={head}
+                    className={`px-6 py-4 ${
+                      head === "Action" ? "text-right" : ""
+                    }`}
+                  >
+                    {head}
+                  </th>
+                ))}
               </tr>
             </thead>
 
             <tbody className="text-gray-700 dark:text-gray-200">
               {filteredIncidents.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={9}
-                    className="px-6 py-8 text-center text-gray-500"
-                  >
+                  <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                     No incident records found.
                   </td>
                 </tr>
@@ -456,18 +546,21 @@ export default function Incidents() {
                     key={incident.id}
                     className="border-t border-gray-200 dark:border-gray-700"
                   >
-                    <td className="px-6 py-4">{incident.id}</td>
+                    <td className="px-6 py-4 font-semibold">{incident.id}</td>
                     <td className="px-6 py-4">{incident.employee}</td>
-                    <td className="px-6 py-4">{incident.company || "-"}</td>
                     <td className="px-6 py-4">{incident.violation}</td>
                     <td className="px-6 py-4">
                       <SeverityBadge level={incident.severity} />
                     </td>
-                    <td className="px-6 py-4">{incident.sanction || "-"}</td>
                     <td className="px-6 py-4">
                       <StatusBadge status={incident.status} />
                     </td>
-                    <td className="px-6 py-4">{incident.date}</td>
+                    <td className="px-6 py-4">
+                      <CaseAgeBadge incident={incident} />
+                    </td>
+                    <td className="px-6 py-4">
+                      <SmartAlertBadge alerts={incident.smartAlerts || []} />
+                    </td>
                     <td className="px-6 py-4 text-right">
                       <ActionButtons
                         incident={incident}
@@ -498,7 +591,7 @@ export default function Incidents() {
           incident={startReviewIncident}
           mode="start-review"
           onClose={() => setStartReviewIncident(null)}
-          onRequestStart={(incident) => setConfirmStartIncident(incident)}
+          onRequestStart={setConfirmStartIncident}
         />
       )}
 
@@ -516,6 +609,7 @@ export default function Incidents() {
           incident={resolutionIncident}
           onClose={() => setResolutionIncident(null)}
           onSubmit={handleSubmitResolution}
+          showNotice={showNotice}
         />
       )}
 
@@ -525,6 +619,7 @@ export default function Incidents() {
           onClose={() => setReviewIncident(null)}
           onApprove={handleApproveCase}
           onReject={handleRejectCase}
+          showNotice={showNotice}
         />
       )}
 
@@ -536,7 +631,32 @@ export default function Incidents() {
         deployments={deployments}
         existingIncidents={incidents}
       />
+
+      {notice && (
+        <NoticeModal
+          type={notice.type}
+          title={notice.title}
+          message={notice.message}
+          onClose={() => setNotice(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function FilterSelect({ value, onChange, options, labels = {} }) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+    >
+      {options.map((option) => (
+        <option key={option} value={option}>
+          {labels[option] || option}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -548,63 +668,110 @@ function ActionButtons({
   onResolve,
   onReview,
 }) {
+  const baseClass =
+    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all duration-150";
+
   if (isSuperAdmin && incident.status === "For Review") {
     return (
-      <button
-        type="button"
+      <ActionButton
+        icon={<FiAlertCircle size={14} />}
+        label="Review"
+        color="bg-indigo-600 hover:bg-indigo-700"
         onClick={() => onReview(incident)}
-        className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
-      >
-        <FiAlertCircle size={14} />
-        Review
-      </button>
+        baseClass={baseClass}
+      />
     );
   }
 
   if (!isSuperAdmin && incident.status === "Open") {
     return (
-      <button
-        type="button"
+      <ActionButton
+        icon={<FiPlay size={14} />}
+        label="Start"
+        color="bg-amber-500 hover:bg-amber-600"
         onClick={() => onStartReview(incident)}
-        className="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"
-      >
-        <FiEye size={14} />
-        Review Case
-      </button>
+        baseClass={baseClass}
+      />
     );
   }
 
   if (!isSuperAdmin && incident.status === "Investigating") {
     return (
-      <button
-        type="button"
+      <ActionButton
+        icon={<FiUpload size={14} />}
+        label="Submit"
+        color="bg-green-600 hover:bg-green-700"
         onClick={() => onResolve(incident)}
-        className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
-      >
-        <FiUpload size={14} />
-        Submit Proof
-      </button>
+        baseClass={baseClass}
+      />
     );
   }
 
   return (
-    <button
-      type="button"
+    <ActionButton
+      icon={<FiEye size={14} />}
+      label="View"
+      color="bg-slate-600 hover:bg-slate-700"
       onClick={() => onView(incident)}
-      className="inline-flex items-center gap-1 rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
-    >
-      <FiEye size={14} />
-      View
+      baseClass={baseClass}
+    />
+  );
+}
+
+function ActionButton({ icon, label, color, onClick, baseClass }) {
+  return (
+    <button type="button" onClick={onClick} className={`${baseClass} ${color}`}>
+      {icon}
+      {label}
     </button>
   );
 }
 
-function ViewIncidentModal({
-  incident,
-  onClose,
-  mode = "view",
-  onRequestStart,
-}) {
+function CaseAgeBadge({ incident }) {
+  return (
+    <span
+      className={`rounded-full px-2 py-1 text-xs font-semibold ${
+        incident.isOverdue
+          ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+          : "bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-200"
+      }`}
+    >
+      {incident.caseAgeDays || 0}d
+    </span>
+  );
+}
+
+function SmartAlertBadge({ alerts = [] }) {
+  if (!alerts.length) {
+    return (
+      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+        <FiCheckCircle size={12} />
+        Clear
+      </span>
+    );
+  }
+
+  const hasCritical = alerts.some((alert) => alert.level === "critical");
+  const hasWarning = alerts.some((alert) => alert.level === "warning");
+
+  const badgeClass = hasCritical
+    ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+    : hasWarning
+    ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+    : "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300";
+
+  return (
+    <span
+      title={alerts.map((alert) => `${alert.title}: ${alert.message}`).join("\n")}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${badgeClass}`}
+    >
+      <FiAlertCircle size={12} />
+      {alerts.length} alert{alerts.length > 1 ? "s" : ""}
+    </span>
+  );
+}
+
+function ViewIncidentModal({ incident, onClose, mode = "view", onRequestStart }) {
   const isStartReview = mode === "start-review";
 
   return (
@@ -617,20 +784,26 @@ function ViewIncidentModal({
       <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
         <div className="space-y-5">
           {isStartReview && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              <p className="font-bold">Review before starting investigation</p>
-              <p className="mt-1">
-                Please verify the reporter, employee, violation type, and case
-                details before proceeding.
-              </p>
-            </div>
+            <AlertBox
+              type="warning"
+              title="Review before starting investigation"
+              message="Please verify the reporter, employee, violation type, case age, alerts, and case details before proceeding."
+            />
           )}
 
           <InfoCard title="Report Information">
             <Detail label="Incident ID" value={incident.id} />
             <Detail label="Reported By" value={incident.reportedBy || "-"} />
-            <Detail label="Reported Date" value={formatDateTime(incident.reportedAt || incident.date)} />
+            <Detail
+              label="Reported Date"
+              value={formatDateTime(incident.reportedAt || incident.date)}
+            />
+            <Detail label="Company" value={incident.company || "-"} />
+            <Detail label="Sanction" value={incident.sanction || "-"} />
             <Detail label="Status" value={incident.status} />
+            <Detail label="Case Age" value={`${incident.caseAgeDays || 0} day(s)`} />
+            <Detail label="SLA Target" value={`${incident.slaDays || "-"} day(s)`} />
+            <Detail label="Overdue" value={incident.isOverdue ? "Yes" : "No"} />
           </InfoCard>
 
           <InfoCard title="Employee and Violation">
@@ -639,8 +812,25 @@ function ViewIncidentModal({
             <Detail label="Company" value={incident.company || "-"} />
             <Detail label="Violation" value={incident.violation} />
             <Detail label="Severity" value={incident.severity} />
-            <Detail label="Sanction" value={incident.sanction} />
+            <Detail label="Offense Count" value={incident.offenseCount || 1} />
+            <Detail label="Sanction" value={incident.sanction || "-"} />
           </InfoCard>
+
+          <InfoCard title="System Recommendation">
+            <p className="rounded-xl bg-indigo-50 p-3 text-sm font-semibold leading-6 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+              {incident.recommendation || "No recommendation generated."}
+            </p>
+          </InfoCard>
+
+          {incident.smartAlerts?.length > 0 && (
+            <InfoCard title="Smart Alerts">
+              <div className="space-y-2">
+                {incident.smartAlerts.map((alert) => (
+                  <SmartAlertCard key={alert.id} alert={alert} />
+                ))}
+              </div>
+            </InfoCard>
+          )}
 
           <InfoCard title="Incident Description">
             <p className="whitespace-pre-line leading-6">
@@ -650,7 +840,7 @@ function ViewIncidentModal({
 
           {incident.review?.decision === "Rejected" && (
             <InfoCard title="Super Admin Return Comment">
-              <p className="rounded-xl bg-red-50 p-3 text-red-700">
+              <p className="rounded-xl bg-red-50 p-3 text-red-700 dark:bg-red-950/30 dark:text-red-300">
                 {incident.review.comments}
               </p>
             </InfoCard>
@@ -697,27 +887,18 @@ function ConfirmStartInvestigationModal({
       size="sm"
     >
       <div className="space-y-5">
-        <div className="flex items-start gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
-          <div className="rounded-full bg-amber-100 p-3 text-amber-700">
-            <FiAlertCircle size={22} />
-          </div>
-
-          <div>
-            <h3 className="text-lg font-extrabold">
-              Are you sure you want to start investigation?
-            </h3>
-            <p className="mt-1 text-sm leading-6">
-              This will move the case to <strong>Investigating</strong> status
-              and log your name, username, user ID, role, date, and time.
-            </p>
-          </div>
-        </div>
+        <AlertBox
+          type="warning"
+          title="Are you sure you want to start investigation?"
+          message="This will move the case to Investigating status and log your name, username, user ID, role, date, and time."
+        />
 
         <InfoCard title="Case to Investigate">
           <Detail label="Incident ID" value={incident.id} />
           <Detail label="Employee" value={incident.employee} />
           <Detail label="Violation Type" value={incident.violation} />
           <Detail label="Severity" value={incident.severity} />
+          <Detail label="Case Age" value={`${incident.caseAgeDays || 0} day(s)`} />
         </InfoCard>
 
         <InfoCard title="Investigation Started By">
@@ -747,7 +928,7 @@ function ConfirmStartInvestigationModal({
   );
 }
 
-function ResolutionModal({ incident, onClose, onSubmit }) {
+function ResolutionModal({ incident, onClose, onSubmit, showNotice }) {
   const [actionTaken, setActionTaken] = useState("");
   const [remarks, setRemarks] = useState("");
   const [proofFiles, setProofFiles] = useState([]);
@@ -766,23 +947,37 @@ function ResolutionModal({ incident, onClose, onSubmit }) {
     );
   };
 
+  const validateResolution = () => {
+    const validations = [
+      {
+        valid: actionTaken.trim(),
+        title: "Action Taken Required",
+        message: "Please enter the action taken before submitting this case for review.",
+      },
+      {
+        valid: remarks.trim(),
+        title: "Resolution Remarks Required",
+        message: "Please enter resolution remarks to explain how the case was handled.",
+      },
+      {
+        valid: proofFiles.length > 0,
+        title: "Proof Upload Required",
+        message: "Please upload at least one proof file before submitting for review.",
+      },
+    ];
+
+    const failed = validations.find((item) => !item.valid);
+    if (failed) {
+      showNotice("error", failed.title, failed.message);
+      return false;
+    }
+
+    return true;
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
-
-    if (!actionTaken.trim()) {
-      alert("Please enter the action taken.");
-      return;
-    }
-
-    if (!remarks.trim()) {
-      alert("Please enter resolution remarks.");
-      return;
-    }
-
-    if (proofFiles.length === 0) {
-      alert("Proof upload is required before submitting for review.");
-      return;
-    }
+    if (!validateResolution()) return;
 
     onSubmit(incident, {
       actionTaken: actionTaken.trim(),
@@ -800,11 +995,18 @@ function ResolutionModal({ incident, onClose, onSubmit }) {
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         {incident.review?.decision === "Rejected" && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            <p className="font-bold">Returned by Super Admin</p>
-            <p className="mt-1">{incident.review.comments}</p>
-          </div>
+          <AlertBox
+            type="error"
+            title="Returned by Super Admin"
+            message={incident.review.comments}
+          />
         )}
+
+        <InfoCard title="System Recommendation">
+          <p className="rounded-xl bg-indigo-50 p-3 text-sm font-semibold leading-6 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+            {incident.recommendation || "No recommendation generated."}
+          </p>
+        </InfoCard>
 
         <Field label="Action Taken" required>
           <textarea
@@ -835,12 +1037,7 @@ function ResolutionModal({ incident, onClose, onSubmit }) {
             <span className="mt-1 text-xs text-gray-500">
               Required before submitting for review
             </span>
-            <input
-              type="file"
-              multiple
-              onChange={handleFileChange}
-              className="hidden"
-            />
+            <input type="file" multiple onChange={handleFileChange} className="hidden" />
           </label>
 
           {proofFiles.length > 0 && <ProofList files={proofFiles} />}
@@ -850,6 +1047,7 @@ function ResolutionModal({ incident, onClose, onSubmit }) {
           <button type="button" onClick={onClose} className="btn-light">
             Cancel
           </button>
+
           <button type="submit" className="btn-green">
             Submit for Review
           </button>
@@ -859,12 +1057,16 @@ function ResolutionModal({ incident, onClose, onSubmit }) {
   );
 }
 
-function ReviewCaseModal({ incident, onClose, onApprove, onReject }) {
+function ReviewCaseModal({ incident, onClose, onApprove, onReject, showNotice }) {
   const [rejectComment, setRejectComment] = useState("");
 
   const handleReject = () => {
     if (!rejectComment.trim()) {
-      alert("Please enter a comment before returning the case.");
+      showNotice(
+        "error",
+        "Return Comment Required",
+        "Please enter a return comment before sending this case back for correction."
+      );
       return;
     }
 
@@ -885,25 +1087,24 @@ function ReviewCaseModal({ incident, onClose, onApprove, onReject }) {
             <Detail label="Severity" value={incident.severity} />
             <Detail label="Sanction" value={incident.sanction} />
             <Detail label="Status" value={incident.status} />
+            <Detail label="Case Age" value={`${incident.caseAgeDays || 0} day(s)`} />
           </InfoCard>
 
+          {incident.smartAlerts?.length > 0 && (
+            <InfoCard title="Smart Alerts">
+              <div className="space-y-2">
+                {incident.smartAlerts.map((alert) => (
+                  <SmartAlertCard key={alert.id} alert={alert} />
+                ))}
+              </div>
+            </InfoCard>
+          )}
+
           <InfoCard title="Investigation Information">
-            <Detail
-              label="Started By"
-              value={incident.investigation?.startedByName || "-"}
-            />
-            <Detail
-              label="Username"
-              value={incident.investigation?.startedByUsername || "-"}
-            />
-            <Detail
-              label="User ID"
-              value={incident.investigation?.startedById || "-"}
-            />
-            <Detail
-              label="Date Started"
-              value={formatDateTime(incident.investigation?.startedAt)}
-            />
+            <Detail label="Started By" value={incident.investigation?.startedByName || "-"} />
+            <Detail label="Username" value={incident.investigation?.startedByUsername || "-"} />
+            <Detail label="User ID" value={incident.investigation?.startedById || "-"} />
+            <Detail label="Date Started" value={formatDateTime(incident.investigation?.startedAt)} />
           </InfoCard>
 
           {incident.resolution && <ProofReview resolution={incident.resolution} />}
@@ -923,11 +1124,8 @@ function ReviewCaseModal({ incident, onClose, onApprove, onReject }) {
               <FiXCircle />
               Return Case
             </button>
-            <button
-              type="button"
-              onClick={() => onApprove(incident)}
-              className="btn-green"
-            >
+
+            <button type="button" onClick={() => onApprove(incident)} className="btn-green">
               <FiCheckCircle />
               Approve & Close
             </button>
@@ -940,14 +1138,7 @@ function ReviewCaseModal({ incident, onClose, onApprove, onReject }) {
   );
 }
 
-function BaseModal({
-  children,
-  onClose,
-  title,
-  subtitle,
-  color = "red",
-  size = "lg",
-}) {
+function BaseModal({ children, onClose, title, subtitle, color = "red", size = "lg" }) {
   const colors = {
     red: "from-red-600 to-rose-600",
     green: "from-green-600 to-emerald-600",
@@ -978,6 +1169,7 @@ function BaseModal({
               type="button"
               onClick={onClose}
               className="rounded-xl bg-white/10 p-2 hover:bg-white/20"
+              aria-label="Close"
             >
               <FiX size={20} />
             </button>
@@ -991,51 +1183,124 @@ function BaseModal({
   );
 }
 
+function NoticeModal({ type = "success", title, message, onClose }) {
+  const isSuccess = type === "success";
+  const color = isSuccess
+    ? "from-emerald-600 to-green-600"
+    : "from-red-600 to-rose-600";
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900">
+        <div className={`bg-gradient-to-r ${color} px-6 py-5 text-white`}>
+          <div className="flex items-start gap-4">
+            <div className="rounded-2xl bg-white/15 p-3">
+              {isSuccess ? <FiCheckCircle size={24} /> : <FiAlertCircle size={24} />}
+            </div>
+
+            <div>
+              <h3 className="text-lg font-extrabold">{title}</h3>
+              <p className="mt-1 text-sm text-white/85">{message}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end p-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white ${
+              isSuccess ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"
+            }`}
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AlertBox({ type = "warning", title, message }) {
+  const style =
+    type === "error"
+      ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+      : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300";
+
+  return (
+    <div className={`flex items-start gap-4 rounded-2xl border p-5 ${style}`}>
+      <div className="rounded-full bg-white/50 p-3">
+        <FiAlertCircle size={22} />
+      </div>
+
+      <div>
+        <h3 className="text-lg font-extrabold">{title}</h3>
+        <p className="mt-1 text-sm leading-6">{message}</p>
+      </div>
+    </div>
+  );
+}
+
+function SmartAlertCard({ alert }) {
+  const style =
+    alert.level === "critical"
+      ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+      : alert.level === "warning"
+      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300"
+      : "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-300";
+
+  return (
+    <div className={`rounded-xl border p-3 text-sm ${style}`}>
+      <p className="font-bold">{alert.title}</p>
+      <p className="mt-1 leading-6">{alert.message}</p>
+    </div>
+  );
+}
+
 function CaseTimeline({ incident }) {
-  const steps = [
+  const fallbackSteps = [
     {
+      id: "reported",
       title: "Reported",
       description: incident.reportedBy
         ? `Reported by ${incident.reportedBy}`
         : "Incident report created",
-      date: incident.reportedAt || incident.date,
-      icon: <FiFileText />,
-      active: true,
+      createdAt: incident.reportedAt || incident.date,
+      status: "Open",
     },
     {
+      id: "investigation",
       title: "Investigation Started",
       description: incident.investigation
         ? `By ${incident.investigation.startedByName}`
         : "Waiting for HR action",
-      date: incident.investigation?.startedAt,
-      icon: <FiPlay />,
-      active: Boolean(incident.investigation),
+      createdAt: incident.investigation?.startedAt,
+      status: "Investigating",
     },
     {
+      id: "proof",
       title: "Proof Submitted",
       description: incident.resolution
         ? `By ${incident.resolution.submittedByName}`
         : "Waiting for resolution proof",
-      date: incident.resolution?.submittedAt,
-      icon: <FiUpload />,
-      active: Boolean(incident.resolution),
+      createdAt: incident.resolution?.submittedAt,
+      status: "For Review",
     },
     {
+      id: "review",
       title: incident.review?.decision === "Rejected" ? "Returned" : "Closed",
       description: incident.review
         ? `${incident.review.decision} by ${incident.review.reviewedByName}`
         : "Waiting for Super Admin review",
-      date: incident.review?.reviewedAt,
-      icon:
-        incident.review?.decision === "Rejected" ? (
-          <FiXCircle />
-        ) : (
-          <FiCheckCircle />
-        ),
-      active: Boolean(incident.review),
-      rejected: incident.review?.decision === "Rejected",
+      createdAt: incident.review?.reviewedAt,
+      status: incident.review?.decision === "Rejected" ? "Investigating" : "Closed",
     },
   ];
+
+  const timelineItems =
+    Array.isArray(incident.timeline) && incident.timeline.length > 0
+      ? incident.timeline
+      : fallbackSteps;
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950">
@@ -1044,38 +1309,41 @@ function CaseTimeline({ incident }) {
       </p>
 
       <div className="space-y-5">
-        {steps.map((step, index) => (
-          <div key={step.title} className="relative flex gap-3">
-            {index !== steps.length - 1 && (
-              <span className="absolute left-[15px] top-8 h-full w-px bg-gray-200 dark:bg-white/10" />
-            )}
+        {timelineItems.map((item, index) => {
+          const isRejected =
+            item.status === "Rejected" ||
+            item.status === "Returned" ||
+            item.title?.toLowerCase().includes("returned");
 
-            <div
-              className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${
-                step.rejected
-                  ? "border-red-300 bg-red-100 text-red-700"
-                  : step.active
-                  ? "border-green-300 bg-green-100 text-green-700"
-                  : "border-gray-200 bg-white text-gray-400"
-              }`}
-            >
-              {step.icon}
-            </div>
+          return (
+            <div key={item.id || `${item.title}-${index}`} className="relative flex gap-3">
+              {index !== timelineItems.length - 1 && (
+                <span className="absolute left-[15px] top-8 h-full w-px bg-gray-200 dark:bg-white/10" />
+              )}
 
-            <div>
-              <p className="text-sm font-bold text-gray-900 dark:text-white">
-                {step.title}
-              </p>
-              <p className="mt-0.5 text-xs text-gray-500">
-                {step.description}
-              </p>
-              <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
-                <FiClock />
-                {formatDateTime(step.date)}
-              </p>
+              <div
+                className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${
+                  isRejected
+                    ? "border-red-300 bg-red-100 text-red-700"
+                    : "border-green-300 bg-green-100 text-green-700"
+                }`}
+              >
+                {isRejected ? <FiXCircle /> : <FiCheckCircle />}
+              </div>
+
+              <div>
+                <p className="text-sm font-bold text-gray-900 dark:text-white">
+                  {item.title}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">{item.description}</p>
+                <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
+                  <FiClock />
+                  {formatDateTime(item.createdAt)}
+                </p>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1085,31 +1353,24 @@ function ProofReview({ resolution }) {
   return (
     <InfoCard title="Resolution Proof Review">
       <Detail label="Submitted By" value={resolution.submittedByName || "-"} />
-      <Detail
-        label="Submitted Date"
-        value={formatDateTime(resolution.submittedAt)}
-      />
+      <Detail label="Submitted Date" value={formatDateTime(resolution.submittedAt)} />
 
-      <div className="mt-3">
-        <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
-          Action Taken
-        </p>
-        <p className="mt-1 whitespace-pre-line text-sm leading-6">
-          {resolution.actionTaken || "-"}
-        </p>
-      </div>
-
-      <div className="mt-3">
-        <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
-          Remarks
-        </p>
-        <p className="mt-1 whitespace-pre-line text-sm leading-6">
-          {resolution.remarks || "-"}
-        </p>
-      </div>
+      <TextDetail label="Action Taken" value={resolution.actionTaken || "-"} />
+      <TextDetail label="Remarks" value={resolution.remarks || "-"} />
 
       <ProofList files={resolution.proofFiles || []} />
     </InfoCard>
+  );
+}
+
+function TextDetail({ label, value }) {
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+        {label}
+      </p>
+      <p className="mt-1 whitespace-pre-line text-sm leading-6">{value}</p>
+    </div>
   );
 }
 
@@ -1126,9 +1387,10 @@ function ProofList({ files = [] }) {
           className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900"
         >
           <div className="flex items-start gap-3">
-            <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600">
+            <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
               <FiFileText />
             </div>
+
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-gray-900 dark:text-white">
                 {file.name}
@@ -1190,15 +1452,16 @@ function ModalFooter({ children }) {
 
 function SeverityBadge({ level }) {
   const colors = {
-    Minor: "bg-blue-100 text-blue-700",
-    Major: "bg-amber-100 text-amber-700",
-    Critical: "bg-red-100 text-red-700",
+    Minor: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
+    Major: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+    Critical: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
   };
 
   return (
     <span
       className={`rounded-full px-2 py-1 text-xs font-medium ${
-        colors[level] || "bg-gray-100 text-gray-700"
+        colors[level] ||
+        "bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-200"
       }`}
     >
       {level || "Minor"}
@@ -1207,19 +1470,36 @@ function SeverityBadge({ level }) {
 }
 
 function StatusBadge({ status }) {
-  const colors = {
-    Open: "bg-red-100 text-red-700",
-    Investigating: "bg-amber-100 text-amber-700",
-    "For Review": "bg-indigo-100 text-indigo-700",
-    Closed: "bg-green-100 text-green-700",
+  const config = {
+    Open: {
+      class:
+        "bg-red-100 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-300",
+      icon: "●",
+    },
+    Investigating: {
+      class:
+        "bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
+      icon: "⏳",
+    },
+    "For Review": {
+      class:
+        "bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300",
+      icon: "👁",
+    },
+    Closed: {
+      class:
+        "bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
+      icon: "✔",
+    },
   };
+
+  const current = config[status] || config.Open;
 
   return (
     <span
-      className={`rounded-full px-2 py-1 text-xs font-medium ${
-        colors[status] || "bg-gray-100 text-gray-700"
-      }`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${current.class}`}
     >
+      <span className="text-[10px]">{current.icon}</span>
       {status || "Open"}
     </span>
   );
@@ -1260,6 +1540,11 @@ function ModalStyle() {
         font-size: 0.875rem;
         font-weight: 700;
         color: rgb(55 65 81);
+      }
+
+      .dark .btn-light {
+        border-color: rgba(255, 255, 255, 0.1);
+        color: rgb(209 213 219);
       }
 
       .btn-green,
