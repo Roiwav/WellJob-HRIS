@@ -1,93 +1,149 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  FiAlertTriangle,
+  FiBell,
+  FiCheckCircle,
+  FiClock,
+} from "react-icons/fi";
 import NotificationCard from "../components/notifications/NotificationCard";
 import NotificationTable from "../components/notifications/NotificationTable";
 
 const INCIDENTS_KEY = "incidents";
+const EMPLOYEES_KEY = "employees";
+const NOTIFICATIONS_LAST_READ_KEY = "notifications_last_read";
+
+function safeParse(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getIncidentTime(incident) {
+  const raw = incident.reportedAt || incident.createdAt || incident.date;
+  const time = new Date(raw).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
 
 export default function Notifications() {
-
   const [notifications, setNotifications] = useState([]);
 
-  useEffect(() => {
-    loadNotifications();
-
-    // 🔥 REAL-TIME UPDATE
-    const reload = () => loadNotifications();
-    window.addEventListener("dataUpdated", reload);
-
-    return () => window.removeEventListener("dataUpdated", reload);
-  }, []);
-
   const loadNotifications = () => {
-    const incidents = JSON.parse(localStorage.getItem(INCIDENTS_KEY)) || [];
-    const employees = JSON.parse(localStorage.getItem("employees")) || [];
+    const incidents = safeParse(INCIDENTS_KEY);
+    const employees = safeParse(EMPLOYEES_KEY);
+    const activeEmployees = employees.filter((emp) => !emp.archived);
 
-    // 🔥 FILTER ACTIVE EMPLOYEES
-    const activeEmployees = employees.filter(emp => !emp.archived);
-
-    const filteredIncidents = incidents.filter(incident =>
+    const filteredIncidents = incidents.filter((incident) =>
       activeEmployees.some(
-        emp =>
-          emp.id === incident.employeeId ||
-          emp.name === incident.employee
+        (emp) =>
+          String(emp.id) === String(incident.employeeId) ||
+          String(emp.name) === String(incident.employee)
       )
     );
 
-    const mapped = filteredIncidents.map((incident) => ({
-      id: incident.id,
-      reportedBy: incident.reportedBy || "Unknown",
-      employee: incident.employee,
-      violation: incident.violation,
-      severity: incident.severity,
-      status: incident.status,
-      date: incident.date
-    }));
+    const mapped = filteredIncidents
+      .map((incident) => ({
+        id: incident.id,
+        reportedBy: incident.reportedBy || "Unknown",
+        employee: incident.employee,
+        violation: incident.violation,
+        severity: incident.severity || "Minor",
+        status: incident.status || "Open",
+        date: incident.reportedAt || incident.date,
+        timestamp: getIncidentTime(incident),
+      }))
+      .sort((a, b) => b.timestamp - a.timestamp);
 
-    setNotifications(mapped.reverse());
+    setNotifications(mapped);
   };
 
-  // 🔥 COUNT CARDS
-  const highCount = notifications.filter(n => n.severity === "Critical").length;
-  const mediumCount = notifications.filter(n => n.severity === "Major").length;
-  const lowCount = notifications.filter(n => n.severity === "Minor").length;
+  useEffect(() => {
+    // Mark notifications as read
+    localStorage.setItem(
+      NOTIFICATIONS_LAST_READ_KEY,
+      new Date().toISOString()
+    );
+
+    window.dispatchEvent(new Event("dataUpdated"));
+  }, []);
+
+  useEffect(() => {
+    const reload = () => {
+      setTimeout(loadNotifications, 0);
+    };
+    
+    // Initial load
+    reload();
+    
+    window.addEventListener("dataUpdated", reload);
+    window.addEventListener("storage", reload);
+
+    return () => {
+      window.removeEventListener("dataUpdated", reload);
+      window.removeEventListener("storage", reload);
+    };
+  }, []);
+
+  const counts = useMemo(
+    () => ({
+      critical: notifications.filter((n) => n.severity === "Critical").length,
+      major: notifications.filter((n) => n.severity === "Major").length,
+      minor: notifications.filter((n) => n.severity === "Minor").length,
+      total: notifications.length,
+    }),
+    [notifications]
+  );
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 p-8">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="flex items-center gap-3 text-2xl font-bold text-gray-900 dark:text-white">
+            <span className="rounded-2xl bg-indigo-100 p-3 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+              <FiBell />
+            </span>
+            Incident Notifications
+          </h1>
 
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Incidents Notification
-        </h1>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            Alerts generated from newly reported and updated incident records.
+          </p>
+        </div>
 
-        <p className="text-gray-500 dark:text-gray-400 text-sm">
-          System alerts for incidents coming notifications
-        </p>
+        <div className="rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm text-gray-600 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-gray-300">
+          Total Notifications:{" "}
+          <span className="font-extrabold text-gray-900 dark:text-white">
+            {counts.total}
+          </span>
+        </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4">
-
+      <div className="grid gap-4 md:grid-cols-3">
         <NotificationCard
           type="High"
-          message={`${highCount} Critical Incidents`}
-          date="Today"
+          icon={<FiAlertTriangle />}
+          message={`${counts.critical} Critical Incidents`}
+          date="Requires immediate attention"
         />
 
         <NotificationCard
           type="Medium"
-          message={`${mediumCount} Major Incidents`}
-          date="Today"
+          icon={<FiClock />}
+          message={`${counts.major} Major Incidents`}
+          date="Needs investigation follow-up"
         />
 
         <NotificationCard
           type="Low"
-          message={`${lowCount} Minor Incidents`}
-          date="Today"
+          icon={<FiCheckCircle />}
+          message={`${counts.minor} Minor Incidents`}
+          date="Standard monitoring"
         />
-
       </div>
 
       <NotificationTable notifications={notifications} />
-
     </div>
   );
 }

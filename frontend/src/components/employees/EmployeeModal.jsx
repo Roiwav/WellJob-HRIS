@@ -148,16 +148,15 @@ function getRiskClasses(level) {
 }
 
 export default function EmployeeModal({ employee, onClose }) {
+  const [previewFile, setPreviewFile] = useState(null);
+
   if (!employee) return null;
 
-  const employeeDocs = Array.isArray(employee.documents) ? employee.documents : [];
   const employeeIncidents = getEmployeeIncidents(employee);
-  const [previewFile, setPreviewFile] = useState(null);
   const normalizedDocuments = (employee.documents || []).map((doc) => ({
-  ...doc,
-  status: getDocumentStatus(doc.expirationDate),
-}));
-
+    ...doc,
+    status: getDocumentStatus(doc.expirationDate),
+  }));
   const overallCompliance = getOverallCompliance(normalizedDocuments);
 
   const expiringDocs = normalizedDocuments.filter(
@@ -471,9 +470,9 @@ export default function EmployeeModal({ employee, onClose }) {
                   >
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                       <div>
-                        <p className="font-semibold text-base text-gray-900 dark:text-white">
-                          {incident.violation || "No violation type"}
-                        </p>
+                        {typeof incident.violation === "object"
+                          ? incident.violation?.label || incident.violation?.violation || "No violation type"
+                          : incident.violation || "No violation type"}
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                           {incident.id} • {formatDate(incident.date)}
                         </p>

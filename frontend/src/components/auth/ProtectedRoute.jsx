@@ -5,7 +5,7 @@ import { ROLES } from "../../constants/roles";
 function getDefaultRouteByRole(role) {
   switch (role) {
     case ROLES.HR_STAFF:
-      return "/";
+      return "/employees";
     case ROLES.HR_MANAGER:
       return "/";
     case ROLES.IT_SUPPORT:
@@ -16,6 +16,17 @@ function getDefaultRouteByRole(role) {
   }
 }
 
+function shouldForceChangePassword(user) {
+  return (
+    user?.mustChangePassword === true ||
+    user?.mustChangePassword === 1 ||
+    user?.mustChangePassword === "1" ||
+    user?.must_change_password === true ||
+    user?.must_change_password === 1 ||
+    user?.must_change_password === "1"
+  );
+}
+
 export default function ProtectedRoute({ allowedRoles }) {
   const { user } = useAuth();
   const location = useLocation();
@@ -24,8 +35,10 @@ export default function ProtectedRoute({ allowedRoles }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // 🔐 FORCE CHANGE PASSWORD FIRST
-  if (user.mustChangePassword && location.pathname !== "/change-password") {
+  if (
+    shouldForceChangePassword(user) &&
+    location.pathname !== "/change-password"
+  ) {
     return <Navigate to="/change-password" replace />;
   }
 

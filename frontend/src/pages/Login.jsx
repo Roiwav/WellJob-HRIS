@@ -53,14 +53,30 @@ export default function Login() {
       }
 
       // SAVE USER
-      localStorage.setItem("user", JSON.stringify(data.user));
-      setUser(data.user);
+const normalizedUser = {
+  ...data.user,
+  mustChangePassword:
+    data.user?.mustChangePassword === true ||
+    data.user?.mustChangePassword === 1 ||
+    data.user?.mustChangePassword === "1" ||
+    data.user?.must_change_password === true ||
+    data.user?.must_change_password === 1 ||
+    data.user?.must_change_password === "1",
+};
+
+localStorage.setItem("user", JSON.stringify(normalizedUser));
+setUser(normalizedUser);
+
+if (normalizedUser.mustChangePassword) {
+  navigate("/change-password", { replace: true });
+  return;
+}
 
         // 🔥 FORCE CHANGE PASSWORD FIRST
-        if (data.user.mustChangePassword) {
-          navigate("/change-password");
-          return;
-        }
+if (normalizedUser.mustChangePassword) {
+  navigate("/change-password");
+  return;
+}
 
         // ROLE-BASED REDIRECT
         const redirectByRole = {

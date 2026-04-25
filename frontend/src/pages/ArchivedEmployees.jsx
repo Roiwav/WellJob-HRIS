@@ -17,10 +17,11 @@ export default function ArchivedEmployees() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
 
-  const saveToStorage = (data) => {
-    setEmployees(data);
-    localStorage.setItem("employees", JSON.stringify(data));
-  };
+const saveToStorage = (data) => {
+  setEmployees(data);
+  localStorage.setItem("employees", JSON.stringify(data));
+  window.dispatchEvent(new Event("dataUpdated"));
+};
 
   const archivedEmployees = useMemo(
     () => employees.filter((emp) => emp.archived),
@@ -73,12 +74,34 @@ export default function ArchivedEmployees() {
     setSuccessMessage("Employee restored successfully.");
   };
 
-  const handleDelete = (id) => {
-    const updated = employees.filter((emp) => emp.id !== id);
-    saveToStorage(updated);
-    setDeleteTarget(null);
-    setSuccessMessage("Employee permanently deleted.");
-  };
+const handleDelete = (id) => {
+  const target = employees.find((emp) => emp.id === id);
+
+  const updatedEmployees = employees.filter((emp) => emp.id !== id);
+
+  const storedIncidents = JSON.parse(localStorage.getItem("incidents") || "[]");
+  const updatedIncidents = storedIncidents.filter(
+    (incident) =>
+      String(incident.employeeId) !== String(id) &&
+      String(incident.employee) !== String(target?.name)
+  );
+
+  const storedDeployments = JSON.parse(localStorage.getItem("deployments") || "[]");
+  const updatedDeployments = storedDeployments.filter(
+    (deployment) =>
+      String(deployment.employeeId) !== String(id) &&
+      String(deployment.employee) !== String(target?.name)
+  );
+
+  saveToStorage(updatedEmployees);
+  localStorage.setItem("incidents", JSON.stringify(updatedIncidents));
+  localStorage.setItem("deployments", JSON.stringify(updatedDeployments));
+
+  window.dispatchEvent(new Event("dataUpdated"));
+
+  setDeleteTarget(null);
+  setSuccessMessage("Employee permanently deleted.");
+};
 
   return (
     <div className="p-8 space-y-6">
