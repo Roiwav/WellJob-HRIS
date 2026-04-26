@@ -166,6 +166,7 @@ export default function AddEmployeeModal({
   const [filteredCompanies, setFilteredCompanies] = useState(COMPANY_OPTIONS);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  
   useEffect(() => {
     setTimeout(() => {
       setFormData({
@@ -369,43 +370,52 @@ const complianceReviewWarning = useMemo(() => {
     }));
   };
 
-  const handleDocumentFile = (docName, fileData) => {
-    setFormData((prev) => ({
-      ...prev,
-      documents: prev.documents.map((doc) =>
-        doc.name === docName ? { ...doc, file: fileData } : doc
-      ),
-    }));
+const handleDocumentFile = (docName, fileData) => {
+  setFormData((prev) => ({
+    ...prev,
+    documents: prev.documents.map((doc) =>
+      doc.name === docName ? { ...doc, file: fileData } : doc
+    ),
+  }));
+
+  setErrors((prev) => ({
+    ...prev,
+    documents: {
+      ...prev.documents,
+      [`${docName}_file`]: "",
+    },
+  }));
+};
+
+const handleFileInput = (docName, file) => {
+  if (!file) return;
+
+  const validTypes = ["image/png", "image/jpeg", "application/pdf"];
+
+  if (!validTypes.includes(file.type)) {
+    alert("Only PNG, JPEG, and PDF files are allowed.");
+    return;
+  }
+
+  const maxSize = 5 * 1024 * 1024;
+
+  if (file.size > maxSize) {
+    alert("File must be less than 5MB.");
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.onloadend = () => {
+    handleDocumentFile(docName, {
+      name: file.name,
+      type: file.type,
+      data: reader.result,
+    });
   };
 
-  const handleFileInput = (docName, file) => {
-    if (!file) return;
-
-    const validTypes = ["image/png", "image/jpeg"];
-    if (!validTypes.includes(file.type))
-          {
-      alert("Only PNG and JPEG images are allowed.");
-      return;
-    }
-
-    const maxSize = 5 * 1024 * 1024;
-    if (file.size > maxSize) {
-      alert("File must be less than 5MB.");
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onloadend = () => {
-      handleDocumentFile(docName, {
-        name: file.name,
-        type: file.type,
-        data: reader.result,
-      });
-    };
-
-    reader.readAsDataURL(file);
-  };
+  reader.readAsDataURL(file);
+};
 
   const validateForm = () => {
     const nextErrors = {
@@ -449,11 +459,15 @@ const complianceReviewWarning = useMemo(() => {
         "Possible duplicate name detected. Please verify using the resume/supporting documents and confirm before saving.";
     }
 
-    formData.documents.forEach((doc) => {
-      if (doc.checked && doc.expirable && !doc.expirationDate) {
-        nextErrors.documents[doc.name] = "Expiration date is required.";
-      }
-    });
+formData.documents.forEach((doc) => {
+  if (doc.checked && doc.expirable && !doc.expirationDate) {
+    nextErrors.documents[doc.name] = "Expiration date is required.";
+  }
+
+  if (doc.checked && !doc.file) {
+    nextErrors.documents[`${doc.name}_file`] = "Proof upload is required.";
+  }
+});
 // 🔥 UPDATED RULE: minimum compliance for deployed
 if (
   formData.status === "Deployed" &&
@@ -907,22 +921,20 @@ if (
                                               </span>
                                             </div>
 
-                                            <input
-                                              type="file"
-                                              accept="image/png, image/jpeg"
-                                              className="hidden"
-                                              onChange={(e) =>
-                                                handleFileInput(
-                                                  doc.name,
-                                                  e.target.files?.[0]
-                                                )
-                                              }
-                                            />
+                                          <input
+                                            type="file"
+                                            accept="image/png, image/jpeg, application/pdf"
+                                            className="hidden"
+                                            onChange={(e) =>
+                                              handleFileInput(doc.name, e.target.files?.[0])
+                                            }
+                                          />
                                           </label>
 
                                           <p className="mt-1 text-xs text-gray-400">
-                                            PNG or JPEG only. Max file size: 5MB.
+                                            PNG, JPEG, or PDF only. Max file size: 5MB.
                                           </p>
+                                          <ErrorText>{errors.documents[`${doc.name}_file`]}</ErrorText>
 
                                           {doc.file && (
                                             <p className="mt-2 flex items-center gap-1.5 text-xs font-bold text-green-600 dark:text-green-400">
@@ -1113,13 +1125,12 @@ if (
                           <p className="text-xs text-gray-500">
                             File: {doc.file?.name || "No file uploaded"}
                           </p>
+                           </div>
+                      {isExpirable && (
+                        <div className="text-sm font-semibold text-gray-600 dark:text-gray-300">
+                          Expires: {doc.expirationDate || "-"} • {status}
                         </div>
-
-                    <div className="text-sm font-semibold text-gray-600 dark:text-gray-300">
-                      {isExpirable
-                        ? `Expires: ${doc.expirationDate || "-"} • ${status}`
-                        : "Permanent"}
-                    </div>
+                      )}
                       </div>
                     );
                   })}
