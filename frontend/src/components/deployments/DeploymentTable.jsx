@@ -1,5 +1,4 @@
-import { FiEdit2, FiEye } from "react-icons/fi";
-import { useAuth } from "../../context/useAuth";
+import { FiBriefcase, FiEye } from "react-icons/fi";
 
 function formatDisplayDate(dateValue) {
   if (!dateValue || dateValue === "-") return "-";
@@ -28,66 +27,82 @@ function StatusBadge({ status }) {
 
   return (
     <span
-      className={`px-3 py-1 rounded-full text-xs font-semibold ${
+      className={`rounded-full px-3 py-1 text-xs font-semibold ${
         styles[status] || "bg-gray-100 text-gray-700"
       }`}
     >
-      {status}
+      {status || "-"}
     </span>
   );
 }
 
-export default function DeploymentTable({
-  deployments,
-  openView,
-  openEdit,
-}) {
-  const { user } = useAuth();
-  const isSuperAdmin = user?.role === "SUPER_ADMIN";
-
+export default function DeploymentTable({ deployments = [], openView }) {
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow border dark:border-gray-700 overflow-hidden">
+    <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-white/10">
+        <div>
+          <h3 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
+            <FiBriefcase className="text-indigo-600 dark:text-indigo-400" />
+            Deployment Records
+          </h3>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            View and monitor employee deployment assignments.
+          </p>
+        </div>
+
+        <span className="rounded-full bg-indigo-50 px-4 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+          {deployments.length} record{deployments.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
       <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 dark:bg-slate-900/70">
-            <tr>
+        <table className="w-full min-w-[1000px] text-left">
+          <thead className="bg-gray-50 dark:bg-white/5">
+            <tr className="border-b border-gray-200 text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:border-white/10 dark:text-gray-400">
+              <th className="px-6 py-4">Employee ID</th>
               <th className="px-6 py-4">Employee</th>
               <th className="px-6 py-4">Company</th>
               <th className="px-6 py-4">Location</th>
               <th className="px-6 py-4">Start Date</th>
               <th className="px-6 py-4">Contract End</th>
               <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4 text-right">Actions</th>
+              <th className="px-6 py-4 text-center">Actions</th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="divide-y divide-gray-100 dark:divide-white/5">
             {deployments.length > 0 ? (
               deployments.map((deployment) => (
                 <tr
                   key={deployment.id}
-                  className="border-t border-gray-200 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-slate-800 transition"
+                  className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5"
                 >
-                  <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
-                    {deployment.employee}
+                  <td className="px-6 py-4">
+                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {deployment.id || "-"}
+                    </span>
                   </td>
 
-                  <td className="px-6 py-4 text-gray-700 dark:text-gray-300">
-                    {deployment.company}
+                  <td className="px-6 py-4">
+                    <p className="font-semibold text-gray-900 dark:text-white">
+                      {deployment.employee || "-"}
+                    </p>
                   </td>
 
-                  <td className="px-6 py-4 text-gray-700 dark:text-gray-300">
-                    {deployment.location}
+                  <td className="px-6 py-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    {deployment.company || "-"}
                   </td>
 
-                  <td className="px-6 py-4 text-gray-700 dark:text-gray-300">
+                  <td className="px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-300">
+                    {deployment.location || "-"}
+                  </td>
+
+                  <td className="px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-300">
                     {formatDisplayDate(deployment.start)}
                   </td>
 
-                  <td className="px-6 py-4 text-gray-700 dark:text-gray-300">
-                    <span>
-                      {formatDisplayDate(deployment.end)}
-                    </span>
+                  <td className="px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-300">
+                    {formatDisplayDate(deployment.contractEnd)}
                   </td>
 
                   <td className="px-6 py-4">
@@ -95,35 +110,35 @@ export default function DeploymentTable({
                   </td>
 
                   <td className="px-6 py-4">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex justify-center">
                       <button
+                        type="button"
                         onClick={() => openView(deployment)}
-                        className="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2 text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-slate-700"
-                        title="View deployment"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-600 hover:text-white dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500"
+                        title="View Deployment"
                       >
                         <FiEye />
                       </button>
-
-                      {!isSuperAdmin && (
-                        <button
-                          onClick={() => openEdit(deployment)}
-                          className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-3 py-2 text-white hover:bg-amber-600"
-                          title="Edit deployment"
-                        >
-                          <FiEdit2 />
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td
-                  colSpan="7"
-                  className="text-center py-10 text-gray-500 dark:text-gray-400"
-                >
-                  No deployments found.
+                <td colSpan="8" className="px-6 py-14 text-center">
+                  <div className="mx-auto flex max-w-sm flex-col items-center">
+                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-white/10">
+                      <FiBriefcase size={24} />
+                    </div>
+
+                    <p className="font-extrabold text-gray-900 dark:text-white">
+                      No deployments found
+                    </p>
+
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      Deployment records will appear here once an employee is deployed.
+                    </p>
+                  </div>
                 </td>
               </tr>
             )}
