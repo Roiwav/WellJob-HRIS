@@ -92,11 +92,17 @@ export default function AddIncidentModal({
   const violationOptions = useMemo(() => flattenViolationRules(), []);
 
   const employeeOptions = useMemo(() => {
-    return employees.map((emp) => ({
-      id: emp.id || emp.employeeId || emp.employee_id || emp.name,
-      name: emp.name || emp.full_name || "",
-      company: emp.company || "",
-    }));
+    return employees
+      .filter((emp) => {
+        const status = String(emp.status || "").trim().toLowerCase();
+
+        return status === "deployed" || status === "active deployed";
+      })
+      .map((emp) => ({
+        id: emp.id || emp.employeeId || emp.employee_id || emp.name,
+        name: emp.name || emp.full_name || "",
+        company: emp.company || "",
+      }));
   }, [employees]);
 
   const createInitialFormData = useCallback(() => {
@@ -240,6 +246,15 @@ export default function AddIncidentModal({
 
   const computePenaltyData = useCallback(
     ({ employeeId, violation, penalties, description }) => {
+      if (!violation) {
+        return {
+          offenseCount: 1,
+          selectedPenalty: null,
+          sanction: "",
+          severity: "",
+        };
+      }
+
       const offenseCount = getNextOffenseCount(
         existingIncidents,
         employeeId,
@@ -271,33 +286,39 @@ export default function AddIncidentModal({
   );
 
   const handleSelectEmployee = (selectedEmployee) => {
-    const activeDeployment = deployments.find(
-      (dep) =>
-        String(dep.employeeId || dep.employee_id || dep.employee) ===
-          String(selectedEmployee.id) ||
-        String(dep.employee) === String(selectedEmployee.name)
-    );
+    const activeDeployment = deployments.find((dep) => {
+      const sameId =
+        String(dep.employeeId || dep.id || "").trim() ===
+        String(selectedEmployee.id || "").trim();
 
-    setFormData((prev) => {
-      const penaltyData = computePenaltyData({
-        employeeId: selectedEmployee.id,
-        violation: prev.violation,
-        penalties: prev.penalties,
-        description: prev.description,
-      });
+      const sameName =
+        String(dep.employee || "").trim().toLowerCase() ===
+        String(selectedEmployee.name || "").trim().toLowerCase();
 
-      return {
-        ...prev,
-        employeeId: selectedEmployee.id,
-        employee: selectedEmployee.name,
-        company:
-          activeDeployment?.company ||
-          activeDeployment?.clientCompany ||
-          selectedEmployee.company ||
-          "",
-        ...penaltyData,
-      };
+      const status = String(dep.status || dep.deploymentStatus || "Active")
+        .trim()
+        .toLowerCase();
+
+      return (
+        (sameId || sameName) &&
+        ["active", "deployed", "ongoing"].includes(status)
+      );
     });
+
+    setFormData((prev) => ({
+      ...prev,
+      employeeId: selectedEmployee.id,
+      employee: selectedEmployee.name,
+      company:
+        activeDeployment?.company ||
+        activeDeployment?.clientCompany ||
+        selectedEmployee.company ||
+        "",
+      offenseCount: 1,
+      selectedPenalty: null,
+      sanction: "",
+      severity: "",
+    }));
 
     setEmployeeSearch(`${selectedEmployee.name} (${selectedEmployee.id})`);
     setShowEmployeeDropdown(false);
@@ -319,6 +340,7 @@ export default function AddIncidentModal({
       offenseCount: 1,
       selectedPenalty: null,
       sanction: "",
+      severity: "",
     }));
   };
 
@@ -458,6 +480,68 @@ export default function AddIncidentModal({
 
   const handleFinalSave = () => {
     if (!validateForm()) return;
+
+    const activeDeployment = deployments.find((dep) => {
+      const sameId =
+        String(dep.employeeId || dep.id || "").trim() ===
+        String(formData.employeeId || "").trim();
+
+      const sameName =
+        String(dep.employee || "").trim().toLowerCase() ===
+        String(formData.employee || "").trim().toLowerCase();
+
+      const status = String(dep.status || dep.deploymentStatus || "Active")
+        .trim()
+        .toLowerCase();
+
+      return (
+        (sameId || sameName) &&
+        ["active", "deployed", "ongoing"].includes(status)
+      );
+    });
+
+    if (!activeDeployment) {
+      showCustomAlert({
+        type: "error",
+        title: "Invalid Employee",
+        message:
+          "Only employees with an active deployment record can be reported in incidents.",
+      });
+      return;
+    }
+
+    // 🔥 PREVENT DUPLICATE INCIDENT SAME DAY
+const existingSame = existingIncidents.find(
+  (inc) =>
+    String(inc.employeeId) === String(formData.employeeId) &&
+    inc.violation === formData.violation &&
+    new Date(inc.date).toDateString() === new Date(formData.date).toDateString()
+);
+
+if (existingSame) {
+  showCustomAlert({
+    type: "error",
+    title: "Duplicate Incident",
+    message: "This employee already has the same violation reported today.",
+  });
+  return;
+}
+
+const hasActiveCase = existingIncidents.some(
+  (inc) =>
+    String(inc.employeeId) === String(formData.employeeId) &&
+    ["Open", "Investigating"].includes(inc.status)
+);
+
+if (hasActiveCase) {
+  showCustomAlert({
+    type: "warning",
+    title: "Active Case Exists",
+    message:
+      "This employee already has an ongoing case. Please resolve it first before creating a new one.",
+  });
+  return;
+}
 
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     const now = formData.reportedAt || new Date().toISOString();
@@ -602,7 +686,7 @@ export default function AddIncidentModal({
                       value={employeeSearch}
                       onChange={handleEmployeeInputChange}
                       onFocus={() => setShowEmployeeDropdown(true)}
-                      placeholder="Search employee name, ID number, or company..."
+                      placeholder="Search deployed employee name, ID number, or company..."
                       className="input-field"
                       style={{
                         paddingLeft: employeeSearch ? "1rem" : "2.55rem",
@@ -634,7 +718,7 @@ export default function AddIncidentModal({
                     employeeSearch &&
                     filteredEmployees.length === 0 && (
                       <div className="absolute z-30 mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-                        No matching employee found.
+                        No deployed employee found.
                       </div>
                     )}
                 </div>
@@ -711,14 +795,14 @@ export default function AddIncidentModal({
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <ReadonlyBadge
                     label="Penalty Level"
-                    value={formData.penaltyLevel}
+                    value={formData.violation ? formData.penaltyLevel : ""}
                     styleMap={penaltyLevelStyle}
                     placeholder="Auto-generated"
                   />
 
                   <ReadonlyBadge
                     label="Severity"
-                    value={formData.severity}
+                    value={formData.violation ? formData.severity : ""}
                     styleMap={severityStyle}
                     placeholder="Auto-generated"
                   />

@@ -21,7 +21,6 @@ import { enrichIncidentIntelligence } from "../utils/incidentIntelligence";
 
 const INCIDENTS_KEY = "incidents";
 const EMPLOYEES_KEY = "employees";
-const DEPLOYMENTS_KEY = "deployments";
 const AUDIT_API_URL = "http://localhost:5000/api/audit-logs";
 
 function safeParse(key) {
@@ -109,6 +108,61 @@ function createTimelineItem({ title, description, createdBy, status }) {
   };
 }
 
+function getEmployeeIncidentStats(employeeId, incidents = []) {
+  const employeeCases = incidents.filter(
+    (inc) => String(inc.employeeId) === String(employeeId)
+  );
+
+  const openCases = employeeCases.filter((inc) =>
+    ["Open", "Investigating", "For Review"].includes(inc.status)
+  );
+
+  const criticalCases = employeeCases.filter(
+    (inc) => inc.severity === "Critical"
+  );
+
+  return {
+    totalCases: employeeCases.length,
+    openCases: openCases.length,
+    criticalCases: criticalCases.length,
+    lastIncidentDate: employeeCases[0]?.reportedAt || employeeCases[0]?.date || null,
+  };
+}
+
+function updateEmployeeKpiAfterIncident(employeeId, incident, incidents = []) {
+  const employees = safeParse(EMPLOYEES_KEY);
+
+  const stats = getEmployeeIncidentStats(employeeId, incidents);
+
+  const updatedEmployees = employees.map((emp) => {
+    const sameEmployee =
+      String(emp.id || emp.employeeId || "") === String(employeeId);
+
+    if (!sameEmployee) return emp;
+
+    const currentScore = Number(emp.performanceScore || emp.kpiScore || 100);
+
+    const penalty =
+      incident.severity === "Critical"
+        ? 10
+        : incident.severity === "Major"
+        ? 5
+        : 2;
+
+    return {
+      ...emp,
+      incidentCount: stats.totalCases,
+      openIncidentCount: stats.openCases,
+      criticalIncidentCount: stats.criticalCases,
+      lastIncidentDate: incident.reportedAt || incident.date,
+      performanceScore: Math.max(0, currentScore - penalty),
+      kpiScore: Math.max(0, currentScore - penalty),
+    };
+  });
+
+  localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(updatedEmployees));
+}
+
 export default function Incidents() {
   const { user } = useAuth();
   const currentUser = getUserIdentity(user);
@@ -118,9 +172,27 @@ export default function Incidents() {
   const navigate = useNavigate();
 
   const storedEmployees = useMemo(() => safeParse(EMPLOYEES_KEY), []);
-  const storedDeployments = useMemo(() => safeParse(DEPLOYMENTS_KEY), []);
-  const activeEmployees = useMemo(
-    () => storedEmployees.filter((emp) => !emp.archived),
+const storedDeployments = useMemo(() => {
+  return storedEmployees
+    .filter((emp) => emp.status === "Deployed" && !emp.archived)
+    .map((emp) => ({
+      id: emp.id,
+      employeeId: emp.id,
+      employee: emp.name,
+      company: emp.company || "-",
+      status: emp.deployment?.status || "Active",
+      deploymentStatus: emp.deployment?.status || "Active",
+    }));
+}, [storedEmployees]);  const activeEmployees = useMemo(
+    () =>
+      storedEmployees.filter((emp) => {
+        const status = String(emp.status || "").trim().toLowerCase();
+
+        return (
+          !emp.archived &&
+          (status === "deployed" || status === "active deployed")
+        );
+      }),
     [storedEmployees]
   );
 
@@ -215,9 +287,20 @@ export default function Incidents() {
       const rawIncidents = safeParse(INCIDENTS_KEY);
       const baseIncidents = rawIncidents.length > 0 ? rawIncidents : incidents;
 
-      const updatedRaw = baseIncidents.map((incident) =>
-        incident.id === incidentId ? updater(incident) : incident
-      );
+     const updatedRaw = baseIncidents.map((incident) => {
+      if (incident.id !== incidentId) return incident;
+
+      if (incident.status === "Closed") {
+        showNotice(
+          "error",
+          "Case Already Closed",
+          "This case is already closed and can no longer be modified."
+        );
+        return incident;
+      }
+
+      return updater(incident);
+    });
 
       const enriched = persistIncidents(updatedRaw);
       const updatedIncident = enriched.find((item) => item.id === incidentId);
@@ -246,28 +329,84 @@ export default function Incidents() {
   );
 
   const handleAddIncident = async (newIncident) => {
-    if (isSuperAdmin) return;
+  if (isSuperAdmin) return;
 
-    const currentRaw = safeParse(INCIDENTS_KEY);
-    const normalizedIncident = normalizeIncidentWithRules(
-      { ...newIncident, status: "Open" },
-      currentRaw
-    );
+  const currentRaw = safeParse(INCIDENTS_KEY);
 
-    persistIncidents([normalizedIncident, ...currentRaw]);
+  const hasActiveSameCase = currentRaw.some(
+    (inc) =>
+      String(inc.employeeId) === String(newIncident.employeeId) &&
+      String(inc.violation) === String(newIncident.violation) &&
+      ["Open", "Investigating", "For Review"].includes(normalizeStatus(inc.status))
+  );
 
-    await createOperationalLog(
-      "CREATE_INCIDENT",
-      `${currentUser.username} created incident report ${normalizedIncident.id}.`
-    );
-
-    setOpenAddModal(false);
+  if (hasActiveSameCase) {
     showNotice(
-      "success",
-      "Incident Report Saved",
-      `Incident ${normalizedIncident.id} has been successfully added to the report list.`
+      "error",
+      "Active Case Exists",
+      "This employee already has an active case with the same violation. Resolve or close it first before creating another one."
     );
+    return;
+  }
+
+  const sameDayCase = currentRaw.some((inc) => {
+    const sameEmployee = String(inc.employeeId) === String(newIncident.employeeId);
+    const sameViolation = String(inc.violation) === String(newIncident.violation);
+
+    const oldDate = new Date(inc.reportedAt || inc.date).toDateString();
+    const newDate = new Date(newIncident.reportedAt || newIncident.date).toDateString();
+
+    return sameEmployee && sameViolation && oldDate === newDate;
+  });
+
+  if (sameDayCase) {
+    showNotice(
+      "error",
+      "Duplicate Incident",
+      "The same employee already has the same violation reported today."
+    );
+    return;
+  }
+
+  const totalEmployeeCases = currentRaw.filter(
+    (inc) => String(inc.employeeId) === String(newIncident.employeeId)
+  ).length;
+
+  const escalatedIncident = {
+    ...newIncident,
+    severity:
+      totalEmployeeCases >= 4 && newIncident.severity !== "Critical"
+        ? "Critical"
+        : newIncident.severity,
+    status: "Open",
   };
+
+  const normalizedIncident = normalizeIncidentWithRules(
+    escalatedIncident,
+    currentRaw
+  );
+
+  const updatedIncidents = persistIncidents([normalizedIncident, ...currentRaw]);
+
+  updateEmployeeKpiAfterIncident(
+    normalizedIncident.employeeId,
+    normalizedIncident,
+    updatedIncidents
+  );
+
+  await createOperationalLog(
+    "CREATE_INCIDENT",
+    `${currentUser.username} created incident report ${normalizedIncident.id} for ${normalizedIncident.employee}.`
+  );
+
+  setOpenAddModal(false);
+
+  showNotice(
+    "success",
+    "Incident Report Saved",
+    `Incident ${normalizedIncident.id} has been successfully added to the report list.`
+  );
+};
 
   const handleConfirmStartInvestigation = async (incident) => {
     if (isSuperAdmin) return;
@@ -933,19 +1072,36 @@ function ResolutionModal({ incident, onClose, onSubmit, showNotice }) {
   const [remarks, setRemarks] = useState("");
   const [proofFiles, setProofFiles] = useState([]);
 
-  const handleFileChange = (event) => {
-    const files = Array.from(event.target.files || []);
+const handleFileChange = (event) => {
+  const files = Array.from(event.target.files || []);
 
-    setProofFiles(
-      files.map((file) => ({
-        id: `${Date.now()}-${file.name}`,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        uploadedAt: new Date().toISOString(),
-      }))
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+  const maxSize = 5 * 1024 * 1024;
+
+  const invalidFile = files.find(
+    (file) => !allowedTypes.includes(file.type) || file.size > maxSize
+  );
+
+  if (invalidFile) {
+    showNotice(
+      "error",
+      "Invalid Proof File",
+      "Only JPG, PNG, WEBP, or PDF files up to 5MB are allowed."
     );
-  };
+    event.target.value = "";
+    return;
+  }
+
+  setProofFiles(
+    files.map((file) => ({
+      id: `${Date.now()}-${file.name}`,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      uploadedAt: new Date().toISOString(),
+    }))
+  );
+};
 
   const validateResolution = () => {
     const validations = [
@@ -1392,9 +1548,9 @@ function ProofList({ files = [] }) {
             </div>
 
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-gray-900 dark:text-white">
-                {file.name}
-              </p>
+<p className="break-all text-sm font-bold text-gray-900 dark:text-white">
+  {file.name}
+</p>
               <p className="mt-1 text-xs text-gray-500">
                 {file.type || "Uploaded file"}
               </p>
