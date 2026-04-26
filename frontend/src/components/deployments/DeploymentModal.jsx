@@ -254,13 +254,11 @@ export default function DeploymentModal({
                 value={form.company}
               />
               {isEdit ? (
-                <EditableCard
-                  icon={<FiMapPin size={16} />}
-                  label="Location"
-                  name="location"
-                  value={form.location}
-                  onChange={handleChange}
-                />
+              <InfoCard
+                icon={<FiMapPin size={16} />}
+                label="Location"
+                value={form.location}
+              />
               ) : (
                 <InfoCard
                   icon={<FiMapPin size={16} />}

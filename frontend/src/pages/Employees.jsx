@@ -16,7 +16,17 @@ import EmployeeTable from "../components/employees/EmployeeTable";
 const EMPLOYEES_KEY = "employees";
 const OPERATIONAL_AUDIT_KEY = "operational_audit_logs";
 
-const REQUIRED_DOCUMENTS = ["NBI", "Police Clearance", "Health Card"];
+const REQUIRED_DOCUMENTS = [
+  "Resume",
+  "NSO/PSA",
+  "SSS (ID or E1 form)",
+  "Pag-IBIG (ID or MDRF Form)",
+  "PhilHealth (ID or MDF Form)",
+  "Diploma",
+  "Cedula",
+  "Barangay Clearance",
+  "NBI/Police Clearance",
+];
 
 const SORT_OPTIONS = [
   { value: "latest", label: "Latest Added" },
@@ -58,24 +68,6 @@ function safeParse(key) {
   } catch {
     return [];
   }
-}
-
-function getDocumentStatus(expirationDate) {
-  if (!expirationDate) return "No Data";
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const exp = new Date(expirationDate);
-  exp.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.ceil(
-    (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  if (diffDays < 0) return "Expired";
-  if (diffDays <= 30) return "Expiring Soon";
-  return "Valid";
 }
 
 export default function Employees() {
@@ -130,24 +122,30 @@ export default function Employees() {
     window.dispatchEvent(new Event("dataUpdated"));
   }, []);
 
-  const getCompliance = useCallback((docs) => {
-    if (!docs || docs.length === 0) return "No Data";
+const getCompliance = useCallback((docs) => {
+  if (!docs || docs.length === 0) return "No Data";
 
-    const statuses = docs.map((doc) => getDocumentStatus(doc.expirationDate));
+  const completedCount = REQUIRED_DOCUMENTS.filter((requiredName) => {
+    const doc = docs.find((d) => d.name === requiredName);
 
-    if (statuses.includes("Expired")) return "Expired";
-    if (statuses.includes("Expiring Soon")) return "Expiring Soon";
+    if (!doc) return false;
 
-    const existingNames = docs.map((doc) => doc.name);
-    const hasMissingRequired = REQUIRED_DOCUMENTS.some(
-      (requiredDoc) => !existingNames.includes(requiredDoc)
-    );
+    if (!doc.file) return false;
 
-    if (hasMissingRequired) return "Incomplete";
-    if (statuses.every((status) => status === "Valid")) return "Valid";
+    if (
+      ["Barangay Clearance", "NBI/Police Clearance"].includes(requiredName) &&
+      !doc.expirationDate
+    ) {
+      return false;
+    }
 
-    return "Incomplete";
-  }, []);
+    return true;
+  }).length;
+
+  if (completedCount === REQUIRED_DOCUMENTS.length) return "Complete";
+
+  return "Incomplete";
+}, []);
 
   const generateId = () => {
     const stored = safeParse(EMPLOYEES_KEY);

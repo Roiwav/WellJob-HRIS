@@ -1,11 +1,61 @@
 import StatusBadge from "./StatusBadge";
 import ComplianceBadge from "./ComplianceBadge";
-import {
-  FiArchive,
-  FiEdit2,
-  FiEye,
-  FiUsers,
-} from "react-icons/fi";
+import { FiArchive, FiEdit2, FiEye, FiUsers } from "react-icons/fi";
+
+const REQUIRED_DOCUMENTS = [
+  "Resume",
+  "NSO/PSA",
+  "SSS (ID or E1 form)",
+  "Pag-IBIG (ID or MDRF Form)",
+  "PhilHealth (ID or MDF Form)",
+  "Diploma",
+  "Cedula",
+  "Barangay Clearance",
+  "NBI/Police Clearance",
+];
+
+const EXPIRABLE_DOCUMENTS = ["Barangay Clearance", "NBI/Police Clearance"];
+
+function getSafeComplianceStatus(documents = []) {
+  if (!Array.isArray(documents) || documents.length === 0) {
+    return "No Compliance";
+  }
+
+  const checkedDocs = documents.filter((doc) => {
+    if (typeof doc === "string") return true;
+    return doc?.name;
+  });
+
+  if (checkedDocs.length === 0) {
+    return "No Compliance";
+  }
+
+  const completedCount = REQUIRED_DOCUMENTS.filter((requiredName) => {
+    const doc = documents.find((item) =>
+      typeof item === "string" ? item === requiredName : item?.name === requiredName
+    );
+
+    if (!doc) return false;
+
+    if (typeof doc === "string") {
+      return !EXPIRABLE_DOCUMENTS.includes(requiredName);
+    }
+
+    if (!doc.file) return false;
+
+    if (EXPIRABLE_DOCUMENTS.includes(requiredName) && !doc.expirationDate) {
+      return false;
+    }
+
+    return true;
+  }).length;
+
+  if (completedCount === REQUIRED_DOCUMENTS.length) {
+    return "Complete";
+  }
+
+  return "Incomplete";
+}
 
 export default function EmployeeTable({
   employees = [],
@@ -43,14 +93,24 @@ export default function EmployeeTable({
               <th className="px-6 py-4">Company</th>
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4">Compliance</th>
-              <th className="px-6 py-4 text-right">Actions</th>
+              <th className="px-6 py-4 text-center">Actions</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-gray-100 dark:divide-white/5">
             {employees.length > 0 ? (
               employees.map((emp) => {
-                const compliance = getComplianceStatus(emp.documents);
+                const compliance =
+                  typeof getComplianceStatus === "function"
+                    ? getComplianceStatus(emp.documents)
+                    : getSafeComplianceStatus(emp.documents);
+
+                const safeCompliance =
+                  compliance === "Complete" ||
+                  compliance === "Incomplete" ||
+                  compliance === "No Compliance"
+                    ? compliance
+                    : getSafeComplianceStatus(emp.documents);
 
                 return (
                   <tr
@@ -78,7 +138,7 @@ export default function EmployeeTable({
                     </td>
 
                     <td className="px-6 py-4">
-                      <ComplianceBadge status={compliance} />
+                      <ComplianceBadge status={safeCompliance} />
                     </td>
 
                     <td className="px-6 py-4">
@@ -102,18 +162,17 @@ export default function EmployeeTable({
                             <FiEdit2 />
                           </button>
                         )}
-{isHRManager && onArchive && (
-  <button
-    type="button"
-    onClick={() => onArchive(emp)}
-    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-amber-100 bg-amber-50 text-amber-700 transition hover:bg-amber-500 hover:text-white dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500 dark:hover:text-white"
-    title="Archive Employee"
-  >
-    <FiArchive />
-  </button>
-)}
 
-    
+                        {isHRManager && onArchive && (
+                          <button
+                            type="button"
+                            onClick={() => onArchive(emp)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-amber-100 bg-amber-50 text-amber-700 transition hover:bg-amber-500 hover:text-white dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500 dark:hover:text-white"
+                            title="Archive Employee"
+                          >
+                            <FiArchive />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

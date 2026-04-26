@@ -55,7 +55,7 @@ export default function DeploymentTable({
               <th className="px-6 py-4">Company</th>
               <th className="px-6 py-4">Location</th>
               <th className="px-6 py-4">Start Date</th>
-              <th className="px-6 py-4">End Date</th>
+              <th className="px-6 py-4">Contract End</th>
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4 text-right">Actions</th>
             </tr>
@@ -85,7 +85,9 @@ export default function DeploymentTable({
                   </td>
 
                   <td className="px-6 py-4 text-gray-700 dark:text-gray-300">
-                    {formatDisplayDate(deployment.end)}
+                    <span>
+                      {formatDisplayDate(deployment.end)}
+                    </span>
                   </td>
 
                   <td className="px-6 py-4">

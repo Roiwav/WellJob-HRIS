@@ -4,6 +4,33 @@ import { FiCalendar, FiSearch } from "react-icons/fi";
 import DeploymentTable from "../components/deployments/DeploymentTable";
 import DeploymentModal from "../components/deployments/DeploymentModal";
 
+const COMPANY_LOCATIONS = {
+  "SM Supermalls": "Calamba City, Laguna",
+  "Robinsons Retail Holdings": "Calamba City, Laguna",
+  "Ayala Land Inc.": "Makati City",
+  "Jollibee Foods Corporation": "Pasig City",
+  "San Miguel Corporation": "Mandaluyong City",
+  "PLDT Inc.": "Makati City",
+  "Globe Telecom": "Taguig City",
+  "BDO Unibank": "Makati City",
+  "Metrobank": "Makati City",
+  "Puregold Price Club": "Quezon City",
+  "Wilcon Depot": "Quezon City",
+  "DMCI Holdings": "Makati City",
+  "Megaworld Corporation": "Taguig City",
+  "Unilab Inc.": "Mandaluyong City",
+  "Nestlé Philippines": "Makati City",
+  "Coca-Cola Philippines": "Taguig City",
+  "Pepsi-Cola Products Philippines": "Muntinlupa City",
+  "Toyota Philippines": "Santa Rosa, Laguna",
+  "Honda Philippines": "Batangas",
+  "Accenture Philippines": "Taguig City",
+  "IBM Philippines": "Quezon City",
+  "Teleperformance Philippines": "Pasig City",
+  "Concentrix Philippines": "Quezon City",
+  "Sitel Philippines": "Makati City",
+};
+
 function Toast({ show, message }) {
   if (typeof document === "undefined") return null;
 
@@ -32,9 +59,9 @@ function getDeploymentsFromStorage() {
       company: emp.company || "-",
 
       // CONNECTED NA SA EMPLOYEE DEPLOYMENT
-      location: emp.deployment?.location || "-",
+      location: COMPANY_LOCATIONS[emp.company] || "-",
       start: emp.deployment?.start || new Date().toISOString().split("T")[0],
-      end: emp.deployment?.end || "-",
+      end: emp.contractEnd || "-",      
       status: emp.deployment?.status || "Active",
     }));
 }
@@ -108,7 +135,7 @@ export default function Deployments() {
       ? {
           ...emp,
           deployment: {
-            location: updatedDeployment.location,
+            location: COMPANY_LOCATIONS[updatedDeployment.company] || "-",            
             start: updatedDeployment.start,
             end: updatedDeployment.end,
             status: updatedDeployment.status,

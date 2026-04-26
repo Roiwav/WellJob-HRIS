@@ -1,61 +1,213 @@
 import { useMemo, useState } from "react";
-import { FiArrowLeft, FiEye, FiInbox, FiRotateCcw, FiTrash2 } from "react-icons/fi";
+import {
+  FiArrowLeft,
+  FiEye,
+  FiInbox,
+  FiRotateCcw,
+  FiTrash2,
+} from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import ComplianceBadge from "../components/employees/ComplianceBadge";
 import EmployeeModal from "../components/employees/EmployeeModal";
 
+const EMPLOYEES_KEY = "employees";
+const INCIDENTS_KEY = "incidents";
+const DEPLOYMENTS_KEY = "deployments";
+
+const REQUIRED_DOCUMENTS = [
+  "Resume",
+  "NSO/PSA",
+  "SSS (ID or E1 form)",
+  "Pag-IBIG (ID or MDRF Form)",
+  "PhilHealth (ID or MDF Form)",
+  "Diploma",
+  "Cedula",
+  "Barangay Clearance",
+  "NBI/Police Clearance",
+];
+
+const EXPIRABLE_DOCUMENTS = ["Barangay Clearance", "NBI/Police Clearance"];
+
+function safeParse(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getDocumentStatus(expirationDate) {
+  if (!expirationDate) return "No Data";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const exp = new Date(expirationDate);
+  exp.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.ceil(
+    (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (diffDays < 0) return "Expired";
+  if (diffDays <= 30) return "Expiring Soon";
+  return "Valid";
+}
+
+function getCompliance(documents = []) {
+  if (!Array.isArray(documents) || documents.length === 0) {
+    return "No Data";
+  }
+
+  const uploadedDocs = documents.filter((doc) => {
+    if (typeof doc === "string") return true;
+    return doc?.name;
+  });
+
+  if (uploadedDocs.length === 0) return "No Data";
+
+  const hasExpired = documents.some((doc) => {
+    if (!doc || typeof doc === "string") return false;
+    if (!EXPIRABLE_DOCUMENTS.includes(doc.name)) return false;
+    return getDocumentStatus(doc.expirationDate) === "Expired";
+  });
+
+  if (hasExpired) return "Expired";
+
+  const hasExpiringSoon = documents.some((doc) => {
+    if (!doc || typeof doc === "string") return false;
+    if (!EXPIRABLE_DOCUMENTS.includes(doc.name)) return false;
+    return getDocumentStatus(doc.expirationDate) === "Expiring Soon";
+  });
+
+  if (hasExpiringSoon) return "Expiring Soon";
+
+  const completedCount = REQUIRED_DOCUMENTS.filter((requiredName) => {
+    const doc = documents.find((item) =>
+      typeof item === "string"
+        ? item === requiredName
+        : item?.name === requiredName
+    );
+
+    if (!doc) return false;
+
+    if (typeof doc === "string") {
+      return !EXPIRABLE_DOCUMENTS.includes(requiredName);
+    }
+
+    if (!doc.file) return false;
+
+    if (EXPIRABLE_DOCUMENTS.includes(requiredName) && !doc.expirationDate) {
+      return false;
+    }
+
+    return true;
+  }).length;
+
+  if (completedCount === REQUIRED_DOCUMENTS.length) return "Complete";
+
+  return "Incomplete";
+}
+
+function SuccessModal({ message, onClose }) {
+  if (!message) return null;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-white p-6 shadow-2xl dark:bg-slate-900">
+        <h3 className="mb-2 text-lg font-extrabold text-green-600">
+          Success
+        </h3>
+
+        <p className="mb-5 text-sm text-gray-700 dark:text-gray-300">
+          {message}
+        </p>
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmModal({
+  title,
+  message,
+  confirmLabel,
+  tone = "green",
+  onConfirm,
+  onCancel,
+}) {
+  const toneClass =
+    tone === "red"
+      ? "bg-red-600 hover:bg-red-700 text-white"
+      : "bg-green-600 hover:bg-green-700 text-white";
+
+  const titleClass =
+    tone === "red"
+      ? "text-red-700 dark:text-red-300"
+      : "text-green-700 dark:text-green-300";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white p-6 shadow-2xl dark:bg-slate-900">
+        <h2 className={`mb-4 text-lg font-extrabold ${titleClass}`}>
+          {title}
+        </h2>
+
+        <p className="mb-6 text-sm leading-6 text-gray-700 dark:text-gray-300">
+          {message}
+        </p>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-bold transition ${toneClass}`}
+          >
+            {confirmLabel}
+          </button>
+
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-xl bg-gray-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-gray-600"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ArchivedEmployees() {
   const navigate = useNavigate();
 
-  const [employees, setEmployees] = useState(() => {
-    const stored = localStorage.getItem("employees");
-    return stored ? JSON.parse(stored) : [];
-  });
-
+  const [employees, setEmployees] = useState(() => safeParse(EMPLOYEES_KEY));
   const [viewEmployee, setViewEmployee] = useState(null);
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
 
-const saveToStorage = (data) => {
-  setEmployees(data);
-  localStorage.setItem("employees", JSON.stringify(data));
-  window.dispatchEvent(new Event("dataUpdated"));
-};
+  const saveToStorage = (data) => {
+    setEmployees(data);
+    localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(data));
+    window.dispatchEvent(new Event("dataUpdated"));
+  };
 
   const archivedEmployees = useMemo(
     () => employees.filter((emp) => emp.archived),
     [employees]
   );
-
-  const getDocumentStatus = (expirationDate) => {
-    if (!expirationDate) return "No Data";
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const exp = new Date(expirationDate);
-    exp.setHours(0, 0, 0, 0);
-
-    const diffTime = exp.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) return "Expired";
-    if (diffDays <= 30) return "Expiring Soon";
-    return "Valid";
-  };
-
-  const getCompliance = (docs) => {
-    if (!docs || docs.length === 0) return "No Data";
-
-    const statuses = docs.map((doc) => getDocumentStatus(doc.expirationDate));
-
-    if (statuses.includes("Expired")) return "Expired";
-    if (statuses.includes("Expiring Soon")) return "Expiring Soon";
-    if (statuses.every((status) => status === "Valid")) return "Valid";
-
-    return "Incomplete";
-  };
 
   const handleRestore = (id) => {
     const updated = employees.map((emp) =>
@@ -74,105 +226,144 @@ const saveToStorage = (data) => {
     setSuccessMessage("Employee restored successfully.");
   };
 
-const handleDelete = (id) => {
-  const target = employees.find((emp) => emp.id === id);
+  const handleDelete = (id) => {
+    const target = employees.find((emp) => emp.id === id);
 
-  const updatedEmployees = employees.filter((emp) => emp.id !== id);
+    const updatedEmployees = employees.filter((emp) => emp.id !== id);
 
-  const storedIncidents = JSON.parse(localStorage.getItem("incidents") || "[]");
-  const updatedIncidents = storedIncidents.filter(
-    (incident) =>
-      String(incident.employeeId) !== String(id) &&
-      String(incident.employee) !== String(target?.name)
-  );
+    const updatedIncidents = safeParse(INCIDENTS_KEY).filter(
+      (incident) =>
+        String(incident.employeeId) !== String(id) &&
+        String(incident.employee) !== String(target?.name)
+    );
 
-  const storedDeployments = JSON.parse(localStorage.getItem("deployments") || "[]");
-  const updatedDeployments = storedDeployments.filter(
-    (deployment) =>
-      String(deployment.employeeId) !== String(id) &&
-      String(deployment.employee) !== String(target?.name)
-  );
+    const updatedDeployments = safeParse(DEPLOYMENTS_KEY).filter(
+      (deployment) =>
+        String(deployment.employeeId) !== String(id) &&
+        String(deployment.employee) !== String(target?.name)
+    );
 
-  saveToStorage(updatedEmployees);
-  localStorage.setItem("incidents", JSON.stringify(updatedIncidents));
-  localStorage.setItem("deployments", JSON.stringify(updatedDeployments));
+    saveToStorage(updatedEmployees);
+    localStorage.setItem(INCIDENTS_KEY, JSON.stringify(updatedIncidents));
+    localStorage.setItem(DEPLOYMENTS_KEY, JSON.stringify(updatedDeployments));
 
-  window.dispatchEvent(new Event("dataUpdated"));
+    window.dispatchEvent(new Event("dataUpdated"));
 
-  setDeleteTarget(null);
-  setSuccessMessage("Employee permanently deleted.");
-};
+    setDeleteTarget(null);
+    setSuccessMessage("Employee permanently deleted.");
+  };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="space-y-6 p-8">
       <div className="flex items-center gap-3">
         <button
+          type="button"
           onClick={() => navigate("/employees")}
-          className="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2 text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-slate-700"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
           title="Back to Employees"
         >
           <FiArrowLeft />
         </button>
 
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">
             Archived Employees
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            View and restore inactive employee records.
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            View, restore, or permanently delete inactive employee records.
           </p>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 overflow-hidden">
+      <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-white/10">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
+              Archived Records
+            </h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Records removed from the active employee list.
+            </p>
+          </div>
+
+          <span className="rounded-full bg-amber-50 px-4 py-1.5 text-xs font-bold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+            {archivedEmployees.length} archived
+          </span>
+        </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 dark:bg-slate-900/70">
-              <tr>
+          <table className="w-full min-w-[900px] text-left">
+            <thead className="bg-gray-50 dark:bg-white/5">
+              <tr className="border-b border-gray-200 text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:border-white/10 dark:text-gray-400">
                 <th className="px-6 py-4">Employee ID</th>
                 <th className="px-6 py-4">Full Name</th>
                 <th className="px-6 py-4">Company</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Compliance</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+                <th className="px-6 py-4 text-center">Actions</th>
               </tr>
             </thead>
 
-            <tbody>
+            <tbody className="divide-y divide-gray-100 dark:divide-white/5">
               {archivedEmployees.length > 0 ? (
                 archivedEmployees.map((emp) => {
                   const compliance = getCompliance(emp.documents);
 
                   return (
-                    <tr key={emp.uid || emp.id} className="border-t">
-                      <td className="px-6 py-4">{emp.id}</td>
-                      <td className="px-6 py-4">{emp.name}</td>
-                      <td className="px-6 py-4">{emp.company || "-"}</td>
-                      <td className="px-6 py-4">Inactive</td>
+                    <tr
+                      key={emp.uid || emp.id}
+                      className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5"
+                    >
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                          {emp.id || "-"}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <p className="font-semibold text-gray-900 dark:text-white">
+                          {emp.name || "-"}
+                        </p>
+                      </td>
+
+                      <td className="px-6 py-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                        {emp.company || "-"}
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span className="inline-flex rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300">
+                          Inactive
+                        </span>
+                      </td>
+
                       <td className="px-6 py-4">
                         <ComplianceBadge status={compliance} />
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex justify-end gap-2">
+
+                      <td className="px-6 py-4 text-center">
+                        <div className="inline-flex items-center gap-2">
                           <button
+                            type="button"
                             onClick={() => setViewEmployee(emp)}
-                            className="inline-flex items-center justify-center rounded-lg border px-3 py-2 hover:bg-gray-50 dark:hover:bg-slate-700"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-600 hover:text-white dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500"
                             title="View employee"
                           >
                             <FiEye />
                           </button>
 
                           <button
+                            type="button"
                             onClick={() => setRestoreTarget(emp)}
-                            className="inline-flex items-center justify-center rounded-lg bg-green-600 px-3 py-2 text-white hover:bg-green-700"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-green-100 bg-green-50 text-green-700 transition hover:bg-green-600 hover:text-white dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-300 dark:hover:bg-green-600"
                             title="Restore employee"
                           >
                             <FiRotateCcw />
                           </button>
 
                           <button
+                            type="button"
                             onClick={() => setDeleteTarget(emp)}
-                            className="inline-flex items-center justify-center rounded-lg bg-red-600 px-3 py-2 text-white hover:bg-red-700"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-700 transition hover:bg-red-600 hover:text-white dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-600"
                             title="Permanently delete employee"
                           >
                             <FiTrash2 />
@@ -184,16 +375,21 @@ const handleDelete = (id) => {
                 })
               ) : (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center">
-                    <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-slate-700">
-                      <FiInbox className="text-gray-500" size={22} />
+                  <td colSpan="6" className="px-6 py-14 text-center">
+                    <div className="mx-auto flex max-w-sm flex-col items-center">
+                      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-white/10">
+                        <FiInbox size={24} />
+                      </div>
+
+                      <p className="font-extrabold text-gray-900 dark:text-white">
+                        No archived employees
+                      </p>
+
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        Archived employees will appear here once HR marks them as
+                        inactive.
+                      </p>
                     </div>
-                    <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-                      No archived employees
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      Archived employees will appear here once HR marks them as inactive.
-                    </p>
                   </td>
                 </tr>
               )}
@@ -210,85 +406,41 @@ const handleDelete = (id) => {
       )}
 
       {restoreTarget && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl w-full max-w-md">
-            <h2 className="text-lg font-bold mb-4 text-green-700 dark:text-white">
-              Restore Employee
-            </h2>
-
-            <p className="text-sm mb-6 text-gray-900 dark:text-white">
-              Are you sure you want to restore <b>{restoreTarget.name}</b>?
-              This employee will return to the main employee table.
-            </p>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleRestore(restoreTarget.id)}
-                className="flex-1 bg-green-600 text-white py-2 rounded hover:bg-green-700"
-              >
-                Yes, Restore
-              </button>
-
-              <button
-                onClick={() => setRestoreTarget(null)}
-                className="flex-1 bg-gray-500 text-white py-2 rounded"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="Restore Employee"
+          message={
+            <>
+              Are you sure you want to restore <b>{restoreTarget.name}</b>? This
+              employee will return to the main employee table.
+            </>
+          }
+          confirmLabel="Yes, Restore"
+          tone="green"
+          onConfirm={() => handleRestore(restoreTarget.id)}
+          onCancel={() => setRestoreTarget(null)}
+        />
       )}
 
       {deleteTarget && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl w-full max-w-md">
-            <h2 className="text-lg font-bold mb-4 text-red-700 dark:text-white">
-              Permanently Delete Employee
-            </h2>
-
-            <p className="text-sm mb-6 text-gray-900 dark:text-white">
-              Are you sure you want to permanently delete <b>{deleteTarget.name}</b>?
-              This action cannot be undone and all employee data will be lost.
-            </p>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleDelete(deleteTarget.id)}
-                className="flex-1 bg-red-600 text-white py-2 rounded hover:bg-red-700"
-              >
-                Yes, Delete
-              </button>
-
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="flex-1 bg-gray-500 text-white py-2 rounded"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="Permanently Delete Employee"
+          message={
+            <>
+              Are you sure you want to permanently delete{" "}
+              <b>{deleteTarget.name}</b>? This action cannot be undone.
+            </>
+          }
+          confirmLabel="Yes, Delete"
+          tone="red"
+          onConfirm={() => handleDelete(deleteTarget.id)}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
 
-      {successMessage && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-green-600 mb-2">Success</h3>
-            <p className="text-sm text-gray-700 dark:text-gray-300 mb-5">
-              {successMessage}
-            </p>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setSuccessMessage("")}
-                className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SuccessModal
+        message={successMessage}
+        onClose={() => setSuccessMessage("")}
+      />
     </div>
   );
 }

@@ -148,6 +148,9 @@ export default function AddEmployeeModal({
     name: "",
     status: "Deployed",
     company: "",
+    employmentType: "Permanent",
+    contractStart: "",
+    contractEnd: "",
     documents: createDefaultDocuments([]),
   }));
 
@@ -160,6 +163,8 @@ export default function AddEmployeeModal({
     company: "",
     duplicateId: "",
     duplicateConfirm: "",
+    contractStart: "",
+    contractEnd: "",
     documents: {},
   });
 
@@ -173,6 +178,9 @@ export default function AddEmployeeModal({
         name: editingEmployee ? editingEmployee.name || "" : "",
         status: editingEmployee ? editingEmployee.status || "Deployed" : "Deployed",
         company: editingEmployee ? editingEmployee.company || "" : "",
+        employmentType: editingEmployee?.employmentType || "Permanent",
+        contractStart: editingEmployee?.contractStart || "",
+        contractEnd: editingEmployee?.contractEnd || "",
         documents: createDefaultDocuments(editingEmployee?.documents || []),
       });
 
@@ -185,6 +193,8 @@ export default function AddEmployeeModal({
         company: "",
         duplicateId: "",
         duplicateConfirm: "",
+        contractStart: "",
+        contractEnd: "",
         documents: {},
       });
 
@@ -203,13 +213,14 @@ export default function AddEmployeeModal({
       }));
   }, [formData.documents]);
 
-  const completedDocuments = useMemo(() => {
-    return formData.documents.filter((doc) => {
-      if (!doc.checked) return false;
-      if (doc.expirable && !doc.expirationDate) return false;
-      return true;
-    });
-  }, [formData.documents]);
+const completedDocuments = useMemo(() => {
+  return formData.documents.filter((doc) => {
+    if (!doc.checked) return false;
+    if (!doc.file) return false;
+    if (doc.expirable && !doc.expirationDate) return false;
+    return true;
+  });
+}, [formData.documents]);
 
 
   const duplicatePreview = useMemo(() => {
@@ -224,20 +235,30 @@ export default function AddEmployeeModal({
   }, [employees, editingEmployee, formData.name]);
 
   const completion = useMemo(() => {
-    let score = 0;
+  let score = 0;
 
-    const totalDocs = DOCUMENT_OPTIONS.length;
-    const docsScore =
-      totalDocs > 0 ? (completedDocuments.length / totalDocs) * 40 : 0;
+  const totalDocs = DOCUMENT_OPTIONS.length;
+  const docsScore =
+    totalDocs > 0 ? (completedDocuments.length / totalDocs) * 40 : 0;
 
-    if (formData.name.trim()) score += 20;
-    if (formData.status) score += 10;
-    if (formData.status !== "Deployed" || formData.company.trim()) score += 15;
+  if (formData.name.trim()) score += 20;
+  if (formData.status) score += 10;
+  if (formData.status !== "Deployed" || formData.company.trim()) score += 15;
+  if (formData.employmentType) score += 15;
 
+  if (
+    formData.employmentType === "Permanent" ||
+    (formData.employmentType === "Contractual" &&
+      formData.contractStart &&
+      formData.contractEnd)
+  ) {
     score += docsScore;
+  } else {
+    score += docsScore;
+  }
 
-    return Math.min(Math.round(score), 100);
-  }, [formData, completedDocuments.length]);
+  return Math.min(Math.round(score), 100);
+}, [formData, completedDocuments.length]);
 
 const remainingDocuments = DOCUMENT_OPTIONS.length - completedDocuments.length;
 
@@ -258,50 +279,64 @@ const complianceReviewWarning = useMemo(() => {
   return "";
 }, [formData.status, selectedDocuments.length]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
+const handleChange = (e) => {
+  const { name, value } = e.target;
 
-    if (name === "status" && value !== "Deployed") {
-      setFormData((prev) => ({
-        ...prev,
-        status: value,
-        company: "",
-      }));
-
-      setErrors((prev) => ({
-        ...prev,
-        company: "",
-      }));
-
-      setFilteredCompanies(COMPANY_OPTIONS);
-      setShowSuggestions(false);
-      return;
-    }
-
-    if (name === "company") {
-      const filtered = COMPANY_OPTIONS.filter((company) =>
-        company.toLowerCase().includes(value.toLowerCase())
-      );
-
-      setFilteredCompanies(filtered);
-      setShowSuggestions(true);
-    }
-
+  if (name === "status" && value !== "Deployed") {
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      status: value,
+      company: "",
+      employmentType: "Permanent",
+      contractStart: "",
+      contractEnd: "",
     }));
-
-    if (name === "name") {
-      setDuplicateConfirmed(false);
-    }
 
     setErrors((prev) => ({
       ...prev,
-      [name]: "",
+      company: "",
       duplicateConfirm: name === "name" ? "" : prev.duplicateConfirm,
     }));
-  };
+
+    setFilteredCompanies(COMPANY_OPTIONS);
+    setShowSuggestions(false);
+    return;
+  }
+
+  if (name === "employmentType" && value === "Permanent") {
+    setFormData((prev) => ({
+      ...prev,
+      employmentType: value,
+      contractStart: "",
+      contractEnd: "",
+    }));
+    return;
+  }
+
+  if (name === "company") {
+    const filtered = COMPANY_OPTIONS.filter((company) =>
+      company.toLowerCase().includes(value.toLowerCase())
+    );
+
+    setFilteredCompanies(filtered);
+    setShowSuggestions(true);
+  }
+
+  setFormData((prev) => ({
+    ...prev,
+    [name]: value,
+  }));
+
+  if (name === "name") {
+    setDuplicateConfirmed(false);
+  }
+
+  setErrors((prev) => ({
+    ...prev,
+    [name]: "",
+    duplicateConfirm: name === "name" ? "" : prev.duplicateConfirm,
+  }));
+};
 
   const handleNameBlur = () => {
     setFormData((prev) => ({
@@ -397,34 +432,32 @@ const handleFileInput = (docName, file) => {
     return;
   }
 
-  const maxSize = 5 * 1024 * 1024;
+  const maxSize = 2 * 1024 * 1024;
 
   if (file.size > maxSize) {
-    alert("File must be less than 5MB.");
+    alert("File must be less than 2MB.");
     return;
   }
 
-  const reader = new FileReader();
+  const fileURL = URL.createObjectURL(file);
 
-  reader.onloadend = () => {
-    handleDocumentFile(docName, {
-      name: file.name,
-      type: file.type,
-      data: reader.result,
-    });
-  };
-
-  reader.readAsDataURL(file);
+  handleDocumentFile(docName, {
+    name: file.name,
+    type: file.type,
+    url: fileURL,
+  });
 };
-
   const validateForm = () => {
-    const nextErrors = {
-      name: "",
-      company: "",
-      duplicateId: "",
-      duplicateConfirm: "",
-      documents: {},
-    };
+
+  const nextErrors = {
+    name: "",
+    company: "",
+    duplicateId: "",
+    duplicateConfirm: "",
+    contractStart: "",   
+    contractEnd: "",     
+    documents: {},
+  };
 
     const trimmedName = formData.name.trim().replace(/\s+/g, " ");
     const trimmedCompany = formData.company.trim();
@@ -441,6 +474,24 @@ const handleFileInput = (docName, file) => {
     if (formData.status === "Deployed" && !trimmedCompany) {
       nextErrors.company = "Company name is required for deployed employees.";
     }
+
+    if (formData.employmentType === "Contractual") {
+  if (!formData.contractStart) {
+    nextErrors.contractStart = "Contract start date is required.";
+  }
+
+  if (!formData.contractEnd) {
+    nextErrors.contractEnd = "Contract end date is required.";
+  }
+
+  if (
+    formData.contractStart &&
+    formData.contractEnd &&
+    new Date(formData.contractEnd) < new Date(formData.contractStart)
+  ) {
+    nextErrors.contractEnd = "Contract end date cannot be earlier than start date.";
+  }
+}
 
     const duplicateId = employees.some((emp) => {
       if (editingEmployee && emp.id === editingEmployee.id) return false;
@@ -480,15 +531,17 @@ if (
 
     const hasDocumentErrors = Object.values(nextErrors.documents).some(Boolean);
 
-    return !(
-      nextErrors.name ||
-      nextErrors.company ||
-      nextErrors.duplicateId ||
-      nextErrors.duplicateConfirm ||
-      nextErrors.documents.general ||
-      hasDocumentErrors
-    );
-  };
+return !(
+  nextErrors.name ||
+  nextErrors.company ||
+  nextErrors.duplicateId ||
+  nextErrors.duplicateConfirm ||
+  nextErrors.contractStart ||
+  nextErrors.contractEnd ||
+  nextErrors.documents.general ||
+  hasDocumentErrors
+);
+};
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -499,13 +552,16 @@ if (
   };
 
   const handleConfirmSave = () => {
-    onSave({
-      name: toProperName(formData.name),
-      status: formData.status,
-      company: formData.status === "Deployed" ? formData.company.trim() : "",
-      duplicateVerified: !!duplicatePreview && duplicateConfirmed,
-      documents: selectedDocuments,
-    });
+  onSave({
+    name: toProperName(formData.name),
+    status: formData.status,
+    company: formData.status === "Deployed" ? formData.company.trim() : "",
+    employmentType: formData.employmentType,
+    contractStart: formData.contractStart,
+    contractEnd: formData.contractEnd,
+    duplicateVerified: !!duplicatePreview && duplicateConfirmed,
+    documents: selectedDocuments,
+  });
 
     setShowReview(false);
     onClose();
@@ -607,6 +663,7 @@ if (
             </header>
 
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-6">
+              <div className="space-y-6">
               <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
                 <main className="space-y-6">
                   <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
@@ -666,6 +723,60 @@ if (
                           <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" />
                         </div>
                       </div>
+
+<div>
+  <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
+    Employment Type
+  </label>
+
+  <div className="relative">
+    <select
+      name="employmentType"
+      value={formData.employmentType}
+      onChange={handleChange}
+      className="w-full appearance-none rounded-2xl border border-gray-200 bg-white px-4 py-3 pr-10 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white"
+    >
+      <option value="Permanent">Permanent</option>
+      <option value="Contractual">Contractual</option>
+    </select>
+
+    <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" />
+  </div>
+</div>
+
+{formData.employmentType === "Contractual" && (
+  <>
+    <div>
+      <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
+        Contract Start Date
+      </label>
+
+      <input
+        type="date"
+        name="contractStart"
+        value={formData.contractStart}
+        onChange={handleChange}
+        className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white"
+      />
+      <ErrorText>{errors.contractStart}</ErrorText>
+    </div>
+
+    <div>
+      <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
+        Contract End Date
+      </label>
+
+      <input
+        type="date"
+        name="contractEnd"
+        value={formData.contractEnd}
+        onChange={handleChange}
+        className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white"
+      />
+      <ErrorText>{errors.contractEnd}</ErrorText>
+    </div>
+  </>
+)}
 
                       <div className="md:col-span-2">
                         <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
@@ -785,8 +896,53 @@ if (
                     </div>
                   </section>
 
-                                    <section className="rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900/60">
-                    <button
+                </main>
+
+                <aside className="space-y-4">
+                  <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
+                    <div className="mb-4 flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                        <FiInfo />
+                      </div>
+
+                      <div>
+                        <h3 className="font-extrabold text-gray-900 dark:text-white">
+                          Record Summary
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Live preview before review.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 text-sm">
+                      <SummaryRow label="Employee ID" value={generatedId} />
+                      <SummaryRow label="Full Name" value={toProperName(formData.name) || "-"} />
+                      <SummaryRow label="Status" value={formData.status} />
+                      <SummaryRow
+                        label="Company"
+                        value={formData.status === "Deployed" ? formData.company || "-" : "Not Assigned"}
+                      />
+                      <SummaryRow
+                        label="Documents"
+                        value={`${completedDocuments.length}/${DOCUMENT_OPTIONS.length} completed`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                    <div className="mb-1 flex items-center gap-2 font-extrabold">
+                      <FiAlertTriangle />
+                      HRIS Reminder
+                    </div>
+                    <p className="leading-5">
+                      Verify duplicate names using supporting documents.
+                    </p>
+                  </div>
+                </aside>
+              </div>
+
+<section className="rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900/60">                    <button
                       type="button"
                       onClick={() => setShowDocuments((prev) => !prev)}
                       className="flex w-full items-center justify-between gap-4 p-5 text-left"
@@ -826,8 +982,7 @@ if (
 
                     {showDocuments && (
                       <div className="border-t border-gray-200 p-5 dark:border-white/10">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {formData.documents.map((doc) => {
+<div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">                          {formData.documents.map((doc) => {
                             const status = getDocumentStatus(doc.expirationDate);
                             const isRisky =
                               doc.checked &&
@@ -954,57 +1109,6 @@ if (
                       </div>
                     )}
                   </section>
-                </main>
-
-                <aside className="space-y-4">
-                  <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
-                    <div className="mb-4 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-                        <FiInfo />
-                      </div>
-
-                      <div>
-                        <h3 className="font-extrabold text-gray-900 dark:text-white">
-                          Record Summary
-                        </h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Live preview before review.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 text-sm">
-                      <SummaryRow label="Employee ID" value={generatedId} />
-                      <SummaryRow
-                        label="Full Name"
-                        value={toProperName(formData.name) || "-"}
-                      />
-                      <SummaryRow label="Status" value={formData.status} />
-                      <SummaryRow
-                        label="Company"
-                        value={
-                          formData.status === "Deployed"
-                            ? formData.company || "-"
-                            : "Not Assigned"
-                        }
-                      />
-                      <SummaryRow
-                        label="Documents"
-                        value={`${completedDocuments.length}/${DOCUMENT_OPTIONS.length} completed`}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-                    <div className="mb-2 flex items-center gap-2 font-extrabold">
-                      <FiAlertTriangle />
-                      HRIS Reminder
-                    </div>
-                    <p className="leading-6">
-                      Duplicate names require HR verification using supporting documents.                    
-                    </p>
-                  </div>
-                </aside>
               </div>
 
               <footer className="mt-6 flex flex-col-reverse gap-3 border-t border-gray-200 pt-5 dark:border-white/10 sm:flex-row sm:justify-end">
@@ -1089,6 +1193,13 @@ if (
                 <ReviewBox label="Employee ID" value={generatedId} />
               <ReviewBox label="Full Name" value={toProperName(formData.name)} />
               <ReviewBox label="Status" value={formData.status} />
+              <ReviewBox label="Employment Type" value={formData.employmentType} />
+              {formData.employmentType === "Contractual" && (
+                <>
+                  <ReviewBox label="Contract Start" value={formData.contractStart || "-"} />
+                  <ReviewBox label="Contract End" value={formData.contractEnd || "-"} />
+                </>
+              )}
               <ReviewBox
                 label="Company"
                 value={
@@ -1107,11 +1218,15 @@ if (
               {selectedDocuments.length > 0 ? (
                 <div className="space-y-3">
                     {selectedDocuments.map((doc) => {
-                      const masterDoc = DOCUMENT_OPTIONS.find((item) => item.name === doc.name);
-                      const isExpirable = masterDoc?.expirable;
-                      const status = isExpirable
-                        ? getDocumentStatus(doc.expirationDate)
-                        : "Permanent";
+                    const masterDoc = DOCUMENT_OPTIONS.find((item) => item.name === doc.name);
+                    const isExpirable = masterDoc?.expirable;
+
+                    const status = isExpirable
+                      ? getDocumentStatus(doc.expirationDate)
+                      : "Permanent";
+
+                    const isValid =
+                      !isExpirable || (status !== "Expired" && status !== "Expiring Soon");
 
                       return (
                       <div
@@ -1126,11 +1241,21 @@ if (
                             File: {doc.file?.name || "No file uploaded"}
                           </p>
                            </div>
-                      {isExpirable && (
-                        <div className="text-sm font-semibold text-gray-600 dark:text-gray-300">
-                          Expires: {doc.expirationDate || "-"} • {status}
-                        </div>
-                      )}
+                          <div className="text-sm font-semibold text-gray-600 dark:text-gray-300">
+                            {isExpirable ? (
+                              <>
+                                Expires: {doc.expirationDate || "-"} • {status}
+                              </>
+                            ) : (
+                              "Permanent Document"
+                            )}
+                          </div>
+
+                          {isValid && (
+                            <span className="text-xs text-green-600 dark:text-green-400 font-bold">
+                              ✔ Document is valid
+                            </span>
+                          )}
                       </div>
                     );
                   })}
