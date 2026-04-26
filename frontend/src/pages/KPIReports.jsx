@@ -12,27 +12,67 @@ import UtilizationTrendChart from "../components/dashboard/UtilizationTrendChart
 import KPICards from "../components/kpi/KPICards";
 import HighRiskEmployees from "../components/kpi/HighRiskEmployees";
 import RiskTable from "../components/kpi/RiskTable";
-import {
-  getKPILevel,
-  getSeverityWeight,
-} from "../utils/configStorage";
+import { getKPILevel, getSeverityWeight } from "../utils/configStorage";
 
 const EMPLOYEES_KEY = "employees";
 const INCIDENTS_KEY = "incidents";
-const DEPLOYMENTS_KEY = "deployments";
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
 function safeParse(key) {
   try {
-    const value = localStorage.getItem(key);
-    const parsed = JSON.parse(value || "[]");
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
-    console.error(`Failed to parse localStorage key: ${key}`, error);
+    console.error(`Failed to parse ${key}:`, error);
     return [];
   }
 }
 
-function getRiskLevelByKPI(kpiLevel) {
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeStatus(status) {
+  const value = normalizeText(status);
+
+  if (value === "resolved") return "For Review";
+  if (value === "for_review") return "For Review";
+  if (value === "closed") return "Closed";
+  if (value === "investigating") return "Investigating";
+
+  return "Open";
+}
+
+function getEmployeeId(emp, index = 0) {
+  return emp.id || emp.employeeId || emp.employee_id || `EMP-${index + 1}`;
+}
+
+function getEmployeeName(emp) {
+  return emp.name || emp.full_name || emp.fullName || "Unknown Employee";
+}
+
+function isSameEmployee(emp, incident, index = 0) {
+  const employeeId = String(getEmployeeId(emp, index));
+  const employeeName = normalizeText(getEmployeeName(emp));
+
+  const incidentEmployeeId = String(
+    incident.employeeId || incident.employee_id || incident.empId || ""
+  );
+
+  const incidentEmployeeName = normalizeText(
+    incident.employee || incident.employeeName || incident.name
+  );
+
+  return employeeId === incidentEmployeeId || employeeName === incidentEmployeeName;
+}
+
+function getRiskLevelByKPI(kpiLevel, violationCount, criticalCount) {
+  if (criticalCount >= 1) return "High Risk";
+
   switch (kpiLevel) {
     case "High":
       return "High Risk";
@@ -41,8 +81,15 @@ function getRiskLevelByKPI(kpiLevel) {
     case "Low":
       return "Monitor";
     default:
-      return "Clean";
+      return violationCount > 0 ? "Monitor" : "Clean";
   }
+}
+
+function getSeverityLabelByScore(severityScore, violationCount) {
+  if (severityScore >= 8) return "Critical";
+  if (severityScore >= 4) return "Major";
+  if (violationCount >= 1) return "Minor";
+  return "Clean";
 }
 
 function getAlertClasses(level) {
@@ -72,76 +119,83 @@ export default function KPIReports() {
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
   const employeesRaw = useMemo(() => {
-    const all = safeParse(EMPLOYEES_KEY);
-    return all.filter((emp) => !emp.archived);
+    return safeParse(EMPLOYEES_KEY).filter((emp) => !emp.archived);
   }, []);
 
-  const deploymentsRaw = useMemo(() => safeParse(DEPLOYMENTS_KEY), []);
-
   const incidentsRaw = useMemo(() => {
-    const all = safeParse(INCIDENTS_KEY);
+    const allIncidents = safeParse(INCIDENTS_KEY);
 
-    return all.filter((incident) =>
-      employeesRaw.some(
-        (emp) =>
-          emp.id === incident.employeeId ||
-          emp.employee_id === incident.employeeId ||
-          emp.name === incident.employee
-      )
-    );
+    return allIncidents
+      .map((incident) => ({
+        ...incident,
+        status: normalizeStatus(incident.status),
+      }))
+      .filter((incident) =>
+        employeesRaw.some((emp, index) => isSameEmployee(emp, incident, index))
+      );
   }, [employeesRaw]);
 
   const employees = useMemo(() => {
     return employeesRaw.map((emp, index) => {
-      const employeeId =
-        emp.id || emp.employeeId || emp.employee_id || `EMP-${index + 1}`;
-      const employeeName = emp.name || emp.full_name || "Unknown Employee";
+      const employeeId = getEmployeeId(emp, index);
+      const employeeName = getEmployeeName(emp);
 
-      const relatedIncidents = incidentsRaw.filter(
-        (incident) =>
-          incident.employeeId === employeeId ||
-          incident.employee_id === employeeId ||
-          incident.employee === employeeName
-      );
-
-      const activeDeployment = deploymentsRaw.find(
-        (deployment) =>
-          deployment.employeeId === employeeId ||
-          deployment.employee_id === employeeId ||
-          deployment.employee === employeeName
+      const relatedIncidents = incidentsRaw.filter((incident) =>
+        isSameEmployee({ ...emp, id: employeeId, name: employeeName }, incident, index)
       );
 
       const totalSeverityScore = relatedIncidents.reduce((sum, incident) => {
         return sum + getSeverityWeight(incident.severity);
       }, 0);
 
+      const criticalCount = relatedIncidents.filter(
+        (incident) => incident.severity === "Critical"
+      ).length;
+
+      const openCount = relatedIncidents.filter((incident) =>
+        ["Open", "Investigating", "For Review"].includes(incident.status)
+      ).length;
+
       const kpiLevel =
         relatedIncidents.length > 0 ? getKPILevel(totalSeverityScore) : "Clean";
+
+      const riskLevel = getRiskLevelByKPI(
+        kpiLevel,
+        relatedIncidents.length,
+        criticalCount
+      );
 
       return {
         id: employeeId,
         name: employeeName,
-        company:
-          activeDeployment?.company ||
-          activeDeployment?.clientCompany ||
-          emp.company ||
-          "Unassigned",
+        company: emp.company || emp.clientCompany || "Unassigned",
+        status: emp.status || "Unknown",
+        isDeployed: normalizeText(emp.status) === "deployed",
         violationCount: relatedIncidents.length,
+        openIncidentCount: openCount,
+        criticalIncidentCount: criticalCount,
         severityScore: totalSeverityScore,
+        severityLabel: getSeverityLabelByScore(
+          totalSeverityScore,
+          relatedIncidents.length
+        ),
         kpiLevel,
-        riskLevel: getRiskLevelByKPI(kpiLevel),
+        riskLevel,
+        lastIncidentDate:
+          relatedIncidents[0]?.reportedAt || relatedIncidents[0]?.date || null,
       };
     });
-  }, [employeesRaw, incidentsRaw, deploymentsRaw]);
+  }, [employeesRaw, incidentsRaw]);
 
   const totalEmployees = employees.length;
+  const deployedEmployees = employees.filter((emp) => emp.isDeployed).length;
 
   const repeatOffenders = employees.filter(
-    (emp) => emp.kpiLevel === "Medium"
+    (emp) => emp.riskLevel === "Repeat" || emp.violationCount >= 3
   ).length;
 
   const highRiskEmployees = employees.filter(
-    (emp) => emp.kpiLevel === "High"
+    (emp) => emp.riskLevel === "High Risk"
   ).length;
 
   const compliantEmployees = employees.filter(
@@ -162,6 +216,10 @@ export default function KPIReports() {
       (incident) => incident.status === "Investigating"
     ).length;
 
+    const forReviewIncidents = incidentsRaw.filter(
+      (incident) => incident.status === "For Review"
+    ).length;
+
     const criticalIncidents = incidentsRaw.filter(
       (incident) => incident.severity === "Critical"
     ).length;
@@ -177,81 +235,79 @@ export default function KPIReports() {
       },
       {
         level: "LOW",
-        text: `${openIncidents} open incident case(s) awaiting action`,
+        text: `${openIncidents} open case(s), ${forReviewIncidents} for Super Admin review`,
       },
     ];
   }, [incidentsRaw]);
 
   const violationTrend = useMemo(() => {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-    const monthMap = months.reduce((acc, month) => {
+    const monthMap = MONTHS.reduce((acc, month) => {
       acc[month] = 0;
       return acc;
     }, {});
 
     incidentsRaw.forEach((incident) => {
-      const month = getMonthLabel(incident.date);
+      const month = getMonthLabel(
+        incident.reportedAt || incident.date || incident.createdAt
+      );
+
       if (monthMap[month] !== undefined) {
         monthMap[month] += 1;
       }
     });
 
-    return months.map((month) => ({
+    return MONTHS.map((month) => ({
       month,
       violations: monthMap[month],
     }));
   }, [incidentsRaw]);
 
   const complianceTrend = useMemo(() => {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return MONTHS.map((month) => {
+      const monthIncidentEmployeeIds = new Set();
 
-    const running = [];
-    let cumulativeIncidents = 0;
+      incidentsRaw.forEach((incident) => {
+        const incidentMonth = getMonthLabel(
+          incident.reportedAt || incident.date || incident.createdAt
+        );
 
-    months.forEach((month) => {
-      const monthViolations =
-        violationTrend.find((item) => item.month === month)?.violations || 0;
+        if (incidentMonth === month) {
+          const matchedEmployee = employees.find((emp) =>
+            isSameEmployee(emp, incident)
+          );
 
-      cumulativeIncidents += monthViolations;
+          if (matchedEmployee) {
+            monthIncidentEmployeeIds.add(matchedEmployee.id);
+          }
+        }
+      });
 
-      const cleanEmployees =
-        totalEmployees > 0
-          ? Math.max(totalEmployees - cumulativeIncidents, 0)
-          : 0;
+      const cleanEmployees = Math.max(
+        totalEmployees - monthIncidentEmployeeIds.size,
+        0
+      );
 
-      const compliance =
-        totalEmployees > 0
-          ? Math.round((cleanEmployees / totalEmployees) * 100)
-          : 0;
-
-      running.push({ month, compliance });
+      return {
+        month,
+        compliance:
+          totalEmployees > 0
+            ? Math.round((cleanEmployees / totalEmployees) * 100)
+            : 0,
+      };
     });
-
-    return running;
-  }, [violationTrend, totalEmployees]);
+  }, [employees, incidentsRaw, totalEmployees]);
 
   const utilizationTrend = useMemo(() => {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const currentMonth = new Date().toLocaleString("en-US", { month: "short" });
 
-    return months.map((month) => {
-      const count = deploymentsRaw.filter((deployment) => {
-        const rawDate =
-          deployment.startDate ||
-          deployment.deploymentDate ||
-          deployment.date ||
-          "";
-        return getMonthLabel(rawDate) === month;
-      }).length;
-
-      const utilization =
-        totalEmployees > 0
-          ? Math.round((count / totalEmployees) * 100)
-          : 0;
-
-      return { month, utilization };
-    });
-  }, [deploymentsRaw, totalEmployees]);
+    return MONTHS.map((month) => ({
+      month,
+      utilization:
+        month === currentMonth && totalEmployees > 0
+          ? Math.round((deployedEmployees / totalEmployees) * 100)
+          : 0,
+    }));
+  }, [deployedEmployees, totalEmployees]);
 
   const handleExportPDF = () => {
     const doc = new jsPDF();
@@ -260,7 +316,7 @@ export default function KPIReports() {
     doc.text("Welljob Solutions KPI Report", 14, 15);
 
     doc.setFontSize(10);
-    doc.text(`Generated by: ${user?.name || "System User"}`, 14, 22);
+    doc.text(`Generated by: ${user?.name || user?.username || "System User"}`, 14, 22);
     doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
 
     doc.setFontSize(12);
@@ -270,10 +326,11 @@ export default function KPIReports() {
       startY: 42,
       head: [["Metric", "Value"]],
       body: [
-        ["Total Employees", totalEmployees],
+        ["Total Active Employees", totalEmployees],
+        ["Currently Deployed Employees", deployedEmployees],
         ["Compliance Rate", `${complianceRate}%`],
-        ["Medium KPI Employees", repeatOffenders],
-        ["High KPI Employees", highRiskEmployees],
+        ["Repeat Offenders", repeatOffenders],
+        ["High Risk Employees", highRiskEmployees],
       ],
       styles: { fontSize: 10 },
       headStyles: { fillColor: [22, 163, 74] },
@@ -293,10 +350,21 @@ export default function KPIReports() {
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 14,
-      head: [["Employee", "Company", "Violations", "Score", "KPI Level", "Risk Level"]],
+      head: [
+        [
+          "Employee",
+          "Company",
+          "Status",
+          "Violations",
+          "Severity Score",
+          "KPI Level",
+          "Risk Level",
+        ],
+      ],
       body: employees.map((emp) => [
         emp.name,
         emp.company,
+        emp.status,
         emp.violationCount,
         emp.severityScore,
         emp.kpiLevel,
@@ -325,6 +393,7 @@ export default function KPIReports() {
 
         <RoleGuard permission={PERMISSIONS.CAN_EXPORT_PDF}>
           <button
+            type="button"
             onClick={handleExportPDF}
             className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 shadow-sm"
           >
@@ -339,7 +408,8 @@ export default function KPIReports() {
             KPI Summary
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Key workforce and compliance indicators for quick executive review.
+            Key workforce and compliance indicators connected to employee,
+            incident, and deployment records.
           </p>
         </div>
 
@@ -385,7 +455,8 @@ export default function KPIReports() {
             Risk Intelligence
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Identifies repeat offenders and high-risk employees based on configured KPI thresholds.
+            Identifies repeat offenders and high-risk employees based on
+            incident frequency and severity.
           </p>
         </div>
 
@@ -397,8 +468,18 @@ export default function KPIReports() {
           <div className="xl:col-span-2">
             <RiskTable
               employees={employees}
-              getSeverity={(employee) => employee.kpiLevel}
-              getRiskLevel={(employee) => employee.riskLevel}
+              getSeverity={(violationCount) => {
+                if (violationCount >= 5) return "Critical";
+                if (violationCount >= 3) return "Major";
+                if (violationCount >= 1) return "Minor";
+                return "Clean";
+              }}
+              getRiskLevel={(violationCount) => {
+                if (violationCount >= 5) return "High Risk";
+                if (violationCount >= 3) return "Repeat";
+                if (violationCount >= 1) return "Monitor";
+                return "Clean";
+              }}
             />
           </div>
         </div>
@@ -410,7 +491,7 @@ export default function KPIReports() {
             Analytics Trends
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Tracks workforce violations, employee compliance, and deployment utilization over time.
+            Tracks workforce violations, compliance, and current deployment utilization.
           </p>
         </div>
 

@@ -3,7 +3,7 @@ import { FiAlertTriangle } from "react-icons/fi";
 export default function HighRiskEmployees({ employees }) {
 
   const highRiskEmployees = employees
-    .filter(emp => emp.violationCount >= 3)
+.filter((emp) => emp.riskLevel === "High Risk" || emp.violationCount >= 5)
     .sort((a, b) => b.violationCount - a.violationCount);
 
   if (highRiskEmployees.length === 0) {
