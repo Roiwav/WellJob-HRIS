@@ -662,7 +662,7 @@ return !(
               </button>
             </header>
 
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-6">
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-6">
               <div className="space-y-6">
               <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
                 <main className="space-y-6">
@@ -982,7 +982,8 @@ return !(
 
                     {showDocuments && (
                       <div className="border-t border-gray-200 p-5 dark:border-white/10">
-<div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">                          {formData.documents.map((doc) => {
+                        <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
+                          {formData.documents.map((doc) => {
                             const status = getDocumentStatus(doc.expirationDate);
                             const isRisky =
                               doc.checked &&
@@ -1092,10 +1093,12 @@ return !(
                                           <ErrorText>{errors.documents[`${doc.name}_file`]}</ErrorText>
 
                                           {doc.file && (
-                                            <p className="mt-2 flex items-center gap-1.5 text-xs font-bold text-green-600 dark:text-green-400">
-                                              <FiCheck />
-                                              {doc.file.name}
-                                            </p>
+                                            <div className="mt-2 flex min-w-0 items-start gap-1.5 rounded-xl bg-green-500/10 px-3 py-2 text-xs font-bold text-green-600 dark:text-green-400">
+                                              <FiCheck className="mt-0.5 shrink-0" />
+                                              <span className="block min-w-0 max-w-full break-all leading-5">
+                                                {doc.file.name}
+                                              </span>
+                                            </div>
                                           )}
                                         </div>
                                       </div>
@@ -1237,9 +1240,9 @@ return !(
                           <p className="font-bold text-gray-900 dark:text-white">
                             {doc.name}
                           </p>
-                          <p className="text-xs text-gray-500">
-                            File: {doc.file?.name || "No file uploaded"}
-                          </p>
+                            <p className="mt-1 max-w-full break-all text-xs text-gray-500 dark:text-gray-400">
+                              File: {doc.file?.name || "No file uploaded"}
+                            </p>
                            </div>
                           <div className="text-sm font-semibold text-gray-600 dark:text-gray-300">
                             {isExpirable ? (
