@@ -7,10 +7,10 @@ import {
 } from "react-icons/fi";
 import NotificationCard from "../components/notifications/NotificationCard";
 import NotificationTable from "../components/notifications/NotificationTable";
+import { useAuth } from "../context/useAuth";
 
 const INCIDENTS_KEY = "incidents";
 const EMPLOYEES_KEY = "employees";
-const NOTIFICATIONS_LAST_READ_KEY = "notifications_last_read";
 
 function safeParse(key) {
   try {
@@ -21,13 +21,54 @@ function safeParse(key) {
   }
 }
 
-function getIncidentTime(incident) {
-  const raw = incident.reportedAt || incident.createdAt || incident.date;
+function getReadKey(role) {
+  return `notifications_last_read_${role || "USER"}`;
+}
+
+function getIncidentTimeByRole(incident, role) {
+  const raw =
+    role === "SUPER_ADMIN"
+      ? incident?.resolution?.submittedAt ||
+        incident?.review?.reviewedAt ||
+        incident?.updatedAt ||
+        incident?.reportedAt ||
+        incident?.createdAt ||
+        incident?.date
+      : incident?.updatedAt ||
+        incident?.reportedAt ||
+        incident?.createdAt ||
+        incident?.date;
+
   const time = new Date(raw).getTime();
   return Number.isNaN(time) ? 0 : time;
 }
 
+function isNotificationVisibleForRole(incident, role) {
+  const status = incident?.status || "Open";
+
+  if (role === "IT_SUPPORT") return false;
+
+  if (role === "SUPER_ADMIN") {
+    return status === "For Review";
+  }
+
+  if (role === "HR_MANAGER" || role === "HR_STAFF") {
+    return ["Open", "Investigating"].includes(status);
+  }
+
+  return false;
+}
+
+function getPageSubtitle(role) {
+  if (role === "SUPER_ADMIN") {
+    return "Cases submitted by HR for Super Admin review and approval.";
+  }
+
+  return "Incident alerts assigned to HR Staff and HR Manager for monitoring and investigation.";
+}
+
 export default function Notifications() {
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState([]);
 
   const loadNotifications = () => {
@@ -35,13 +76,18 @@ export default function Notifications() {
     const employees = safeParse(EMPLOYEES_KEY);
     const activeEmployees = employees.filter((emp) => !emp.archived);
 
-    const filteredIncidents = incidents.filter((incident) =>
-      activeEmployees.some(
+    const filteredIncidents = incidents.filter((incident) => {
+      const employeeIsActive = activeEmployees.some(
         (emp) =>
           String(emp.id) === String(incident.employeeId) ||
           String(emp.name) === String(incident.employee)
-      )
-    );
+      );
+
+      return (
+        employeeIsActive &&
+        isNotificationVisibleForRole(incident, user?.role)
+      );
+    });
 
     const mapped = filteredIncidents
       .map((incident) => ({
@@ -51,8 +97,16 @@ export default function Notifications() {
         violation: incident.violation,
         severity: incident.severity || "Minor",
         status: incident.status || "Open",
-        date: incident.reportedAt || incident.date,
-        timestamp: getIncidentTime(incident),
+        date:
+          user?.role === "SUPER_ADMIN"
+            ? incident?.resolution?.submittedAt ||
+              incident?.updatedAt ||
+              incident?.reportedAt ||
+              incident?.date
+            : incident?.updatedAt ||
+              incident?.reportedAt ||
+              incident?.date,
+        timestamp: getIncidentTimeByRole(incident, user?.role),
       }))
       .sort((a, b) => b.timestamp - a.timestamp);
 
@@ -60,31 +114,26 @@ export default function Notifications() {
   };
 
   useEffect(() => {
-    // Mark notifications as read
-    localStorage.setItem(
-      NOTIFICATIONS_LAST_READ_KEY,
-      new Date().toISOString()
-    );
+    if (user?.role) {
+      localStorage.setItem(getReadKey(user.role), new Date().toISOString());
+      window.dispatchEvent(new Event("dataUpdated"));
+    }
 
-    window.dispatchEvent(new Event("dataUpdated"));
-  }, []);
-
-  useEffect(() => {
     const reload = () => {
       setTimeout(loadNotifications, 0);
     };
-    
-    // Initial load
-    reload();
-    
+
     window.addEventListener("dataUpdated", reload);
     window.addEventListener("storage", reload);
+
+    // Initial load - defer to avoid synchronous setState
+    setTimeout(loadNotifications, 0);
 
     return () => {
       window.removeEventListener("dataUpdated", reload);
       window.removeEventListener("storage", reload);
     };
-  }, []);
+  }, [user?.role]);
 
   const counts = useMemo(
     () => ({
@@ -108,7 +157,7 @@ export default function Notifications() {
           </h1>
 
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Alerts generated from newly reported and updated incident records.
+            {getPageSubtitle(user?.role)}
           </p>
         </div>
 
@@ -125,14 +174,22 @@ export default function Notifications() {
           type="High"
           icon={<FiAlertTriangle />}
           message={`${counts.critical} Critical Incidents`}
-          date="Requires immediate attention"
+          date={
+            user?.role === "SUPER_ADMIN"
+              ? "Pending review priority"
+              : "Requires immediate HR action"
+          }
         />
 
         <NotificationCard
           type="Medium"
           icon={<FiClock />}
           message={`${counts.major} Major Incidents`}
-          date="Needs investigation follow-up"
+          date={
+            user?.role === "SUPER_ADMIN"
+              ? "Needs approval review"
+              : "Needs investigation follow-up"
+          }
         />
 
         <NotificationCard
