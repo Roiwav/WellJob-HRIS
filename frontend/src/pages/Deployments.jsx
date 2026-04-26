@@ -4,16 +4,52 @@ import { FiCalendar, FiSearch } from "react-icons/fi";
 import DeploymentTable from "../components/deployments/DeploymentTable";
 import DeploymentModal from "../components/deployments/DeploymentModal";
 
+const COMPANY_LOCATIONS = {
+  "SM Supermalls": "Calamba City, Laguna",
+  "Robinsons Retail Holdings": "Calamba City, Laguna",
+  "Ayala Land Inc.": "Makati City",
+  "Jollibee Foods Corporation": "Pasig City",
+  "San Miguel Corporation": "Mandaluyong City",
+  "PLDT Inc.": "Makati City",
+  "Globe Telecom": "Taguig City",
+  "BDO Unibank": "Makati City",
+  "Metrobank": "Makati City",
+  "Puregold Price Club": "Quezon City",
+  "Wilcon Depot": "Quezon City",
+  "DMCI Holdings": "Makati City",
+  "Megaworld Corporation": "Taguig City",
+  "Unilab Inc.": "Mandaluyong City",
+  "Nestlé Philippines": "Makati City",
+  "Coca-Cola Philippines": "Taguig City",
+  "Pepsi-Cola Products Philippines": "Muntinlupa City",
+  "Toyota Philippines": "Santa Rosa, Laguna",
+  "Honda Philippines": "Batangas",
+  "Accenture Philippines": "Taguig City",
+  "IBM Philippines": "Quezon City",
+  "Teleperformance Philippines": "Pasig City",
+  "Concentrix Philippines": "Quezon City",
+  "Sitel Philippines": "Makati City",
+};
+
+function safeParse(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function Toast({ show, message }) {
   if (typeof document === "undefined") return null;
 
   return createPortal(
     <div
       className={`fixed bottom-6 right-6 z-[9999] transform transition-all duration-500 ${
-        show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+        show ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0"
       }`}
     >
-      <div className="bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg">
+      <div className="rounded-xl bg-green-600 px-5 py-3 text-white shadow-lg">
         {message}
       </div>
     </div>,
@@ -22,7 +58,7 @@ function Toast({ show, message }) {
 }
 
 function getDeploymentsFromStorage() {
-  const employees = JSON.parse(localStorage.getItem("employees")) || [];
+  const employees = safeParse("employees");
 
   return employees
     .filter((emp) => emp.status === "Deployed" && !emp.archived)
@@ -30,12 +66,13 @@ function getDeploymentsFromStorage() {
       id: emp.id,
       employee: emp.name,
       company: emp.company || "-",
-
-      // CONNECTED NA SA EMPLOYEE DEPLOYMENT
-      location: emp.deployment?.location || "-",
+      location: COMPANY_LOCATIONS[emp.company] || "-",
       start: emp.deployment?.start || new Date().toISOString().split("T")[0],
-      end: emp.deployment?.end || "-",
       status: emp.deployment?.status || "Active",
+
+      employmentType: emp.employmentType || "Permanent",
+      contractStart: emp.contractStart || "-",
+      contractEnd: emp.contractEnd || "-",
     }));
 }
 
@@ -69,10 +106,10 @@ function getYearOptions(deployments) {
 
   const uniqueYears = [...new Set(years)].sort((a, b) => Number(b) - Number(a));
 
-  return [{ value: "", label: "All Years" }, ...uniqueYears.map((year) => ({
-    value: year,
-    label: year,
-  }))];
+  return [
+    { value: "", label: "All Years" },
+    ...uniqueYears.map((year) => ({ value: year, label: year })),
+  ];
 }
 
 export default function Deployments() {
@@ -101,34 +138,30 @@ export default function Deployments() {
   };
 
   const updateDeployment = (updatedDeployment) => {
-    const employees = JSON.parse(localStorage.getItem("employees")) || [];
+    const employees = safeParse("employees");
 
-  const updatedEmployees = employees.map((emp) =>
-    emp.id === updatedDeployment.id
-      ? {
-          ...emp,
-          deployment: {
-            location: updatedDeployment.location,
-            start: updatedDeployment.start,
-            end: updatedDeployment.end,
-            status: updatedDeployment.status,
-          },
-        }
-      : emp
-  );
+    const updatedEmployees = employees.map((emp) =>
+      emp.id === updatedDeployment.id
+        ? {
+            ...emp,
+            deployment: {
+              location: COMPANY_LOCATIONS[updatedDeployment.company] || "-",
+              start: updatedDeployment.start,
+              status: updatedDeployment.status,
+            },
+          }
+        : emp
+    );
 
     localStorage.setItem("employees", JSON.stringify(updatedEmployees));
-
-    // 🔥 REAL-TIME TRIGGER
     window.dispatchEvent(new Event("dataUpdated"));
-    setDeployments(getDeploymentsFromStorage());
 
+    setDeployments(getDeploymentsFromStorage());
     setShowToast(false);
 
     setTimeout(() => {
       setToastMessage("Deployment updated successfully!");
       setShowToast(true);
-
       setTimeout(() => setShowToast(false), 2200);
     }, 50);
   };
@@ -138,10 +171,12 @@ export default function Deployments() {
       const keyword = search.toLowerCase().trim();
 
       const matchSearch =
-        deployment.employee.toLowerCase().includes(keyword) ||
-        deployment.company.toLowerCase().includes(keyword) ||
-        deployment.location.toLowerCase().includes(keyword) ||
-        deployment.status.toLowerCase().includes(keyword);
+        String(deployment.id || "").toLowerCase().includes(keyword) ||
+        String(deployment.employee || "").toLowerCase().includes(keyword) ||
+        String(deployment.company || "").toLowerCase().includes(keyword) ||
+        String(deployment.location || "").toLowerCase().includes(keyword) ||
+        String(deployment.status || "").toLowerCase().includes(keyword) ||
+        String(deployment.employmentType || "").toLowerCase().includes(keyword);
 
       if (!deployment.start || deployment.start === "-") {
         return matchSearch && !selectedMonth && !selectedYear;
@@ -168,29 +203,29 @@ export default function Deployments() {
             Deployment Tracking
           </h1>
 
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Monitor employee deployments across client companies.
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Monitor employee assignments, client locations, and contract duration.
           </p>
         </div>
 
-        <div className="flex flex-col xl:flex-row gap-3 items-start xl:items-center">
+        <div className="flex flex-col items-start gap-3 xl:flex-row xl:items-center">
           <div className="relative w-full max-w-xs">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
             <input
               type="text"
-              placeholder="Search employee, company, location..."
+              placeholder="Search ID, employee, company, location..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition"
+              className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-gray-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             />
           </div>
 
           <div className="relative">
-            <FiCalendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+            <FiCalendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
+              className="rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-gray-900 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             >
               {monthOptions.map((month) => (
                 <option key={month.label} value={month.value}>
@@ -203,7 +238,7 @@ export default function Deployments() {
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
-            className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
+            className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-gray-900 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
           >
             {yearOptions.map((year) => (
               <option key={year.label} value={year.value}>

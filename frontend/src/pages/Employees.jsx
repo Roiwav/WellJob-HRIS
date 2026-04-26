@@ -2,10 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FiArchive,
-  FiEdit2,
-  FiEye,
   FiFilter,
-  FiInbox,
   FiSearch,
 } from "react-icons/fi";
 
@@ -14,12 +11,22 @@ import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 import AddEmployeeModal from "../components/employees/AddEmployeeModal";
 import EmployeeModal from "../components/employees/EmployeeModal";
-import ComplianceBadge from "../components/employees/ComplianceBadge";
+import EmployeeTable from "../components/employees/EmployeeTable";
 
 const EMPLOYEES_KEY = "employees";
 const OPERATIONAL_AUDIT_KEY = "operational_audit_logs";
 
-const REQUIRED_DOCUMENTS = ["NBI", "Police Clearance", "Health Card"];
+const REQUIRED_DOCUMENTS = [
+  "Resume",
+  "NSO/PSA",
+  "SSS (ID or E1 form)",
+  "Pag-IBIG (ID or MDRF Form)",
+  "PhilHealth (ID or MDF Form)",
+  "Diploma",
+  "Cedula",
+  "Barangay Clearance",
+  "NBI/Police Clearance",
+];
 
 const SORT_OPTIONS = [
   { value: "latest", label: "Latest Added" },
@@ -61,24 +68,6 @@ function safeParse(key) {
   } catch {
     return [];
   }
-}
-
-function getDocumentStatus(expirationDate) {
-  if (!expirationDate) return "No Data";
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const exp = new Date(expirationDate);
-  exp.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.ceil(
-    (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  if (diffDays < 0) return "Expired";
-  if (diffDays <= 30) return "Expiring Soon";
-  return "Valid";
 }
 
 export default function Employees() {
@@ -133,24 +122,30 @@ export default function Employees() {
     window.dispatchEvent(new Event("dataUpdated"));
   }, []);
 
-  const getCompliance = useCallback((docs) => {
-    if (!docs || docs.length === 0) return "No Data";
+const getCompliance = useCallback((docs) => {
+  if (!docs || docs.length === 0) return "No Data";
 
-    const statuses = docs.map((doc) => getDocumentStatus(doc.expirationDate));
+  const completedCount = REQUIRED_DOCUMENTS.filter((requiredName) => {
+    const doc = docs.find((d) => d.name === requiredName);
 
-    if (statuses.includes("Expired")) return "Expired";
-    if (statuses.includes("Expiring Soon")) return "Expiring Soon";
+    if (!doc) return false;
 
-    const existingNames = docs.map((doc) => doc.name);
-    const hasMissingRequired = REQUIRED_DOCUMENTS.some(
-      (requiredDoc) => !existingNames.includes(requiredDoc)
-    );
+    if (!doc.file) return false;
 
-    if (hasMissingRequired) return "Incomplete";
-    if (statuses.every((status) => status === "Valid")) return "Valid";
+    if (
+      ["Barangay Clearance", "NBI/Police Clearance"].includes(requiredName) &&
+      !doc.expirationDate
+    ) {
+      return false;
+    }
 
-    return "Incomplete";
-  }, []);
+    return true;
+  }).length;
+
+  if (completedCount === REQUIRED_DOCUMENTS.length) return "Complete";
+
+  return "Incomplete";
+}, []);
 
   const generateId = () => {
     const stored = safeParse(EMPLOYEES_KEY);
@@ -329,18 +324,6 @@ export default function Employees() {
     getCompliance,
   ]);
 
-  const emptyStateTitle = search
-    ? "No employees match your search"
-    : filterStatus !== "All" || filterCompliance !== "All"
-    ? "No employees match the selected filters"
-    : "No employees yet";
-
-  const emptyStateDescription = search
-    ? "Try another employee ID, name, or company keyword."
-    : filterStatus !== "All" || filterCompliance !== "All"
-    ? "Try changing the status or compliance filter."
-    : "Start by adding a new employee record.";
-
   return (
     <div className="p-8 space-y-6">
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
@@ -455,95 +438,15 @@ export default function Employees() {
         </select>
       </div>
 
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-gray-700 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 dark:bg-slate-900/70">
-              <tr>
-                <th className="px-6 py-4">Employee ID</th>
-                <th className="px-6 py-4">Full Name</th>
-                <th className="px-6 py-4">Company</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Compliance</th>
-                <th className="px-6 py-4 text-right">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredEmployees.length > 0 ? (
-                filteredEmployees.map((emp) => {
-                  const compliance = getCompliance(emp.documents);
-
-                  return (
-                    <tr key={emp.uid || emp.id} className="border-t">
-                      <td className="px-6 py-4">{emp.id}</td>
-                      <td className="px-6 py-4">{emp.name}</td>
-                      <td className="px-6 py-4">{emp.company || "-"}</td>
-                      <td className="px-6 py-4">{emp.status}</td>
-                      <td className="px-6 py-4">
-                        <ComplianceBadge status={compliance} />
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setViewEmployee(emp)}
-                            className="inline-flex items-center justify-center rounded-lg border px-3 py-2 hover:bg-gray-50 dark:hover:bg-blue-900/30"
-                            title="View employee"
-                          >
-                            <FiEye />
-                          </button>
-
-                          {!isSuperAdmin && (
-                            <RoleGuard
-                              permission={PERMISSIONS.CAN_EDIT_EMPLOYEE}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => handleEdit(emp)}
-                                className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-3 py-2 text-white hover:bg-amber-600"
-                                title="Edit employee"
-                              >
-                                <FiEdit2 />
-                              </button>
-                            </RoleGuard>
-                          )}
-
-                          {isHRManager && (
-                            <button
-                              type="button"
-                              onClick={() => setArchiveTarget(emp)}
-                              className="inline-flex items-center justify-center rounded-lg bg-slate-700 px-3 py-2 text-white hover:bg-red-600 transition"
-                              title="Archive employee"
-                            >
-                              <FiArchive />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center">
-                    <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-slate-700">
-                      <FiInbox className="text-gray-500" size={22} />
-                    </div>
-                    <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-                      {emptyStateTitle}
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      {emptyStateDescription}
-                    </p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+<EmployeeTable
+  employees={filteredEmployees}
+  openModal={(emp) => setViewEmployee(emp)}
+  onEdit={handleEdit}
+  getComplianceStatus={getCompliance}
+  onArchive={(emp) => setArchiveTarget(emp)}
+  isHRManager={isHRManager}
+  isSuperAdmin={isSuperAdmin}
+/>
       {showModal && !isSuperAdmin && (
         <AddEmployeeModal
           generatedId={generatedId}

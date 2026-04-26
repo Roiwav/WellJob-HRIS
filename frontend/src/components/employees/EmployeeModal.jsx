@@ -1,19 +1,24 @@
+import { useState } from "react";
 import {
   FiAlertTriangle,
   FiBriefcase,
   FiCalendar,
   FiCheckCircle,
   FiClock,
+  FiEye,
   FiFileText,
   FiShield,
   FiUser,
   FiX,
 } from "react-icons/fi";
-import { useState } from "react";
-import { FiEye } from "react-icons/fi";
 
-const REQUIRED_DOCUMENTS = ["NBI", "Police Clearance", "Health Card"];
 const INCIDENTS_KEY = "incidents";
+
+const EXPIRABLE_DOCUMENTS = ["Barangay Clearance", "NBI/Police Clearance"];
+
+function isExpirableDocument(docName) {
+  return EXPIRABLE_DOCUMENTS.includes(docName);
+}
 
 function formatDate(dateString) {
   if (!dateString) return "Not Set";
@@ -28,17 +33,29 @@ function formatDate(dateString) {
   });
 }
 
-function getDocumentStatus(expirationDate) {
-  if (!expirationDate) return "No Data";
+function getDocumentStatus(doc) {
+  if (!doc) return "No Data";
+
+  const hasFile = !!doc.file;
+  const isExpirable = isExpirableDocument(doc.name);
+
+  if (!hasFile) return "No Data";
+
+  if (!isExpirable) return "Valid";
+
+  if (!doc.expirationDate) return "No Data";
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const exp = new Date(expirationDate);
+  const exp = new Date(doc.expirationDate);
   exp.setHours(0, 0, 0, 0);
 
-  const diffTime = exp.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  if (Number.isNaN(exp.getTime())) return "No Data";
+
+  const diffDays = Math.ceil(
+    (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
 
   if (diffDays < 0) return "Expired";
   if (diffDays <= 30) return "Expiring Soon";
@@ -56,16 +73,17 @@ function getDaysLabel(expirationDate) {
 
   if (Number.isNaN(exp.getTime())) return "Invalid expiration date";
 
-  const diffTime = exp.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = Math.ceil(
+    (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
 
   if (diffDays < 0) {
-    return `Expired ${Math.abs(diffDays)} day${Math.abs(diffDays) > 1 ? "s" : ""} ago`;
+    return `Expired ${Math.abs(diffDays)} day${
+      Math.abs(diffDays) > 1 ? "s" : ""
+    } ago`;
   }
 
-  if (diffDays === 0) {
-    return "Expires today";
-  }
+  if (diffDays === 0) return "Expires today";
 
   return `Expires in ${diffDays} day${diffDays > 1 ? "s" : ""}`;
 }
@@ -94,6 +112,8 @@ function getStatusClasses(status) {
 }
 
 function getOverallCompliance(documents) {
+  if (!documents || documents.length === 0) return "No Data";
+
   const statuses = documents.map((doc) => doc.status);
 
   if (statuses.includes("Expired")) return "Expired";
@@ -153,10 +173,13 @@ export default function EmployeeModal({ employee, onClose }) {
   if (!employee) return null;
 
   const employeeIncidents = getEmployeeIncidents(employee);
+
   const normalizedDocuments = (employee.documents || []).map((doc) => ({
     ...doc,
-    status: getDocumentStatus(doc.expirationDate),
+    expirable: isExpirableDocument(doc.name),
+    status: getDocumentStatus(doc),
   }));
+
   const overallCompliance = getOverallCompliance(normalizedDocuments);
 
   const expiringDocs = normalizedDocuments.filter(
@@ -187,12 +210,15 @@ export default function EmployeeModal({ employee, onClose }) {
     .join("");
 
   const totalIncidents = employeeIncidents.length;
+
   const openIncidents = employeeIncidents.filter(
     (incident) => incident.status !== "Resolved"
   ).length;
+
   const resolvedIncidents = employeeIncidents.filter(
     (incident) => incident.status === "Resolved"
   ).length;
+
   const riskLevel = getRiskLevel(totalIncidents);
 
   const recentIncidents = [...employeeIncidents]
@@ -227,10 +253,14 @@ export default function EmployeeModal({ employee, onClose }) {
 
                   <span
                     className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getStatusClasses(
-                      employee.status === "Inactive" ? "Inactive" : employee.status
+                      employee.status === "Inactive"
+                        ? "Inactive"
+                        : employee.status
                     )}`}
                   >
-                    {employee.status === "Inactive" && <FiShield className="text-sm" />}
+                    {employee.status === "Inactive" && (
+                      <FiShield className="text-sm" />
+                    )}
                     {employee.status}
                   </span>
 
@@ -251,7 +281,9 @@ export default function EmployeeModal({ employee, onClose }) {
                       riskLevel
                     )}`}
                   >
-                    {riskLevel === "High Risk" && <FiAlertTriangle className="text-sm" />}
+                    {riskLevel === "High Risk" && (
+                      <FiAlertTriangle className="text-sm" />
+                    )}
                     Risk: {riskLevel}
                   </span>
                 </div>
@@ -259,6 +291,7 @@ export default function EmployeeModal({ employee, onClose }) {
             </div>
 
             <button
+              type="button"
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
             >
@@ -307,14 +340,16 @@ export default function EmployeeModal({ employee, onClose }) {
                     {expiredDocs.length > 0 && (
                       <p>
                         {expiredDocs.length} document
-                        {expiredDocs.length > 1 ? "s are" : " is"} already expired.
+                        {expiredDocs.length > 1 ? "s are" : " is"} already
+                        expired.
                       </p>
                     )}
 
                     {expiringDocs.length > 0 && (
                       <p>
                         {expiringDocs.length} document
-                        {expiringDocs.length > 1 ? "s are" : " is"} expiring soon.
+                        {expiringDocs.length > 1 ? "s are" : " is"} expiring
+                        soon.
                       </p>
                     )}
 
@@ -374,10 +409,14 @@ export default function EmployeeModal({ employee, onClose }) {
                 </p>
                 <span
                   className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getStatusClasses(
-                    employee.status === "Inactive" ? "Inactive" : employee.status
+                    employee.status === "Inactive"
+                      ? "Inactive"
+                      : employee.status
                   )}`}
                 >
-                  {employee.status === "Inactive" && <FiShield className="text-sm" />}
+                  {employee.status === "Inactive" && (
+                    <FiShield className="text-sm" />
+                  )}
                   {employee.status}
                 </span>
               </div>
@@ -443,7 +482,9 @@ export default function EmployeeModal({ employee, onClose }) {
                     riskLevel
                   )}`}
                 >
-                  {riskLevel === "High Risk" && <FiAlertTriangle className="text-sm" />}
+                  {riskLevel === "High Risk" && (
+                    <FiAlertTriangle className="text-sm" />
+                  )}
                   {riskLevel}
                 </span>
               </div>
@@ -471,8 +512,11 @@ export default function EmployeeModal({ employee, onClose }) {
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                       <div>
                         {typeof incident.violation === "object"
-                          ? incident.violation?.label || incident.violation?.violation || "No violation type"
+                          ? incident.violation?.label ||
+                            incident.violation?.violation ||
+                            "No violation type"
                           : incident.violation || "No violation type"}
+
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                           {incident.id} • {formatDate(incident.date)}
                         </p>
@@ -526,6 +570,8 @@ export default function EmployeeModal({ employee, onClose }) {
                 const isExpired = doc.status === "Expired";
                 const isExpiringSoon = doc.status === "Expiring Soon";
                 const isMissing = doc.status === "Missing";
+                const isNoData = doc.status === "No Data";
+                const isExpirable = doc.expirable;
 
                 return (
                   <div
@@ -535,7 +581,7 @@ export default function EmployeeModal({ employee, onClose }) {
                         ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
                         : isExpiringSoon
                         ? "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
-                        : isMissing
+                        : isMissing || isNoData
                         ? "border-orange-300 bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10"
                         : "border-gray-200 bg-white dark:border-white/10 dark:bg-slate-900/40"
                     }`}
@@ -548,7 +594,7 @@ export default function EmployeeModal({ employee, onClose }) {
                               ? "text-red-500"
                               : isExpiringSoon
                               ? "text-amber-500"
-                              : isMissing
+                              : isMissing || isNoData
                               ? "text-orange-500"
                               : "text-indigo-500"
                           }`}
@@ -562,33 +608,44 @@ export default function EmployeeModal({ employee, onClose }) {
                           </p>
 
                           <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
-                            <div className="flex items-center gap-2">
-                              <FiCalendar size={14} />
-                              <span>
-                                Expiration Date:{" "}
-                                {doc.expirationDate
-                                  ? formatDate(doc.expirationDate)
-                                  : "Not Set"}
-                              </span>
-                            </div>
+                            {isExpirable && (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <FiCalendar size={14} />
+                                  <span>
+                                    Expiration Date:{" "}
+                                    {doc.expirationDate
+                                      ? formatDate(doc.expirationDate)
+                                      : "Not Set"}
+                                  </span>
+                                </div>
 
-                            <div className="flex items-center gap-2">
-                              <FiClock size={14} />
-                              <span>
-                                {isMissing
-                                  ? "Required document is missing"
-                                  : getDaysLabel(doc.expirationDate)}
-                              </span>
-                            </div>
+                                <div className="flex items-center gap-2">
+                                  <FiClock size={14} />
+                                  <span>{getDaysLabel(doc.expirationDate)}</span>
+                                </div>
+                              </>
+                            )}
+
+                            {!isExpirable && (
+                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                Permanent compliance document
+                              </p>
+                            )}
+
+                            {!doc.file && (
+                              <p className="text-sm font-medium text-orange-600 dark:text-orange-300">
+                                No uploaded file found
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
 
                       <div className="flex flex-col items-start lg:items-end gap-2">
-
-                        {/* 🔥 VIEW BUTTON */}
                         {doc.file && (
                           <button
+                            type="button"
                             onClick={() => setPreviewFile(doc.file)}
                             className="flex items-center gap-1 text-indigo-500 hover:text-indigo-700 text-xs"
                           >
@@ -601,23 +658,25 @@ export default function EmployeeModal({ employee, onClose }) {
                             doc.status
                           )}`}
                         >
-                          {(isExpired || isExpiringSoon) && (
+                          {(isExpired ||
+                            isExpiringSoon ||
+                            isMissing ||
+                            isNoData) && (
                             <FiAlertTriangle className="text-sm" />
                           )}
-                          {isMissing && <FiAlertTriangle className="text-sm" />}
                           {doc.status}
                         </span>
 
-                        {!isMissing && doc.status === "Valid" && (
+                        {doc.status === "Valid" && (
                           <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-300">
                             <FiCheckCircle size={14} />
-                            Document is active and up to date
+                            Permanent document verified
                           </span>
                         )}
 
-                        {isMissing && (
+                        {(isMissing || isNoData) && (
                           <span className="text-xs text-orange-700 dark:text-orange-300 font-medium">
-                            Immediate update recommended
+                            Upload proof file recommended
                           </span>
                         )}
                       </div>
@@ -626,31 +685,49 @@ export default function EmployeeModal({ employee, onClose }) {
                 );
               })}
             </div>
+
             {previewFile && (
-              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
-                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl max-w-3xl w-full relative">
+              <div
+                className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999] p-4"
+                onClick={() => setPreviewFile(null)}
+              >
+                <div
+                  className="bg-white dark:bg-slate-900 p-4 rounded-xl max-w-5xl w-full relative"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="mb-3 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-bold text-gray-900 dark:text-white">
+                        File Preview
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {previewFile.name || "Uploaded file"}
+                      </p>
+                    </div>
 
-                  <button
-                    onClick={() => setPreviewFile(null)}
-                    className="absolute top-3 right-3 text-gray-400 hover:text-white"
-                  >
-                    ✖
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFile(null)}
+                      className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-white/10"
+                    >
+                      <FiX size={20} />
+                    </button>
+                  </div>
 
-                  {previewFile.data?.includes("image") ? (
+                  {previewFile.type?.startsWith("image/") ||
+                  previewFile.data?.startsWith("data:image") ? (
                     <img
                       src={previewFile.data}
-                      alt="preview"
-                      className="w-full max-h-[80vh] object-contain"
+                      alt={previewFile.name || "preview"}
+                      className="mx-auto max-h-[80vh] w-full object-contain rounded-lg"
                     />
                   ) : (
                     <iframe
                       src={previewFile.data}
-                      title="file preview"
-                      className="w-full h-[80vh]"
+                      title={previewFile.name || "file preview"}
+                      className="w-full h-[80vh] rounded-lg border border-gray-200 dark:border-white/10"
                     />
                   )}
-
                 </div>
               </div>
             )}
@@ -659,6 +736,7 @@ export default function EmployeeModal({ employee, onClose }) {
 
         <div className="shrink-0 px-4 sm:px-6 lg:px-8 py-4 border-t border-gray-200 dark:border-white/10 flex justify-end bg-white dark:bg-slate-900">
           <button
+            type="button"
             onClick={onClose}
             className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition font-medium"
           >
