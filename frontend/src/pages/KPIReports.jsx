@@ -92,6 +92,44 @@ function getSeverityLabelByScore(severityScore, violationCount) {
   return "Clean";
 }
 
+function getDSSRecommendation(emp) {
+  if (emp.criticalIncidentCount >= 2) return "Termination Review";
+
+  if (emp.criticalIncidentCount >= 1 || emp.riskLevel === "High Risk") {
+    return "Suspension Review";
+  }
+
+  if (emp.violationCount >= 3 || emp.riskLevel === "Repeat") {
+    return "Final Warning";
+  }
+
+  if (emp.violationCount >= 1 || emp.riskLevel === "Monitor") {
+    return "Monitor Employee";
+  }
+
+  return "Retain";
+}
+
+function getDSSReason(emp) {
+  if (emp.criticalIncidentCount >= 2) {
+    return `Employee has ${emp.criticalIncidentCount} critical incident(s), requiring termination review.`;
+  }
+
+  if (emp.criticalIncidentCount >= 1 || emp.riskLevel === "High Risk") {
+    return `Employee has critical or high-risk incident records requiring suspension review.`;
+  }
+
+  if (emp.violationCount >= 3 || emp.riskLevel === "Repeat") {
+    return `Employee has repeated violations and should receive final warning.`;
+  }
+
+  if (emp.violationCount >= 1 || emp.riskLevel === "Monitor") {
+    return `Employee has recorded violation(s) and should be monitored.`;
+  }
+
+  return "Employee has no recorded violation and may be retained.";
+}
+
 function getAlertClasses(level) {
   switch (level) {
     case "HIGH":
@@ -183,6 +221,16 @@ export default function KPIReports() {
         riskLevel,
         lastIncidentDate:
           relatedIncidents[0]?.reportedAt || relatedIncidents[0]?.date || null,
+        recommendation: getDSSRecommendation({
+          violationCount: relatedIncidents.length,
+          criticalIncidentCount: criticalCount,
+          riskLevel,
+        }),
+        recommendationReason: getDSSReason({
+          violationCount: relatedIncidents.length,
+          criticalIncidentCount: criticalCount,
+          riskLevel,
+        }),
       };
     });
   }, [employeesRaw, incidentsRaw]);
@@ -359,6 +407,8 @@ export default function KPIReports() {
           "Severity Score",
           "KPI Level",
           "Risk Level",
+          "Recommendation",
+          "Reason",
         ],
       ],
       body: employees.map((emp) => [
@@ -369,6 +419,8 @@ export default function KPIReports() {
         emp.severityScore,
         emp.kpiLevel,
         emp.riskLevel,
+        emp.recommendation,
+        emp.recommendationReason,
       ]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [37, 99, 235] },
@@ -402,24 +454,99 @@ export default function KPIReports() {
         </RoleGuard>
       </div>
 
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            KPI Summary
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Key workforce and compliance indicators connected to employee,
-            incident, and deployment records.
-          </p>
-        </div>
+<div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_380px] xl:items-start">
+  <div className="space-y-8">
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+          KPI Summary
+        </h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Key workforce and compliance indicators connected to employee,
+          incident, and deployment records.
+        </p>
+      </div>
 
-        <KPICards
-          totalEmployees={totalEmployees}
-          complianceRate={complianceRate}
-          repeatOffenders={repeatOffenders}
-          highRiskEmployees={highRiskEmployees}
-        />
-      </section>
+      <KPICards
+        totalEmployees={totalEmployees}
+        complianceRate={complianceRate}
+        repeatOffenders={repeatOffenders}
+        highRiskEmployees={highRiskEmployees}
+      />
+    </section>
+
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Critical Alerts
+        </h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Priority operational issues that require monitoring and intervention.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {criticalAlerts.map((alert, index) => (
+          <div
+            key={index}
+            className={`rounded-2xl border px-4 py-4 shadow-sm ${getAlertClasses(
+              alert.level
+            )}`}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wide">
+                {alert.level}
+              </span>
+            </div>
+
+            <p className="text-sm font-medium">{alert.text}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  </div>
+
+<aside className="space-y-4">
+  <div>
+    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+      High Risk Monitoring
+    </h2>
+    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+      Employees requiring priority monitoring based on incident frequency and severity.
+    </p>
+  </div>
+
+  <HighRiskEmployees employees={employees} />
+</aside>
+</div>
+
+  <section className="space-y-4">
+    <div>
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+        Risk Intelligence
+      </h2>
+      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        Identifies repeat offenders and high-risk employees based on incident
+        frequency, severity, KPI level, and rule-based DSS recommendation.
+      </p>
+    </div>
+
+    <RiskTable
+      employees={employees}
+      getSeverity={(violationCount) => {
+        if (violationCount >= 5) return "Critical";
+        if (violationCount >= 3) return "Major";
+        if (violationCount >= 1) return "Minor";
+        return "Clean";
+      }}
+      getRiskLevel={(violationCount) => {
+        if (violationCount >= 5) return "High Risk";
+        if (violationCount >= 3) return "Repeat";
+        if (violationCount >= 1) return "Monitor";
+        return "Clean";
+      }}
+    />
+  </section>
 
       <section className="space-y-4">
         <div>

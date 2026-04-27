@@ -1,26 +1,26 @@
 import {
-  FiAlertTriangle,
   FiCheckCircle,
-  FiEye,
-  FiRefreshCw,
+  FiMinusCircle,
+  FiTrendingDown,
+  FiTrendingUp,
 } from "react-icons/fi";
 
-const RISK_STYLES = {
-  "High Risk": {
-    label: "High Risk",
-    icon: FiAlertTriangle,
+const KPI_STYLES = {
+  High: {
+    label: "High",
+    icon: FiTrendingDown,
     className:
       "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/30 dark:text-rose-300",
   },
-  Repeat: {
-    label: "Repeat",
-    icon: FiRefreshCw,
+  Medium: {
+    label: "Medium",
+    icon: FiMinusCircle,
     className:
-      "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800/70 dark:bg-orange-950/30 dark:text-orange-300",
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-300",
   },
-  Monitor: {
-    label: "Monitor",
-    icon: FiEye,
+  Low: {
+    label: "Low",
+    icon: FiTrendingUp,
     className:
       "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/70 dark:bg-sky-950/30 dark:text-sky-300",
   },
@@ -32,14 +32,14 @@ const RISK_STYLES = {
   },
 };
 
-export default function RiskBadge({ level }) {
-  const current = RISK_STYLES[level] || RISK_STYLES.Clean;
+export default function KPIBadge({ level }) {
+  const current = KPI_STYLES[level] || KPI_STYLES.Clean;
   const Icon = current.icon;
 
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold whitespace-nowrap ${current.className}`}
-      title={`Risk Level: ${current.label}`}
+      title={`KPI Level: ${current.label}`}
     >
       <Icon size={12} />
       {current.label}
