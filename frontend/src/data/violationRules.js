@@ -1,6 +1,6 @@
 export const VIOLATION_RULES = [
   {
-    category: "I. ABSENCES AND TARDINESS",
+    category: "I. ABSENCES AND TARDINESS", 
     rows: [
    {
   section: "Sec. 1",

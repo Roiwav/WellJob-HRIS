@@ -81,6 +81,7 @@ export default function AuditLogsPage({ category, title, description }) {
       const matchSearch =
         !keyword ||
         (log.username || "").toLowerCase().includes(keyword) ||
+        (log.full_name || "").toLowerCase().includes(keyword) ||
         (log.description || "").toLowerCase().includes(keyword);
 
       const matchRole = role === "All" || log.role === role;
@@ -208,7 +209,16 @@ export default function AuditLogsPage({ category, title, description }) {
                     </td>
 
                     <td className="px-6 py-4 min-w-[280px]">
-                      {log.description}
+                      {log.full_name ? (
+                        <>
+                          <span className="font-semibold text-indigo-500">
+                            {log.full_name}
+                          </span>{" "}
+                          {String(log.description).replace(/^User\s+/i, "")}
+                        </>
+                      ) : (
+                        log.description
+                      )}
                     </td>
                   </tr>
                 ))}

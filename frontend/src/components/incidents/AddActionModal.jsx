@@ -9,6 +9,7 @@ import {
   FiX,
 } from "react-icons/fi";
 
+
 const INCIDENTS_KEY = "incidents";
 
 function generateActionId(actions = []) {

@@ -432,20 +432,24 @@ const handleFileInput = (docName, file) => {
     return;
   }
 
-  const maxSize = 2 * 1024 * 1024;
+  const maxSize = 2 * 800 * 1024;
 
   if (file.size > maxSize) {
     alert("File must be less than 2MB.");
     return;
   }
 
-  const fileURL = URL.createObjectURL(file);
+  const reader = new FileReader();
 
-  handleDocumentFile(docName, {
-    name: file.name,
-    type: file.type,
-    url: fileURL,
-  });
+  reader.onload = () => {
+    handleDocumentFile(docName, {
+      name: file.name,
+      type: file.type,
+      url: reader.result,
+    });
+};
+
+reader.readAsDataURL(file);
 };
   const validateForm = () => {
 
@@ -519,7 +523,7 @@ formData.documents.forEach((doc) => {
     nextErrors.documents[`${doc.name}_file`] = "Proof upload is required.";
   }
 });
-// 🔥 UPDATED RULE: minimum compliance for deployed
+// UPDATED RULE: minimum compliance for deployed
 if (
   formData.status === "Deployed" &&
   selectedDocuments.length < MIN_DEPLOYED_DOCUMENTS
@@ -1240,9 +1244,29 @@ return !(
                           <p className="font-bold text-gray-900 dark:text-white">
                             {doc.name}
                           </p>
-                            <p className="mt-1 max-w-full break-all text-xs text-gray-500 dark:text-gray-400">
-                              File: {doc.file?.name || "No file uploaded"}
-                            </p>
+                            {doc.file ? (
+                              doc.file.type?.includes("image") ? (
+                                <img
+                                  src={doc.file.url}
+                                  alt={doc.file.name}
+                                  className="mt-2 max-h-40 rounded border"
+                                />
+                              ) : doc.file.type === "application/pdf" ? (
+                                <iframe
+                                  src={doc.file.url}
+                                  title={doc.file.name}
+                                  className="mt-2 w-full h-40 rounded border"
+                                />
+                              ) : (
+                                <p className="mt-1 text-xs text-gray-500">
+                                  File: {doc.file.name}
+                                </p>
+                              )
+                            ) : (
+                              <p className="mt-1 text-xs text-gray-400">
+                                No file uploaded
+                              </p>
+                            )}
                            </div>
                           <div className="text-sm font-semibold text-gray-600 dark:text-gray-300">
                             {isExpirable ? (
@@ -1294,7 +1318,7 @@ return !(
   );
 }
 
-// 🔥 HELPERS
+// HELPERS
 
 function SummaryRow({ label, value }) {
   return (

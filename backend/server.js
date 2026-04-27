@@ -13,7 +13,7 @@ app.use(express.json());
 // DB CONNECTION
 // =========================
 const db = mysql.createConnection({
-  host: "100.119.171.111",
+  host: "localhost",
   user: "remoteuser",
   password: "",
   database: "welljob_db",
@@ -67,12 +67,13 @@ async function logAudit(data) {
   try {
     await query(
       `INSERT INTO audit_logs 
-       (user_id, username, role, category, action, description)
+       (user_id, username, full_name, role, category, action, description)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
         data.userId || null,
         data.username || null,
         data.role || null,
+        
         data.category || AUDIT_CATEGORY.TECHNICAL,
         data.action || "UNKNOWN_ACTION",
         data.description || "",
@@ -200,6 +201,7 @@ app.post("/api/login", async (req, res) => {
     await logAudit({
       userId: user.user_id,
       username: user.username,
+      full_name: user.full_name,
       role: user.role,
       category: AUDIT_CATEGORY.TECHNICAL,
       action: "LOGIN_SUCCESS",
@@ -210,6 +212,7 @@ app.post("/api/login", async (req, res) => {
       {
         id: user.id,
         userId: user.user_id,
+        full_name: user.full_name,
         username: user.username,
         role: user.role,
       },
@@ -223,7 +226,7 @@ app.post("/api/login", async (req, res) => {
           id: user.id,
           userId: user.user_id,
           username: user.username,
-          fullName: user.full_name,
+          full_name: user.fullName,
           role: user.role,
           mustChangePassword: Boolean(user.must_change_password),
         },
@@ -479,22 +482,19 @@ app.put("/api/users/change-password", async (req, res) => {
 // AUDIT FETCH
 // =========================
 app.get("/api/audit-logs/:category", async (req, res) => {
-  try {
-    const { category } = req.params;
+  const logs = await query(
+    `SELECT 
+        audit_logs.*,
+        users.full_name
+     FROM audit_logs
+     LEFT JOIN users 
+     ON audit_logs.username = users.username
+     WHERE audit_logs.category = ?
+     ORDER BY audit_logs.created_at DESC`,
+    [req.params.category]
+  );
 
-    const logs = await query(
-      `SELECT *
-       FROM audit_logs
-       WHERE category = ?
-       ORDER BY created_at DESC`,
-      [category]
-    );
-
-    return res.json(logs);
-  } catch (err) {
-    console.error("Fetch audit logs error:", err);
-    return res.status(500).json({ message: "Fetch audit logs error" });
-  }
+  res.json(logs);
 });
 
 // =========================
@@ -510,6 +510,54 @@ app.post("/api/audit-logs", async (req, res) => {
   } catch (err) {
     console.error("Audit trigger error:", err);
     return res.status(500).json({ message: "Audit trigger error" });
+  }
+});
+
+// =========================
+// TOGGLE USER STATUS
+// =========================
+app.put("/api/users/toggle/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const users = await query(
+      "SELECT id, user_id, username, role, status FROM users WHERE id = ? LIMIT 1",
+      [id]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const user = users[0];
+
+    const newStatus = user.status === "Active" ? "Inactive" : "Active";
+
+    await query(
+      "UPDATE users SET status = ? WHERE id = ?",
+      [newStatus, id]
+    );
+
+    await logAudit({
+      userId: user.user_id,
+      username: user.username,
+      role: user.role,
+      category: AUDIT_CATEGORY.TECHNICAL,
+      action: "TOGGLE_STATUS",
+      description: `Changed status of ${user.username} to ${newStatus}.`,
+    });
+
+    return res.json({
+      message: "Status updated successfully",
+      status: newStatus,
+    });
+  } catch (err) {
+    console.error("Toggle error:", err);
+    return res.status(500).json({
+      message: "Toggle status error",
+    });
   }
 });
 
