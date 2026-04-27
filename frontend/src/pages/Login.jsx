@@ -72,7 +72,7 @@ if (normalizedUser.mustChangePassword) {
   return;
 }
 
-        // 🔥 FORCE CHANGE PASSWORD FIRST
+        // FORCE CHANGE PASSWORD FIRST
 if (normalizedUser.mustChangePassword) {
   navigate("/change-password");
   return;

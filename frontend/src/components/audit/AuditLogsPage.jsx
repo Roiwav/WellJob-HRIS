@@ -81,6 +81,7 @@ export default function AuditLogsPage({ category, title, description }) {
       const matchSearch =
         !keyword ||
         (log.username || "").toLowerCase().includes(keyword) ||
+        (log.full_name || "").toLowerCase().includes(keyword) ||
         (log.description || "").toLowerCase().includes(keyword);
 
       const matchRole = role === "All" || log.role === role;

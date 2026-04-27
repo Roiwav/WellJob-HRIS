@@ -33,7 +33,7 @@ const penaltyLevelStyle = {
     "bg-red-100 text-red-700 border-red-200",
 };
 
-// 🔥 SAFE FORMATTER (KEY FIX)
+// SAFE FORMATTER (KEY FIX)
 function formatPenalty(penalty, index) {
   if (!penalty) return "No penalty";
 

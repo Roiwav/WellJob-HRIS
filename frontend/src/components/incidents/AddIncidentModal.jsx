@@ -510,7 +510,7 @@ export default function AddIncidentModal({
       return;
     }
 
-    // 🔥 PREVENT DUPLICATE INCIDENT SAME DAY
+    // PREVENT DUPLICATE INCIDENT SAME DAY
 const existingSame = existingIncidents.find(
   (inc) =>
     String(inc.employeeId) === String(formData.employeeId) &&
@@ -545,7 +545,7 @@ if (hasActiveCase) {
 
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     const now = formData.reportedAt || new Date().toISOString();
-    const createdBy = user?.name || user?.username || "Unknown";
+    const createdBy = user?.name || user?.full_name || "Unknown";
 
     const penaltyData = computePenaltyData({
       employeeId: formData.employeeId,

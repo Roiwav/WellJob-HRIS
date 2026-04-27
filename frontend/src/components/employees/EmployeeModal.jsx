@@ -717,13 +717,13 @@ export default function EmployeeModal({ employee, onClose }) {
                   {previewFile.type?.startsWith("image/") ||
                   previewFile.data?.startsWith("data:image") ? (
                     <img
-                      src={previewFile.data}
+                      src={previewFile.url}
                       alt={previewFile.name || "preview"}
                       className="mx-auto max-h-[80vh] w-full object-contain rounded-lg"
                     />
                   ) : (
                     <iframe
-                      src={previewFile.data}
+                      src={previewFile.url}
                       title={previewFile.name || "file preview"}
                       className="w-full h-[80vh] rounded-lg border border-gray-200 dark:border-white/10"
                     />

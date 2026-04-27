@@ -13,7 +13,7 @@ app.use(express.json());
 // DB CONNECTION
 // =========================
 const db = mysql.createConnection({
-  host: "100.119.171.111",
+  host: "localhost",
   user: "remoteuser",
   password: "",
   database: "welljob_db",
@@ -226,7 +226,7 @@ app.post("/api/login", async (req, res) => {
           id: user.id,
           userId: user.user_id,
           username: user.username,
-          fullName: user.full_name,
+          full_name: user.fullName,
           role: user.role,
           mustChangePassword: Boolean(user.must_change_password),
         },
@@ -510,6 +510,54 @@ app.post("/api/audit-logs", async (req, res) => {
   } catch (err) {
     console.error("Audit trigger error:", err);
     return res.status(500).json({ message: "Audit trigger error" });
+  }
+});
+
+// =========================
+// TOGGLE USER STATUS
+// =========================
+app.put("/api/users/toggle/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const users = await query(
+      "SELECT id, user_id, username, role, status FROM users WHERE id = ? LIMIT 1",
+      [id]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const user = users[0];
+
+    const newStatus = user.status === "Active" ? "Inactive" : "Active";
+
+    await query(
+      "UPDATE users SET status = ? WHERE id = ?",
+      [newStatus, id]
+    );
+
+    await logAudit({
+      userId: user.user_id,
+      username: user.username,
+      role: user.role,
+      category: AUDIT_CATEGORY.TECHNICAL,
+      action: "TOGGLE_STATUS",
+      description: `Changed status of ${user.username} to ${newStatus}.`,
+    });
+
+    return res.json({
+      message: "Status updated successfully",
+      status: newStatus,
+    });
+  } catch (err) {
+    console.error("Toggle error:", err);
+    return res.status(500).json({
+      message: "Toggle status error",
+    });
   }
 });
 

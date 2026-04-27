@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 🔥 AUDIT LOG FILTER INPUT */
+/* AUDIT LOG FILTER INPUT */
 .filter-input {
   width: 100%;
   border-radius: 0.5rem;

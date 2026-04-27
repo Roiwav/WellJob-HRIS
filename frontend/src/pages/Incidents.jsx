@@ -396,7 +396,7 @@ const storedDeployments = useMemo(() => {
 
   await createOperationalLog(
     "CREATE_INCIDENT",
-    `${currentUser.username} created incident report ${normalizedIncident.id} for ${normalizedIncident.employee}.`
+    `${currentUser.name} created incident report ${normalizedIncident.id} for ${normalizedIncident.employee}.`
   );
 
   setOpenAddModal(false);
@@ -433,7 +433,7 @@ const storedDeployments = useMemo(() => {
 
     await createOperationalLog(
       "START_INVESTIGATION",
-      `${currentUser.username} started investigation for incident ${incident.id}.`
+      `${currentUser.name} started investigation for incident ${incident.id}.`
     );
 
     setConfirmStartIncident(null);
@@ -474,7 +474,7 @@ const storedDeployments = useMemo(() => {
 
     await createOperationalLog(
       "SUBMIT_RESOLUTION",
-      `${currentUser.username} submitted proof for incident ${incident.id}.`
+      `${currentUser.name} submitted proof for incident ${incident.id}.`
     );
 
     setResolutionIncident(null);
@@ -513,7 +513,7 @@ const storedDeployments = useMemo(() => {
 
     await createOperationalLog(
       "CLOSE_INCIDENT",
-      `${currentUser.username} approved and closed incident ${incident.id}.`
+      `${currentUser.name} approved and closed incident ${incident.id}.`
     );
 
     setReviewIncident(null);
@@ -552,7 +552,7 @@ const storedDeployments = useMemo(() => {
 
     await createOperationalLog(
       "RETURN_INCIDENT",
-      `${currentUser.username} returned incident ${incident.id} for correction.`
+      `${currentUser.name} returned incident ${incident.id} for correction.`
     );
 
     setReviewIncident(null);
@@ -937,7 +937,6 @@ function ViewIncidentModal({ incident, onClose, mode = "view", onRequestStart })
               label="Reported Date"
               value={formatDateTime(incident.reportedAt || incident.date)}
             />
-            <Detail label="Company" value={incident.company || "-"} />
             <Detail label="Sanction" value={incident.sanction || "-"} />
             <Detail label="Status" value={incident.status} />
             <Detail label="Case Age" value={`${incident.caseAgeDays || 0} day(s)`} />

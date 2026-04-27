@@ -99,6 +99,7 @@ export default function Employees() {
         id: Date.now(),
         user_id: user?.userId || "-",
         username: user?.username || "-",
+        full_name: user?.fullName || "-",
         role: user?.role || "-",
         category: "OPERATIONAL",
         action,
@@ -190,7 +191,7 @@ const getCompliance = useCallback((docs) => {
 
       createOperationalLog(
         "EDIT_EMPLOYEE",
-        `${user?.username || "User"} edited employee record for ${
+        `edited employee record for ${
           data.name || editingEmployee.name
         }.`
       );
@@ -215,7 +216,7 @@ const getCompliance = useCallback((docs) => {
 
       createOperationalLog(
         "ADD_EMPLOYEE",
-        `${user?.username || "User"} added employee record for ${data.name}.`
+        `${user?.fullName || "User"} added employee record for ${data.name}.`
       );
 
       setSuccessMessage("Employee saved successfully.");
@@ -254,7 +255,7 @@ const getCompliance = useCallback((docs) => {
 
     createOperationalLog(
       "ARCHIVE_EMPLOYEE",
-      `${user?.username || "User"} archived employee record for ${
+      `${user?.fullName || "User"} archived employee record for ${
         target?.name || id
       }.`
     );

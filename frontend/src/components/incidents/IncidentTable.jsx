@@ -45,7 +45,7 @@ export default function IncidentTable({
               <td className="px-6 py-4 text-right">
                 <div className="flex justify-end gap-2">
 
-                  {/* 🔥 OPEN → START INVESTIGATION */}
+                  {/* OPEN → START INVESTIGATION */}
                   {incident.status === "Open" && (
                     <button
                       onClick={() => onStartInvestigation(incident)}
@@ -56,7 +56,7 @@ export default function IncidentTable({
                     </button>
                   )}
 
-                  {/* 🔥 INVESTIGATING → RESOLVE */}
+                  {/* INVESTIGATING → RESOLVE */}
                   {incident.status === "Investigating" && (
                     <button
                       onClick={() => onOpenResolutionModal(incident)}
@@ -67,7 +67,7 @@ export default function IncidentTable({
                     </button>
                   )}
 
-                  {/* 🔥 RESOLVED / CLOSED → VIEW */}
+                  {/* RESOLVED / CLOSED → VIEW */}
                   {(incident.status === "Resolved" ||
                     incident.status === "Closed") && (
                     <button

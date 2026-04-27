@@ -16,7 +16,7 @@ import SuperAdminPortal from "./pages/SuperAdminPortal";
 import ChangePassword from "./pages/ChangePassword";
 import SystemConfiguration from "./pages/SystemConfiguration";
 
-// 🔥 AUDIT PAGES
+// AUDIT PAGES
 import TechnicalAuditLogs from "./pages/TechnicalAuditLogs";
 import OperationalAuditLogs from "./pages/OperationalAuditLogs";
 
@@ -104,7 +104,7 @@ function App() {
           >
             <Route path="/settings" element={<Settings />} />
 
-            {/* 🔥 TECHNICAL AUDIT */}
+            {/* TECHNICAL AUDIT */}
             <Route
               path="/technical-audit-logs"
               element={<TechnicalAuditLogs />}
@@ -121,7 +121,7 @@ function App() {
               element={<SystemConfiguration />}
             />
 
-            {/* 🔥 OPERATIONAL AUDIT */}
+            {/* OPERATIONAL AUDIT */}
             <Route
               path="/operational-audit-logs"
               element={<OperationalAuditLogs />}
