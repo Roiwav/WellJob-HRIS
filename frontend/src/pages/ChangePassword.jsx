@@ -12,12 +12,13 @@ export default function ChangePassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // 🔥 FIX 1: Nilagyan natin ng redirectPath ang state
   const [modal, setModal] = useState({
     open: false,
     type: "success",
     title: "",
     message: "",
-    redirect: false,
+    redirectPath: null, 
   });
 
   const validateStrongPassword = (password) => {
@@ -31,36 +32,38 @@ export default function ChangePassword() {
   };
 
   const getRedirectPath = (role) => {
+    const normalizedRole = String(role || "").toUpperCase().trim();
+    
     const redirectByRole = {
-      SUPER_ADMIN: "/",
-      HR_MANAGER: "/",
-      HR_STAFF: "/employees",
-      IT_SUPPORT: "/settings",
+      "SUPER_ADMIN": "/",
+      "HR_MANAGER": "/",
+      "HR_STAFF": "/employees",
+      "IT_SUPPORT": "/settings",
     };
 
-    return redirectByRole[role] || "/";
+    return redirectByRole[normalizedRole] || "/";
   };
 
-  const showModal = ({ type = "error", title, message, redirect = false }) => {
+  const showModal = ({ type = "error", title, message, redirectPath = null }) => {
     setModal({
       open: true,
       type,
       title,
       message,
-      redirect,
+      redirectPath,
     });
   };
 
   const closeModal = () => {
-    const shouldRedirect = modal.redirect;
+    const pathToGo = modal.redirectPath;
 
     setModal((prev) => ({
       ...prev,
       open: false,
     }));
 
-    if (shouldRedirect) {
-      navigate(getRedirectPath(user?.role), { replace: true });
+    if (pathToGo) {
+      window.location.href = pathToGo;
     }
   };
 
@@ -72,8 +75,8 @@ export default function ChangePassword() {
         type: "error",
         title: "Session Expired",
         message: "Please login again to continue.",
-        redirect: false,
       });
+
       navigate("/login", { replace: true });
       return;
     }
@@ -124,7 +127,8 @@ export default function ChangePassword() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          userId: user.userId,
+          userId: user?.userId || user?.user_id || user?.id,
+          username: user?.username,
           currentPassword,
           newPassword,
         }),
@@ -144,17 +148,22 @@ export default function ChangePassword() {
       const updatedUser = {
         ...user,
         mustChangePassword: false,
+        must_change_password: 0,
+        must_change_password_flag: false 
       };
 
       localStorage.setItem("user", JSON.stringify(updatedUser));
       setUser(updatedUser);
 
+      const targetPath = getRedirectPath(updatedUser.role);
+
       showModal({
         type: "success",
         title: "Password Changed Successfully",
         message: "Your password has been updated. You may now continue to the system.",
-        redirect: true,
+        redirectPath: targetPath, // Ipasa na natin ang designated path
       });
+
     } catch (err) {
       console.error("Change password error:", err);
 
@@ -163,6 +172,7 @@ export default function ChangePassword() {
         title: "Network Error",
         message: "Unable to change password. Please check your connection and try again.",
       });
+
     } finally {
       setLoading(false);
     }
