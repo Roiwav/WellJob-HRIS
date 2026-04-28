@@ -394,10 +394,10 @@ const storedDeployments = useMemo(() => {
     updatedIncidents
   );
 
-  await createOperationalLog(
-    "CREATE_INCIDENT",
-    `${currentUser.name} created incident report ${normalizedIncident.id} for ${normalizedIncident.employee}.`
-  );
+await createOperationalLog(
+  "CREATE_INCIDENT",
+  `${currentUser.name || currentUser.fullName || currentUser.username} created an incident report (ID: ${normalizedIncident.id}) for employee ${normalizedIncident.employee}.`
+);
 
   setOpenAddModal(false);
 
