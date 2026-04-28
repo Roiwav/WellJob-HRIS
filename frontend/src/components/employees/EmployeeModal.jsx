@@ -12,6 +12,7 @@ import {
   FiX,
 } from "react-icons/fi";
 
+
 const INCIDENTS_KEY = "incidents";
 
 const EXPIRABLE_DOCUMENTS = ["Barangay Clearance", "NBI/Police Clearance"];

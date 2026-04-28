@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FiAlertTriangle,
   FiBriefcase,
@@ -25,9 +25,9 @@ import {
   ReviewBox,
 } from "./EmployeeUtils";
 
-export default function AddEmployeeModal({
+export default function EditEmployeeModal({
   onClose,
-  generatedId,
+  employeeToEdit,
   employees = [],
   onSaveSuccess,
 }) {
@@ -58,6 +58,35 @@ export default function AddEmployeeModal({
   const [filteredCompanies, setFilteredCompanies] = useState(COMPANY_OPTIONS);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  useEffect(() => {
+    if (employeeToEdit) {
+      console.log("🔥 DATA FROM DB:", employeeToEdit); 
+      console.log("🔥 EMPLOYEE DOCUMENTS:", employeeToEdit.documents);
+      console.log("🔥 TYPE OF DOCUMENTS:", typeof employeeToEdit.documents);
+
+      let parsedDocs = [];
+      if (typeof employeeToEdit.documents === "string") {
+        try {
+          parsedDocs = JSON.parse(employeeToEdit.documents);
+        } catch (e) {
+          console.error("Failed to parse documents");
+        }
+      } else if (Array.isArray(employeeToEdit.documents)) {
+        parsedDocs = employeeToEdit.documents;
+      }
+
+      setFormData({
+        name: employeeToEdit.name || employeeToEdit.fullName || employeeToEdit.fullname || "", 
+        company: employeeToEdit.company || "",
+        status: employeeToEdit.status || "Deployed",
+        employmentType: employeeToEdit.employmentType || "Permanent",
+        contractStart: employeeToEdit.contractStart || "",
+        contractEnd: employeeToEdit.contractEnd || "",
+        documents: createDefaultDocuments(parsedDocs),
+      });
+    }
+  }, [employeeToEdit]);
+
   const selectedDocuments = useMemo(() => {
     return formData.documents
       .filter((doc) => doc.checked)
@@ -82,9 +111,10 @@ export default function AddEmployeeModal({
     if (!normalizedInput) return null;
 
     return employees.find((emp) => {
+      if (employeeToEdit && emp.id === employeeToEdit.id) return false;
       return normalizeName(emp.name) === normalizedInput;
     });
-  }, [employees, formData.name]);
+  }, [employees, employeeToEdit, formData.name]);
 
   const completion = useMemo(() => {
     let score = 0;
@@ -253,21 +283,13 @@ export default function AddEmployeeModal({
       }
     }
 
-    const duplicateId = employees.some((emp) => {
-      return String(emp.id || "").trim().toLowerCase() === String(generatedId || "").trim().toLowerCase();
-    });
-
-    if (generatedId && duplicateId) {
-      nextErrors.duplicateId = "This employee ID already exists.";
-    }
-
     if (duplicatePreview && !duplicateConfirmed) {
       nextErrors.duplicateConfirm = "Possible duplicate name detected. Please verify using the resume/supporting documents and confirm before saving.";
     }
 
     formData.documents.forEach((doc) => {
       if (doc.checked) {
-        if (!doc.file) nextErrors.documents[`${doc.name}_file`] = "File is required";
+        if (!doc.file && !doc.filePath) nextErrors.documents[`${doc.name}_file`] = "File is required";
         if (doc.expirable && !doc.expirationDate) nextErrors.documents[doc.name] = "Expiration date is required";
       }
     });
@@ -280,7 +302,7 @@ export default function AddEmployeeModal({
     const hasDocumentErrors = Object.values(nextErrors.documents).some(Boolean);
 
     return !(
-      nextErrors.name || nextErrors.company || nextErrors.duplicateId || nextErrors.duplicateConfirm ||
+      nextErrors.name || nextErrors.company || nextErrors.duplicateConfirm ||
       nextErrors.contractStart || nextErrors.contractEnd || nextErrors.documents.general || hasDocumentErrors
     );
   };
@@ -291,7 +313,7 @@ export default function AddEmployeeModal({
     setShowReview(true);
   };
 
-  const handleConfirmSave = async () => {
+  const handleConfirmUpdate = async () => {
     try {
       const formDataToSend = new FormData();
       formDataToSend.append("name", formData.name);
@@ -310,16 +332,16 @@ export default function AddEmployeeModal({
         }
       });
 
-      const res = await axios.post("http://localhost:5000/api/employees", formDataToSend);
-      console.log("SAVED:", res.data);
-      alert("Employee created!");
+      const res = await axios.put(`http://localhost:5000/api/employees/${employeeToEdit?.id}`, formDataToSend);
+      console.log("UPDATED:", res.data);
+      alert("Employee updated!");
       setShowReview(false);
       onClose();
       if (onSaveSuccess) onSaveSuccess();
       else window.location.reload();
     } catch (err) {
-      console.error("SAVE ERROR:", err);
-      alert("Error saving employee");
+      console.error("UPDATE ERROR:", err);
+      alert("Error updating employee");
     }
   };
 
@@ -333,7 +355,7 @@ export default function AddEmployeeModal({
                 <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
                   <FiUser size={26} />
                 </div>
-                <h2 className="text-2xl font-extrabold">New Employee</h2>
+                <h2 className="text-2xl font-extrabold">Update Employee</h2>
                 <p className="mt-3 text-sm leading-6 text-white/75">
                   Register employee details, verify possible duplicate names, and attach compliance proof files for HR monitoring.
                 </p>
@@ -357,7 +379,7 @@ export default function AddEmployeeModal({
               <div className="mt-5 space-y-3 text-sm">
                 <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
                   <p className="font-bold">Employee ID</p>
-                  <p className="mt-1 text-white/75">{generatedId || "-"}</p>
+                  <p className="mt-1 text-white/75">{employeeToEdit?.id || "-"}</p>
                 </div>
                 <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
                   <p className="font-bold">Selected Documents</p>
@@ -372,7 +394,7 @@ export default function AddEmployeeModal({
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill tone="indigo">
-                    <FiUser /> Create Mode
+                    <FiUser /> Edit Mode
                   </StatusPill>
                   {duplicatePreview && (
                     <StatusPill tone={duplicateConfirmed ? "amber" : "red"}>
@@ -380,7 +402,7 @@ export default function AddEmployeeModal({
                     </StatusPill>
                   )}
                 </div>
-                <h2 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">Add Employee Record</h2>
+                <h2 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">Edit Employee Record</h2>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Complete the required employee information and review before saving.</p>
               </div>
               <button type="button" onClick={onClose} className="rounded-xl p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/10 dark:hover:text-white">
@@ -406,8 +428,7 @@ export default function AddEmployeeModal({
                       <div className="grid gap-4 md:grid-cols-2">
                         <div>
                           <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">Employee ID</label>
-                          <input type="text" value={generatedId} disabled className={`w-full rounded-2xl border px-4 py-3 text-sm font-bold text-gray-500 outline-none dark:bg-slate-800 dark:text-gray-400 ${errors.duplicateId ? "border-red-500 bg-red-50 dark:border-red-500" : "border-gray-200 bg-gray-100 dark:border-white/10"}`} />
-                          <ErrorText>{errors.duplicateId}</ErrorText>
+                          <input type="text" value={employeeToEdit?.id || ""} disabled className={`w-full rounded-2xl border px-4 py-3 text-sm font-bold text-gray-500 outline-none dark:bg-slate-800 dark:text-gray-400 border-gray-200 bg-gray-100 dark:border-white/10`} />
                         </div>
 
                         <div>
@@ -504,7 +525,7 @@ export default function AddEmployeeModal({
                         </div>
                       </div>
                       <div className="space-y-3 text-sm">
-                        <SummaryRow label="Employee ID" value={generatedId} />
+                        <SummaryRow label="Employee ID" value={employeeToEdit?.id} />
                         <SummaryRow label="Full Name" value={toProperName(formData.name) || "-"} />
                         <SummaryRow label="Status" value={formData.status} />
                         <SummaryRow label="Company" value={formData.status === "Deployed" ? formData.company || "-" : "Not Assigned"} />
@@ -576,16 +597,16 @@ export default function AddEmployeeModal({
                                         <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-4 text-sm font-semibold text-gray-500 transition hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300 dark:hover:bg-indigo-500/10">
                                           <div className="flex items-center gap-2">
                                             <FiUploadCloud />
-                                            <span>{doc.file ? "Change proof file" : "Upload proof file"}</span>
+                                            <span>{doc.file || doc.filePath ? "Change proof file" : "Upload proof file"}</span>
                                           </div>
                                           <input type="file" accept="image/png, image/jpeg, application/pdf" className="hidden" onChange={(e) => handleFileInput(doc.name, e.target.files?.[0])} />
                                         </label>
                                         <p className="mt-1 text-xs text-gray-400">PNG, JPEG, or PDF only. Max file size: 5MB.</p>
                                         <ErrorText>{errors.documents[`${doc.name}_file`]}</ErrorText>
-                                        {doc.file && (
+                                        {(doc.file || doc.filePath) && (
                                           <div className="mt-2 flex min-w-0 items-start gap-1.5 rounded-xl bg-green-500/10 px-3 py-2 text-xs font-bold text-green-600 dark:text-green-400">
                                             <FiCheck className="mt-0.5 shrink-0" />
-                                            <span className="block min-w-0 max-w-full break-all leading-5">{doc.file.name}</span>
+                                            <span className="block min-w-0 max-w-full break-all leading-5">{doc.file ? doc.file.name : "Existing file attached"}</span>
                                           </div>
                                         )}
                                       </div>
@@ -607,7 +628,7 @@ export default function AddEmployeeModal({
                   Cancel
                 </button>
                 <button type="submit" className="rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-indigo-700">
-                  Review Save
+                  Review Update
                 </button>
               </footer>
             </form>
@@ -621,8 +642,8 @@ export default function AddEmployeeModal({
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <StatusPill tone="green"><FiCheck /> Ready for Confirmation</StatusPill>
-                <h3 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">Review Employee Details</h3>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Please verify all employee details before saving.</p>
+                <h3 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">Review Update Details</h3>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Please verify all employee details before updating.</p>
               </div>
               <button type="button" onClick={() => setShowReview(false)} className="rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/10 dark:hover:text-white">
                 <FiX size={22} />
@@ -654,7 +675,7 @@ export default function AddEmployeeModal({
             )}
 
             <div className="grid gap-4 md:grid-cols-2">
-              <ReviewBox label="Employee ID" value={generatedId} />
+              <ReviewBox label="Employee ID" value={employeeToEdit?.id} />
               <ReviewBox label="Full Name" value={toProperName(formData.name)} />
               <ReviewBox label="Status" value={formData.status} />
               <ReviewBox label="Employment Type" value={formData.employmentType} />
@@ -689,6 +710,8 @@ export default function AddEmployeeModal({
                             ) : (
                               <p className="mt-1 text-xs text-gray-500">File: {doc.file.name}</p>
                             )
+                          ) : doc.filePath ? (
+                            <p className="mt-1 text-xs text-gray-500">Existing file attached</p>
                           ) : (
                             <p className="mt-1 text-xs text-gray-400">No file uploaded</p>
                           )}
@@ -710,8 +733,8 @@ export default function AddEmployeeModal({
               <button type="button" onClick={() => setShowReview(false)} className="rounded-2xl border border-gray-200 px-5 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10">
                 Back to Edit
               </button>
-              <button type="button" onClick={handleConfirmSave} className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-bold text-white hover:bg-green-700">
-                Confirm Save
+              <button type="button" onClick={handleConfirmUpdate} className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-bold text-white hover:bg-green-700">
+                Confirm Update
               </button>
             </div>
           </div>

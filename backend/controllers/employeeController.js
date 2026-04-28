@@ -1,40 +1,43 @@
 const db = require("../config/db");
 
+// 🔥 HELPER FUNCTION
+const extractDocumentsFromReq = (req) => {
+  const documents = [];
+  for (let i = 0; i < 20; i++) {
+    let docName = null;
+    let expDate = null;
+
+    if (req.body.documents && req.body.documents[i]) {
+      docName = req.body.documents[i].name;
+      expDate = req.body.documents[i].expirationDate;
+    } else if (req.body[`documents[${i}][name]`] !== undefined) {
+      docName = req.body[`documents[${i}][name]`];
+      expDate = req.body[`documents[${i}][expirationDate]`];
+    }
+
+    const file = req.files?.find((f) => f.fieldname === `documents[${i}]`);
+    const filePath = file ? file.path.replace(/\\/g, "/") : null;
+
+    if (docName || file) {
+      documents.push({
+        name: docName || (file ? file.originalname : "Unknown"),
+        expirationDate: expDate || null,
+        filePath: filePath,
+        hasNewFile: !!file
+      });
+    }
+  }
+  return documents;
+};
+
 // ✅ CREATE EMPLOYEE
 exports.createEmployee = async (req, res) => {
   try {
-    const {
-      name,
-      company,
-      status,
-      employmentType,
-      contractStart,
-      contractEnd,
-    } = req.body;
-
-    const documents = [];
-
-    if (req.files && req.files.length > 0) {
-      req.files.forEach((file) => {
-        const cleanPath = file.path.replace(/\\/g, "/");
-
-        const match = file.fieldname.match(/documents\[(\d+)\]/);
-        const index = match ? match[1] : null;
-
-        const nameKey = `documents[${index}][name]`;
-        const expKey = `documents[${index}][expirationDate]`;
-
-        documents.push({
-          name: req.body[nameKey] || file.originalname,
-          expirationDate: req.body[expKey] || null,
-          filePath: cleanPath,
-        });
-      });
-    }
+    const { name, company, status, employmentType, contractStart, contractEnd } = req.body;
+    const documents = extractDocumentsFromReq(req);
 
     const [result] = await db.promise().query(
-      `INSERT INTO employees 
-      (name, company, status, employmentType, contractStart, contractEnd)
+      `INSERT INTO employees (name, company, status, employmentType, contractStart, contractEnd)
       VALUES (?, ?, ?, ?, ?, ?)`,
       [name, company, status, employmentType, contractStart, contractEnd]
     );
@@ -43,15 +46,13 @@ exports.createEmployee = async (req, res) => {
 
     for (const doc of documents) {
       await db.promise().query(
-        `INSERT INTO employee_documents 
-        (employee_id, name, expiration_date, file_path)
+        `INSERT INTO employee_documents (employee_id, name, expiration_date, file_path)
         VALUES (?, ?, ?, ?)`,
         [employeeId, doc.name, doc.expirationDate, doc.filePath]
       );
     }
 
-    res.json({ success: true, documents });
-
+    res.json({ success: true });
   } catch (err) {
     console.error("CREATE ERROR:", err);
     res.status(500).json({ error: "Create employee error" });
@@ -62,10 +63,7 @@ exports.createEmployee = async (req, res) => {
 exports.getEmployees = async (req, res) => {
   try {
     const [employees] = await db.promise().query("SELECT * FROM employees");
-
-    const [documents] = await db.promise().query(
-      "SELECT * FROM employee_documents"
-    );
+    const [documents] = await db.promise().query("SELECT * FROM employee_documents");
 
     const result = employees.map((emp) => ({
       ...emp,
@@ -79,80 +77,93 @@ exports.getEmployees = async (req, res) => {
     }));
 
     res.json(result);
-
   } catch (err) {
     console.error("FETCH ERROR:", err);
     res.status(500).json({ error: "Fetch error" });
   }
 };
 
-// ✅ UPDATE EMPLOYEE (FINAL FIXED VERSION)
+// ✅ UPDATE EMPLOYEE (Kasama yung logic para burahin ang in-uncheck na checkbox)
 exports.updateEmployee = async (req, res) => {
   const { id } = req.params;
-
   try {
-    const {
-      name,
-      company,
-      status,
-      employmentType,
-      contractStart,
-      contractEnd,
-    } = req.body;
+    const { name, company, status, employmentType, contractStart, contractEnd } = req.body;
 
-    // 🔥 UPDATE BASIC INFO
     await db.promise().query(
-      `UPDATE employees SET 
-        name=?, company=?, status=?, employmentType=?, contractStart=?, contractEnd=?
-       WHERE id=?`,
+      `UPDATE employees SET name=?, company=?, status=?, employmentType=?, contractStart=?, contractEnd=? WHERE id=?`,
       [name, company, status, employmentType, contractStart, contractEnd, id]
     );
 
-    // 🔥 PROCESS FILES
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        const cleanPath = file.path.replace(/\\/g, "/");
+    const [existingDocs] = await db.promise().query(
+      "SELECT * FROM employee_documents WHERE employee_id=?", [id]
+    );
 
-        const match = file.fieldname.match(/documents\[(\d+)\]/);
-        const index = match ? match[1] : null;
+    const frontendDocs = extractDocumentsFromReq(req);
 
-        const nameKey = `documents[${index}][name]`;
-        const expKey = `documents[${index}][expirationDate]`;
-
-        const docName = req.body[nameKey] || file.originalname;
-        const expiration = req.body[expKey] || null;
-
-        // 🔥 CHECK IF DOCUMENT EXISTS
-        const [existing] = await db.promise().query(
-          `SELECT id FROM employee_documents 
-           WHERE employee_id=? AND name=?`,
-          [id, docName]
+    for (const doc of frontendDocs) {
+      const existing = existingDocs.find((d) => d.name === doc.name);
+      if (existing) {
+        const finalPath = doc.hasNewFile ? doc.filePath : existing.file_path;
+        await db.promise().query(
+          `UPDATE employee_documents SET expiration_date=?, file_path=? WHERE id=?`,
+          [doc.expirationDate, finalPath, existing.id]
         );
+      } else {
+        await db.promise().query(
+          `INSERT INTO employee_documents (employee_id, name, expiration_date, file_path) VALUES (?, ?, ?, ?)`,
+          [id, doc.name, doc.expirationDate, doc.filePath]
+        );
+      }
+    }
 
-        if (existing.length > 0) {
-          // ✅ UPDATE EXISTING DOCUMENT
-          await db.promise().query(
-            `UPDATE employee_documents 
-             SET expiration_date=?, file_path=? 
-             WHERE id=?`,
-            [expiration, cleanPath, existing[0].id]
-          );
-        } else {
-          // ✅ INSERT NEW DOCUMENT
-          await db.promise().query(
-            `INSERT INTO employee_documents 
-             (employee_id, name, expiration_date, file_path)
-             VALUES (?, ?, ?, ?)`,
-            [id, docName, expiration, cleanPath]
-          );
-        }
+    // Burahin sa database yung mga documents na in-uncheck sa frontend
+    for (const existing of existingDocs) {
+      const stillChecked = frontendDocs.find((d) => d.name === existing.name);
+      if (!stillChecked) {
+        await db.promise().query(`DELETE FROM employee_documents WHERE id=?`, [existing.id]);
       }
     }
 
     res.json({ success: true });
-
   } catch (err) {
     console.error("UPDATE ERROR:", err);
     res.status(500).json({ error: "Update error" });
+  }
+};
+
+// ✅ ARCHIVE EMPLOYEE
+exports.archiveEmployee = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.promise().query("UPDATE employees SET archived = true WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("ARCHIVE ERROR:", err);
+    res.status(500).json({ error: "Archive error" });
+  }
+};
+
+// ✅ RESTORE EMPLOYEE
+exports.restoreEmployee = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.promise().query("UPDATE employees SET archived = false WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("RESTORE ERROR:", err);
+    res.status(500).json({ error: "Restore error" });
+  }
+};
+
+// ✅ PERMANENTLY DELETE EMPLOYEE
+exports.deleteEmployee = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.promise().query("DELETE FROM employee_documents WHERE employee_id = ?", [id]);
+    await db.promise().query("DELETE FROM employees WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("DELETE ERROR:", err);
+    res.status(500).json({ error: "Delete error" });
   }
 };
