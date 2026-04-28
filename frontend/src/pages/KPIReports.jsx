@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
@@ -11,9 +11,6 @@ import RiskIntelligenceSection from "../components/kpi/sections/RiskIntelligence
 import AnalyticsTrendsSection from "../components/kpi/sections/AnalyticsTrendsSection";
 
 import {
-  EMPLOYEES_KEY,
-  INCIDENTS_KEY,
-  safeParse,
   normalizeStatus,
   isSameEmployee,
   buildKPIEmployees,
@@ -24,26 +21,165 @@ import {
 
 import { exportKPIReportPDF } from "../utils/kpi/kpiPdfExport";
 
+const API_BASE = "http://localhost:5000/api";
+const EMPLOYEE_API_URL = `${API_BASE}/employees`;
+const INCIDENT_API_URL = `${API_BASE}/incidents`;
+
+// Cache only for temporary compatibility with older pages.
+// Backend/MySQL is still the main source of truth.
+const EMPLOYEES_CACHE_KEY = "employees";
+const INCIDENTS_CACHE_KEY = "incidents";
+
+async function requestJson(url) {
+  const response = await fetch(url);
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error ||
+        data?.message ||
+        `Request failed with status ${response.status}`
+    );
+  }
+
+  return data;
+}
+
+function isArchivedEmployee(employee) {
+  return employee?.archived === true || Number(employee?.archived) === 1;
+}
+
+function normalizeBackendEmployee(employee) {
+  return {
+    ...employee,
+    id: employee.id || employee.employeeId || employee.employee_id,
+    employeeId: employee.id || employee.employeeId || employee.employee_id,
+    name:
+      employee.name ||
+      employee.full_name ||
+      employee.fullName ||
+      "Unknown Employee",
+    company: employee.company || employee.clientCompany || "Unassigned",
+    status: employee.status || "Unknown",
+    employmentType: employee.employmentType || employee.employment_type || "",
+    contractStart: employee.contractStart || employee.contract_start || null,
+    contractEnd: employee.contractEnd || employee.contract_end || null,
+    archived: isArchivedEmployee(employee),
+    documents: Array.isArray(employee.documents) ? employee.documents : [],
+  };
+}
+
+function normalizeBackendIncident(incident) {
+  const employeeId =
+    incident.employeeId ||
+    incident.employee_id ||
+    incident.empId ||
+    incident.employeeID ||
+    "";
+
+  const violation =
+    incident.violation ||
+    incident.violationType ||
+    incident.violation_type ||
+    "No violation type";
+
+  const date =
+    incident.reportedAt ||
+    incident.reported_at ||
+    incident.date ||
+    incident.incidentDate ||
+    incident.incident_date ||
+    incident.createdAt ||
+    incident.created_at ||
+    new Date().toISOString();
+
+  return {
+    ...incident,
+    id: incident.id,
+    employeeId,
+    employee_id: employeeId,
+    employee:
+      incident.employee ||
+      incident.employeeName ||
+      incident.employee_name ||
+      "Unknown Employee",
+    employeeName:
+      incident.employeeName ||
+      incident.employee ||
+      incident.employee_name ||
+      "Unknown Employee",
+    company: incident.company || "",
+    violation,
+    violationType: violation,
+    severity: incident.severity || "Minor",
+    status: normalizeStatus(incident.status || "Open"),
+    date,
+    incidentDate: incident.incidentDate || incident.incident_date || date,
+    reportedAt: incident.reportedAt || incident.reported_at || date,
+    createdAt: incident.createdAt || incident.created_at || date,
+    recommendation: incident.recommendation || "",
+    sanction: incident.sanction || incident.actionTaken || incident.action_taken || "",
+    description: incident.description || "",
+  };
+}
+
+function cacheBackendData({ employees, incidents }) {
+  localStorage.setItem(EMPLOYEES_CACHE_KEY, JSON.stringify(employees));
+  localStorage.setItem(INCIDENTS_CACHE_KEY, JSON.stringify(incidents));
+  window.dispatchEvent(new Event("dataUpdated"));
+}
+
 export default function KPIReports() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
-  const employeesRaw = useMemo(() => {
-    return safeParse(EMPLOYEES_KEY).filter((emp) => !emp.archived);
+  const [employeesRaw, setEmployeesRaw] = useState([]);
+  const [incidentsRaw, setIncidentsRaw] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
+
+  const fetchKPIData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setFetchError("");
+
+      const [employeeData, incidentData] = await Promise.all([
+        requestJson(EMPLOYEE_API_URL),
+        requestJson(INCIDENT_API_URL),
+      ]);
+
+      const normalizedEmployees = Array.isArray(employeeData)
+        ? employeeData.map(normalizeBackendEmployee).filter((emp) => !emp.archived)
+        : [];
+
+      const normalizedIncidents = Array.isArray(incidentData)
+        ? incidentData.map(normalizeBackendIncident)
+        : [];
+
+      const visibleIncidents = normalizedIncidents.filter((incident) =>
+        normalizedEmployees.some((emp, index) =>
+          isSameEmployee(emp, incident, index)
+        )
+      );
+
+      setEmployeesRaw(normalizedEmployees);
+      setIncidentsRaw(visibleIncidents);
+
+      cacheBackendData({
+        employees: normalizedEmployees,
+        incidents: visibleIncidents,
+      });
+    } catch (error) {
+      console.error("KPI backend fetch error:", error);
+      setFetchError(error.message || "Unable to load KPI backend data.");
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const incidentsRaw = useMemo(() => {
-    const allIncidents = safeParse(INCIDENTS_KEY);
-
-    return allIncidents
-      .map((incident) => ({
-        ...incident,
-        status: normalizeStatus(incident.status),
-      }))
-      .filter((incident) =>
-        employeesRaw.some((emp, index) => isSameEmployee(emp, incident, index))
-      );
-  }, [employeesRaw]);
+  useEffect(() => {
+    fetchKPIData();
+  }, [fetchKPIData]);
 
   const employees = useMemo(() => {
     return buildKPIEmployees(employeesRaw, incidentsRaw);
@@ -150,52 +286,78 @@ export default function KPIReports() {
           </p>
         </div>
 
-        <RoleGuard permission={PERMISSIONS.CAN_EXPORT_PDF}>
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={handleExportPDF}
-            className="rounded-lg bg-green-600 px-4 py-2 text-white shadow-sm transition hover:bg-green-700"
+            onClick={fetchKPIData}
+            disabled={isLoading}
+            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
           >
-            Export PDF
+            {isLoading ? "Refreshing..." : "Refresh Data"}
           </button>
-        </RoleGuard>
+
+          <RoleGuard permission={PERMISSIONS.CAN_EXPORT_PDF}>
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              disabled={isLoading || employees.length === 0}
+              className="rounded-lg bg-green-600 px-4 py-2 text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Export PDF
+            </button>
+          </RoleGuard>
+        </div>
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
-        <div className="min-w-0 space-y-8">
-          <KPISummarySection
-            totalEmployees={totalEmployees}
-            complianceRate={complianceRate}
-            repeatOffenders={repeatOffenders}
-            highRiskEmployees={highRiskEmployees}
-          />
-
-          <CriticalAlerts alerts={criticalAlerts} />
+      {fetchError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+          {fetchError}
         </div>
+      )}
 
-        <aside className="min-w-0 space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              High Risk Monitoring
-            </h2>
+      {isLoading ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm font-semibold text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          Loading KPI data from backend...
+        </div>
+      ) : (
+        <>
+          <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
+            <div className="min-w-0 space-y-8">
+              <KPISummarySection
+                totalEmployees={totalEmployees}
+                complianceRate={complianceRate}
+                repeatOffenders={repeatOffenders}
+                highRiskEmployees={highRiskEmployees}
+              />
 
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Employees requiring priority monitoring based on incident
-              frequency and severity.
-            </p>
+              <CriticalAlerts alerts={criticalAlerts} />
+            </div>
+
+            <aside className="min-w-0 space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  High Risk Monitoring
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Employees requiring priority monitoring based on incident
+                  frequency and severity.
+                </p>
+              </div>
+
+              <HighRiskEmployees employees={employees} />
+            </aside>
           </div>
 
-          <HighRiskEmployees employees={employees} />
-        </aside>
-      </div>
+          <RiskIntelligenceSection employees={employees} />
 
-      <RiskIntelligenceSection employees={employees} />
-
-      <AnalyticsTrendsSection
-        violationTrend={violationTrend}
-        complianceTrend={complianceTrend}
-        utilizationTrend={utilizationTrend}
-      />
+          <AnalyticsTrendsSection
+            violationTrend={violationTrend}
+            complianceTrend={complianceTrend}
+            utilizationTrend={utilizationTrend}
+          />
+        </>
+      )}
     </div>
   );
 }

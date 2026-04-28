@@ -8,6 +8,8 @@ const path = require("path");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const employeeRoutes = require("./routes/employeeRoutes");
+const incidentRoutes = require("./routes/incidentRoutes");
+const deploymentRoutes = require("./routes/deploymentRoutes");
 const auditLogRoutes = require("./routes/auditLogRoutes");
 
 // 🔥 KUNIN ANG CHANGE PASSWORD FUNCTION
@@ -30,6 +32,9 @@ app.put("/api/users/change-password", changePassword);
 app.use("/api", authRoutes);
 app.use("/api", userRoutes);
 app.use("/api", employeeRoutes);
+app.use("/api", incidentRoutes);
+app.use("/api", deploymentRoutes);
+
 app.use("/api", auditLogRoutes);
 
 // 🔥 DEFAULT TEST ROUTE

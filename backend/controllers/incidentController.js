@@ -1,0 +1,490 @@
+const db = require("../config/db");
+const { logAudit, AUDIT_CATEGORY } = require("../utils/auditLogger");
+
+function normalizeDate(value) {
+  if (!value) return null;
+  return String(value).slice(0, 10);
+}
+
+function normalizeStatus(value) {
+  return value || "Open";
+}
+
+function normalizeSeverity(value) {
+  return value || "Minor";
+}
+
+function buildEvidenceFromReq(req) {
+  if (!req.files || !Array.isArray(req.files)) return [];
+
+  return req.files.map((file) => ({
+    fileName: file.originalname,
+    filePath: file.path.replace(/\\/g, "/"),
+  }));
+}
+
+// GET ALL INCIDENTS
+exports.getIncidents = async (req, res) => {
+  try {
+    const [incidents] = await db.promise().query(`
+      SELECT 
+        i.*,
+        e.name AS employeeNameFromEmployee,
+        e.company AS employeeCompany,
+        e.status AS employeeStatus
+      FROM incidents i
+      LEFT JOIN employees e ON e.id = i.employee_id
+      ORDER BY i.created_at DESC
+    `);
+
+    const [evidence] = await db.promise().query(`
+      SELECT * FROM incident_evidence
+      ORDER BY created_at DESC
+    `);
+
+    const result = incidents.map((incident) => ({
+      id: incident.id,
+      employeeId: incident.employee_id,
+      employee_id: incident.employee_id,
+
+      employee:
+        incident.employee_name ||
+        incident.employeeNameFromEmployee ||
+        "Unknown Employee",
+
+      employeeName:
+        incident.employee_name ||
+        incident.employeeNameFromEmployee ||
+        "Unknown Employee",
+
+      company: incident.company || incident.employeeCompany || "",
+      employeeStatus: incident.employeeStatus || "",
+
+      violation: incident.violation_type,
+      violationType: incident.violation_type,
+
+      severity: incident.severity,
+      status: incident.status,
+
+      date: incident.incident_date,
+      incidentDate: incident.incident_date,
+
+      location: incident.location || "",
+      description: incident.description || "",
+      reportedBy: incident.reported_by || "",
+      actionTaken: incident.action_taken || "",
+      recommendation: incident.recommendation || "",
+      resolutionNotes: incident.resolution_notes || "",
+
+      createdAt: incident.created_at,
+      updatedAt: incident.updated_at,
+
+      evidence: evidence
+        .filter((item) => item.incident_id === incident.id)
+        .map((item) => ({
+          id: item.id,
+          fileName: item.file_name,
+          filePath: item.file_path,
+          url: `http://localhost:5000/${item.file_path}`,
+        })),
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error("GET INCIDENTS ERROR:", err);
+    res.status(500).json({ error: "Failed to fetch incidents" });
+  }
+};
+
+// GET ONE INCIDENT
+exports.getIncidentById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.promise().query(
+      `
+      SELECT 
+        i.*,
+        e.name AS employeeNameFromEmployee,
+        e.company AS employeeCompany,
+        e.status AS employeeStatus
+      FROM incidents i
+      LEFT JOIN employees e ON e.id = i.employee_id
+      WHERE i.id = ?
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Incident not found" });
+    }
+
+    const incident = rows[0];
+
+    const [evidence] = await db.promise().query(
+      `SELECT * FROM incident_evidence WHERE incident_id = ? ORDER BY created_at DESC`,
+      [id]
+    );
+
+    res.json({
+      id: incident.id,
+      employeeId: incident.employee_id,
+      employee_id: incident.employee_id,
+
+      employee:
+        incident.employee_name ||
+        incident.employeeNameFromEmployee ||
+        "Unknown Employee",
+
+      employeeName:
+        incident.employee_name ||
+        incident.employeeNameFromEmployee ||
+        "Unknown Employee",
+
+      company: incident.company || incident.employeeCompany || "",
+      employeeStatus: incident.employeeStatus || "",
+
+      violation: incident.violation_type,
+      violationType: incident.violation_type,
+
+      severity: incident.severity,
+      status: incident.status,
+
+      date: incident.incident_date,
+      incidentDate: incident.incident_date,
+
+      location: incident.location || "",
+      description: incident.description || "",
+      reportedBy: incident.reported_by || "",
+      actionTaken: incident.action_taken || "",
+      recommendation: incident.recommendation || "",
+      resolutionNotes: incident.resolution_notes || "",
+
+      createdAt: incident.created_at,
+      updatedAt: incident.updated_at,
+
+      evidence: evidence.map((item) => ({
+        id: item.id,
+        fileName: item.file_name,
+        filePath: item.file_path,
+        url: `http://localhost:5000/${item.file_path}`,
+      })),
+    });
+  } catch (err) {
+    console.error("GET INCIDENT ERROR:", err);
+    res.status(500).json({ error: "Failed to fetch incident" });
+  }
+};
+
+// CREATE INCIDENT
+exports.createIncident = async (req, res) => {
+  try {
+    const {
+      employeeId,
+      employee_id,
+      employee,
+      employeeName,
+      company,
+      violation,
+      violationType,
+      severity,
+      status,
+      date,
+      incidentDate,
+      location,
+      description,
+      reportedBy,
+      actionTaken,
+      recommendation,
+      resolutionNotes,
+      userId,
+      username,
+      role,
+    } = req.body;
+
+    const finalEmployeeId = employeeId || employee_id;
+
+    if (!finalEmployeeId) {
+      return res.status(400).json({ error: "Employee is required" });
+    }
+
+    const [employeeRows] = await db.promise().query(
+      `SELECT * FROM employees WHERE id = ? LIMIT 1`,
+      [finalEmployeeId]
+    );
+
+    if (employeeRows.length === 0) {
+      return res.status(404).json({ error: "Selected employee not found" });
+    }
+
+    const employeeRecord = employeeRows[0];
+
+    const finalEmployeeName =
+      employeeName || employee || employeeRecord.name || null;
+
+    const finalCompany = company || employeeRecord.company || null;
+    const finalViolation = violationType || violation;
+
+    if (!finalViolation) {
+      return res.status(400).json({ error: "Violation type is required" });
+    }
+
+    const finalDate = normalizeDate(incidentDate || date);
+
+    if (!finalDate) {
+      return res.status(400).json({ error: "Incident date is required" });
+    }
+
+    const [result] = await db.promise().query(
+      `
+      INSERT INTO incidents
+      (
+        employee_id,
+        employee_name,
+        company,
+        violation_type,
+        severity,
+        status,
+        incident_date,
+        location,
+        description,
+        reported_by,
+        action_taken,
+        recommendation,
+        resolution_notes
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        finalEmployeeId,
+        finalEmployeeName,
+        finalCompany,
+        finalViolation,
+        normalizeSeverity(severity),
+        normalizeStatus(status),
+        finalDate,
+        location || null,
+        description || null,
+        reportedBy || null,
+        actionTaken || null,
+        recommendation || null,
+        resolutionNotes || null,
+      ]
+    );
+
+    const incidentId = result.insertId;
+    const evidenceFiles = buildEvidenceFromReq(req);
+
+    for (const file of evidenceFiles) {
+      await db.promise().query(
+        `
+        INSERT INTO incident_evidence
+        (incident_id, file_name, file_path)
+        VALUES (?, ?, ?)
+        `,
+        [incidentId, file.fileName, file.filePath]
+      );
+    }
+
+    await logAudit({
+      userId,
+      username,
+      role,
+      category: AUDIT_CATEGORY.OPERATIONAL,
+      action: "ADD_INCIDENT",
+      description: `Created incident record for ${finalEmployeeName}.`,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Incident created successfully",
+      id: incidentId,
+    });
+  } catch (err) {
+    console.error("CREATE INCIDENT ERROR:", err);
+    res.status(500).json({ error: "Failed to create incident" });
+  }
+};
+
+// UPDATE INCIDENT
+exports.updateIncident = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      employeeId,
+      employee_id,
+      employee,
+      employeeName,
+      company,
+      violation,
+      violationType,
+      severity,
+      status,
+      date,
+      incidentDate,
+      location,
+      description,
+      reportedBy,
+      actionTaken,
+      recommendation,
+      resolutionNotes,
+      userId,
+      username,
+      role,
+    } = req.body;
+
+    const finalEmployeeId = employeeId || employee_id;
+
+    if (!finalEmployeeId) {
+      return res.status(400).json({ error: "Employee is required" });
+    }
+
+    const [employeeRows] = await db.promise().query(
+      `SELECT * FROM employees WHERE id = ? LIMIT 1`,
+      [finalEmployeeId]
+    );
+
+    if (employeeRows.length === 0) {
+      return res.status(404).json({ error: "Selected employee not found" });
+    }
+
+    const employeeRecord = employeeRows[0];
+
+    const finalEmployeeName =
+      employeeName || employee || employeeRecord.name || null;
+
+    const finalCompany = company || employeeRecord.company || null;
+    const finalViolation = violationType || violation;
+    const finalDate = normalizeDate(incidentDate || date);
+
+    if (!finalViolation) {
+      return res.status(400).json({ error: "Violation type is required" });
+    }
+
+    if (!finalDate) {
+      return res.status(400).json({ error: "Incident date is required" });
+    }
+
+    await db.promise().query(
+      `
+      UPDATE incidents
+      SET
+        employee_id = ?,
+        employee_name = ?,
+        company = ?,
+        violation_type = ?,
+        severity = ?,
+        status = ?,
+        incident_date = ?,
+        location = ?,
+        description = ?,
+        reported_by = ?,
+        action_taken = ?,
+        recommendation = ?,
+        resolution_notes = ?
+      WHERE id = ?
+      `,
+      [
+        finalEmployeeId,
+        finalEmployeeName,
+        finalCompany,
+        finalViolation,
+        normalizeSeverity(severity),
+        normalizeStatus(status),
+        finalDate,
+        location || null,
+        description || null,
+        reportedBy || null,
+        actionTaken || null,
+        recommendation || null,
+        resolutionNotes || null,
+        id,
+      ]
+    );
+
+    const evidenceFiles = buildEvidenceFromReq(req);
+
+    for (const file of evidenceFiles) {
+      await db.promise().query(
+        `
+        INSERT INTO incident_evidence
+        (incident_id, file_name, file_path)
+        VALUES (?, ?, ?)
+        `,
+        [id, file.fileName, file.filePath]
+      );
+    }
+
+    await logAudit({
+      userId,
+      username,
+      role,
+      category: AUDIT_CATEGORY.OPERATIONAL,
+      action: "UPDATE_INCIDENT",
+      description: `Updated incident record for ${finalEmployeeName}.`,
+    });
+
+    res.json({
+      success: true,
+      message: "Incident updated successfully",
+    });
+  } catch (err) {
+    console.error("UPDATE INCIDENT ERROR:", err);
+    res.status(500).json({ error: "Failed to update incident" });
+  }
+};
+
+// UPDATE STATUS ONLY
+exports.updateIncidentStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, resolutionNotes, actionTaken, recommendation } = req.body;
+
+    await db.promise().query(
+      `
+      UPDATE incidents
+      SET
+        status = ?,
+        resolution_notes = COALESCE(?, resolution_notes),
+        action_taken = COALESCE(?, action_taken),
+        recommendation = COALESCE(?, recommendation)
+      WHERE id = ?
+      `,
+      [
+        normalizeStatus(status),
+        resolutionNotes || null,
+        actionTaken || null,
+        recommendation || null,
+        id,
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: "Incident status updated successfully",
+    });
+  } catch (err) {
+    console.error("UPDATE INCIDENT STATUS ERROR:", err);
+    res.status(500).json({ error: "Failed to update incident status" });
+  }
+};
+
+// DELETE INCIDENT
+exports.deleteIncident = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await db.promise().query(`DELETE FROM incident_evidence WHERE incident_id = ?`, [id]);
+    await db.promise().query(`DELETE FROM incidents WHERE id = ?`, [id]);
+
+    res.json({
+      success: true,
+      message: "Incident deleted successfully",
+    });
+  } catch (err) {
+    console.error("DELETE INCIDENT ERROR:", err);
+    res.status(500).json({ error: "Failed to delete incident" });
+  }
+};

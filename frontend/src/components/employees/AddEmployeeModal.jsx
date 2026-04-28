@@ -318,8 +318,8 @@ export default function AddEmployeeModal({
       if (onSaveSuccess) onSaveSuccess();
       else window.location.reload();
     } catch (err) {
-      console.error("SAVE ERROR:", err);
-      alert("Error saving employee");
+      console.error("SAVE ERROR:", err.response?.data || err);
+      alert(err.response?.data?.error || err.message || "Error saving employee");
     }
   };
 
