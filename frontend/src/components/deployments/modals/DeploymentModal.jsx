@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import {
   FiAlertTriangle,
   FiBriefcase,
@@ -10,89 +10,53 @@ import {
   FiUser,
   FiX,
 } from "react-icons/fi";
-import { useAuth } from "../../context/useAuth";
 
-function formatDisplayDate(dateValue) {
-  if (!dateValue || dateValue === "-") return "Not Set";
-
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return dateValue;
-
-  return date.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function getStatusBadgeClass(status) {
-  const styles = {
-    Active:
-      "bg-green-100 text-green-700 border border-green-200 dark:bg-green-500/20 dark:text-green-300 dark:border-green-500/30",
-    Completed:
-      "bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/30",
-    Pending:
-      "bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30",
-    Cancelled:
-      "bg-red-100 text-red-700 border border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/30",
-  };
-
-  return styles[status] || "bg-gray-100 text-gray-700 border border-gray-200";
-}
-
-function getContractTimelineInfo(contractStart, contractEnd, employmentType) {
-  if (employmentType === "Permanent") {
-    return "Permanent employee. No contract end date required.";
-  }
-
-  if (!contractStart || contractStart === "-") {
-    return "Contract start date is not available.";
-  }
-
-  if (!contractEnd || contractEnd === "-") {
-    return "Contract end date is not available.";
-  }
-
-  const startDate = new Date(contractStart);
-  const endDate = new Date(contractEnd);
-
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-    return "Invalid contract date.";
-  }
-
-  const diffDays = Math.ceil(
-    (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  if (diffDays < 0) return "Contract end date is earlier than contract start.";
-
-  return `Contract duration: ${diffDays + 1} day${
-    diffDays + 1 > 1 ? "s" : ""
-  }. Contract end: ${formatDisplayDate(contractEnd)}.`;
-}
+import { useAuth } from "../../../context/useAuth";
+import {
+  formatLongDisplayDate,
+  getContractTimelineInfo,
+  getStatusBadgeClass,
+} from "../../../utils/deployments/deploymentHelpers";
+import {
+  DeploymentInfoCard,
+  ConfirmDeploymentActionModal,
+} from "../shared/DeploymentModalUI";
 
 export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
-  const [form, setForm] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
 
-  const initialForm = useMemo(() => deployment || null, [deployment]);
+  if (!deployment) return null;
 
-  useEffect(() => {
-    setForm(initialForm);
-    setConfirmAction(null);
-  }, [initialForm]);
-
-  if (!deployment || !form) return null;
+  const form = deployment;
 
   const isEdit = mode === "edit" && !isSuperAdmin;
   const isActive = form.status === "Active";
+  const isAttention = form.status === "Cancelled" || form.status === "Pending";
+
+  const employeeInitials = String(form.employee || "D")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
+  const timelineInfo = getContractTimelineInfo(
+    form.contractStart || form.start,
+    form.contractEnd,
+    form.employmentType
+  );
+
+  const handleClose = () => {
+    setConfirmAction(null);
+    close();
+  };
 
   const handleSave = () => {
     onUpdate(form);
-    close();
+    handleClose();
   };
 
   const handleComplete = () => {
@@ -122,30 +86,15 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
     close();
   };
 
-  const employeeInitials = String(form.employee || "D")
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-
-  const timelineInfo = getContractTimelineInfo(
-    form.contractStart || form.start,
-    form.contractEnd,
-    form.employmentType
-  );
-
-  const isAttention = form.status === "Cancelled" || form.status === "Pending";
-
   return (
     <>
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-        onClick={close}
+        onClick={handleClose}
       >
         <div
           className="flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900 sm:h-[88vh]"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
         >
           <div className="shrink-0 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4 dark:border-white/10 dark:from-slate-900 dark:to-slate-900 sm:px-6 sm:py-5 lg:px-8">
             <div className="flex items-start justify-between gap-4">
@@ -184,8 +133,9 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
 
               <button
                 type="button"
-                onClick={close}
+                onClick={handleClose}
                 className="text-gray-400 transition hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                aria-label="Close deployment modal"
               >
                 <FiX size={22} />
               </button>
@@ -221,17 +171,19 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
               </h3>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <InfoCard
+                <DeploymentInfoCard
                   icon={<FiUser size={16} />}
                   label="Employee"
                   value={form.employee}
                 />
-                <InfoCard
+
+                <DeploymentInfoCard
                   icon={<FiBriefcase size={16} />}
                   label="Company"
                   value={form.company}
                 />
-                <InfoCard
+
+                <DeploymentInfoCard
                   icon={<FiMapPin size={16} />}
                   label="Location"
                   value={form.location}
@@ -245,16 +197,16 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
               </h3>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <InfoCard
+                <DeploymentInfoCard
                   icon={<FiCalendar size={16} />}
                   label="Contract Start"
-                  value={formatDisplayDate(form.contractStart || form.start)}
+                  value={formatLongDisplayDate(form.contractStart || form.start)}
                 />
 
-                <InfoCard
+                <DeploymentInfoCard
                   icon={<FiCalendar size={16} />}
                   label="Contract End"
-                  value={formatDisplayDate(form.contractEnd)}
+                  value={formatLongDisplayDate(form.contractEnd)}
                 />
               </div>
 
@@ -263,6 +215,7 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
                   <FiClock size={16} />
                   <span className="text-sm">Timeline Summary</span>
                 </div>
+
                 <p className="text-base font-medium">{timelineInfo}</p>
               </div>
             </section>
@@ -315,7 +268,7 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
           <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 bg-white px-4 py-4 dark:border-white/10 dark:bg-slate-900 sm:px-6 lg:px-8">
             <button
               type="button"
-              onClick={close}
+              onClick={handleClose}
               className="rounded-lg bg-gray-300 px-4 py-2 text-black transition hover:bg-gray-400"
             >
               Close
@@ -355,91 +308,13 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
       </div>
 
       {confirmAction && (
-        <div
-          className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => setConfirmAction(null)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-slate-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center gap-3">
-              <div
-                className={`flex h-11 w-11 items-center justify-center rounded-full ${
-                  confirmAction === "cancel"
-                    ? "bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300"
-                    : "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-300"
-                }`}
-              >
-                {confirmAction === "cancel" ? (
-                  <FiAlertTriangle size={22} />
-                ) : (
-                  <FiCheckCircle size={22} />
-                )}
-              </div>
-
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                  {confirmAction === "cancel"
-                    ? "Cancel Deployment?"
-                    : "Mark as Completed?"}
-                </h3>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  This action will update deployment status only.
-                </p>
-              </div>
-            </div>
-
-            <p className="mb-6 text-sm leading-6 text-gray-600 dark:text-gray-300">
-              {confirmAction === "cancel"
-                ? `Are you sure you want to cancel the deployment record of ${
-                    form.employee || "this employee"
-                  }? Contract dates will remain unchanged.`
-                : `Are you sure you want to mark ${
-                    form.employee || "this deployment"
-                  } as completed? Contract dates will remain unchanged.`}
-            </p>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmAction(null)}
-                className="rounded-lg bg-gray-200 px-4 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-300 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600"
-              >
-                No, go back
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmAction}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
-                  confirmAction === "cancel"
-                    ? "bg-red-600 hover:bg-red-700"
-                    : "bg-green-600 hover:bg-green-700"
-                }`}
-              >
-                {confirmAction === "cancel"
-                  ? "Yes, cancel deployment"
-                  : "Yes, mark completed"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDeploymentActionModal
+          action={confirmAction}
+          employee={form.employee}
+          onClose={() => setConfirmAction(null)}
+          onConfirm={handleConfirmAction}
+        />
       )}
     </>
-  );
-}
-
-function InfoCard({ icon, label, value }) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900/40">
-      <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
-        {icon}
-        <span className="text-sm">{label}</span>
-      </div>
-      <p className="text-base font-semibold text-gray-900 dark:text-white">
-        {value || "-"}
-      </p>
-    </div>
   );
 }

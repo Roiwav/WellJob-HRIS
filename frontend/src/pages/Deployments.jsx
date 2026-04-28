@@ -1,121 +1,26 @@
 import { useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import { FiCalendar, FiSearch } from "react-icons/fi";
-import DeploymentTable from "../components/deployments/DeploymentTable";
-import DeploymentModal from "../components/deployments/DeploymentModal";
 
-const COMPANY_LOCATIONS = {
-  "SM Supermalls": "Calamba City, Laguna",
-  "Robinsons Retail Holdings": "Calamba City, Laguna",
-  "Ayala Land Inc.": "Makati City",
-  "Jollibee Foods Corporation": "Pasig City",
-  "San Miguel Corporation": "Mandaluyong City",
-  "PLDT Inc.": "Makati City",
-  "Globe Telecom": "Taguig City",
-  "BDO Unibank": "Makati City",
-  "Metrobank": "Makati City",
-  "Puregold Price Club": "Quezon City",
-  "Wilcon Depot": "Quezon City",
-  "DMCI Holdings": "Makati City",
-  "Megaworld Corporation": "Taguig City",
-  "Unilab Inc.": "Mandaluyong City",
-  "Nestlé Philippines": "Makati City",
-  "Coca-Cola Philippines": "Taguig City",
-  "Pepsi-Cola Products Philippines": "Muntinlupa City",
-  "Toyota Philippines": "Santa Rosa, Laguna",
-  "Honda Philippines": "Batangas",
-  "Accenture Philippines": "Taguig City",
-  "IBM Philippines": "Quezon City",
-  "Teleperformance Philippines": "Pasig City",
-  "Concentrix Philippines": "Quezon City",
-  "Sitel Philippines": "Makati City",
-};
+import DeploymentTable from "../components/deployments/table/DeploymentTable";
+import DeploymentModal from "../components/deployments/modals/DeploymentModal";
+import DeploymentToast from "../components/deployments/shared/DeploymentToast";
 
-function safeParse(key) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
+import {
+  COMPANY_LOCATIONS,
+  safeParse,
+  getDeploymentsFromStorage,
+  getMonthOptions,
+  getYearOptions,
+} from "../utils/deployments/deploymentHelpers";
 
-function Toast({ show, message }) {
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
-    <div
-      className={`fixed bottom-6 right-6 z-[9999] transform transition-all duration-500 ${
-        show ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0"
-      }`}
-    >
-      <div className="rounded-xl bg-green-600 px-5 py-3 text-white shadow-lg">
-        {message}
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-function getDeploymentsFromStorage() {
-  const employees = safeParse("employees");
-
-  return employees
-    .filter((emp) => emp.status === "Deployed" && !emp.archived)
-    .map((emp) => ({
-      id: emp.id,
-      employee: emp.name,
-      company: emp.company || "-",
-      location: COMPANY_LOCATIONS[emp.company] || "-",
-      start: emp.deployment?.start || new Date().toISOString().split("T")[0],
-      status: emp.deployment?.status || "Active",
-
-      employmentType: emp.employmentType || "Permanent",
-      contractStart: emp.contractStart || "-",
-      contractEnd: emp.contractEnd || "-",
-    }));
-}
-
-function getMonthOptions() {
-  return [
-    { value: "", label: "All Months" },
-    { value: "0", label: "January" },
-    { value: "1", label: "February" },
-    { value: "2", label: "March" },
-    { value: "3", label: "April" },
-    { value: "4", label: "May" },
-    { value: "5", label: "June" },
-    { value: "6", label: "July" },
-    { value: "7", label: "August" },
-    { value: "8", label: "September" },
-    { value: "9", label: "October" },
-    { value: "10", label: "November" },
-    { value: "11", label: "December" },
-  ];
-}
-
-function getYearOptions(deployments) {
-  const years = deployments
-    .map((deployment) => {
-      if (!deployment.start || deployment.start === "-") return null;
-      const date = new Date(deployment.start);
-      if (Number.isNaN(date.getTime())) return null;
-      return String(date.getFullYear());
-    })
-    .filter(Boolean);
-
-  const uniqueYears = [...new Set(years)].sort((a, b) => Number(b) - Number(a));
-
-  return [
-    { value: "", label: "All Years" },
-    ...uniqueYears.map((year) => ({ value: year, label: year })),
-  ];
-}
+const EMPLOYEES_KEY = "employees";
 
 export default function Deployments() {
   const [selectedDeployment, setSelectedDeployment] = useState(null);
   const [modalMode, setModalMode] = useState("view");
-  const [deployments, setDeployments] = useState(() => getDeploymentsFromStorage());
+  const [deployments, setDeployments] = useState(() =>
+    getDeploymentsFromStorage()
+  );
 
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -132,13 +37,18 @@ export default function Deployments() {
     setSelectedDeployment(deployment);
   };
 
-  const openEdit = (deployment) => {
-    setModalMode("edit");
-    setSelectedDeployment(deployment);
+  const showSuccessToast = (message) => {
+    setShowToast(false);
+
+    setTimeout(() => {
+      setToastMessage(message);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2200);
+    }, 50);
   };
 
   const updateDeployment = (updatedDeployment) => {
-    const employees = safeParse("employees");
+    const employees = safeParse(EMPLOYEES_KEY);
 
     const updatedEmployees = employees.map((emp) =>
       emp.id === updatedDeployment.id
@@ -153,17 +63,11 @@ export default function Deployments() {
         : emp
     );
 
-    localStorage.setItem("employees", JSON.stringify(updatedEmployees));
+    localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(updatedEmployees));
     window.dispatchEvent(new Event("dataUpdated"));
 
     setDeployments(getDeploymentsFromStorage());
-    setShowToast(false);
-
-    setTimeout(() => {
-      setToastMessage("Deployment updated successfully!");
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 2200);
-    }, 50);
+    showSuccessToast("Deployment updated successfully!");
   };
 
   const filteredDeployments = useMemo(() => {
@@ -215,7 +119,7 @@ export default function Deployments() {
               type="text"
               placeholder="Search ID, employee, company, location..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
               className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-gray-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             />
           </div>
@@ -224,7 +128,7 @@ export default function Deployments() {
             <FiCalendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
             <select
               value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
+              onChange={(event) => setSelectedMonth(event.target.value)}
               className="rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-gray-900 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             >
               {monthOptions.map((month) => (
@@ -237,7 +141,7 @@ export default function Deployments() {
 
           <select
             value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value)}
+            onChange={(event) => setSelectedYear(event.target.value)}
             className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-gray-900 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
           >
             {yearOptions.map((year) => (
@@ -248,11 +152,7 @@ export default function Deployments() {
           </select>
         </div>
 
-        <DeploymentTable
-          deployments={filteredDeployments}
-          openView={openView}
-          openEdit={openEdit}
-        />
+        <DeploymentTable deployments={filteredDeployments} openView={openView} />
 
         <DeploymentModal
           deployment={selectedDeployment}
@@ -262,7 +162,7 @@ export default function Deployments() {
         />
       </div>
 
-      <Toast show={showToast} message={toastMessage} />
+      <DeploymentToast show={showToast} message={toastMessage} />
     </>
   );
 }
