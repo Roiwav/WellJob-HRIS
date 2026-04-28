@@ -19,7 +19,7 @@ import {
   getNextOffenseCount,
   getPenaltyByOffense,
   getPenaltyText,
-} from "../../utils/incidentIntelligence";
+} from "../../../utils/incidentIntelligence";
 
 const severityStyle = {
   Minor: "bg-emerald-100 text-emerald-700 border-emerald-200",
