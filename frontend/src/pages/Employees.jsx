@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import {
   FiArchive,
   FiFilter,
@@ -14,7 +15,6 @@ import EmployeeModal from "../components/employees/EmployeeModal";
 import EmployeeTable from "../components/employees/EmployeeTable";
 
 const EMPLOYEES_KEY = "employees";
-const OPERATIONAL_AUDIT_KEY = "operational_audit_logs";
 
 const REQUIRED_DOCUMENTS = [
   "Resume",
@@ -77,7 +77,7 @@ export default function Employees() {
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const isHRManager = user?.role === "HR_MANAGER";
 
-  const [employees, setEmployees] = useState(() => safeParse(EMPLOYEES_KEY));
+  const [employees, setEmployees] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [generatedId, setGeneratedId] = useState("");
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -116,6 +116,21 @@ export default function Employees() {
     },
     [user]
   );
+
+  const fetchEmployees = async () => {
+  try {
+    const res = await fetch("http://localhost:5000/api/employees");
+    const data = await res.json();
+
+    setEmployees(data);
+  } catch (err) {
+    console.error("Fetch error:", err);
+  }
+};
+
+useEffect(() => {
+    fetchEmployees();
+  }, []);
 
   const saveToStorage = useCallback((data) => {
     setEmployees(data);
@@ -458,6 +473,7 @@ const getCompliance = useCallback((docs) => {
           onSave={handleSave}
           editingEmployee={editingEmployee}
           employees={employees}
+          onSaveSuccess={fetchEmployees} // 🔥 IMPORTANT
         />
       )}
 

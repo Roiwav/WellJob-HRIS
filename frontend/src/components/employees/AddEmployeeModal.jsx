@@ -10,6 +10,7 @@ import {
   FiUser,
   FiX,
 } from "react-icons/fi";
+import axios from "axios";
 
 const COMPANY_OPTIONS = [
   "SM Supermalls",
@@ -65,20 +66,31 @@ function toProperName(value) {
 
 function createDefaultDocuments(existingDocs = []) {
   return DOCUMENT_OPTIONS.map((doc) => {
-    const matched =
-      existingDocs.find((item) =>
-        typeof item === "object" ? item.name === doc.name : item === doc.name
-      ) || null;
+    const matched = existingDocs.find((item) => item.name === doc.name);
 
     return {
       name: doc.name,
       expirable: doc.expirable,
+
+      // ✅ CHECK IF EXISTS
       checked: !!matched,
-      expirationDate:
-        matched && typeof matched === "object"
-          ? matched.expirationDate || ""
-          : "",
-      file: matched?.file || null,
+
+      // 🔥 FIX FIELD NAME (snake_case → camelCase)
+      expirationDate: matched?.expiration_date || "",
+
+      // 🔥 KEEP RAW PATH
+      filePath: matched?.file_path || null,
+
+      // 🔥 CONVERT FOR UI
+      file: matched?.file_path
+        ? {
+            url: `http://localhost:5000/${matched.file_path}`,
+            name: matched.name,
+            type: matched.file_path.endsWith(".pdf")
+              ? "application/pdf"
+              : "image/*",
+          }
+        : null,
     };
   });
 }
@@ -143,6 +155,7 @@ export default function AddEmployeeModal({
   generatedId,
   editingEmployee,
   employees = [],
+  onSaveSuccess,
 }) {
   const [formData, setFormData] = useState(() => ({
     name: "",
@@ -216,8 +229,9 @@ export default function AddEmployeeModal({
 const completedDocuments = useMemo(() => {
   return formData.documents.filter((doc) => {
     if (!doc.checked) return false;
-    if (!doc.file) return false;
+    if (!doc.file && !doc.filePath) return false;
     if (doc.expirable && !doc.expirationDate) return false;
+
     return true;
   });
 }, [formData.documents]);
@@ -405,11 +419,11 @@ const handleChange = (e) => {
     }));
   };
 
-const handleDocumentFile = (docName, fileData) => {
+const handleDocumentFile = (docName, file) => {
   setFormData((prev) => ({
     ...prev,
     documents: prev.documents.map((doc) =>
-      doc.name === docName ? { ...doc, file: fileData } : doc
+      doc.name === docName ? { ...doc, file } : doc
     ),
   }));
 
@@ -432,25 +446,18 @@ const handleFileInput = (docName, file) => {
     return;
   }
 
-  const maxSize = 2 * 800 * 1024;
+  const maxSize = 5 * 1024 * 1024;
 
   if (file.size > maxSize) {
-    alert("File must be less than 2MB.");
+    alert("File must be less than 5MB.");
     return;
   }
 
-  const reader = new FileReader();
+  console.log("REAL FILE:", file); // DEBUG
 
-  reader.onload = () => {
-    handleDocumentFile(docName, {
-      name: file.name,
-      type: file.type,
-      url: reader.result,
-    });
+  handleDocumentFile(docName, file);
 };
 
-reader.readAsDataURL(file);
-};
   const validateForm = () => {
 
   const nextErrors = {
@@ -514,16 +521,20 @@ reader.readAsDataURL(file);
         "Possible duplicate name detected. Please verify using the resume/supporting documents and confirm before saving.";
     }
 
+// 🔥 VALIDATE DOCUMENT FILES (NO FORM DATA HERE)
 formData.documents.forEach((doc) => {
-  if (doc.checked && doc.expirable && !doc.expirationDate) {
-    nextErrors.documents[doc.name] = "Expiration date is required.";
-  }
+  if (doc.checked) {
+    if (!doc.file) {
+      nextErrors.documents[`${doc.name}_file`] = "File is required";
+    }
 
-  if (doc.checked && !doc.file) {
-    nextErrors.documents[`${doc.name}_file`] = "Proof upload is required.";
+    if (doc.expirable && !doc.expirationDate) {
+      nextErrors.documents[doc.name] = "Expiration date is required";
+    }
   }
 });
-// UPDATED RULE: minimum compliance for deployed
+
+// 🔥 UPDATED RULE: minimum compliance for deployed
 if (
   formData.status === "Deployed" &&
   selectedDocuments.length < MIN_DEPLOYED_DOCUMENTS
@@ -531,9 +542,11 @@ if (
   nextErrors.documents.general = `At least ${MIN_DEPLOYED_DOCUMENTS} compliance documents are required for deployed employees.`;
 }
 
-    setErrors(nextErrors);
+// 🔥 SET ERRORS
+setErrors(nextErrors);
 
-    const hasDocumentErrors = Object.values(nextErrors.documents).some(Boolean);
+// 🔥 FINAL CHECK
+const hasDocumentErrors = Object.values(nextErrors.documents).some(Boolean);
 
 return !(
   nextErrors.name ||
@@ -555,21 +568,62 @@ return !(
     setShowReview(true);
   };
 
-  const handleConfirmSave = () => {
-  onSave({
-    name: toProperName(formData.name),
-    status: formData.status,
-    company: formData.status === "Deployed" ? formData.company.trim() : "",
-    employmentType: formData.employmentType,
-    contractStart: formData.contractStart,
-    contractEnd: formData.contractEnd,
-    duplicateVerified: !!duplicatePreview && duplicateConfirmed,
-    documents: selectedDocuments,
-  });
+  const handleConfirmSave = async () => {
+  try {
+    const formDataToSend = new FormData();
+
+    // 🔥 BASIC INFO
+    formDataToSend.append("name", formData.name);
+    formDataToSend.append("company", formData.company);
+    formDataToSend.append("status", formData.status);
+    formDataToSend.append("employmentType", formData.employmentType);
+    formDataToSend.append("contractStart", formData.contractStart);
+    formDataToSend.append("contractEnd", formData.contractEnd);
+
+    // 🔥 DOCUMENTS
+    const selectedDocs = formData.documents.filter(doc => doc.checked);
+
+    selectedDocs.forEach((doc, index) => {
+      if (doc.file) {
+        formDataToSend.append(`documents[${index}]`, doc.file);
+        formDataToSend.append(`documents[${index}][name]`, doc.name);
+        formDataToSend.append(
+          `documents[${index}][expirationDate]`,
+          doc.expirationDate || ""
+        );
+      }
+    });
+
+    let res;
+
+    // 🔥 ⭐ IMPORTANT PART
+    if (editingEmployee) {
+      // ✅ UPDATE
+      res = await axios.put(
+        `http://localhost:5000/api/employees/${editingEmployee.id}`,
+        formDataToSend
+      );
+    } else {
+      // ✅ CREATE
+      res = await axios.post(
+        "http://localhost:5000/api/employees",
+        formDataToSend
+      );
+    }
+
+    console.log("SAVED:", res.data);
+
+    alert(editingEmployee ? "Employee updated!" : "Employee created!");
 
     setShowReview(false);
     onClose();
-  };
+    window.location.reload();
+
+  } catch (err) {
+    console.error("SAVE ERROR:", err);
+    alert("Error saving employee");
+  }
+};
 
   return (
     <>
