@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FiArrowLeft,
   FiEye,
@@ -7,10 +7,10 @@ import {
   FiTrash2,
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import ComplianceBadge from "../components/employees/ComplianceBadge";
 import EmployeeModal from "../components/employees/EmployeeModal";
 
-const EMPLOYEES_KEY = "employees";
 const INCIDENTS_KEY = "incidents";
 const DEPLOYMENTS_KEY = "deployments";
 
@@ -91,45 +91,29 @@ function getCompliance(documents = []) {
     );
 
     if (!doc) return false;
-
     if (typeof doc === "string") {
       return !EXPIRABLE_DOCUMENTS.includes(requiredName);
     }
-
-    if (!doc.file) return false;
-
+    if (!doc.filePath && !doc.file) return false;
     if (EXPIRABLE_DOCUMENTS.includes(requiredName) && !doc.expirationDate) {
       return false;
     }
-
     return true;
   }).length;
 
   if (completedCount === REQUIRED_DOCUMENTS.length) return "Complete";
-
   return "Incomplete";
 }
 
 function SuccessModal({ message, onClose }) {
   if (!message) return null;
-
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-white p-6 shadow-2xl dark:bg-slate-900">
-        <h3 className="mb-2 text-lg font-extrabold text-green-600">
-          Success
-        </h3>
-
-        <p className="mb-5 text-sm text-gray-700 dark:text-gray-300">
-          {message}
-        </p>
-
+        <h3 className="mb-2 text-lg font-extrabold text-green-600">Success</h3>
+        <p className="mb-5 text-sm text-gray-700 dark:text-gray-300">{message}</p>
         <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700"
-          >
+          <button type="button" onClick={onClose} className="rounded-xl bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700">
             OK
           </button>
         </div>
@@ -138,49 +122,20 @@ function SuccessModal({ message, onClose }) {
   );
 }
 
-function ConfirmModal({
-  title,
-  message,
-  confirmLabel,
-  tone = "green",
-  onConfirm,
-  onCancel,
-}) {
-  const toneClass =
-    tone === "red"
-      ? "bg-red-600 hover:bg-red-700 text-white"
-      : "bg-green-600 hover:bg-green-700 text-white";
-
-  const titleClass =
-    tone === "red"
-      ? "text-red-700 dark:text-red-300"
-      : "text-green-700 dark:text-green-300";
+function ConfirmModal({ title, message, confirmLabel, tone = "green", onConfirm, onCancel }) {
+  const toneClass = tone === "red" ? "bg-red-600 hover:bg-red-700 text-white" : "bg-green-600 hover:bg-green-700 text-white";
+  const titleClass = tone === "red" ? "text-red-700 dark:text-red-300" : "text-green-700 dark:text-green-300";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white p-6 shadow-2xl dark:bg-slate-900">
-        <h2 className={`mb-4 text-lg font-extrabold ${titleClass}`}>
-          {title}
-        </h2>
-
-        <p className="mb-6 text-sm leading-6 text-gray-700 dark:text-gray-300">
-          {message}
-        </p>
-
+        <h2 className={`mb-4 text-lg font-extrabold ${titleClass}`}>{title}</h2>
+        <p className="mb-6 text-sm leading-6 text-gray-700 dark:text-gray-300">{message}</p>
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-bold transition ${toneClass}`}
-          >
+          <button type="button" onClick={onConfirm} className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-bold transition ${toneClass}`}>
             {confirmLabel}
           </button>
-
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex-1 rounded-xl bg-gray-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-gray-600"
-          >
+          <button type="button" onClick={onCancel} className="flex-1 rounded-xl bg-gray-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-gray-600">
             Cancel
           </button>
         </div>
@@ -192,65 +147,68 @@ function ConfirmModal({
 export default function ArchivedEmployees() {
   const navigate = useNavigate();
 
-  const [employees, setEmployees] = useState(() => safeParse(EMPLOYEES_KEY));
+  const [archivedEmployees, setArchivedEmployees] = useState([]);
   const [viewEmployee, setViewEmployee] = useState(null);
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
 
-  const saveToStorage = (data) => {
-    setEmployees(data);
-    localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(data));
-    window.dispatchEvent(new Event("dataUpdated"));
+  // 🔥 FETCH DATA DIRECTLY FROM DATABASE
+  useEffect(() => {
+    const fetchArchived = async () => {
+      try {
+        const res = await axios.get("http://localhost:5000/api/employees");
+        // Kunin lang yung mga may archived = 1 (true)
+        const archived = res.data.filter((emp) => emp.archived === 1 || emp.archived === true);
+        setArchivedEmployees(archived);
+      } catch (err) {
+        console.error("Error fetching archived employees", err);
+      }
+    };
+    fetchArchived();
+  }, []);
+
+  const handleRestore = async (id) => {
+    try {
+      await axios.put(`http://localhost:5000/api/employees/restore/${id}`);
+      
+      // Update UI by removing the restored employee from the archived list
+      setArchivedEmployees((prev) => prev.filter((emp) => emp.id !== id));
+      
+      setRestoreTarget(null);
+      setSuccessMessage("Employee restored successfully.");
+    } catch (err) {
+      console.error("Error restoring employee", err);
+      alert("Failed to restore employee");
+    }
   };
 
-  const archivedEmployees = useMemo(
-    () => employees.filter((emp) => emp.archived),
-    [employees]
-  );
+  const handleDelete = async (id) => {
+    try {
+      const target = archivedEmployees.find((emp) => emp.id === id);
+      
+      // Delete from Database
+      await axios.delete(`http://localhost:5000/api/employees/${id}`);
 
-  const handleRestore = (id) => {
-    const updated = employees.map((emp) =>
-      emp.id === id
-        ? {
-            ...emp,
-            archived: false,
-            archivedAt: null,
-            status: emp.previousStatus || "Deployed",
-          }
-        : emp
-    );
+      // Update UI
+      setArchivedEmployees((prev) => prev.filter((emp) => emp.id !== id));
 
-    saveToStorage(updated);
-    setRestoreTarget(null);
-    setSuccessMessage("Employee restored successfully.");
-  };
+      // Linisin ang related data sa localStorage (incidents/deployments) - Maintain mo lang to for now kung nakalocalstorage pa
+      const updatedIncidents = safeParse(INCIDENTS_KEY).filter(
+        (incident) => String(incident.employeeId) !== String(id) && String(incident.employee) !== String(target?.name)
+      );
+      const updatedDeployments = safeParse(DEPLOYMENTS_KEY).filter(
+        (deployment) => String(deployment.employeeId) !== String(id) && String(deployment.employee) !== String(target?.name)
+      );
+      localStorage.setItem(INCIDENTS_KEY, JSON.stringify(updatedIncidents));
+      localStorage.setItem(DEPLOYMENTS_KEY, JSON.stringify(updatedDeployments));
 
-  const handleDelete = (id) => {
-    const target = employees.find((emp) => emp.id === id);
-
-    const updatedEmployees = employees.filter((emp) => emp.id !== id);
-
-    const updatedIncidents = safeParse(INCIDENTS_KEY).filter(
-      (incident) =>
-        String(incident.employeeId) !== String(id) &&
-        String(incident.employee) !== String(target?.name)
-    );
-
-    const updatedDeployments = safeParse(DEPLOYMENTS_KEY).filter(
-      (deployment) =>
-        String(deployment.employeeId) !== String(id) &&
-        String(deployment.employee) !== String(target?.name)
-    );
-
-    saveToStorage(updatedEmployees);
-    localStorage.setItem(INCIDENTS_KEY, JSON.stringify(updatedIncidents));
-    localStorage.setItem(DEPLOYMENTS_KEY, JSON.stringify(updatedDeployments));
-
-    window.dispatchEvent(new Event("dataUpdated"));
-
-    setDeleteTarget(null);
-    setSuccessMessage("Employee permanently deleted.");
+      setDeleteTarget(null);
+      setSuccessMessage("Employee permanently deleted.");
+    } catch (err) {
+      console.error("Error deleting employee", err);
+      alert("Failed to delete employee");
+    }
   };
 
   return (
@@ -264,28 +222,18 @@ export default function ArchivedEmployees() {
         >
           <FiArrowLeft />
         </button>
-
         <div>
-          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">
-            Archived Employees
-          </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            View, restore, or permanently delete inactive employee records.
-          </p>
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Archived Employees</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">View, restore, or permanently delete inactive employee records.</p>
         </div>
       </div>
 
       <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-white/10">
           <div>
-            <h3 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
-              Archived Records
-            </h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Records removed from the active employee list.
-            </p>
+            <h3 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">Archived Records</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Records removed from the active employee list.</p>
           </div>
-
           <span className="rounded-full bg-amber-50 px-4 py-1.5 text-xs font-bold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
             {archivedEmployees.length} archived
           </span>
@@ -308,64 +256,32 @@ export default function ArchivedEmployees() {
               {archivedEmployees.length > 0 ? (
                 archivedEmployees.map((emp) => {
                   const compliance = getCompliance(emp.documents);
-
                   return (
-                    <tr
-                      key={emp.uid || emp.id}
-                      className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5"
-                    >
+                    <tr key={emp.id} className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5">
                       <td className="px-6 py-4">
-                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                          {emp.id || "-"}
-                        </span>
+                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{emp.id || "-"}</span>
                       </td>
-
                       <td className="px-6 py-4">
-                        <p className="font-semibold text-gray-900 dark:text-white">
-                          {emp.name || "-"}
-                        </p>
+                        <p className="font-semibold text-gray-900 dark:text-white">{emp.name || "-"}</p>
                       </td>
-
-                      <td className="px-6 py-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        {emp.company || "-"}
-                      </td>
-
+                      <td className="px-6 py-4 text-sm font-semibold text-gray-700 dark:text-gray-300">{emp.company || "-"}</td>
                       <td className="px-6 py-4">
                         <span className="inline-flex rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300">
                           Inactive
                         </span>
                       </td>
-
                       <td className="px-6 py-4">
                         <ComplianceBadge status={compliance} />
                       </td>
-
                       <td className="px-6 py-4 text-center">
                         <div className="inline-flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setViewEmployee(emp)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-600 hover:text-white dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500"
-                            title="View employee"
-                          >
+                          <button type="button" onClick={() => setViewEmployee(emp)} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-600 hover:text-white dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500" title="View employee">
                             <FiEye />
                           </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setRestoreTarget(emp)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-green-100 bg-green-50 text-green-700 transition hover:bg-green-600 hover:text-white dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-300 dark:hover:bg-green-600"
-                            title="Restore employee"
-                          >
+                          <button type="button" onClick={() => setRestoreTarget(emp)} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-green-100 bg-green-50 text-green-700 transition hover:bg-green-600 hover:text-white dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-300 dark:hover:bg-green-600" title="Restore employee">
                             <FiRotateCcw />
                           </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setDeleteTarget(emp)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-700 transition hover:bg-red-600 hover:text-white dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-600"
-                            title="Permanently delete employee"
-                          >
+                          <button type="button" onClick={() => setDeleteTarget(emp)} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-700 transition hover:bg-red-600 hover:text-white dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-600" title="Permanently delete employee">
                             <FiTrash2 />
                           </button>
                         </div>
@@ -380,15 +296,8 @@ export default function ArchivedEmployees() {
                       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-white/10">
                         <FiInbox size={24} />
                       </div>
-
-                      <p className="font-extrabold text-gray-900 dark:text-white">
-                        No archived employees
-                      </p>
-
-                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Archived employees will appear here once HR marks them as
-                        inactive.
-                      </p>
+                      <p className="font-extrabold text-gray-900 dark:text-white">No archived employees</p>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Archived employees will appear here once HR marks them as inactive.</p>
                     </div>
                   </td>
                 </tr>
@@ -398,22 +307,12 @@ export default function ArchivedEmployees() {
         </div>
       </div>
 
-      {viewEmployee && (
-        <EmployeeModal
-          employee={viewEmployee}
-          onClose={() => setViewEmployee(null)}
-        />
-      )}
+      {viewEmployee && <EmployeeModal employee={viewEmployee} onClose={() => setViewEmployee(null)} />}
 
       {restoreTarget && (
         <ConfirmModal
           title="Restore Employee"
-          message={
-            <>
-              Are you sure you want to restore <b>{restoreTarget.name}</b>? This
-              employee will return to the main employee table.
-            </>
-          }
+          message={<>Are you sure you want to restore <b>{restoreTarget.name}</b>? This employee will return to the main employee table.</>}
           confirmLabel="Yes, Restore"
           tone="green"
           onConfirm={() => handleRestore(restoreTarget.id)}
@@ -424,12 +323,7 @@ export default function ArchivedEmployees() {
       {deleteTarget && (
         <ConfirmModal
           title="Permanently Delete Employee"
-          message={
-            <>
-              Are you sure you want to permanently delete{" "}
-              <b>{deleteTarget.name}</b>? This action cannot be undone.
-            </>
-          }
+          message={<>Are you sure you want to permanently delete <b>{deleteTarget.name}</b>? This action cannot be undone.</>}
           confirmLabel="Yes, Delete"
           tone="red"
           onConfirm={() => handleDelete(deleteTarget.id)}
@@ -437,10 +331,7 @@ export default function ArchivedEmployees() {
         />
       )}
 
-      <SuccessModal
-        message={successMessage}
-        onClose={() => setSuccessMessage("")}
-      />
+      <SuccessModal message={successMessage} onClose={() => setSuccessMessage("")} />
     </div>
   );
 }

@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FiArchive,
   FiFilter,
   FiSearch,
 } from "react-icons/fi";
+import axios from "axios"; // 🔥 NA-ADD NA ANG AXIOS DITO
 
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
@@ -12,9 +13,10 @@ import { useAuth } from "../context/useAuth";
 import AddEmployeeModal from "../components/employees/AddEmployeeModal";
 import EmployeeModal from "../components/employees/EmployeeModal";
 import EmployeeTable from "../components/employees/EmployeeTable";
+import EditEmployeeModal from '../components/employees/EditEmployeeModal';
 
 const EMPLOYEES_KEY = "employees";
-const OPERATIONAL_AUDIT_KEY = "operational_audit_logs";
+const OPERATIONAL_AUDIT_KEY = "operational_audit"; // 🔥 IDINAGDAG PARA HINDI MAG-CRASH ANG ADD/EDIT
 
 const REQUIRED_DOCUMENTS = [
   "Resume",
@@ -77,7 +79,7 @@ export default function Employees() {
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const isHRManager = user?.role === "HR_MANAGER";
 
-  const [employees, setEmployees] = useState(() => safeParse(EMPLOYEES_KEY));
+  const [employees, setEmployees] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [generatedId, setGeneratedId] = useState("");
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -117,36 +119,49 @@ export default function Employees() {
     [user]
   );
 
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/employees");
+      const data = await res.json();
+      setEmployees(data);
+    } catch (err) {
+      console.error("Fetch error:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+
   const saveToStorage = useCallback((data) => {
     setEmployees(data);
     localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(data));
     window.dispatchEvent(new Event("dataUpdated"));
   }, []);
 
-const getCompliance = useCallback((docs) => {
-  if (!docs || docs.length === 0) return "No Data";
+  const getCompliance = useCallback((docs) => {
+    if (!docs || docs.length === 0) return "No Data";
 
-  const completedCount = REQUIRED_DOCUMENTS.filter((requiredName) => {
-    const doc = docs.find((d) => d.name === requiredName);
+    const completedCount = REQUIRED_DOCUMENTS.filter((requiredName) => {
+      const doc = docs.find((d) => d.name === requiredName);
 
-    if (!doc) return false;
+      if (!doc) return false;
+      if (!doc.filePath && !doc.file) return false;
 
-    if (!doc.file) return false;
+      if (
+        ["Barangay Clearance", "NBI/Police Clearance"].includes(requiredName) &&
+        !doc.expirationDate
+      ) {
+        return false;
+      }
 
-    if (
-      ["Barangay Clearance", "NBI/Police Clearance"].includes(requiredName) &&
-      !doc.expirationDate
-    ) {
-      return false;
-    }
+      return true;
+    }).length;
 
-    return true;
-  }).length;
+    if (completedCount === REQUIRED_DOCUMENTS.length) return "Complete";
 
-  if (completedCount === REQUIRED_DOCUMENTS.length) return "Complete";
-
-  return "Incomplete";
-}, []);
+    return "Incomplete";
+  }, []);
 
   const generateId = () => {
     const stored = safeParse(EMPLOYEES_KEY);
@@ -170,7 +185,9 @@ const getCompliance = useCallback((docs) => {
 
   const handleSave = (data) => {
     if (isSuperAdmin) return;
-
+    
+    // Note: Since Add and Edit are hitting API directly now, 
+    // this handles local state updates if you still use it.
     if (editingEmployee) {
       const updated = employees.map((emp) =>
         emp.id === editingEmployee.id
@@ -188,14 +205,7 @@ const getCompliance = useCallback((docs) => {
       );
 
       saveToStorage(updated);
-
-      createOperationalLog(
-        "EDIT_EMPLOYEE",
-        `edited employee record for ${
-          data.name || editingEmployee.name
-        }.`
-      );
-
+      createOperationalLog("EDIT_EMPLOYEE", `edited employee record for ${data.name || editingEmployee.name}.`);
       setSuccessMessage("Employee information updated successfully.");
     } else {
       const newEmployee = {
@@ -213,12 +223,7 @@ const getCompliance = useCallback((docs) => {
       };
 
       saveToStorage([...employees, newEmployee]);
-
-      createOperationalLog(
-        "ADD_EMPLOYEE",
-        `${user?.fullName || "User"} added employee record for ${data.name}.`
-      );
-
+      createOperationalLog("ADD_EMPLOYEE", `${user?.fullName || "User"} added employee record for ${data.name}.`);
       setSuccessMessage("Employee saved successfully.");
     }
 
@@ -228,40 +233,27 @@ const getCompliance = useCallback((docs) => {
 
   const handleEdit = (employee) => {
     if (isSuperAdmin) return;
-
-    setEditingEmployee(employee);
+    setEditingEmployee({
+      ...employee,
+      documents: employee.documents || [],
+    });
     setGeneratedId(employee.id);
     setShowModal(true);
   };
 
-  const handleArchive = (id) => {
-    if (isSuperAdmin) return;
+  const handleArchive = async (id) => {
+    const confirmArchive = window.confirm("Are you sure you want to archive this employee?");
+    if (!confirmArchive) return;
 
-    const target = employees.find((emp) => emp.id === id);
-
-    const updated = employees.map((emp) =>
-      emp.id === id
-        ? {
-            ...emp,
-            archived: true,
-            archivedAt: new Date().toISOString(),
-            previousStatus: emp.status,
-            status: "Inactive",
-          }
-        : emp
-    );
-
-    saveToStorage(updated);
-
-    createOperationalLog(
-      "ARCHIVE_EMPLOYEE",
-      `${user?.fullName || "User"} archived employee record for ${
-        target?.name || id
-      }.`
-    );
-
-    setArchiveTarget(null);
-    setSuccessMessage("Employee archived successfully.");
+    try {
+      await axios.put(`http://localhost:5000/api/employees/archive/${id}`);
+      
+      alert("Employee successfully archived!");
+      window.location.reload();
+    } catch (error) {
+      console.error("Archive Error:", error);
+      alert("Failed to archive employee.");
+    }
   };
 
   const activeEmployees = useMemo(
@@ -295,7 +287,6 @@ const getCompliance = useCallback((docs) => {
       if (compliance === "Expiring Soon") return 2;
       if (compliance === "Incomplete") return 3;
       if (compliance === "Valid") return 4;
-
       return 5;
     };
 
@@ -439,25 +430,28 @@ const getCompliance = useCallback((docs) => {
         </select>
       </div>
 
-<EmployeeTable
-  employees={filteredEmployees}
-  openModal={(emp) => setViewEmployee(emp)}
-  onEdit={handleEdit}
-  getComplianceStatus={getCompliance}
-  onArchive={(emp) => setArchiveTarget(emp)}
-  isHRManager={isHRManager}
-  isSuperAdmin={isSuperAdmin}
-/>
-      {showModal && !isSuperAdmin && (
+      <EmployeeTable
+        employees={filteredEmployees}
+        openModal={(emp) => setViewEmployee(emp)}
+        onEdit={handleEdit}
+        getComplianceStatus={getCompliance}
+        onArchive={(emp) => setArchiveTarget(emp)}
+        isHRManager={isHRManager}
+        isSuperAdmin={isSuperAdmin}
+      />
+      
+      {showModal && !editingEmployee && (
         <AddEmployeeModal
           generatedId={generatedId}
-          onClose={() => {
-            setShowModal(false);
-            setEditingEmployee(null);
-          }}
-          onSave={handleSave}
-          editingEmployee={editingEmployee}
+          onClose={() => setShowModal(false)}
           employees={employees}
+        />
+      )}
+
+      {showModal && editingEmployee && (
+        <EditEmployeeModal 
+          employeeToEdit={editingEmployee}  
+          onClose={() => setShowModal(false)}
         />
       )}
 

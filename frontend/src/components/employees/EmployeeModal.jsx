@@ -12,6 +12,7 @@ import {
   FiX,
 } from "react-icons/fi";
 
+
 const INCIDENTS_KEY = "incidents";
 
 const EXPIRABLE_DOCUMENTS = ["Barangay Clearance", "NBI/Police Clearance"];
@@ -175,10 +176,25 @@ export default function EmployeeModal({ employee, onClose }) {
   const employeeIncidents = getEmployeeIncidents(employee);
 
   const normalizedDocuments = (employee.documents || []).map((doc) => ({
+  ...doc,
+
+  // 🔥 FIX: convert backend filePath → frontend usable file
+  file: doc.filePath
+    ? {
+        url: `http://localhost:5000/${doc.filePath}`,
+        name: doc.name,
+        type: doc.filePath.endsWith(".pdf") ? "application/pdf" : "image/*",
+      }
+    : null,
+
+  expirable: isExpirableDocument(doc.name),
+
+  // 🔥 FIX: para makita na may file kahit backend galing
+  status: getDocumentStatus({
     ...doc,
-    expirable: isExpirableDocument(doc.name),
-    status: getDocumentStatus(doc),
-  }));
+    file: doc.filePath ? true : null,
+  }),
+}));
 
   const overallCompliance = getOverallCompliance(normalizedDocuments);
 
