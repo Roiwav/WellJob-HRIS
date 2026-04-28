@@ -1,3 +1,5 @@
+//userController.js
+
 const db = require("../config/db");
 const bcrypt = require("bcrypt");
 const { logAudit } = require("../utils/auditLogger");
@@ -65,7 +67,6 @@ exports.createUser = async (req, res) => {
       temporaryPassword: tempPassword,
       account: { userId, username, role },
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Create user error" });
@@ -107,7 +108,6 @@ exports.resetPassword = async (req, res) => {
       message: "Password reset",
       temporaryPassword: tempPassword,
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Reset error" });
@@ -149,5 +149,61 @@ exports.toggleStatus = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Toggle error" });
+  }
+};
+
+// CHANGE PASSWORD
+exports.changePassword = async (req, res) => {
+  // 🔥 ILALAGAY NATIN ITO PARA MAKITA NATIN SA TERMINAL KUNG ANO ANG SINESEND NG REACT
+  console.log("🔥 CHANGE PASSWORD PAYLOAD:", req.body);
+
+  // Kukunin natin lahat ng posibleng ipasa ng frontend
+  const { userId, id, username, currentPassword, newPassword } = req.body;
+  
+  // Gagamitin natin kung alin man ang may laman sa tatlo
+  const identifier = userId || id || username; 
+
+  try {
+    // 1. Hanapin ang user sa database gamit ang user_id, id, OR username
+    const [users] = await db.promise().query(
+      "SELECT * FROM users WHERE user_id = ? OR id = ? OR username = ?",
+      [identifier, identifier, identifier]
+    );
+
+    if (users.length === 0) {
+      console.log("❌ USER HINDI NAKITA SA DATABASE. Identifier na ginamit:", identifier);
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const user = users[0];
+
+    // 2. I-verify kung tama ang current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Incorrect current password" });
+    }
+
+    // 3. I-hash yung bagong password
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    // 4. I-save sa database at tanggalin ang "must_change_password" flag
+    await db.promise().query(
+      "UPDATE users SET password=?, must_change_password=0 WHERE id=?",
+      [hash, user.id]
+    );
+
+    await logAudit({
+      userId: user.user_id,
+      username: user.username,
+      role: user.role,
+      action: "CHANGE_PASSWORD",
+      description: "User successfully changed their password"
+    });
+
+    res.json({ success: true, message: "Password updated successfully" });
+
+  } catch (err) {
+    console.error("Change Password Error:", err);
+    res.status(500).json({ message: "Error changing password" });
   }
 };
