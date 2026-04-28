@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  FiAward,
   FiClock,
   FiFileText,
   FiMapPin,
@@ -22,11 +21,6 @@ const TABS = [
     key: "compliance",
     label: "Compliance",
     icon: FiFileText,
-  },
-  {
-    key: "positiveSignals",
-    label: "Positive Signals",
-    icon: FiAward,
   },
 ];
 
@@ -54,19 +48,10 @@ export default function ExecutiveInsightTabs({ insights, onOpenDrilldown }) {
       );
     }
 
-    if (activeTab === "compliance") {
-      return (
-        <CompliancePanel
-          complianceBreakdown={insights.complianceBreakdown}
-          onOpen={() => onOpenDrilldown?.("complianceBreakdown")}
-        />
-      );
-    }
-
     return (
-      <PositiveSignalsPanel
-        positiveSignals={insights.positiveSignals}
-        onOpen={() => onOpenDrilldown?.("positiveSignals")}
+      <CompliancePanel
+        complianceBreakdown={insights.complianceBreakdown}
+        onOpen={() => onOpenDrilldown?.("complianceBreakdown")}
       />
     );
   }, [activeTab, insights, onOpenDrilldown]);
@@ -82,8 +67,9 @@ export default function ExecutiveInsightTabs({ insights, onOpenDrilldown }) {
           </h2>
 
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Drillable summaries for client-site risk, case aging, compliance
-            focus, and positive performance signals.
+            Drillable summaries for client-site risk, case aging, and compliance
+            focus. Positive reinforcement is shown in Management Prescriptive
+            Insights.
           </p>
         </div>
 
@@ -192,11 +178,13 @@ function CaseAgingPanel({ caseAging, onOpen }) {
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
         <MetricCard label="0–7 Days" value={caseAging.zeroToSeven} tone="blue" />
+
         <MetricCard
           label="8–30 Days"
           value={caseAging.eightToThirty}
           tone="amber"
         />
+
         <MetricCard label="30+ Days" value={caseAging.overThirty} tone="red" />
       </div>
 
@@ -247,46 +235,6 @@ function CompliancePanel({ complianceBreakdown = [], onOpen }) {
       </div>
 
       <ViewButton onClick={onOpen}>View Compliance Breakdown</ViewButton>
-    </div>
-  );
-}
-
-function PositiveSignalsPanel({ positiveSignals = [], onOpen }) {
-  const signals = positiveSignals.slice(0, 3);
-
-  if (signals.length === 0) {
-    return (
-      <EmptyState
-        title="No positive reinforcement signal yet"
-        description="Positive signals will appear when the system detects strong utilization, low risk, good compliance, or stable site performance."
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-3 lg:grid-cols-3">
-        {signals.map((signal) => (
-          <div
-            key={signal.title}
-            className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/30 dark:bg-emerald-500/10"
-          >
-            <p className="text-sm font-extrabold text-emerald-800 dark:text-emerald-200">
-              {signal.title}
-            </p>
-
-            <p className="mt-2 line-clamp-2 text-xs leading-5 text-emerald-700/80 dark:text-emerald-200/80">
-              {signal.recommendation}
-            </p>
-
-            <p className="mt-3 rounded-xl bg-white/60 px-3 py-2 text-[11px] font-semibold text-emerald-800 dark:bg-slate-950/30 dark:text-emerald-200">
-              {signal.basis}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      <ViewButton onClick={onOpen}>View Positive Signals</ViewButton>
     </div>
   );
 }

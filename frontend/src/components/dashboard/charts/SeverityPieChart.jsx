@@ -6,7 +6,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import SharedTooltip from "./SharedTooltip";
+import SharedTooltip from "../shared/SharedTooltip";
 
 const COLORS = ["#4f46e5", "#f59e0b", "#ef4444", "#10b981"];
 

@@ -3,10 +3,10 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FiBarChart2, FiDownload, FiRefreshCw } from "react-icons/fi";
 
-import ExecutiveActionItems from "../components/dashboard/ExecutiveActionItems";
-import WorkforceHealthBanner from "../components/dashboard/WorkforceHealthBanner";
-import ExecutiveInsightTabs from "../components/dashboard/ExecutiveInsightTabs";
-import DashboardDrilldownModal from "../components/dashboard/DashboardDrilldownModal";
+import ExecutiveActionItems from "../components/dashboard/insights/ExecutiveActionItems";
+import WorkforceHealthBanner from "../components/dashboard/insights/WorkforceHealthBanner";
+import ExecutiveInsightTabs from "../components/dashboard/insights/ExecutiveInsightTabs";
+import DashboardDrilldownModal from "../components/dashboard/modals/DashboardDrilldownModal";
 
 import { buildExecutiveActionItems } from "../utils/dashboard/prescriptiveAnalytics";
 import { buildDashboardInsights } from "../utils/dashboard/dashboardInsights";
@@ -14,11 +14,11 @@ import { buildDashboardInsights } from "../utils/dashboard/dashboardInsights";
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 
-import KPICards from "../components/dashboard/KPICards";
-import DeploymentTrendChart from "../components/dashboard/DeploymentTrendChart";
-import IncidentTrendChart from "../components/dashboard/IncidentTrendChart";
-import SeverityPieChart from "../components/dashboard/SeverityPieChart";
-import CaseAgingChart from "../components/dashboard/CaseAgingChart";
+import KPICards from "../components/dashboard/cards/KPICards";
+import DeploymentTrendChart from "../components/dashboard/charts/DeploymentTrendChart";
+import IncidentTrendChart from "../components/dashboard/charts/IncidentTrendChart";
+import SeverityPieChart from "../components/dashboard/charts/SeverityPieChart";
+import CaseAgingChart from "../components/dashboard/charts/CaseAgingChart";
 
 const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
@@ -770,8 +770,7 @@ export default function Dashboard() {
               </p>
 
               <p className="mt-1 text-xs font-semibold text-white/70">
-                Report Scope: {selectedPeriodLabel} — top KPI cards show current
-                workforce snapshot.
+                Report Scope: {selectedPeriodLabel}
               </p>
             </div>
 
