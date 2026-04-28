@@ -3,6 +3,9 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FiBarChart2, FiDownload, FiRefreshCw } from "react-icons/fi";
 
+import ExecutiveActionItems from "../components/dashboard/ExecutiveActionItems";
+import { buildExecutiveActionItems } from "../utils/dashboard/prescriptiveAnalytics";
+
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 
@@ -274,6 +277,8 @@ export default function Dashboard() {
     incidents: [],
     severity: [],
     aging: [],
+    rawEmployees: [],
+    rawIncidents: [],
   });
 
   const loadData = useCallback(async () => {
@@ -372,6 +377,8 @@ export default function Dashboard() {
         incidents,
         severity,
         aging,
+        rawEmployees: activeEmployees,
+        rawIncidents: incidentsRaw,
       });
 
       localStorage.setItem("employees", JSON.stringify(activeEmployees));
@@ -494,6 +501,15 @@ export default function Dashboard() {
     return Number(((deployed / total) * 100).toFixed(1));
   }, [filteredKPIS]);
 
+  const executiveActions = useMemo(() => {
+    return buildExecutiveActionItems({
+      employees: data.rawEmployees,
+      incidents: data.rawIncidents,
+      kpis: filteredKPIS,
+      utilizationRate,
+    });
+  }, [data.rawEmployees, data.rawIncidents, filteredKPIS, utilizationRate]);
+
   const totalIncidentsForYear = useMemo(
     () => incidentTrend.reduce((sum, item) => sum + item.value, 0),
     [incidentTrend]
@@ -562,10 +578,31 @@ export default function Dashboard() {
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 10,
+      head: [["Priority", "Type", "Recommendation", "Basis"]],
+      body: executiveActions.map((action) => [
+        action.priority,
+        action.type,
+        action.recommendation,
+        action.basis || "-",
+      ]),
+      theme: "grid",
+      headStyles: { fillColor: [22, 163, 74] },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        0: { cellWidth: 24 },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 78 },
+        3: { cellWidth: 52 },
+      },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 10,
       head: [["Month", "Deployment", "Incidents"]],
       body: monthList.map((month) => {
         const deployment = workforceTrend.find((item) => item.label === month);
         const incident = incidentTrend.find((item) => item.label === month);
+
         return [month, deployment?.value ?? 0, incident?.value ?? 0];
       }),
       theme: "striped",
@@ -585,6 +622,7 @@ export default function Dashboard() {
     topSeverity,
     workforceTrend,
     incidentTrend,
+    executiveActions,
   ]);
 
   if (loading) {
@@ -629,7 +667,9 @@ export default function Dashboard() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <select
                 value={selectedMonth}
-                onChange={(event) => setSelectedMonth(Number(event.target.value))}
+                onChange={(event) =>
+                  setSelectedMonth(Number(event.target.value))
+                }
                 className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50"
               >
                 <option className="text-slate-900" value={0}>
@@ -686,6 +726,8 @@ export default function Dashboard() {
       </section>
 
       <KPICards kpis={filteredKPIS} utilizationRate={utilizationRate} />
+
+      <ExecutiveActionItems actions={executiveActions} />
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <InsightCard
