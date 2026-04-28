@@ -1,3 +1,5 @@
+//AuditLogs.jsx
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FiActivity,
@@ -46,8 +48,7 @@ export default function AuditLogsPage({ category, title, description }) {
 
     try {
       if (category === "OPERATIONAL") {
-        const localLogs =
-          JSON.parse(localStorage.getItem(LOCAL_KEY)) || [];
+        const localLogs = JSON.parse(localStorage.getItem(LOCAL_KEY)) || [];
         setLogs(localLogs);
       } else {
         const res = await fetch(`${API_BASE}/${category}`);
@@ -94,12 +95,21 @@ export default function AuditLogsPage({ category, title, description }) {
     return new Set(logs.map((l) => l.username)).size;
   }, [logs]);
 
+  // 🔥 FIX 1: Helper function para laging mahanap ang tamang kulay kahit may space
+  const getActionStyle = (action) => {
+    if (!action) return "bg-gray-100 text-gray-700";
+    
+    // Kino-convert niya ang "Login Success" to "LOGIN_SUCCESS" para mag-match sa ACTION_STYLE
+    const normalizedAction = String(action).toUpperCase().replace(/\s+/g, "_");
+    
+    return ACTION_STYLE[normalizedAction] || "bg-gray-100 text-gray-700";
+  };
+
   // =========================
   // UI
   // =========================
   return (
     <div className="p-8 space-y-6">
-
       {/* HEADER */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
@@ -129,11 +139,9 @@ export default function AuditLogsPage({ category, title, description }) {
 
       {/* FILTER BAR */}
       <div className="flex flex-col xl:flex-row gap-3 items-start xl:items-center">
-
         {/* SEARCH */}
         <div className="relative w-full max-w-xs">
           <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-
           <input
             type="text"
             placeholder="Search logs..."
@@ -157,7 +165,6 @@ export default function AuditLogsPage({ category, title, description }) {
 
       {/* TABLE */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
-
         {loading ? (
           <div className="p-8 text-center text-gray-500 dark:text-gray-400">
             Loading audit logs...
@@ -193,32 +200,21 @@ export default function AuditLogsPage({ category, title, description }) {
 
                     <td className="px-6 py-4">
                       <span className="px-2 py-1 rounded text-xs bg-gray-100 dark:bg-slate-700">
-                        {ROLE_LABELS[log.role] || "-"}
+                        {ROLE_LABELS[log.role] || log.role || "-"}
                       </span>
                     </td>
 
                     <td className="px-6 py-4">
                       <span
-                        className={`px-2 py-1 rounded text-xs font-semibold ${
-                          ACTION_STYLE[log.action] ||
-                          "bg-gray-100 text-gray-700"
-                        }`}
+                        className={`px-2 py-1 rounded text-xs font-semibold ${getActionStyle(log.action)}`}
                       >
                         {formatAction(log.action)}
                       </span>
                     </td>
 
+                    {/* 🔥 FIX 2: Pinalinis natin ang description output */}
                     <td className="px-6 py-4 min-w-[280px]">
-                      {log.full_name ? (
-                        <>
-                          <span className="font-semibold text-indigo-500">
-                            {log.full_name}
-                          </span>{" "}
-                          {String(log.description).replace(/^User\s+/i, "")}
-                        </>
-                      ) : (
-                        log.description
-                      )}
+                      {log.description || "-"}
                     </td>
                   </tr>
                 ))}
@@ -266,11 +262,13 @@ function formatDate(date) {
   });
 }
 
+// 🔥 FIX 3: Inayos ang formatAction para i-handle nang tama ang underscore AND spaces
 function formatAction(action) {
   if (!action) return "-";
 
   return String(action)
-    .split("_")
-    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+    .replace(/_/g, " ") // Gawing space ang mga underscore
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
 }
