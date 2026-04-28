@@ -1,26 +1,64 @@
-import { useMemo, useState } from "react";
-import { FiCalendar, FiSearch } from "react-icons/fi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FiCalendar, FiRefreshCw, FiSearch } from "react-icons/fi";
 
 import DeploymentTable from "../components/deployments/table/DeploymentTable";
 import DeploymentModal from "../components/deployments/modals/DeploymentModal";
 import DeploymentToast from "../components/deployments/shared/DeploymentToast";
 
 import {
-  COMPANY_LOCATIONS,
-  safeParse,
-  getDeploymentsFromStorage,
   getMonthOptions,
   getYearOptions,
 } from "../utils/deployments/deploymentHelpers";
 
-const EMPLOYEES_KEY = "employees";
+const API_BASE = "http://localhost:5000/api";
+const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error ||
+        data?.message ||
+        `Request failed with status ${response.status}`
+    );
+  }
+
+  return data;
+}
+
+function normalizeDeployment(item) {
+  return {
+    id: item.id || item.employeeId || item.employee_id,
+    employeeId: item.employeeId || item.id || item.employee_id,
+    employee:
+      item.employee ||
+      item.employeeName ||
+      item.employee_name ||
+      item.name ||
+      "Unknown Employee",
+    company: item.company || "-",
+    location: item.location || "-",
+    start: item.start || item.contractStart || item.contract_start || "-",
+    status: item.status || "Active",
+    employmentType:
+      item.employmentType || item.employment_type || "Permanent",
+    contractStart: item.contractStart || item.contract_start || item.start || "-",
+    contractEnd: item.contractEnd || item.contract_end || "-",
+    createdAt: item.createdAt || item.created_at || null,
+    updatedAt: item.updatedAt || item.updated_at || null,
+  };
+}
 
 export default function Deployments() {
   const [selectedDeployment, setSelectedDeployment] = useState(null);
   const [modalMode, setModalMode] = useState("view");
-  const [deployments, setDeployments] = useState(() =>
-    getDeploymentsFromStorage()
-  );
+  const [deployments, setDeployments] = useState([]);
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState("");
 
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -32,12 +70,7 @@ export default function Deployments() {
   const monthOptions = useMemo(() => getMonthOptions(), []);
   const yearOptions = useMemo(() => getYearOptions(deployments), [deployments]);
 
-  const openView = (deployment) => {
-    setModalMode("view");
-    setSelectedDeployment(deployment);
-  };
-
-  const showSuccessToast = (message) => {
+  const showSuccessToast = useCallback((message) => {
     setShowToast(false);
 
     setTimeout(() => {
@@ -45,29 +78,77 @@ export default function Deployments() {
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2200);
     }, 50);
+  }, []);
+
+  const fetchDeployments = useCallback(async () => {
+    try {
+      setFetchError("");
+
+      const data = await requestJson(DEPLOYMENT_API_URL);
+
+      const normalized = Array.isArray(data)
+        ? data.map(normalizeDeployment)
+        : [];
+
+      setDeployments(normalized);
+
+      localStorage.setItem("deployments", JSON.stringify(normalized));
+      window.dispatchEvent(new Event("dataUpdated"));
+    } catch (error) {
+      console.error("Fetch deployments error:", error);
+      setFetchError(error.message || "Unable to load deployments.");
+      setDeployments([]);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDeployments();
+  }, [fetchDeployments]);
+
+  const openView = (deployment) => {
+    setModalMode("view");
+    setSelectedDeployment(deployment);
   };
 
-  const updateDeployment = (updatedDeployment) => {
-    const employees = safeParse(EMPLOYEES_KEY);
+  const updateDeployment = async (updatedDeployment) => {
+    try {
+      const targetStatus = updatedDeployment.status;
 
-    const updatedEmployees = employees.map((emp) =>
-      emp.id === updatedDeployment.id
-        ? {
-            ...emp,
-            deployment: {
-              location: COMPANY_LOCATIONS[updatedDeployment.company] || "-",
-              start: updatedDeployment.start,
-              status: updatedDeployment.status,
-            },
-          }
-        : emp
-    );
+      if (!["Completed", "Cancelled"].includes(targetStatus)) {
+        showSuccessToast("No backend update needed.");
+        return;
+      }
 
-    localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(updatedEmployees));
-    window.dispatchEvent(new Event("dataUpdated"));
+      await requestJson(
+        `${DEPLOYMENT_API_URL}/${updatedDeployment.employeeId || updatedDeployment.id}/status`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: targetStatus,
+          }),
+        }
+      );
 
-    setDeployments(getDeploymentsFromStorage());
-    showSuccessToast("Deployment updated successfully!");
+      await fetchDeployments();
+
+      showSuccessToast(
+        targetStatus === "Cancelled"
+          ? "Deployment cancelled successfully!"
+          : "Deployment marked as completed successfully!"
+      );
+    } catch (error) {
+      console.error("Update deployment error:", error);
+      setFetchError(error.message || "Unable to update deployment.");
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchDeployments();
   };
 
   const filteredDeployments = useMemo(() => {
@@ -102,15 +183,33 @@ export default function Deployments() {
   return (
     <>
       <div className="space-y-8">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Deployment Tracking
-          </h1>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              Deployment Tracking
+            </h1>
 
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Monitor employee assignments, client locations, and contract duration.
-          </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Monitor employee assignments, client locations, and contract duration.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="inline-flex w-fit items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
+          >
+            <FiRefreshCw className={isRefreshing ? "animate-spin" : ""} />
+            {isRefreshing ? "Refreshing..." : "Refresh"}
+          </button>
         </div>
+
+        {fetchError && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+            {fetchError}
+          </div>
+        )}
 
         <div className="flex flex-col items-start gap-3 xl:flex-row xl:items-center">
           <div className="relative w-full max-w-xs">
@@ -152,7 +251,13 @@ export default function Deployments() {
           </select>
         </div>
 
-        <DeploymentTable deployments={filteredDeployments} openView={openView} />
+        {isLoading ? (
+          <div className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center text-sm font-semibold text-gray-500 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-gray-400">
+            Loading deployment records from backend...
+          </div>
+        ) : (
+          <DeploymentTable deployments={filteredDeployments} openView={openView} />
+        )}
 
         <DeploymentModal
           deployment={selectedDeployment}

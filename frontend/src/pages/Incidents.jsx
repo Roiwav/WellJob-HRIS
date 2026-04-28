@@ -1,48 +1,173 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import {
-  FiSearch,
-} from "react-icons/fi";
+import { FiSearch } from "react-icons/fi";
 
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
+
 import AddIncidentModal from "../components/incidents/modals/AddIncidentModal";
-import FilterSelect from "../components/incidents/table/IncidentFilters";
-import ActionButtons from "../components/incidents/table/IncidentActionButtons";
-import {
-  SeverityBadge,
-  StatusBadge,
-  CaseAgeBadge,
-  SmartAlertBadge,
-} from "../components/incidents/badges/incidentBadges";
-import {
-  safeParse,
-  getUserIdentity,
-  normalizeStatus,
-  normalizeIncidentWithRules,
-  getVisibleIncidents,
-  createTimelineItem,
-  updateEmployeeKpiAfterIncident,
-} from "../utils/incidents/incidentHelpers";
-import {
-  BaseModal,
-  NoticeModal,
-  InfoCard,
-  Detail,
-  Field,
-  ModalFooter,
-  ProofReview,
-  CaseTimeline,
-} from "../components/incidents/shared/ModalUI";
 import ViewIncidentModal from "../components/incidents/modals/ViewIncidentModal";
 import ConfirmStartInvestigationModal from "../components/incidents/modals/ConfirmStartInvestigationModal";
 import ResolutionModal from "../components/incidents/modals/ResolutionModal";
 import ReviewCaseModal from "../components/incidents/modals/ReviewCaseModal";
 
-const INCIDENTS_KEY = "incidents";
-const EMPLOYEES_KEY = "employees";
-const AUDIT_API_URL = "http://localhost:5000/api/audit-logs";
+import FilterSelect from "../components/incidents/table/IncidentFilters";
+import ActionButtons from "../components/incidents/table/IncidentActionButtons";
+
+import {
+  SeverityBadge,
+  StatusBadge,
+  CaseAgeBadge,
+  SmartAlertBadge,
+} from "../components/incidents/badges/IncidentBadges";
+
+import { NoticeModal } from "../components/incidents/shared/ModalUI";
+
+import {
+  getUserIdentity,
+  normalizeStatus,
+  normalizeIncidentWithRules,
+  createTimelineItem,
+} from "../utils/incidents/incidentHelpers";
+
+const API_BASE = "http://localhost:5000/api";
+const EMPLOYEE_API_URL = `${API_BASE}/employees`;
+const INCIDENT_API_URL = `${API_BASE}/incidents`;
+const AUDIT_API_URL = `${API_BASE}/audit-logs`;
+
+// Temporary compatibility only.
+// Main source is backend/MySQL, but this keeps KPI/Employee Modal working
+// while those pages are not yet converted to backend incidents.
+const INCIDENTS_CACHE_KEY = "incidents";
+
+function formatIncidentCode(id) {
+  if (!id) return "-";
+
+  const value = String(id);
+
+  if (value.startsWith("INC-")) return value;
+
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return value;
+
+  return `INC-${String(numeric).padStart(4, "0")}`;
+}
+
+function normalizeBackendIncident(incident) {
+  const incidentId = incident.id;
+
+  return {
+    ...incident,
+
+    id: incidentId,
+    displayId: formatIncidentCode(incidentId),
+
+    employeeId:
+      incident.employeeId ||
+      incident.employee_id ||
+      incident.employee_id_fk ||
+      "",
+
+    employee:
+      incident.employee ||
+      incident.employeeName ||
+      incident.employee_name ||
+      "Unknown Employee",
+
+    employeeName:
+      incident.employeeName ||
+      incident.employee ||
+      incident.employee_name ||
+      "Unknown Employee",
+
+    company: incident.company || "",
+
+    violation:
+      incident.violation ||
+      incident.violationType ||
+      incident.violation_type ||
+      "No violation type",
+
+    violationType:
+      incident.violationType ||
+      incident.violation ||
+      incident.violation_type ||
+      "No violation type",
+
+    severity: incident.severity || "Minor",
+    status: normalizeStatus(incident.status || "Open"),
+
+    date:
+      incident.date ||
+      incident.incidentDate ||
+      incident.incident_date ||
+      incident.createdAt ||
+      incident.created_at ||
+      new Date().toISOString(),
+
+    incidentDate:
+      incident.incidentDate ||
+      incident.date ||
+      incident.incident_date ||
+      incident.createdAt ||
+      incident.created_at ||
+      new Date().toISOString(),
+
+    reportedAt:
+      incident.reportedAt ||
+      incident.reported_at ||
+      incident.createdAt ||
+      incident.created_at ||
+      incident.date ||
+      new Date().toISOString(),
+
+    reportedBy:
+      incident.reportedBy ||
+      incident.reported_by ||
+      "Unknown",
+
+    description: incident.description || "",
+    sanction: incident.sanction || incident.actionTaken || incident.action_taken || "",
+    recommendation: incident.recommendation || "",
+    resolutionNotes:
+      incident.resolutionNotes ||
+      incident.resolution_notes ||
+      "",
+
+    smartAlerts: incident.smartAlerts || [],
+    timeline: Array.isArray(incident.timeline) ? incident.timeline : [],
+  };
+}
+
+function buildIncidentList(rawIncidents = []) {
+  const normalized = rawIncidents.map(normalizeBackendIncident);
+
+  return normalized.map((incident) =>
+    normalizeIncidentWithRules(incident, normalized)
+  );
+}
+
+function cacheIncidentsForOtherPages(incidents = []) {
+  localStorage.setItem(INCIDENTS_CACHE_KEY, JSON.stringify(incidents));
+  window.dispatchEvent(new Event("dataUpdated"));
+}
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, options);
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error ||
+        data?.message ||
+        `Request failed with status ${response.status}`
+    );
+  }
+
+  return data;
+}
 
 export default function Incidents() {
   const { user } = useAuth();
@@ -52,49 +177,12 @@ export default function Incidents() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const storedEmployees = useMemo(() => safeParse(EMPLOYEES_KEY), []);
-
-  const storedDeployments = useMemo(() => {
-    return storedEmployees
-      .filter((emp) => emp.status === "Deployed" && !emp.archived)
-      .map((emp) => ({
-        id: emp.id,
-        employeeId: emp.id,
-        employee: emp.name,
-        company: emp.company || "-",
-        status: emp.deployment?.status || "Active",
-        deploymentStatus: emp.deployment?.status || "Active",
-      }));
-  }, [storedEmployees]);
-
-  const activeEmployees = useMemo(
-    () =>
-      storedEmployees.filter((emp) => {
-        const status = String(emp.status || "").trim().toLowerCase();
-
-        return (
-          !emp.archived &&
-          (status === "deployed" || status === "active deployed")
-        );
-      }),
-    [storedEmployees]
-  );
-
-  const initialIncidents = useMemo(
-    () => getVisibleIncidents(safeParse(INCIDENTS_KEY), storedEmployees),
-    [storedEmployees]
-  );
-
-  const initialIncident = location.state?.incidentId
-    ? initialIncidents.find((item) => item.id === location.state.incidentId)
-    : null;
-
-  const [incidents, setIncidents] = useState(initialIncidents);
-  const [employees] = useState(activeEmployees);
-  const [deployments] = useState(storedDeployments);
+  const [employees, setEmployees] = useState([]);
+  const [incidents, setIncidents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [openAddModal, setOpenAddModal] = useState(false);
-  const [selectedIncident, setSelectedIncident] = useState(initialIncident);
+  const [selectedIncident, setSelectedIncident] = useState(null);
   const [startReviewIncident, setStartReviewIncident] = useState(null);
   const [confirmStartIncident, setConfirmStartIncident] = useState(null);
   const [resolutionIncident, setResolutionIncident] = useState(null);
@@ -108,6 +196,28 @@ export default function Incidents() {
   const showNotice = useCallback((type, title, message) => {
     setNotice({ type, title, message });
   }, []);
+
+  const activeEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      const status = String(emp.status || "").trim().toLowerCase();
+
+      return (
+        !emp.archived &&
+        (status === "deployed" || status === "active deployed")
+      );
+    });
+  }, [employees]);
+
+  const deployments = useMemo(() => {
+    return activeEmployees.map((emp) => ({
+      id: emp.id,
+      employeeId: emp.id,
+      employee: emp.name,
+      company: emp.company || "-",
+      status: "Active",
+      deploymentStatus: "Active",
+    }));
+  }, [activeEmployees]);
 
   const createOperationalLog = useCallback(
     async (action, description) => {
@@ -131,93 +241,148 @@ export default function Incidents() {
     [user]
   );
 
-  useEffect(() => {
-    if (location.state?.incidentId) {
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [location.state, navigate, location.pathname]);
+  const fetchPageData = useCallback(async () => {
+    try {
+      setIsLoading(true);
 
-  useEffect(() => {
-    const syncIncidentsFromStorage = () => {
-      setIncidents(
-        getVisibleIncidents(safeParse(INCIDENTS_KEY), safeParse(EMPLOYEES_KEY))
+      const [employeeData, incidentData] = await Promise.all([
+        requestJson(EMPLOYEE_API_URL),
+        requestJson(INCIDENT_API_URL),
+      ]);
+
+      const backendIncidents = buildIncidentList(
+        Array.isArray(incidentData) ? incidentData : []
       );
-    };
 
-    window.addEventListener("dataUpdated", syncIncidentsFromStorage);
-    window.addEventListener("storage", syncIncidentsFromStorage);
+      setEmployees(Array.isArray(employeeData) ? employeeData : []);
+      setIncidents(backendIncidents);
 
-    return () => {
-      window.removeEventListener("dataUpdated", syncIncidentsFromStorage);
-      window.removeEventListener("storage", syncIncidentsFromStorage);
-    };
-  }, []);
+      cacheIncidentsForOtherPages(backendIncidents);
+    } catch (error) {
+      console.error("Fetch incident page data error:", error);
+      showNotice(
+        "error",
+        "Backend Fetch Failed",
+        error.message || "Unable to load employee and incident records."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [showNotice]);
 
-  const persistIncidents = useCallback((updatedIncidents) => {
-    const enriched = updatedIncidents.map((item) =>
-      normalizeIncidentWithRules(item, updatedIncidents)
+  useEffect(() => {
+    fetchPageData();
+  }, [fetchPageData]);
+
+  useEffect(() => {
+    if (!location.state?.incidentId || incidents.length === 0) return;
+
+    const targetId = String(location.state.incidentId);
+
+    const foundIncident = incidents.find(
+      (incident) =>
+        String(incident.id) === targetId ||
+        String(incident.displayId) === targetId
     );
 
-    setIncidents(enriched);
-    localStorage.setItem(INCIDENTS_KEY, JSON.stringify(enriched));
-    window.dispatchEvent(new Event("dataUpdated"));
+    if (foundIncident) {
+      setSelectedIncident(foundIncident);
+    }
 
-    return enriched;
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, navigate, incidents]);
+
+  const syncModalIncident = useCallback((updatedIncident) => {
+    const updateIfSelected = (setter) => {
+      setter((current) => {
+        if (!current) return current;
+
+        return String(current.id) === String(updatedIncident.id)
+          ? updatedIncident
+          : current;
+      });
+    };
+
+    updateIfSelected(setSelectedIncident);
+    updateIfSelected(setStartReviewIncident);
+    updateIfSelected(setConfirmStartIncident);
+    updateIfSelected(setResolutionIncident);
+    updateIfSelected(setReviewIncident);
   }, []);
 
-  const updateIncidentById = useCallback(
-    (incidentId, updater) => {
-      const rawIncidents = safeParse(INCIDENTS_KEY);
-      const baseIncidents = rawIncidents.length > 0 ? rawIncidents : incidents;
+  const updateIncidentState = useCallback(
+    (updatedIncident) => {
+      setIncidents((prev) => {
+        const nextRaw = prev.map((incident) =>
+          String(incident.id) === String(updatedIncident.id)
+            ? updatedIncident
+            : incident
+        );
 
-      const updatedRaw = baseIncidents.map((incident) => {
-        if (incident.id !== incidentId) return incident;
+        const nextEnriched = nextRaw.map((incident) =>
+          normalizeIncidentWithRules(incident, nextRaw)
+        );
 
-        if (incident.status === "Closed") {
-          showNotice(
-            "error",
-            "Case Already Closed",
-            "This case is already closed and can no longer be modified."
-          );
-          return incident;
-        }
+        cacheIncidentsForOtherPages(nextEnriched);
 
-        return updater(incident);
+        return nextEnriched;
       });
 
-      const enriched = persistIncidents(updatedRaw);
-      const updatedIncident = enriched.find((item) => item.id === incidentId);
-
-      const syncSelected = (setter, current) => {
-        if (current?.id === incidentId) setter(updatedIncident);
-      };
-
-      syncSelected(setSelectedIncident, selectedIncident);
-      syncSelected(setStartReviewIncident, startReviewIncident);
-      syncSelected(setConfirmStartIncident, confirmStartIncident);
-      syncSelected(setResolutionIncident, resolutionIncident);
-      syncSelected(setReviewIncident, reviewIncident);
-
-      return updatedIncident;
+      syncModalIncident(updatedIncident);
     },
-    [
-      incidents,
-      persistIncidents,
-      selectedIncident,
-      startReviewIncident,
-      confirmStartIncident,
-      resolutionIncident,
-      reviewIncident,
-      showNotice,
-    ]
+    [syncModalIncident]
+  );
+
+  const patchIncidentStatus = useCallback(
+    async ({
+      incident,
+      updatedIncident,
+      payload,
+      auditAction,
+      auditDescription,
+      successTitle,
+      successMessage,
+    }) => {
+      if (incident.status === "Closed") {
+        showNotice(
+          "error",
+          "Case Already Closed",
+          "This case is already closed and can no longer be modified."
+        );
+        return false;
+      }
+
+      try {
+        await requestJson(`${INCIDENT_API_URL}/${incident.id}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        updateIncidentState(updatedIncident);
+
+        await createOperationalLog(auditAction, auditDescription);
+
+        showNotice("success", successTitle, successMessage);
+
+        return true;
+      } catch (error) {
+        console.error("Patch incident status error:", error);
+        showNotice(
+          "error",
+          "Update Failed",
+          error.message || "Unable to update this incident."
+        );
+        return false;
+      }
+    },
+    [createOperationalLog, showNotice, updateIncidentState]
   );
 
   const handleAddIncident = async (newIncident) => {
-    if (isSuperAdmin) return;
+    if (isSuperAdmin) return false;
 
-    const currentRaw = safeParse(INCIDENTS_KEY);
-
-    const hasActiveSameCase = currentRaw.some(
+    const hasActiveSameCase = incidents.some(
       (inc) =>
         String(inc.employeeId) === String(newIncident.employeeId) &&
         String(inc.violation) === String(newIncident.violation) &&
@@ -232,16 +397,18 @@ export default function Incidents() {
         "Active Case Exists",
         "This employee already has an active case with the same violation. Resolve or close it first before creating another one."
       );
-      return;
+      return false;
     }
 
-    const sameDayCase = currentRaw.some((inc) => {
+    const sameDayCase = incidents.some((inc) => {
       const sameEmployee =
         String(inc.employeeId) === String(newIncident.employeeId);
+
       const sameViolation =
         String(inc.violation) === String(newIncident.violation);
 
       const oldDate = new Date(inc.reportedAt || inc.date).toDateString();
+
       const newDate = new Date(
         newIncident.reportedAt || newIncident.date
       ).toDateString();
@@ -255,10 +422,10 @@ export default function Incidents() {
         "Duplicate Incident",
         "The same employee already has the same violation reported today."
       );
-      return;
+      return false;
     }
 
-    const totalEmployeeCases = currentRaw.filter(
+    const totalEmployeeCases = incidents.filter(
       (inc) => String(inc.employeeId) === String(newIncident.employeeId)
     ).length;
 
@@ -273,32 +440,66 @@ export default function Incidents() {
 
     const normalizedIncident = normalizeIncidentWithRules(
       escalatedIncident,
-      currentRaw
+      incidents
     );
 
-    const updatedIncidents = persistIncidents([
-      normalizedIncident,
-      ...currentRaw,
-    ]);
+    try {
+      const response = await requestJson(INCIDENT_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId: normalizedIncident.employeeId,
+          employee: normalizedIncident.employee,
+          employeeName: normalizedIncident.employee,
+          company: normalizedIncident.company,
 
-    updateEmployeeKpiAfterIncident(
-      normalizedIncident.employeeId,
-      normalizedIncident,
-      updatedIncidents
-    );
+          violation: normalizedIncident.violation,
+          violationType: normalizedIncident.violation,
+          severity: normalizedIncident.severity,
+          status: "Open",
 
-    await createOperationalLog(
-      "CREATE_INCIDENT",
-      `${currentUser.name} created an incident report (ID: ${normalizedIncident.id}) for employee ${normalizedIncident.employee}.`
-    );
+          date: normalizedIncident.date,
+          incidentDate: normalizedIncident.date,
 
-    setOpenAddModal(false);
+          location: normalizedIncident.location || "",
+          description: normalizedIncident.description || "",
 
-    showNotice(
-      "success",
-      "Incident Report Saved",
-      `Incident ${normalizedIncident.id} has been successfully added to the report list.`
-    );
+          reportedBy: currentUser.name,
+          actionTaken: normalizedIncident.sanction || "",
+          recommendation: normalizedIncident.recommendation || "",
+          resolutionNotes: "",
+
+          userId: user?.userId || user?.id,
+          username: user?.username,
+          role: user?.role,
+        }),
+      });
+
+      await fetchPageData();
+
+      await createOperationalLog(
+        "CREATE_INCIDENT",
+        `${currentUser.name} created an incident report for employee ${normalizedIncident.employee}.`
+      );
+
+      setOpenAddModal(false);
+
+      showNotice(
+        "success",
+        "Incident Report Saved",
+        `Incident ${formatIncidentCode(response?.id)} has been saved to MySQL.`
+      );
+
+      return true;
+    } catch (error) {
+      console.error("Create incident error:", error);
+      showNotice(
+        "error",
+        "Save Failed",
+        error.message || "Unable to save incident report."
+      );
+      return false;
+    }
   };
 
   const handleConfirmStartInvestigation = async (incident) => {
@@ -311,32 +512,43 @@ export default function Incidents() {
       status: "Investigating",
     });
 
-    updateIncidentById(incident.id, (item) => ({
-      ...item,
-      status: "Investigating",
-      investigation: {
-        startedAt: new Date().toISOString(),
-        startedById: currentUser.id,
-        startedByName: currentUser.name,
-        startedByUsername: currentUser.username,
-        startedByRole: currentUser.role,
+    const updatedIncident = normalizeIncidentWithRules(
+      {
+        ...incident,
+        status: "Investigating",
+        investigation: {
+          startedAt: new Date().toISOString(),
+          startedById: currentUser.id,
+          startedByName: currentUser.name,
+          startedByUsername: currentUser.username,
+          startedByRole: currentUser.role,
+        },
+        timeline: [...(incident.timeline || []), timelineItem],
       },
-      timeline: [...(item.timeline || []), timelineItem],
-    }));
-
-    await createOperationalLog(
-      "START_INVESTIGATION",
-      `${currentUser.name} started investigation for incident ${incident.id}.`
+      incidents
     );
 
-    setConfirmStartIncident(null);
-    setStartReviewIncident(null);
+    const success = await patchIncidentStatus({
+      incident,
+      updatedIncident,
+      payload: {
+        status: "Investigating",
+        resolutionNotes: "Investigation started.",
+      },
+      auditAction: "START_INVESTIGATION",
+      auditDescription: `${currentUser.name} started investigation for incident ${formatIncidentCode(
+        incident.id
+      )}.`,
+      successTitle: "Investigation Started",
+      successMessage: `Incident ${formatIncidentCode(
+        incident.id
+      )} is now marked as Investigating.`,
+    });
 
-    showNotice(
-      "success",
-      "Investigation Started",
-      `Incident ${incident.id} is now marked as Investigating.`
-    );
+    if (success) {
+      setConfirmStartIncident(null);
+      setStartReviewIncident(null);
+    }
   };
 
   const handleSubmitResolution = async (incident, resolutionData) => {
@@ -349,34 +561,49 @@ export default function Incidents() {
       status: "For Review",
     });
 
-    updateIncidentById(incident.id, (item) => ({
-      ...item,
-      status: "For Review",
-      resolution: {
-        submittedAt: new Date().toISOString(),
-        submittedById: currentUser.id,
-        submittedByName: currentUser.name,
-        submittedByUsername: currentUser.username,
-        submittedByRole: currentUser.role,
+    const updatedIncident = normalizeIncidentWithRules(
+      {
+        ...incident,
+        status: "For Review",
+        resolution: {
+          submittedAt: new Date().toISOString(),
+          submittedById: currentUser.id,
+          submittedByName: currentUser.name,
+          submittedByUsername: currentUser.username,
+          submittedByRole: currentUser.role,
+          actionTaken: resolutionData.actionTaken,
+          remarks: resolutionData.remarks,
+          proofFiles: resolutionData.proofFiles,
+        },
         actionTaken: resolutionData.actionTaken,
-        remarks: resolutionData.remarks,
-        proofFiles: resolutionData.proofFiles,
+        resolutionNotes: resolutionData.remarks,
+        timeline: [...(incident.timeline || []), timelineItem],
       },
-      timeline: [...(item.timeline || []), timelineItem],
-    }));
-
-    await createOperationalLog(
-      "SUBMIT_RESOLUTION",
-      `${currentUser.name} submitted proof for incident ${incident.id}.`
+      incidents
     );
 
-    setResolutionIncident(null);
+    const success = await patchIncidentStatus({
+      incident,
+      updatedIncident,
+      payload: {
+        status: "For Review",
+        actionTaken: resolutionData.actionTaken,
+        resolutionNotes: resolutionData.remarks,
+        recommendation: incident.recommendation || "",
+      },
+      auditAction: "SUBMIT_RESOLUTION",
+      auditDescription: `${currentUser.name} submitted proof for incident ${formatIncidentCode(
+        incident.id
+      )}.`,
+      successTitle: "Submitted for Review",
+      successMessage: `Proof for incident ${formatIncidentCode(
+        incident.id
+      )} has been submitted to Super Admin.`,
+    });
 
-    showNotice(
-      "success",
-      "Submitted for Review",
-      `Proof for incident ${incident.id} has been submitted to Super Admin.`
-    );
+    if (success) {
+      setResolutionIncident(null);
+    }
   };
 
   const handleApproveCase = async (incident) => {
@@ -389,33 +616,53 @@ export default function Incidents() {
       status: "Closed",
     });
 
-    updateIncidentById(incident.id, (item) => ({
-      ...item,
-      status: "Closed",
-      review: {
-        reviewedAt: new Date().toISOString(),
-        reviewedById: currentUser.id,
-        reviewedByName: currentUser.name,
-        reviewedByUsername: currentUser.username,
-        reviewedByRole: currentUser.role,
-        decision: "Approved",
-        comments: "Proof reviewed and approved.",
+    const updatedIncident = normalizeIncidentWithRules(
+      {
+        ...incident,
+        status: "Closed",
+        review: {
+          reviewedAt: new Date().toISOString(),
+          reviewedById: currentUser.id,
+          reviewedByName: currentUser.name,
+          reviewedByUsername: currentUser.username,
+          reviewedByRole: currentUser.role,
+          decision: "Approved",
+          comments: "Proof reviewed and approved.",
+        },
+        timeline: [...(incident.timeline || []), timelineItem],
       },
-      timeline: [...(item.timeline || []), timelineItem],
-    }));
-
-    await createOperationalLog(
-      "CLOSE_INCIDENT",
-      `${currentUser.name} approved and closed incident ${incident.id}.`
+      incidents
     );
 
-    setReviewIncident(null);
+    const success = await patchIncidentStatus({
+      incident,
+      updatedIncident,
+      payload: {
+        status: "Closed",
+        resolutionNotes:
+          incident.resolutionNotes ||
+          incident.resolution?.remarks ||
+          "Proof reviewed and approved.",
+        actionTaken:
+          incident.actionTaken ||
+          incident.resolution?.actionTaken ||
+          incident.sanction ||
+          "",
+        recommendation: incident.recommendation || "",
+      },
+      auditAction: "CLOSE_INCIDENT",
+      auditDescription: `${currentUser.name} approved and closed incident ${formatIncidentCode(
+        incident.id
+      )}.`,
+      successTitle: "Case Approved",
+      successMessage: `Incident ${formatIncidentCode(
+        incident.id
+      )} has been approved and closed successfully.`,
+    });
 
-    showNotice(
-      "success",
-      "Case Approved",
-      `Incident ${incident.id} has been approved and closed successfully.`
-    );
+    if (success) {
+      setReviewIncident(null);
+    }
   };
 
   const handleRejectCase = async (incident, comments) => {
@@ -428,33 +675,46 @@ export default function Incidents() {
       status: "Investigating",
     });
 
-    updateIncidentById(incident.id, (item) => ({
-      ...item,
-      status: "Investigating",
-      review: {
-        reviewedAt: new Date().toISOString(),
-        reviewedById: currentUser.id,
-        reviewedByName: currentUser.name,
-        reviewedByUsername: currentUser.username,
-        reviewedByRole: currentUser.role,
-        decision: "Rejected",
-        comments,
+    const updatedIncident = normalizeIncidentWithRules(
+      {
+        ...incident,
+        status: "Investigating",
+        review: {
+          reviewedAt: new Date().toISOString(),
+          reviewedById: currentUser.id,
+          reviewedByName: currentUser.name,
+          reviewedByUsername: currentUser.username,
+          reviewedByRole: currentUser.role,
+          decision: "Rejected",
+          comments,
+        },
+        timeline: [...(incident.timeline || []), timelineItem],
       },
-      timeline: [...(item.timeline || []), timelineItem],
-    }));
-
-    await createOperationalLog(
-      "RETURN_INCIDENT",
-      `${currentUser.name} returned incident ${incident.id} for correction.`
+      incidents
     );
 
-    setReviewIncident(null);
+    const success = await patchIncidentStatus({
+      incident,
+      updatedIncident,
+      payload: {
+        status: "Investigating",
+        resolutionNotes: comments,
+        actionTaken: incident.actionTaken || incident.sanction || "",
+        recommendation: incident.recommendation || "",
+      },
+      auditAction: "RETURN_INCIDENT",
+      auditDescription: `${currentUser.name} returned incident ${formatIncidentCode(
+        incident.id
+      )} for correction.`,
+      successTitle: "Case Returned",
+      successMessage: `Incident ${formatIncidentCode(
+        incident.id
+      )} has been returned for correction.`,
+    });
 
-    showNotice(
-      "success",
-      "Case Returned",
-      `Incident ${incident.id} has been returned for correction.`
-    );
+    if (success) {
+      setReviewIncident(null);
+    }
   };
 
   const filteredIncidents = useMemo(() => {
@@ -462,6 +722,7 @@ export default function Incidents() {
 
     return incidents.filter((incident) => {
       const matchesSearch = [
+        incident.displayId,
         incident.id,
         incident.employee,
         incident.employeeId,
@@ -566,12 +827,15 @@ export default function Incidents() {
             </thead>
 
             <tbody className="text-gray-700 dark:text-gray-200">
-              {filteredIncidents.length === 0 ? (
+              {isLoading ? (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="px-6 py-8 text-center text-gray-500"
-                  >
+                  <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                    Loading incident records...
+                  </td>
+                </tr>
+              ) : filteredIncidents.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                     No incident records found.
                   </td>
                 </tr>
@@ -581,7 +845,9 @@ export default function Incidents() {
                     key={incident.id}
                     className="border-t border-gray-200 dark:border-gray-700"
                   >
-                    <td className="px-6 py-4 font-semibold">{incident.id}</td>
+                    <td className="px-6 py-4 font-semibold">
+                      {incident.displayId || formatIncidentCode(incident.id)}
+                    </td>
                     <td className="px-6 py-4">{incident.employee}</td>
                     <td className="px-6 py-4">{incident.violation}</td>
                     <td className="px-6 py-4">
@@ -662,7 +928,7 @@ export default function Incidents() {
         isOpen={openAddModal}
         onClose={() => setOpenAddModal(false)}
         onSave={handleAddIncident}
-        employees={employees}
+        employees={activeEmployees}
         deployments={deployments}
         existingIncidents={incidents}
       />
@@ -678,4 +944,3 @@ export default function Incidents() {
     </div>
   );
 }
-

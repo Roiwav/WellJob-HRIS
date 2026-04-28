@@ -12,9 +12,9 @@ import IncidentTrendChart from "../components/dashboard/IncidentTrendChart";
 import SeverityPieChart from "../components/dashboard/SeverityPieChart";
 import CaseAgingChart from "../components/dashboard/CaseAgingChart";
 
-const EMPLOYEES_KEY = "employees";
-const INCIDENTS_KEY = "incidents";
-const DEPLOYMENTS_KEY = "deployments";
+const API_BASE = "http://localhost:5000/api";
+const EMPLOYEE_API_URL = `${API_BASE}/employees`;
+const INCIDENT_API_URL = `${API_BASE}/incidents`;
 
 const monthList = [
   "Jan",
@@ -31,19 +31,112 @@ const monthList = [
   "Dec",
 ];
 
-function safeParse(key) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeStatus(status) {
+  const value = normalizeText(status);
+
+  if (value === "resolved") return "For Review";
+  if (value === "for_review") return "For Review";
+  if (value === "for review") return "For Review";
+  if (value === "closed") return "Closed";
+  if (value === "investigating") return "Investigating";
+
+  return "Open";
+}
+
+function isArchivedEmployee(employee) {
+  return employee?.archived === true || Number(employee?.archived) === 1;
+}
+
+function isEmployeeDeployed(employee) {
+  const status = normalizeText(employee?.status);
+  return status === "deployed" || status === "active deployed";
+}
+
+function normalizeBackendEmployee(employee) {
+  return {
+    ...employee,
+    id: employee.id || employee.employeeId || employee.employee_id,
+    employeeId: employee.id || employee.employeeId || employee.employee_id,
+    name:
+      employee.name ||
+      employee.full_name ||
+      employee.fullName ||
+      "Unknown Employee",
+    company: employee.company || employee.clientCompany || "Unassigned",
+    status: employee.status || "Unknown",
+    employmentType: employee.employmentType || employee.employment_type || "",
+    contractStart: employee.contractStart || employee.contract_start || null,
+    contractEnd: employee.contractEnd || employee.contract_end || null,
+    createdAt: employee.createdAt || employee.created_at || null,
+    archived: isArchivedEmployee(employee),
+    documents: Array.isArray(employee.documents) ? employee.documents : [],
+  };
+}
+
+function normalizeBackendIncident(incident) {
+  const date =
+    incident.reportedAt ||
+    incident.reported_at ||
+    incident.date ||
+    incident.incidentDate ||
+    incident.incident_date ||
+    incident.createdAt ||
+    incident.created_at ||
+    new Date().toISOString();
+
+  return {
+    ...incident,
+    id: incident.id,
+    employeeId:
+      incident.employeeId ||
+      incident.employee_id ||
+      incident.empId ||
+      incident.employeeID ||
+      "",
+    employee:
+      incident.employee ||
+      incident.employeeName ||
+      incident.employee_name ||
+      "Unknown Employee",
+    company: incident.company || "",
+    violation:
+      incident.violation ||
+      incident.violationType ||
+      incident.violation_type ||
+      "No violation type",
+    severity: incident.severity || "Minor",
+    status: normalizeStatus(incident.status || "Open"),
+    date,
+    reportedAt: incident.reportedAt || incident.reported_at || date,
+    createdAt: incident.createdAt || incident.created_at || date,
+  };
+}
+
+async function requestJson(url) {
+  const response = await fetch(url);
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error ||
+        data?.message ||
+        `Request failed with status ${response.status}`
+    );
   }
+
+  return data;
 }
 
 function getRecordDate(record) {
   return (
     record?.reportedAt ||
     record?.createdAt ||
+    record?.contractStart ||
+    record?.contract_start ||
     record?.start ||
     record?.startDate ||
     record?.deploymentDate ||
@@ -120,23 +213,9 @@ function getCaseAgeInDays(dateString) {
 }
 
 function isActiveIncident(status) {
-  return ["Open", "Investigating", "For Review"].includes(status || "Open");
-}
-
-function isEmployeeDeployed(employee, deployments) {
-  return deployments.some((deployment) => {
-    const deploymentEmployeeId =
-      deployment.employeeId ||
-      deployment.employee_id ||
-      deployment.id ||
-      deployment.employee;
-
-    return (
-      String(deploymentEmployeeId) === String(employee.id) ||
-      String(deploymentEmployeeId) === String(employee.employeeId) ||
-      String(deployment.employee || "") === String(employee.name || "")
-    );
-  });
+  return ["Open", "Investigating", "For Review"].includes(
+    normalizeStatus(status)
+  );
 }
 
 function getExpiringDocumentsCount(employees) {
@@ -145,7 +224,11 @@ function getExpiringDocumentsCount(employees) {
 
     const expiringDocs = docs.filter((doc) => {
       const expirationDate =
-        doc?.expirationDate || doc?.expiryDate || doc?.expiresAt || doc?.date;
+        doc?.expirationDate ||
+        doc?.expiration_date ||
+        doc?.expiryDate ||
+        doc?.expiresAt ||
+        doc?.date;
 
       if (!expirationDate) return false;
 
@@ -160,7 +243,7 @@ function getExpiringDocumentsCount(employees) {
         (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
       );
 
-      return diffDays <= 30;
+      return diffDays >= 0 && diffDays <= 30;
     });
 
     return count + expiringDocs.length;
@@ -177,6 +260,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("");
+  const [fetchError, setFetchError] = useState("");
 
   const [data, setData] = useState({
     kpis: {
@@ -192,119 +276,126 @@ export default function Dashboard() {
     aging: [],
   });
 
-  const loadData = useCallback(() => {
-    const employeesRaw = safeParse(EMPLOYEES_KEY);
-    const incidentsRaw = safeParse(INCIDENTS_KEY);
-    const deploymentsRaw = safeParse(DEPLOYMENTS_KEY);
+  const loadData = useCallback(async () => {
+    try {
+      setFetchError("");
 
-    const activeEmployees = employeesRaw.filter((emp) => !emp.archived);
-    const deployedCount = activeEmployees.filter((emp) =>
-      isEmployeeDeployed(emp, deploymentsRaw)
-    ).length;
+      const [employeeData, incidentData] = await Promise.all([
+        requestJson(EMPLOYEE_API_URL),
+        requestJson(INCIDENT_API_URL),
+      ]);
 
-    const availableCount = Math.max(activeEmployees.length - deployedCount, 0);
+      const employeesRaw = Array.isArray(employeeData)
+        ? employeeData.map(normalizeBackendEmployee)
+        : [];
 
-    const activeIncidentsCount = incidentsRaw.filter((incident) =>
-      isActiveIncident(incident.status)
-    ).length;
+      const incidentsRaw = Array.isArray(incidentData)
+        ? incidentData.map(normalizeBackendIncident)
+        : [];
 
-    const workforce = deploymentsRaw
-      .map((deployment) => ({
-        date: normalizeDateValue(getRecordDate(deployment)),
-        employees: 1,
-      }))
-      .filter((item) => item.date);
+      const activeEmployees = employeesRaw.filter((emp) => !emp.archived);
 
-    const incidents = incidentsRaw
-      .map((incident) => ({
-        date: normalizeDateValue(getRecordDate(incident)),
-        incidents: 1,
-      }))
-      .filter((item) => item.date);
+      const deployedEmployees = activeEmployees.filter(isEmployeeDeployed);
+      const deployedCount = deployedEmployees.length;
+      const availableCount = Math.max(activeEmployees.length - deployedCount, 0);
 
-    const severityMap = {
-      Minor: 0,
-      Major: 0,
-      Critical: 0,
-    };
+      const activeIncidentsCount = incidentsRaw.filter((incident) =>
+        isActiveIncident(incident.status)
+      ).length;
 
-    incidentsRaw.forEach((incident) => {
-      const severity = incident.severity || "Minor";
-      if (severityMap[severity] !== undefined) {
-        severityMap[severity] += 1;
-      }
-    });
+      const workforce = deployedEmployees
+        .map((employee) => ({
+          date: normalizeDateValue(
+            employee.contractStart || employee.createdAt || new Date()
+          ),
+          employees: 1,
+        }))
+        .filter((item) => item.date);
 
-    const severity = Object.entries(severityMap).map(([name, value]) => ({
-      name,
-      value,
-    }));
+      const incidents = incidentsRaw
+        .map((incident) => ({
+          date: normalizeDateValue(getRecordDate(incident)),
+          incidents: 1,
+        }))
+        .filter((item) => item.date);
 
-    const agingBuckets = {
-      "0-7 Days": 0,
-      "8-30 Days": 0,
-      "30+ Days": 0,
-    };
+      const severityMap = {
+        Minor: 0,
+        Major: 0,
+        Critical: 0,
+      };
 
-    incidentsRaw.forEach((incident) => {
-      if (!isActiveIncident(incident.status)) return;
+      incidentsRaw.forEach((incident) => {
+        const severity = incident.severity || "Minor";
 
-      const age = getCaseAgeInDays(getRecordDate(incident));
-      if (age === null) return;
+        if (severityMap[severity] !== undefined) {
+          severityMap[severity] += 1;
+        }
+      });
 
-      if (age <= 7) agingBuckets["0-7 Days"] += 1;
-      else if (age <= 30) agingBuckets["8-30 Days"] += 1;
-      else agingBuckets["30+ Days"] += 1;
-    });
+      const severity = Object.entries(severityMap).map(([name, value]) => ({
+        name,
+        value,
+      }));
 
-    const aging = Object.entries(agingBuckets).map(([name, value]) => ({
-      name,
-      value,
-    }));
+      const agingBuckets = {
+        "0-7 Days": 0,
+        "8-30 Days": 0,
+        "30+ Days": 0,
+      };
 
-    setData({
-      kpis: {
-        total: activeEmployees.length,
-        deployed: deployedCount,
-        available: availableCount,
-        activeIncidents: activeIncidentsCount,
-        expiringDocs: getExpiringDocumentsCount(activeEmployees),
-      },
-      workforce,
-      incidents,
-      severity,
-      aging,
-    });
+      incidentsRaw.forEach((incident) => {
+        if (!isActiveIncident(incident.status)) return;
 
-    setLastUpdated(formatLastUpdated());
-    setLoading(false);
+        const age = getCaseAgeInDays(getRecordDate(incident));
+        if (age === null) return;
+
+        if (age <= 7) agingBuckets["0-7 Days"] += 1;
+        else if (age <= 30) agingBuckets["8-30 Days"] += 1;
+        else agingBuckets["30+ Days"] += 1;
+      });
+
+      const aging = Object.entries(agingBuckets).map(([name, value]) => ({
+        name,
+        value,
+      }));
+
+      setData({
+        kpis: {
+          total: activeEmployees.length,
+          deployed: deployedCount,
+          available: availableCount,
+          activeIncidents: activeIncidentsCount,
+          expiringDocs: getExpiringDocumentsCount(activeEmployees),
+        },
+        workforce,
+        incidents,
+        severity,
+        aging,
+      });
+
+      localStorage.setItem("employees", JSON.stringify(activeEmployees));
+      localStorage.setItem("incidents", JSON.stringify(incidentsRaw));
+      window.dispatchEvent(new Event("dataUpdated"));
+
+      setLastUpdated(formatLastUpdated());
+    } catch (error) {
+      console.error("Dashboard backend fetch error:", error);
+      setFetchError(error.message || "Unable to load dashboard data.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    const reload = () => {
-      setTimeout(loadData, 0);
-    };
-    
-    // Initial load
-    reload();
-    
-    window.addEventListener("dataUpdated", reload);
-    window.addEventListener("storage", reload);
-
-    return () => {
-      window.removeEventListener("dataUpdated", reload);
-      window.removeEventListener("storage", reload);
-    };
+    loadData();
   }, [loadData]);
 
-  const handleRefresh = useCallback(() => {
-  setRefreshing(true);
-
-  setTimeout(() => {
-    loadData();
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
     setRefreshing(false);
-  }, 700); // para makita mo loading effect
-}, [loadData]);
+  }, [loadData]);
 
   const isCurrentYear = selectedYear === currentYear;
 
@@ -339,12 +430,24 @@ export default function Dashboard() {
   }, [selectedYear, currentYear, currentMonth]);
 
   const workforceTrend = useMemo(
-    () => aggregateByMonth(data.workforce, "employees", selectedYear, isCurrentYear),
+    () =>
+      aggregateByMonth(
+        data.workforce,
+        "employees",
+        selectedYear,
+        isCurrentYear
+      ),
     [data.workforce, selectedYear, isCurrentYear]
   );
 
   const incidentTrend = useMemo(
-    () => aggregateByMonth(data.incidents, "incidents", selectedYear, isCurrentYear),
+    () =>
+      aggregateByMonth(
+        data.incidents,
+        "incidents",
+        selectedYear,
+        isCurrentYear
+      ),
     [data.incidents, selectedYear, isCurrentYear]
   );
 
@@ -355,17 +458,21 @@ export default function Dashboard() {
 
     const deployed = data.workforce.reduce((sum, item) => {
       const date = normalizeDateValue(item.date);
+
       if (date.startsWith(selectedYear) && date.slice(5, 7) === monthStr) {
         return sum + (Number(item.employees) || 0);
       }
+
       return sum;
     }, 0);
 
     const activeIncidents = data.incidents.reduce((sum, item) => {
       const date = normalizeDateValue(item.date);
+
       if (date.startsWith(selectedYear) && date.slice(5, 7) === monthStr) {
         return sum + (Number(item.incidents) || 0);
       }
+
       return sum;
     }, 0);
 
@@ -381,7 +488,9 @@ export default function Dashboard() {
   const utilizationRate = useMemo(() => {
     const total = Number(filteredKPIS.total) || 0;
     const deployed = Number(filteredKPIS.deployed) || 0;
+
     if (!total) return 0;
+
     return Number(((deployed / total) * 100).toFixed(1));
   }, [filteredKPIS]);
 
@@ -392,19 +501,25 @@ export default function Dashboard() {
 
   const peakDeploymentMonth = useMemo(() => {
     if (!workforceTrend.length) return "N/A";
+
     const highest = [...workforceTrend].sort((a, b) => b.value - a.value)[0];
+
     return highest?.value ? `${highest.label} (${highest.value})` : "N/A";
   }, [workforceTrend]);
 
   const highestIncidentMonth = useMemo(() => {
     if (!incidentTrend.length) return "N/A";
+
     const highest = [...incidentTrend].sort((a, b) => b.value - a.value)[0];
+
     return highest?.value ? `${highest.label} (${highest.value})` : "N/A";
   }, [incidentTrend]);
 
   const topSeverity = useMemo(() => {
     if (!data.severity.length) return "N/A";
+
     const highest = [...data.severity].sort((a, b) => b.value - a.value)[0];
+
     return highest?.value ? highest.name : "N/A";
   }, [data.severity]);
 
@@ -482,6 +597,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      {fetchError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+          {fetchError}
+        </div>
+      )}
+
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
         <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-slate-900 px-6 py-6 text-white">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
@@ -508,12 +629,13 @@ export default function Dashboard() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <select
                 value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                onChange={(event) => setSelectedMonth(Number(event.target.value))}
                 className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50"
               >
                 <option className="text-slate-900" value={0}>
                   All Months
                 </option>
+
                 {availableMonths.map((month) => (
                   <option
                     className="text-slate-900"
@@ -528,7 +650,7 @@ export default function Dashboard() {
 
               <select
                 value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
+                onChange={(event) => setSelectedYear(event.target.value)}
                 className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50"
               >
                 {availableYears.map((year) => (
@@ -538,15 +660,15 @@ export default function Dashboard() {
                 ))}
               </select>
 
-<button
-  type="button"
-  onClick={handleRefresh}
-  disabled={refreshing}
-  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/25 disabled:opacity-60"
->
-  <FiRefreshCw className={refreshing ? "animate-spin" : ""} />
-  {refreshing ? "Refreshing..." : "Refresh"}
-</button>
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/25 disabled:opacity-60"
+              >
+                <FiRefreshCw className={refreshing ? "animate-spin" : ""} />
+                {refreshing ? "Refreshing..." : "Refresh"}
+              </button>
 
               <RoleGuard permission={PERMISSIONS.CAN_EXPORT_PDF}>
                 <button
@@ -566,9 +688,20 @@ export default function Dashboard() {
       <KPICards kpis={filteredKPIS} utilizationRate={utilizationRate} />
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <InsightCard title="Peak Deployment Month" value={peakDeploymentMonth} tone="indigo" />
-        <InsightCard title="Highest Incident Month" value={highestIncidentMonth} tone="red" />
+        <InsightCard
+          title="Peak Deployment Month"
+          value={peakDeploymentMonth}
+          tone="indigo"
+        />
+
+        <InsightCard
+          title="Highest Incident Month"
+          value={highestIncidentMonth}
+          tone="red"
+        />
+
         <InsightCard title="Top Severity" value={topSeverity} tone="amber" />
+
         <InsightCard
           title={`Total Incidents (${selectedYear})`}
           value={totalIncidentsForYear}
@@ -607,6 +740,7 @@ function InsightCard({ title, value, tone = "indigo" }) {
       <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {title}
       </p>
+
       <h3 className="mt-2 text-xl font-extrabold text-slate-900 dark:text-white">
         {value}
       </h3>

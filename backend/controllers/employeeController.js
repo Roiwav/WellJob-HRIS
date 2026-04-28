@@ -1,8 +1,27 @@
 const db = require("../config/db");
 
-// 🔥 HELPER FUNCTION
+function toNullable(value) {
+  if (value === undefined || value === null) return null;
+
+  const trimmed = String(value).trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function toNullableDate(value) {
+  if (value === undefined || value === null) return null;
+
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return trimmed.slice(0, 10);
+}
+
 const extractDocumentsFromReq = (req) => {
   const documents = [];
+
   for (let i = 0; i < 20; i++) {
     let docName = null;
     let expDate = null;
@@ -16,60 +35,134 @@ const extractDocumentsFromReq = (req) => {
     }
 
     const file = req.files?.find((f) => f.fieldname === `documents[${i}]`);
-    const filePath = file ? file.path.replace(/\\/g, "/") : null;
+    const filePath = file ? `documents/employees/${file.filename}` : null;
 
     if (docName || file) {
       documents.push({
-        name: docName || (file ? file.originalname : "Unknown"),
-        expirationDate: expDate || null,
-        filePath: filePath,
-        hasNewFile: !!file
+        name: toNullable(docName) || (file ? file.originalname : "Unknown"),
+        expirationDate: toNullableDate(expDate),
+        filePath,
+        hasNewFile: !!file,
       });
     }
   }
+
   return documents;
 };
 
-// ✅ CREATE EMPLOYEE
 exports.createEmployee = async (req, res) => {
+  const connection = db.promise();
+
   try {
-    const { name, company, status, employmentType, contractStart, contractEnd } = req.body;
+    const {
+      name,
+      company,
+      status,
+      employmentType,
+      contractStart,
+      contractEnd,
+    } = req.body;
+
+    const finalName = toNullable(name);
+    const finalStatus = toNullable(status) || "Deployed";
+    const finalEmploymentType = toNullable(employmentType) || "Permanent";
+    const finalCompany =
+      finalStatus === "Deployed" ? toNullable(company) : null;
+
+    const finalContractStart =
+      finalEmploymentType === "Contractual"
+        ? toNullableDate(contractStart)
+        : null;
+
+    const finalContractEnd =
+      finalEmploymentType === "Contractual"
+        ? toNullableDate(contractEnd)
+        : null;
+
+    if (!finalName) {
+      return res.status(400).json({ error: "Employee name is required." });
+    }
+
+    if (finalStatus === "Deployed" && !finalCompany) {
+      return res.status(400).json({
+        error: "Company is required for deployed employees.",
+      });
+    }
+
+    if (
+      finalEmploymentType === "Contractual" &&
+      (!finalContractStart || !finalContractEnd)
+    ) {
+      return res.status(400).json({
+        error: "Contract start and end dates are required for contractual employees.",
+      });
+    }
+
     const documents = extractDocumentsFromReq(req);
 
-    const [result] = await db.promise().query(
-      `INSERT INTO employees (name, company, status, employmentType, contractStart, contractEnd)
-      VALUES (?, ?, ?, ?, ?, ?)`,
-      [name, company, status, employmentType, contractStart, contractEnd]
+    const [result] = await connection.query(
+      `
+      INSERT INTO employees
+      (name, company, status, employmentType, contractStart, contractEnd)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [
+        finalName,
+        finalCompany,
+        finalStatus,
+        finalEmploymentType,
+        finalContractStart,
+        finalContractEnd,
+      ]
     );
 
     const employeeId = result.insertId;
 
     for (const doc of documents) {
-      await db.promise().query(
-        `INSERT INTO employee_documents (employee_id, name, expiration_date, file_path)
-        VALUES (?, ?, ?, ?)`,
+      await connection.query(
+        `
+        INSERT INTO employee_documents
+        (employee_id, name, expiration_date, file_path)
+        VALUES (?, ?, ?, ?)
+        `,
         [employeeId, doc.name, doc.expirationDate, doc.filePath]
       );
     }
 
-    res.json({ success: true });
+    res.status(201).json({
+      success: true,
+      message: "Employee created successfully.",
+      id: employeeId,
+    });
   } catch (err) {
-    console.error("CREATE ERROR:", err);
-    res.status(500).json({ error: "Create employee error" });
+    console.error("CREATE EMPLOYEE ERROR:", err);
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Create employee error",
+    });
   }
 };
 
-// ✅ GET EMPLOYEES
 exports.getEmployees = async (req, res) => {
   try {
-    const [employees] = await db.promise().query("SELECT * FROM employees");
-    const [documents] = await db.promise().query("SELECT * FROM employee_documents");
+    const [employees] = await db.promise().query(`
+      SELECT *
+      FROM employees
+      ORDER BY created_at DESC
+    `);
+
+    const [documents] = await db.promise().query(`
+      SELECT *
+      FROM employee_documents
+      ORDER BY id ASC
+    `);
 
     const result = employees.map((emp) => ({
       ...emp,
       documents: documents
-        .filter((d) => d.employee_id === emp.id)
+        .filter((doc) => Number(doc.employee_id) === Number(emp.id))
         .map((doc) => ({
+          id: doc.id,
           name: doc.name,
           expirationDate: doc.expiration_date,
           filePath: doc.file_path,
@@ -78,92 +171,210 @@ exports.getEmployees = async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error("FETCH ERROR:", err);
-    res.status(500).json({ error: "Fetch error" });
+    console.error("FETCH EMPLOYEES ERROR:", err);
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Fetch employees error",
+    });
   }
 };
 
-// ✅ UPDATE EMPLOYEE (Kasama yung logic para burahin ang in-uncheck na checkbox)
 exports.updateEmployee = async (req, res) => {
   const { id } = req.params;
-  try {
-    const { name, company, status, employmentType, contractStart, contractEnd } = req.body;
+  const connection = db.promise();
 
-    await db.promise().query(
-      `UPDATE employees SET name=?, company=?, status=?, employmentType=?, contractStart=?, contractEnd=? WHERE id=?`,
-      [name, company, status, employmentType, contractStart, contractEnd, id]
+  try {
+    const {
+      name,
+      company,
+      status,
+      employmentType,
+      contractStart,
+      contractEnd,
+    } = req.body;
+
+    const finalName = toNullable(name);
+    const finalStatus = toNullable(status) || "Deployed";
+    const finalEmploymentType = toNullable(employmentType) || "Permanent";
+    const finalCompany =
+      finalStatus === "Deployed" ? toNullable(company) : null;
+
+    const finalContractStart =
+      finalEmploymentType === "Contractual"
+        ? toNullableDate(contractStart)
+        : null;
+
+    const finalContractEnd =
+      finalEmploymentType === "Contractual"
+        ? toNullableDate(contractEnd)
+        : null;
+
+    if (!finalName) {
+      return res.status(400).json({ error: "Employee name is required." });
+    }
+
+    if (finalStatus === "Deployed" && !finalCompany) {
+      return res.status(400).json({
+        error: "Company is required for deployed employees.",
+      });
+    }
+
+    if (
+      finalEmploymentType === "Contractual" &&
+      (!finalContractStart || !finalContractEnd)
+    ) {
+      return res.status(400).json({
+        error: "Contract start and end dates are required for contractual employees.",
+      });
+    }
+
+    await connection.query(
+      `
+      UPDATE employees
+      SET
+        name = ?,
+        company = ?,
+        status = ?,
+        employmentType = ?,
+        contractStart = ?,
+        contractEnd = ?
+      WHERE id = ?
+      `,
+      [
+        finalName,
+        finalCompany,
+        finalStatus,
+        finalEmploymentType,
+        finalContractStart,
+        finalContractEnd,
+        id,
+      ]
     );
 
-    const [existingDocs] = await db.promise().query(
-      "SELECT * FROM employee_documents WHERE employee_id=?", [id]
+    const [existingDocs] = await connection.query(
+      `SELECT * FROM employee_documents WHERE employee_id = ?`,
+      [id]
     );
 
     const frontendDocs = extractDocumentsFromReq(req);
 
     for (const doc of frontendDocs) {
-      const existing = existingDocs.find((d) => d.name === doc.name);
+      const existing = existingDocs.find((item) => item.name === doc.name);
+
       if (existing) {
         const finalPath = doc.hasNewFile ? doc.filePath : existing.file_path;
-        await db.promise().query(
-          `UPDATE employee_documents SET expiration_date=?, file_path=? WHERE id=?`,
+
+        await connection.query(
+          `
+          UPDATE employee_documents
+          SET expiration_date = ?, file_path = ?
+          WHERE id = ?
+          `,
           [doc.expirationDate, finalPath, existing.id]
         );
       } else {
-        await db.promise().query(
-          `INSERT INTO employee_documents (employee_id, name, expiration_date, file_path) VALUES (?, ?, ?, ?)`,
+        await connection.query(
+          `
+          INSERT INTO employee_documents
+          (employee_id, name, expiration_date, file_path)
+          VALUES (?, ?, ?, ?)
+          `,
           [id, doc.name, doc.expirationDate, doc.filePath]
         );
       }
     }
 
-    // Burahin sa database yung mga documents na in-uncheck sa frontend
     for (const existing of existingDocs) {
-      const stillChecked = frontendDocs.find((d) => d.name === existing.name);
+      const stillChecked = frontendDocs.find((doc) => doc.name === existing.name);
+
       if (!stillChecked) {
-        await db.promise().query(`DELETE FROM employee_documents WHERE id=?`, [existing.id]);
+        await connection.query(
+          `DELETE FROM employee_documents WHERE id = ?`,
+          [existing.id]
+        );
       }
     }
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      message: "Employee updated successfully.",
+    });
   } catch (err) {
-    console.error("UPDATE ERROR:", err);
-    res.status(500).json({ error: "Update error" });
+    console.error("UPDATE EMPLOYEE ERROR:", err);
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Update employee error",
+    });
   }
 };
 
-// ✅ ARCHIVE EMPLOYEE
 exports.archiveEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.promise().query("UPDATE employees SET archived = true WHERE id = ?", [id]);
-    res.json({ success: true });
+
+    await db.promise().query(
+      `UPDATE employees SET archived = 1 WHERE id = ?`,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: "Employee archived successfully.",
+    });
   } catch (err) {
-    console.error("ARCHIVE ERROR:", err);
-    res.status(500).json({ error: "Archive error" });
+    console.error("ARCHIVE EMPLOYEE ERROR:", err);
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Archive employee error",
+    });
   }
 };
 
-// ✅ RESTORE EMPLOYEE
 exports.restoreEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.promise().query("UPDATE employees SET archived = false WHERE id = ?", [id]);
-    res.json({ success: true });
+
+    await db.promise().query(
+      `UPDATE employees SET archived = 0 WHERE id = ?`,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: "Employee restored successfully.",
+    });
   } catch (err) {
-    console.error("RESTORE ERROR:", err);
-    res.status(500).json({ error: "Restore error" });
+    console.error("RESTORE EMPLOYEE ERROR:", err);
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Restore employee error",
+    });
   }
 };
 
-// ✅ PERMANENTLY DELETE EMPLOYEE
 exports.deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.promise().query("DELETE FROM employee_documents WHERE employee_id = ?", [id]);
-    await db.promise().query("DELETE FROM employees WHERE id = ?", [id]);
-    res.json({ success: true });
+
+    await db.promise().query(
+      `DELETE FROM employee_documents WHERE employee_id = ?`,
+      [id]
+    );
+
+    await db.promise().query(
+      `DELETE FROM employees WHERE id = ?`,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: "Employee permanently deleted.",
+    });
   } catch (err) {
-    console.error("DELETE ERROR:", err);
-    res.status(500).json({ error: "Delete error" });
+    console.error("DELETE EMPLOYEE ERROR:", err);
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Delete employee error",
+    });
   }
 };

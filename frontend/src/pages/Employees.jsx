@@ -164,14 +164,18 @@ export default function Employees() {
   }, []);
 
   const generateId = () => {
-    const stored = safeParse(EMPLOYEES_KEY);
-    if (stored.length === 0) return "EMP001";
+    if (!employees || employees.length === 0) return "EMP001";
 
-    const numbers = stored
-      .map((emp) => parseInt(String(emp.id || "").replace("EMP", ""), 10))
+    const numbers = employees
+      .map((emp) => {
+        const rawId = String(emp.id || "");
+        const cleanId = rawId.replace("EMP", "");
+        return parseInt(cleanId, 10);
+      })
       .filter((num) => !Number.isNaN(num));
 
     const next = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+
     return `EMP${String(next).padStart(3, "0")}`;
   };
 
