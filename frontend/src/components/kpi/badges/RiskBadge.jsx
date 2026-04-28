@@ -5,6 +5,21 @@ import {
   FiRefreshCw,
 } from "react-icons/fi";
 
+function getRiskExplanation(level) {
+  switch (level) {
+    case "High Risk":
+      return "Why High Risk? Employee has critical incidents or high KPI severity and requires priority HR review.";
+    case "Repeat":
+      return "Why Repeat? Employee has repeated violations or medium KPI severity indicating recurring behavior.";
+    case "Monitor":
+      return "Why Monitor? Employee has minor violation records and should be observed.";
+    case "Clean":
+      return "Why Clean? Employee has no recorded violations or risk indicators.";
+    default:
+      return "Risk level is based on incident frequency, severity, and KPI evaluation.";
+  }
+}
+
 const RISK_STYLES = {
   "High Risk": {
     label: "High Risk",
@@ -38,8 +53,8 @@ export default function RiskBadge({ level }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold whitespace-nowrap ${current.className}`}
-      title={`Risk Level: ${current.label}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-bold ${current.className}`}
+      title={`Risk Level: ${current.label}\n${getRiskExplanation(level)}`}
     >
       <Icon size={12} />
       {current.label}
