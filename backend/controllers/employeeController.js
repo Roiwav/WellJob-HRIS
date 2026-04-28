@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { logAudit, AUDIT_CATEGORY } = require("../utils/auditLogger");
 
 function toNullable(value) {
   if (value === undefined || value === null) return null;
@@ -17,6 +18,33 @@ function toNullableDate(value) {
   if (Number.isNaN(date.getTime())) return null;
 
   return trimmed.slice(0, 10);
+}
+
+function getActor(req) {
+  const body = req.body || {};
+
+  const username = toNullable(body.username);
+  const fullName =
+    toNullable(body.fullName) ||
+    toNullable(body.full_name) ||
+    toNullable(body.name) ||
+    username ||
+    "Unknown User";
+
+  return {
+    userId: toNullable(body.userId || body.user_id),
+    username,
+    fullName,
+    role: toNullable(body.role),
+  };
+}
+
+async function getEmployeeNameById(id) {
+  const [rows] = await db
+    .promise()
+    .query(`SELECT name FROM employees WHERE id = ? LIMIT 1`, [id]);
+
+  return rows[0]?.name || "Unknown Employee";
 }
 
 const extractDocumentsFromReq = (req) => {
@@ -63,6 +91,8 @@ exports.createEmployee = async (req, res) => {
       contractEnd,
     } = req.body;
 
+    const actor = getActor(req);
+
     const finalName = toNullable(name);
     const finalStatus = toNullable(status) || "Deployed";
     const finalEmploymentType = toNullable(employmentType) || "Permanent";
@@ -94,7 +124,8 @@ exports.createEmployee = async (req, res) => {
       (!finalContractStart || !finalContractEnd)
     ) {
       return res.status(400).json({
-        error: "Contract start and end dates are required for contractual employees.",
+        error:
+          "Contract start and end dates are required for contractual employees.",
       });
     }
 
@@ -128,6 +159,16 @@ exports.createEmployee = async (req, res) => {
         [employeeId, doc.name, doc.expirationDate, doc.filePath]
       );
     }
+
+    await logAudit({
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
+      category: AUDIT_CATEGORY.OPERATIONAL,
+      action: "ADD_EMPLOYEE",
+      description: `${actor.fullName} added employee record for ${finalName}.`,
+    });
 
     res.status(201).json({
       success: true,
@@ -193,6 +234,8 @@ exports.updateEmployee = async (req, res) => {
       contractEnd,
     } = req.body;
 
+    const actor = getActor(req);
+
     const finalName = toNullable(name);
     const finalStatus = toNullable(status) || "Deployed";
     const finalEmploymentType = toNullable(employmentType) || "Permanent";
@@ -224,7 +267,8 @@ exports.updateEmployee = async (req, res) => {
       (!finalContractStart || !finalContractEnd)
     ) {
       return res.status(400).json({
-        error: "Contract start and end dates are required for contractual employees.",
+        error:
+          "Contract start and end dates are required for contractual employees.",
       });
     }
 
@@ -285,15 +329,26 @@ exports.updateEmployee = async (req, res) => {
     }
 
     for (const existing of existingDocs) {
-      const stillChecked = frontendDocs.find((doc) => doc.name === existing.name);
+      const stillChecked = frontendDocs.find(
+        (doc) => doc.name === existing.name
+      );
 
       if (!stillChecked) {
-        await connection.query(
-          `DELETE FROM employee_documents WHERE id = ?`,
-          [existing.id]
-        );
+        await connection.query(`DELETE FROM employee_documents WHERE id = ?`, [
+          existing.id,
+        ]);
       }
     }
+
+    await logAudit({
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
+      category: AUDIT_CATEGORY.OPERATIONAL,
+      action: "UPDATE_EMPLOYEE",
+      description: `${actor.fullName} updated employee record for ${finalName}.`,
+    });
 
     res.json({
       success: true,
@@ -311,11 +366,22 @@ exports.updateEmployee = async (req, res) => {
 exports.archiveEmployee = async (req, res) => {
   try {
     const { id } = req.params;
+    const actor = getActor(req);
+    const employeeName = await getEmployeeNameById(id);
 
-    await db.promise().query(
-      `UPDATE employees SET archived = 1 WHERE id = ?`,
-      [id]
-    );
+    await db.promise().query(`UPDATE employees SET archived = 1 WHERE id = ?`, [
+      id,
+    ]);
+
+    await logAudit({
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
+      category: AUDIT_CATEGORY.OPERATIONAL,
+      action: "ARCHIVE_EMPLOYEE",
+      description: `${actor.fullName} archived employee record for ${employeeName}.`,
+    });
 
     res.json({
       success: true,
@@ -333,11 +399,22 @@ exports.archiveEmployee = async (req, res) => {
 exports.restoreEmployee = async (req, res) => {
   try {
     const { id } = req.params;
+    const actor = getActor(req);
+    const employeeName = await getEmployeeNameById(id);
 
-    await db.promise().query(
-      `UPDATE employees SET archived = 0 WHERE id = ?`,
-      [id]
-    );
+    await db.promise().query(`UPDATE employees SET archived = 0 WHERE id = ?`, [
+      id,
+    ]);
+
+    await logAudit({
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
+      category: AUDIT_CATEGORY.OPERATIONAL,
+      action: "RESTORE_EMPLOYEE",
+      description: `${actor.fullName} restored employee record for ${employeeName}.`,
+    });
 
     res.json({
       success: true,
@@ -355,16 +432,24 @@ exports.restoreEmployee = async (req, res) => {
 exports.deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
+    const actor = getActor(req);
+    const employeeName = await getEmployeeNameById(id);
 
-    await db.promise().query(
-      `DELETE FROM employee_documents WHERE employee_id = ?`,
-      [id]
-    );
+    await db
+      .promise()
+      .query(`DELETE FROM employee_documents WHERE employee_id = ?`, [id]);
 
-    await db.promise().query(
-      `DELETE FROM employees WHERE id = ?`,
-      [id]
-    );
+    await db.promise().query(`DELETE FROM employees WHERE id = ?`, [id]);
+
+    await logAudit({
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
+      category: AUDIT_CATEGORY.OPERATIONAL,
+      action: "DELETE_EMPLOYEE",
+      description: `${actor.fullName} permanently deleted employee record for ${employeeName}.`,
+    });
 
     res.json({
       success: true,

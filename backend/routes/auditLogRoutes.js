@@ -1,11 +1,12 @@
-// routes/auditLogRoutes.js
-
 const express = require("express");
 const router = express.Router();
 
-const { getLogsByCategory } = require("../controllers/auditLogController");
+const {
+  getLogsByCategory,
+  createAuditLog,
+} = require("../controllers/auditLogController");
 
-// 🔥 Kapag may nag-request ng /api/audit-logs/TECHNICAL, ipapasa niya rito
 router.get("/audit-logs/:category", getLogsByCategory);
+router.post("/audit-logs", createAuditLog);
 
 module.exports = router;
