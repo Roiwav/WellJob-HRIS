@@ -41,6 +41,7 @@ const ACTION_STYLE = {
   RESOLVE_INCIDENT: "bg-emerald-100 text-emerald-700",
 
   ADD_DEPLOYMENT: "bg-cyan-100 text-cyan-700",
+  CREATE_DEPLOYMENT: "bg-cyan-100 text-cyan-700",
   UPDATE_DEPLOYMENT: "bg-indigo-100 text-indigo-700",
   CANCEL_DEPLOYMENT: "bg-red-100 text-red-700",
   COMPLETE_DEPLOYMENT: "bg-emerald-100 text-emerald-700",
@@ -121,18 +122,17 @@ export default function AuditLogsPage({ category, title, description }) {
     setLoading(true);
 
     try {
-      const endpoint = category === "ALL" || !category 
-        ? API_BASE 
-        : `${API_BASE}/${category}`;
-        
+      const selectedCategory = String(category || "").trim().toUpperCase();
+      const endpoint = `${API_BASE}/${selectedCategory}`;
+
       const response = await fetch(endpoint);
-      const responseData = await response.json().catch(() => []);
+      const result = await response.json().catch(() => []);
 
       if (!response.ok) {
-        throw new Error(responseData?.error || "Failed to fetch audit logs.");
+        throw new Error(result?.error || "Failed to fetch audit logs.");
       }
 
-      setLogs(Array.isArray(responseData) ? responseData : []);
+      setLogs(Array.isArray(result) ? result : []);
     } catch (err) {
       console.error("FETCH AUDIT LOGS ERROR:", err);
       setLogs([]);
@@ -210,8 +210,14 @@ export default function AuditLogsPage({ category, title, description }) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <SummaryCard icon={<FiActivity />} label="Total Logs" value={logs.length} />
+        <SummaryCard
+          icon={<FiActivity />}
+          label="Total Logs"
+          value={logs.length}
+        />
+
         <SummaryCard icon={<FiShield />} label="Users" value={uniqueUsers} />
+
         <SummaryCard
           icon={<FiClock />}
           label="Shown Records"
