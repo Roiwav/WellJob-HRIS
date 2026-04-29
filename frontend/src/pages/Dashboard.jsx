@@ -3,14 +3,22 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FiBarChart2, FiDownload, FiRefreshCw } from "react-icons/fi";
 
+import ExecutiveActionItems from "../components/dashboard/insights/ExecutiveActionItems";
+import WorkforceHealthBanner from "../components/dashboard/insights/WorkforceHealthBanner";
+import ExecutiveInsightTabs from "../components/dashboard/insights/ExecutiveInsightTabs";
+import DashboardDrilldownModal from "../components/dashboard/modals/DashboardDrilldownModal";
+
+import { buildExecutiveActionItems } from "../utils/dashboard/prescriptiveAnalytics";
+import { buildDashboardInsights } from "../utils/dashboard/dashboardInsights";
+
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 
-import KPICards from "../components/dashboard/KPICards";
-import DeploymentTrendChart from "../components/dashboard/DeploymentTrendChart";
-import IncidentTrendChart from "../components/dashboard/IncidentTrendChart";
-import SeverityPieChart from "../components/dashboard/SeverityPieChart";
-import CaseAgingChart from "../components/dashboard/CaseAgingChart";
+import KPICards from "../components/dashboard/cards/KPICards";
+import DeploymentTrendChart from "../components/dashboard/charts/DeploymentTrendChart";
+import IncidentTrendChart from "../components/dashboard/charts/IncidentTrendChart";
+import SeverityPieChart from "../components/dashboard/charts/SeverityPieChart";
+import CaseAgingChart from "../components/dashboard/charts/CaseAgingChart";
 
 const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
@@ -131,20 +139,6 @@ async function requestJson(url) {
   return data;
 }
 
-function getRecordDate(record) {
-  return (
-    record?.reportedAt ||
-    record?.createdAt ||
-    record?.contractStart ||
-    record?.contract_start ||
-    record?.start ||
-    record?.startDate ||
-    record?.deploymentDate ||
-    record?.date ||
-    ""
-  );
-}
-
 function normalizeDateValue(value) {
   if (!value) return "";
 
@@ -156,6 +150,45 @@ function normalizeDateValue(value) {
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+}
+
+function getRecordDate(record) {
+  return (
+    record?.reportedAt ||
+    record?.createdAt ||
+    record?.incidentDate ||
+    record?.incident_date ||
+    record?.date ||
+    ""
+  );
+}
+
+function getDeploymentTrendDate(employee) {
+  return (
+    employee?.contractStart ||
+    employee?.contract_start ||
+    employee?.createdAt ||
+    employee?.created_at ||
+    employee?.date ||
+    ""
+  );
+}
+
+function isInSelectedDashboardRange(value, selectedYear, selectedMonth) {
+  const dateValue = normalizeDateValue(value);
+
+  if (!dateValue) return false;
+
+  const recordYear = dateValue.slice(0, 4);
+  const recordMonth = dateValue.slice(5, 7);
+
+  if (recordYear !== String(selectedYear)) return false;
+
+  if (Number(selectedMonth) > 0) {
+    return recordMonth === String(selectedMonth).padStart(2, "0");
+  }
+
+  return true;
 }
 
 function aggregateByMonth(dataset = [], key, year, isCurrentYear) {
@@ -250,6 +283,51 @@ function getExpiringDocumentsCount(employees) {
   }, 0);
 }
 
+function buildSeverityDistribution(incidents = []) {
+  const severityMap = {
+    Minor: 0,
+    Major: 0,
+    Critical: 0,
+  };
+
+  incidents.forEach((incident) => {
+    const severity = incident.severity || "Minor";
+
+    if (severityMap[severity] !== undefined) {
+      severityMap[severity] += 1;
+    }
+  });
+
+  return Object.entries(severityMap).map(([name, value]) => ({
+    name,
+    value,
+  }));
+}
+
+function buildCaseAgingDistribution(incidents = []) {
+  const agingBuckets = {
+    "0-7 Days": 0,
+    "8-30 Days": 0,
+    "30+ Days": 0,
+  };
+
+  incidents.forEach((incident) => {
+    if (!isActiveIncident(incident.status)) return;
+
+    const age = getCaseAgeInDays(getRecordDate(incident));
+    if (age === null) return;
+
+    if (age <= 7) agingBuckets["0-7 Days"] += 1;
+    else if (age <= 30) agingBuckets["8-30 Days"] += 1;
+    else agingBuckets["30+ Days"] += 1;
+  });
+
+  return Object.entries(agingBuckets).map(([name, value]) => ({
+    name,
+    value,
+  }));
+}
+
 export default function Dashboard() {
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear().toString();
@@ -261,6 +339,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("");
   const [fetchError, setFetchError] = useState("");
+  const [activeDrilldown, setActiveDrilldown] = useState(null);
 
   const [data, setData] = useState({
     kpis: {
@@ -272,8 +351,8 @@ export default function Dashboard() {
     },
     workforce: [],
     incidents: [],
-    severity: [],
-    aging: [],
+    rawEmployees: [],
+    rawIncidents: [],
   });
 
   const loadData = useCallback(async () => {
@@ -294,20 +373,11 @@ export default function Dashboard() {
         : [];
 
       const activeEmployees = employeesRaw.filter((emp) => !emp.archived);
-
       const deployedEmployees = activeEmployees.filter(isEmployeeDeployed);
-      const deployedCount = deployedEmployees.length;
-      const availableCount = Math.max(activeEmployees.length - deployedCount, 0);
-
-      const activeIncidentsCount = incidentsRaw.filter((incident) =>
-        isActiveIncident(incident.status)
-      ).length;
 
       const workforce = deployedEmployees
         .map((employee) => ({
-          date: normalizeDateValue(
-            employee.contractStart || employee.createdAt || new Date()
-          ),
+          date: normalizeDateValue(getDeploymentTrendDate(employee)),
           employees: 1,
         }))
         .filter((item) => item.date);
@@ -319,59 +389,20 @@ export default function Dashboard() {
         }))
         .filter((item) => item.date);
 
-      const severityMap = {
-        Minor: 0,
-        Major: 0,
-        Critical: 0,
-      };
-
-      incidentsRaw.forEach((incident) => {
-        const severity = incident.severity || "Minor";
-
-        if (severityMap[severity] !== undefined) {
-          severityMap[severity] += 1;
-        }
-      });
-
-      const severity = Object.entries(severityMap).map(([name, value]) => ({
-        name,
-        value,
-      }));
-
-      const agingBuckets = {
-        "0-7 Days": 0,
-        "8-30 Days": 0,
-        "30+ Days": 0,
-      };
-
-      incidentsRaw.forEach((incident) => {
-        if (!isActiveIncident(incident.status)) return;
-
-        const age = getCaseAgeInDays(getRecordDate(incident));
-        if (age === null) return;
-
-        if (age <= 7) agingBuckets["0-7 Days"] += 1;
-        else if (age <= 30) agingBuckets["8-30 Days"] += 1;
-        else agingBuckets["30+ Days"] += 1;
-      });
-
-      const aging = Object.entries(agingBuckets).map(([name, value]) => ({
-        name,
-        value,
-      }));
-
       setData({
         kpis: {
           total: activeEmployees.length,
-          deployed: deployedCount,
-          available: availableCount,
-          activeIncidents: activeIncidentsCount,
+          deployed: deployedEmployees.length,
+          available: Math.max(activeEmployees.length - deployedEmployees.length, 0),
+          activeIncidents: incidentsRaw.filter((incident) =>
+            isActiveIncident(incident.status)
+          ).length,
           expiringDocs: getExpiringDocumentsCount(activeEmployees),
         },
         workforce,
         incidents,
-        severity,
-        aging,
+        rawEmployees: activeEmployees,
+        rawIncidents: incidentsRaw,
       });
 
       localStorage.setItem("employees", JSON.stringify(activeEmployees));
@@ -399,6 +430,12 @@ export default function Dashboard() {
 
   const isCurrentYear = selectedYear === currentYear;
 
+  useEffect(() => {
+    if (isCurrentYear && Number(selectedMonth) > currentMonth) {
+      setSelectedMonth(0);
+    }
+  }, [isCurrentYear, selectedMonth, currentMonth]);
+
   const availableYears = useMemo(() => {
     const years = new Set([currentYear]);
 
@@ -414,20 +451,39 @@ export default function Dashboard() {
   }, [data.workforce, data.incidents, currentYear]);
 
   const availableMonths = useMemo(() => {
-    if (selectedYear !== currentYear) {
-      return monthList.map((month, index) => ({
+    return monthList.map((month, index) => {
+      const monthNumber = index + 1;
+      const isFutureMonth =
+        selectedYear === currentYear && monthNumber > currentMonth;
+
+      return {
         name: month,
-        value: index + 1,
-        available: true,
-      }));
+        value: monthNumber,
+        available: !isFutureMonth,
+      };
+    });
+  }, [selectedYear, currentYear, currentMonth]);
+
+  const handleYearChange = (event) => {
+    const nextYear = event.target.value;
+
+    setSelectedYear(nextYear);
+
+    if (nextYear === currentYear && Number(selectedMonth) > currentMonth) {
+      setSelectedMonth(0);
+    }
+  };
+
+  const handleMonthChange = (event) => {
+    const nextMonth = Number(event.target.value);
+
+    if (selectedYear === currentYear && nextMonth > currentMonth) {
+      setSelectedMonth(0);
+      return;
     }
 
-    return monthList.map((month, index) => ({
-      name: month,
-      value: index + 1,
-      available: index + 1 <= currentMonth,
-    }));
-  }, [selectedYear, currentYear, currentMonth]);
+    setSelectedMonth(nextMonth);
+  };
 
   const workforceTrend = useMemo(
     () =>
@@ -451,53 +507,125 @@ export default function Dashboard() {
     [data.incidents, selectedYear, isCurrentYear]
   );
 
-  const filteredKPIS = useMemo(() => {
-    if (selectedMonth === 0) return data.kpis;
-
-    const monthStr = String(selectedMonth).padStart(2, "0");
-
-    const deployed = data.workforce.reduce((sum, item) => {
-      const date = normalizeDateValue(item.date);
-
-      if (date.startsWith(selectedYear) && date.slice(5, 7) === monthStr) {
-        return sum + (Number(item.employees) || 0);
-      }
-
-      return sum;
-    }, 0);
-
-    const activeIncidents = data.incidents.reduce((sum, item) => {
-      const date = normalizeDateValue(item.date);
-
-      if (date.startsWith(selectedYear) && date.slice(5, 7) === monthStr) {
-        return sum + (Number(item.incidents) || 0);
-      }
-
-      return sum;
-    }, 0);
+  const reportScope = useMemo(() => {
+    const scopedIncidents = data.rawIncidents.filter((incident) =>
+      isInSelectedDashboardRange(getRecordDate(incident), selectedYear, selectedMonth)
+    );
 
     return {
-      total: data.kpis.total,
-      deployed,
-      available: Math.max(data.kpis.total - deployed, 0),
-      activeIncidents,
-      expiringDocs: data.kpis.expiringDocs,
+      incidents: scopedIncidents,
     };
-  }, [data.kpis, data.workforce, data.incidents, selectedMonth, selectedYear]);
+  }, [data.rawIncidents, selectedYear, selectedMonth]);
+
+  const currentKPIS = data.kpis;
 
   const utilizationRate = useMemo(() => {
-    const total = Number(filteredKPIS.total) || 0;
-    const deployed = Number(filteredKPIS.deployed) || 0;
+    const total = Number(currentKPIS.total) || 0;
+    const deployed = Number(currentKPIS.deployed) || 0;
 
     if (!total) return 0;
 
     return Number(((deployed / total) * 100).toFixed(1));
-  }, [filteredKPIS]);
+  }, [currentKPIS]);
+
+  const filteredSeverity = useMemo(() => {
+    return buildSeverityDistribution(reportScope.incidents);
+  }, [reportScope.incidents]);
+
+  const filteredAging = useMemo(() => {
+    return buildCaseAgingDistribution(reportScope.incidents);
+  }, [reportScope.incidents]);
+
+  const selectedPeriodLabel =
+    Number(selectedMonth) === 0
+      ? selectedYear
+      : `${monthList[selectedMonth - 1]} ${selectedYear}`;
+
+  const executiveActions = useMemo(() => {
+    return buildExecutiveActionItems({
+      employees: data.rawEmployees,
+      incidents: reportScope.incidents,
+      kpis: currentKPIS,
+      utilizationRate,
+    });
+  }, [data.rawEmployees, reportScope.incidents, currentKPIS, utilizationRate]);
+
+  const dashboardInsights = useMemo(() => {
+    return buildDashboardInsights({
+      employees: data.rawEmployees,
+      incidents: data.rawIncidents,
+      selectedYear,
+      selectedMonth,
+      kpis: currentKPIS,
+      utilizationRate,
+    });
+  }, [
+    data.rawEmployees,
+    data.rawIncidents,
+    selectedYear,
+    selectedMonth,
+    currentKPIS,
+    utilizationRate,
+  ]);
+
+  const kpiTrendData = useMemo(
+    () => ({
+      total: {
+        label: "Current snapshot",
+        direction: "flat",
+        tone: "neutral",
+      },
+      deployed: {
+        label: "Current deployed",
+        direction: "flat",
+        tone: "neutral",
+      },
+      available: {
+        label: "Current available",
+        direction: "flat",
+        tone: "neutral",
+      },
+      utilizationRate: {
+        label: `${utilizationRate}% current`,
+        direction: "flat",
+        tone:
+          utilizationRate >= 80
+            ? "good"
+            : utilizationRate < 60
+            ? "bad"
+            : "neutral",
+      },
+      activeIncidents: {
+        label: "Current active cases",
+        direction: "flat",
+        tone: currentKPIS.activeIncidents > 0 ? "bad" : "good",
+      },
+      expiringDocs: {
+        label: `${currentKPIS.expiringDocs} due soon`,
+        direction: currentKPIS.expiringDocs > 0 ? "up" : "flat",
+        tone: currentKPIS.expiringDocs > 0 ? "bad" : "good",
+      },
+    }),
+    [currentKPIS, utilizationRate]
+  );
+
+  const handleOpenDrilldown = useCallback(
+    (key) => {
+      const detail = dashboardInsights?.drilldowns?.[key];
+
+      if (detail) {
+        setActiveDrilldown(detail);
+      }
+    },
+    [dashboardInsights]
+  );
 
   const totalIncidentsForYear = useMemo(
     () => incidentTrend.reduce((sum, item) => sum + item.value, 0),
     [incidentTrend]
   );
+
+  const totalIncidentsForPeriod = reportScope.incidents.length;
 
   const peakDeploymentMonth = useMemo(() => {
     if (!workforceTrend.length) return "N/A";
@@ -516,12 +644,12 @@ export default function Dashboard() {
   }, [incidentTrend]);
 
   const topSeverity = useMemo(() => {
-    if (!data.severity.length) return "N/A";
+    if (!filteredSeverity.length) return "N/A";
 
-    const highest = [...data.severity].sort((a, b) => b.value - a.value)[0];
+    const highest = [...filteredSeverity].sort((a, b) => b.value - a.value)[0];
 
     return highest?.value ? highest.name : "N/A";
-  }, [data.severity]);
+  }, [filteredSeverity]);
 
   const handleExportPDF = useCallback(() => {
     const doc = new jsPDF();
@@ -531,33 +659,47 @@ export default function Dashboard() {
 
     doc.setFontSize(12);
     doc.text("Executive Workforce Dashboard Report", 14, 26);
-    doc.text(`Year: ${selectedYear}`, 14, 34);
-    doc.text(
-      `Month: ${
-        selectedMonth === 0 ? "All Months" : monthList[selectedMonth - 1]
-      }`,
-      14,
-      42
-    );
-    doc.text(`Generated: ${lastUpdated}`, 14, 50);
+    doc.text(`Report Scope: ${selectedPeriodLabel}`, 14, 34);
+    doc.text(`Generated: ${lastUpdated}`, 14, 42);
 
     autoTable(doc, {
-      startY: 60,
+      startY: 52,
       head: [["Metric", "Value"]],
       body: [
-        ["Total Employees", filteredKPIS.total],
-        ["Deployed Employees", filteredKPIS.deployed],
-        ["Available Workers", filteredKPIS.available],
+        ["Total Employees", currentKPIS.total],
+        ["Deployed Employees", currentKPIS.deployed],
+        ["Available Workers", currentKPIS.available],
         ["Utilization Rate", `${utilizationRate}%`],
-        ["Active Incidents", filteredKPIS.activeIncidents],
-        ["Expiring Documents", filteredKPIS.expiringDocs],
+        ["Current Active Incidents", currentKPIS.activeIncidents],
+        ["Expiring Documents", currentKPIS.expiringDocs],
+        ["Incidents in Report Scope", totalIncidentsForPeriod],
         ["Total Year Incidents", totalIncidentsForYear],
         ["Peak Deployment Month", peakDeploymentMonth],
         ["Highest Incident Month", highestIncidentMonth],
-        ["Top Severity", topSeverity],
+        ["Top Severity in Scope", topSeverity],
       ],
       theme: "grid",
       headStyles: { fillColor: [79, 70, 229] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 10,
+      head: [["Priority", "Type", "Recommendation", "Basis"]],
+      body: executiveActions.map((action) => [
+        action.priority,
+        action.type,
+        action.recommendation,
+        action.basis || "-",
+      ]),
+      theme: "grid",
+      headStyles: { fillColor: [22, 163, 74] },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        0: { cellWidth: 24 },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 78 },
+        3: { cellWidth: 52 },
+      },
     });
 
     autoTable(doc, {
@@ -566,25 +708,27 @@ export default function Dashboard() {
       body: monthList.map((month) => {
         const deployment = workforceTrend.find((item) => item.label === month);
         const incident = incidentTrend.find((item) => item.label === month);
+
         return [month, deployment?.value ?? 0, incident?.value ?? 0];
       }),
       theme: "striped",
       headStyles: { fillColor: [30, 41, 59] },
     });
 
-    doc.save(`Welljob_Dashboard_Report_${selectedYear}.pdf`);
+    doc.save(`Welljob_Dashboard_Report_${selectedPeriodLabel}.pdf`);
   }, [
-    selectedYear,
-    selectedMonth,
+    selectedPeriodLabel,
     lastUpdated,
-    filteredKPIS,
+    currentKPIS,
     utilizationRate,
+    totalIncidentsForPeriod,
     totalIncidentsForYear,
     peakDeploymentMonth,
     highestIncidentMonth,
     topSeverity,
     workforceTrend,
     incidentTrend,
+    executiveActions,
   ]);
 
   if (loading) {
@@ -624,12 +768,16 @@ export default function Dashboard() {
               <p className="mt-3 text-xs text-white/70">
                 Last Updated: {lastUpdated}
               </p>
+
+              <p className="mt-1 text-xs font-semibold text-white/70">
+                Report Scope: {selectedPeriodLabel}
+              </p>
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <select
                 value={selectedMonth}
-                onChange={(event) => setSelectedMonth(Number(event.target.value))}
+                onChange={handleMonthChange}
                 className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50"
               >
                 <option className="text-slate-900" value={0}>
@@ -641,7 +789,7 @@ export default function Dashboard() {
                     className="text-slate-900"
                     key={month.name}
                     value={month.value}
-                    disabled={!month.available && selectedYear === currentYear}
+                    disabled={!month.available}
                   >
                     {month.name}
                   </option>
@@ -650,7 +798,7 @@ export default function Dashboard() {
 
               <select
                 value={selectedYear}
-                onChange={(event) => setSelectedYear(event.target.value)}
+                onChange={handleYearChange}
                 className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50"
               >
                 {availableYears.map((year) => (
@@ -685,7 +833,21 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <KPICards kpis={filteredKPIS} utilizationRate={utilizationRate} />
+      <KPICards
+        kpis={currentKPIS}
+        utilizationRate={utilizationRate}
+        trendData={kpiTrendData}
+        onCardClick={handleOpenDrilldown}
+      />
+
+      <WorkforceHealthBanner health={dashboardInsights.health} />
+
+      <ExecutiveActionItems actions={executiveActions} />
+
+      <ExecutiveInsightTabs
+        insights={dashboardInsights}
+        onOpenDrilldown={handleOpenDrilldown}
+      />
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <InsightCard
@@ -700,11 +862,15 @@ export default function Dashboard() {
           tone="red"
         />
 
-        <InsightCard title="Top Severity" value={topSeverity} tone="amber" />
+        <InsightCard
+          title={`Top Severity (${selectedPeriodLabel})`}
+          value={topSeverity}
+          tone="amber"
+        />
 
         <InsightCard
-          title={`Total Incidents (${selectedYear})`}
-          value={totalIncidentsForYear}
+          title={`Total Incidents (${selectedPeriodLabel})`}
+          value={totalIncidentsForPeriod}
           tone="emerald"
         />
       </section>
@@ -713,9 +879,14 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <IncidentTrendChart data={incidentTrend} />
-        <SeverityPieChart data={data.severity} />
-        <CaseAgingChart data={data.aging} />
+        <SeverityPieChart data={filteredSeverity} />
+        <CaseAgingChart data={filteredAging} />
       </div>
+
+      <DashboardDrilldownModal
+        detail={activeDrilldown}
+        onClose={() => setActiveDrilldown(null)}
+      />
     </div>
   );
 }

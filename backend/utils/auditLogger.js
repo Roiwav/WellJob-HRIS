@@ -5,20 +5,45 @@ const AUDIT_CATEGORY = {
   OPERATIONAL: "OPERATIONAL",
 };
 
-async function logAudit(data) {
+function cleanValue(value) {
+  if (value === undefined || value === null) return null;
+
+  const trimmed = String(value).trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+async function logAudit(data = {}) {
   try {
+    const userId = cleanValue(data.userId || data.user_id);
+    const username = cleanValue(data.username);
+    const role = cleanValue(data.role);
+    const category = cleanValue(data.category) || AUDIT_CATEGORY.TECHNICAL;
+    const action = cleanValue(data.action) || "UNKNOWN_ACTION";
+
+    const fullName =
+      cleanValue(data.fullName) ||
+      cleanValue(data.full_name) ||
+      cleanValue(data.name) ||
+      username ||
+      "Unknown User";
+
+    const description = cleanValue(data.description) || "";
+
     await db.promise().query(
-      `INSERT INTO audit_logs 
-       (user_id, username, role, category, action, description)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        data.userId || null,
-        data.username || null,
-        data.role || null,
-        data.category || AUDIT_CATEGORY.TECHNICAL,
-        data.action || "UNKNOWN_ACTION",
-        data.description || "",
-      ]
+      `
+      INSERT INTO audit_logs
+      (
+        user_id,
+        username,
+        role,
+        category,
+        action,
+        description,
+        full_name
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [userId, username, role, category, action, description, fullName]
     );
   } catch (err) {
     console.error("Audit error:", err);

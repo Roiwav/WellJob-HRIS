@@ -1,6 +1,6 @@
-import ViolationTrendChart from "../../dashboard/ViolationTrendChart";
-import ComplianceTrendChart from "../../dashboard/ComplianceTrendChart";
-import UtilizationTrendChart from "../../dashboard/UtilizationTrendChart";
+import ViolationTrendChart from "../../dashboard/charts/ViolationTrendChart";
+import ComplianceTrendChart from "../../dashboard/charts/ComplianceTrendChart";
+import UtilizationTrendChart from "../../dashboard/charts/UtilizationTrendChart";
 
 export default function AnalyticsTrendsSection({
   violationTrend,

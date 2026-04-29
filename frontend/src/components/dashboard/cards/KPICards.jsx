@@ -8,9 +8,36 @@ import {
   FileWarning,
 } from "lucide-react";
 
-export default function KPICards({ kpis, utilizationRate }) {
+function TrendBadge({ trend }) {
+  if (!trend) return null;
+
+  const toneClasses = {
+    good: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+    bad: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
+    neutral:
+      "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  };
+
+  return (
+    <span
+      className={`mt-3 inline-flex w-fit rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${
+        toneClasses[trend.tone] || toneClasses.neutral
+      }`}
+    >
+      {trend.label}
+    </span>
+  );
+}
+
+export default function KPICards({
+  kpis,
+  utilizationRate,
+  trendData = {},
+  onCardClick,
+}) {
   const cards = [
     {
+      id: "total",
       title: "Total Employees",
       value: kpis.total,
       suffix: "",
@@ -22,6 +49,7 @@ export default function KPICards({ kpis, utilizationRate }) {
       description: "Active workforce records",
     },
     {
+      id: "deployed",
       title: "Deployed Employees",
       value: kpis.deployed,
       suffix: "",
@@ -33,6 +61,7 @@ export default function KPICards({ kpis, utilizationRate }) {
       description: "Currently assigned workers",
     },
     {
+      id: "available",
       title: "Available Workers",
       value: kpis.available,
       suffix: "",
@@ -44,6 +73,7 @@ export default function KPICards({ kpis, utilizationRate }) {
       description: "Floating or unassigned",
     },
     {
+      id: "utilizationRate",
       title: "Utilization Rate",
       value: utilizationRate,
       suffix: "%",
@@ -55,6 +85,7 @@ export default function KPICards({ kpis, utilizationRate }) {
       description: "Deployment efficiency",
     },
     {
+      id: "activeIncidents",
       title: "Active Incidents",
       value: kpis.activeIncidents,
       suffix: "",
@@ -66,6 +97,8 @@ export default function KPICards({ kpis, utilizationRate }) {
       description: "Open or investigating cases",
     },
     {
+      id: "expiringDocs",
+      drilldownKey: "expiringDocuments",
       title: "Expiring Documents",
       value: kpis.expiringDocs,
       suffix: "",
@@ -89,10 +122,15 @@ export default function KPICards({ kpis, utilizationRate }) {
             ? `${Math.min(numericValue, 100)}%`
             : "100%";
 
+        const trend = trendData[card.id];
+        const targetKey = card.drilldownKey || card.id;
+
         return (
-          <div
+          <button
+            type="button"
             key={card.title}
-            className={`group rounded-2xl border bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-md dark:bg-slate-900 ${card.border}`}
+            onClick={() => onCardClick?.(targetKey)}
+            className={`group rounded-2xl border bg-white p-5 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 ${card.border}`}
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -118,12 +156,17 @@ export default function KPICards({ kpis, utilizationRate }) {
                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                   {card.description}
                 </p>
+
+                <TrendBadge trend={trend} />
               </div>
 
               <div
                 className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${card.iconBg}`}
               >
-                <Icon className={`h-5 w-5 ${card.iconColor}`} strokeWidth={2.2} />
+                <Icon
+                  className={`h-5 w-5 ${card.iconColor}`}
+                  strokeWidth={2.2}
+                />
               </div>
             </div>
 
@@ -133,7 +176,11 @@ export default function KPICards({ kpis, utilizationRate }) {
                 style={{ width: progressWidth }}
               />
             </div>
-          </div>
+
+            <p className="mt-3 text-[11px] font-semibold text-slate-400 opacity-0 transition group-hover:opacity-100 dark:text-slate-500">
+              Click to view details
+            </p>
+          </button>
         );
       })}
     </div>

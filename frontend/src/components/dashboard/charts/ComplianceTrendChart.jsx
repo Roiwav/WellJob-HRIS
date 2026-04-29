@@ -2,7 +2,7 @@ import {
   LineChart, Line, XAxis, YAxis,
   Tooltip, CartesianGrid, ResponsiveContainer
 } from "recharts";
-import SharedTooltip from "./SharedTooltip";
+import SharedTooltip from "../shared/SharedTooltip";
 
 export default function ComplianceTrendChart({ data }) {
 
