@@ -1,5 +1,5 @@
 import { FiPlay } from "react-icons/fi";
-import { SmartAlertCard } from "../badges/incidentBadges";
+import { SmartAlertCard } from "../badges/IncidentBadges";
 import { formatDateTime } from "../../../utils/incidents/incidentHelpers";
 import {
   BaseModal,

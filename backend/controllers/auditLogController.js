@@ -2,20 +2,54 @@
 
 const db = require("../config/db");
 
+exports.getAllLogs = async (req, res) => {
+  try {
+    const [logs] = await db.promise().query(
+      "SELECT * FROM audit_logs ORDER BY created_at DESC"
+    );
+    res.json(logs);
+  } catch (err) {
+    console.error("Fetch All Audit Logs Error:", err);
+    res.status(200).json([]); 
+  }
+};
+
 exports.getLogsByCategory = async (req, res) => {
-  const { category } = req.params; // Kukunin niya yung salitang 'TECHNICAL' o 'OPERATIONAL'
+  const { category } = req.params;
 
   try {
-    // Kukunin natin sa database yung mga logs na magma-match sa category
     const [logs] = await db.promise().query(
       "SELECT * FROM audit_logs WHERE category = ? ORDER BY created_at DESC",
       [category]
     );
-
-    res.json(logs); // Ibabalik sa frontend bilang malinis na JSON
+    res.json(logs); 
   } catch (err) {
-    console.error("Fetch Audit Logs Error:", err);
-    // Nagbabalik tayo ng empty array [] para hindi mag-crash ang frontend kung sakaling wala pang laman o table
+    console.error("Fetch Audit Logs by Category Error:", err);
     res.status(200).json([]); 
+  }
+};
+
+// 🔥 FIX: Tinanggal natin ang 'full_name' sa INSERT query para hindi mag-error ang MySQL
+exports.createLog = async (req, res) => {
+  try {
+    const { userId, username, role, category, action, description } = req.body;
+    
+    await db.promise().query(
+      `INSERT INTO audit_logs (user_id, username, role, category, action, description) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        userId || "-", 
+        username || "-", 
+        role || "-", 
+        category || "OPERATIONAL", 
+        action, 
+        description
+      ]
+    );
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error("Create Audit Log Error:", err);
+    res.status(500).json({ error: "Failed to create log" });
   }
 };

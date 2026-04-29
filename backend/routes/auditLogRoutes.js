@@ -1,11 +1,13 @@
-// routes/auditLogRoutes.js
-
 const express = require("express");
 const router = express.Router();
 
-const { getLogsByCategory } = require("../controllers/auditLogController");
+// 🔥 Idinagdag ang createLog sa import
+const { getLogsByCategory, getAllLogs, createLog } = require("../controllers/auditLogController");
 
-// 🔥 Kapag may nag-request ng /api/audit-logs/TECHNICAL, ipapasa niya rito
+router.get("/audit-logs", getAllLogs);
 router.get("/audit-logs/:category", getLogsByCategory);
+
+// 🔥 BAGONG ROUTE: Tatanggap ng data kapag may nag-add/edit/archive ng employee
+router.post("/audit-logs", createLog);
 
 module.exports = router;

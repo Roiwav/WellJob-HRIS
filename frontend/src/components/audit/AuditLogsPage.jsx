@@ -47,14 +47,13 @@ export default function AuditLogsPage({ category, title, description }) {
     setLoading(true);
 
     try {
-      if (category === "OPERATIONAL") {
-        const localLogs = JSON.parse(localStorage.getItem(LOCAL_KEY)) || [];
-        setLogs(localLogs);
-      } else {
-        const res = await fetch(`${API_BASE}/${category}`);
-        const data = await res.json();
-        setLogs(data);
-      }
+      const endpoint = category === "ALL" || !category 
+        ? API_BASE 
+        : `${API_BASE}/${category}`;
+        
+      const res = await fetch(endpoint);
+      const data = await res.json();
+      setLogs(data);
     } catch (err) {
       console.error(err);
       setLogs([]);
