@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { FiSearch } from "react-icons/fi";
 
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
@@ -11,17 +10,7 @@ import ViewIncidentModal from "../components/incidents/modals/ViewIncidentModal"
 import ConfirmStartInvestigationModal from "../components/incidents/modals/ConfirmStartInvestigationModal";
 import ResolutionModal from "../components/incidents/modals/ResolutionModal";
 import ReviewCaseModal from "../components/incidents/modals/ReviewCaseModal";
-
-import FilterSelect from "../components/incidents/table/IncidentFilters";
-import ActionButtons from "../components/incidents/table/IncidentActionButtons";
-
-import {
-  SeverityBadge,
-  StatusBadge,
-  CaseAgeBadge,
-  SmartAlertBadge,
-} from "../components/incidents/badges/IncidentBadges";
-
+import IncidentTable from "../components/incidents/table/IncidentTable";
 import { NoticeModal } from "../components/incidents/shared/ModalUI";
 
 import {
@@ -36,9 +25,6 @@ const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
 const AUDIT_API_URL = `${API_BASE}/audit-logs`;
 
-// Temporary compatibility only.
-// Main source is backend/MySQL, but this keeps KPI/Employee Modal working
-// while those pages are not yet converted to backend incidents.
 const INCIDENTS_CACHE_KEY = "incidents";
 
 function formatIncidentCode(id) {
@@ -122,18 +108,17 @@ function normalizeBackendIncident(incident) {
       incident.date ||
       new Date().toISOString(),
 
-    reportedBy:
-      incident.reportedBy ||
-      incident.reported_by ||
-      "Unknown",
+    reportedBy: incident.reportedBy || incident.reported_by || "Unknown",
 
+    location: incident.location || "",
     description: incident.description || "",
-    sanction: incident.sanction || incident.actionTaken || incident.action_taken || "",
+    sanction:
+      incident.sanction || incident.actionTaken || incident.action_taken || "",
+    actionTaken:
+      incident.actionTaken || incident.action_taken || incident.sanction || "",
     recommendation: incident.recommendation || "",
     resolutionNotes:
-      incident.resolutionNotes ||
-      incident.resolution_notes ||
-      "",
+      incident.resolutionNotes || incident.resolution_notes || "",
 
     smartAlerts: incident.smartAlerts || [],
     timeline: Array.isArray(incident.timeline) ? incident.timeline : [],
@@ -155,7 +140,6 @@ function cacheIncidentsForOtherPages(incidents = []) {
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
-
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -173,6 +157,14 @@ export default function Incidents() {
   const { user } = useAuth();
   const currentUser = getUserIdentity(user);
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
+
+  const actorFullName =
+    currentUser?.name ||
+    user?.fullName ||
+    user?.full_name ||
+    user?.name ||
+    user?.username ||
+    "Unknown User";
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -200,9 +192,10 @@ export default function Incidents() {
   const activeEmployees = useMemo(() => {
     return employees.filter((emp) => {
       const status = String(emp.status || "").trim().toLowerCase();
+      const isArchived = emp.archived === true || Number(emp.archived) === 1;
 
       return (
-        !emp.archived &&
+        !isArchived &&
         (status === "deployed" || status === "active deployed")
       );
     });
@@ -228,6 +221,7 @@ export default function Incidents() {
           body: JSON.stringify({
             userId: user?.userId || user?.id,
             username: user?.username,
+            fullName: actorFullName,
             role: user?.role,
             category: "OPERATIONAL",
             action,
@@ -238,7 +232,7 @@ export default function Incidents() {
         console.error("Audit log failed:", error);
       }
     },
-    [user]
+    [user, actorFullName]
   );
 
   const fetchPageData = useCallback(async () => {
@@ -356,7 +350,13 @@ export default function Incidents() {
         await requestJson(`${INCIDENT_API_URL}/${incident.id}/status`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...payload,
+            userId: user?.userId || user?.id,
+            username: user?.username,
+            fullName: actorFullName,
+            role: user?.role,
+          }),
         });
 
         updateIncidentState(updatedIncident);
@@ -376,7 +376,16 @@ export default function Incidents() {
         return false;
       }
     },
-    [createOperationalLog, showNotice, updateIncidentState]
+    [
+      actorFullName,
+      createOperationalLog,
+      showNotice,
+      updateIncidentState,
+      user?.id,
+      user?.role,
+      user?.userId,
+      user?.username,
+    ]
   );
 
   const handleAddIncident = async (newIncident) => {
@@ -464,13 +473,14 @@ export default function Incidents() {
           location: normalizedIncident.location || "",
           description: normalizedIncident.description || "",
 
-          reportedBy: currentUser.name,
+          reportedBy: actorFullName,
           actionTaken: normalizedIncident.sanction || "",
           recommendation: normalizedIncident.recommendation || "",
           resolutionNotes: "",
 
           userId: user?.userId || user?.id,
           username: user?.username,
+          fullName: actorFullName,
           role: user?.role,
         }),
       });
@@ -479,7 +489,7 @@ export default function Incidents() {
 
       await createOperationalLog(
         "CREATE_INCIDENT",
-        `${currentUser.name} created an incident report for employee ${normalizedIncident.employee}.`
+        `${actorFullName} created an incident report for employee ${normalizedIncident.employee}.`
       );
 
       setOpenAddModal(false);
@@ -507,8 +517,8 @@ export default function Incidents() {
 
     const timelineItem = createTimelineItem({
       title: "Investigation Started",
-      description: `${currentUser.name} started the investigation.`,
-      createdBy: currentUser.name,
+      description: `${actorFullName} started the investigation.`,
+      createdBy: actorFullName,
       status: "Investigating",
     });
 
@@ -519,7 +529,7 @@ export default function Incidents() {
         investigation: {
           startedAt: new Date().toISOString(),
           startedById: currentUser.id,
-          startedByName: currentUser.name,
+          startedByName: actorFullName,
           startedByUsername: currentUser.username,
           startedByRole: currentUser.role,
         },
@@ -536,7 +546,7 @@ export default function Incidents() {
         resolutionNotes: "Investigation started.",
       },
       auditAction: "START_INVESTIGATION",
-      auditDescription: `${currentUser.name} started investigation for incident ${formatIncidentCode(
+      auditDescription: `${actorFullName} started investigation for incident ${formatIncidentCode(
         incident.id
       )}.`,
       successTitle: "Investigation Started",
@@ -556,8 +566,8 @@ export default function Incidents() {
 
     const timelineItem = createTimelineItem({
       title: "Resolution Proof Submitted",
-      description: `${currentUser.name} submitted proof for Super Admin review.`,
-      createdBy: currentUser.name,
+      description: `${actorFullName} submitted proof for Super Admin review.`,
+      createdBy: actorFullName,
       status: "For Review",
     });
 
@@ -568,7 +578,7 @@ export default function Incidents() {
         resolution: {
           submittedAt: new Date().toISOString(),
           submittedById: currentUser.id,
-          submittedByName: currentUser.name,
+          submittedByName: actorFullName,
           submittedByUsername: currentUser.username,
           submittedByRole: currentUser.role,
           actionTaken: resolutionData.actionTaken,
@@ -592,7 +602,7 @@ export default function Incidents() {
         recommendation: incident.recommendation || "",
       },
       auditAction: "SUBMIT_RESOLUTION",
-      auditDescription: `${currentUser.name} submitted proof for incident ${formatIncidentCode(
+      auditDescription: `${actorFullName} submitted proof for incident ${formatIncidentCode(
         incident.id
       )}.`,
       successTitle: "Submitted for Review",
@@ -611,8 +621,8 @@ export default function Incidents() {
 
     const timelineItem = createTimelineItem({
       title: "Case Approved and Closed",
-      description: `${currentUser.name} approved and closed the case.`,
-      createdBy: currentUser.name,
+      description: `${actorFullName} approved and closed the case.`,
+      createdBy: actorFullName,
       status: "Closed",
     });
 
@@ -623,7 +633,7 @@ export default function Incidents() {
         review: {
           reviewedAt: new Date().toISOString(),
           reviewedById: currentUser.id,
-          reviewedByName: currentUser.name,
+          reviewedByName: actorFullName,
           reviewedByUsername: currentUser.username,
           reviewedByRole: currentUser.role,
           decision: "Approved",
@@ -651,7 +661,7 @@ export default function Incidents() {
         recommendation: incident.recommendation || "",
       },
       auditAction: "CLOSE_INCIDENT",
-      auditDescription: `${currentUser.name} approved and closed incident ${formatIncidentCode(
+      auditDescription: `${actorFullName} approved and closed incident ${formatIncidentCode(
         incident.id
       )}.`,
       successTitle: "Case Approved",
@@ -671,7 +681,7 @@ export default function Incidents() {
     const timelineItem = createTimelineItem({
       title: "Case Returned",
       description: comments,
-      createdBy: currentUser.name,
+      createdBy: actorFullName,
       status: "Investigating",
     });
 
@@ -682,7 +692,7 @@ export default function Incidents() {
         review: {
           reviewedAt: new Date().toISOString(),
           reviewedById: currentUser.id,
-          reviewedByName: currentUser.name,
+          reviewedByName: actorFullName,
           reviewedByUsername: currentUser.username,
           reviewedByRole: currentUser.role,
           decision: "Rejected",
@@ -703,7 +713,7 @@ export default function Incidents() {
         recommendation: incident.recommendation || "",
       },
       auditAction: "RETURN_INCIDENT",
-      auditDescription: `${currentUser.name} returned incident ${formatIncidentCode(
+      auditDescription: `${actorFullName} returned incident ${formatIncidentCode(
         incident.id
       )} for correction.`,
       successTitle: "Case Returned",
@@ -752,6 +762,7 @@ export default function Incidents() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Incident Reports
           </h1>
+
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             {isSuperAdmin
               ? "Review submitted proof and close verified cases."
@@ -764,7 +775,7 @@ export default function Incidents() {
             <button
               type="button"
               onClick={() => setOpenAddModal(true)}
-              className="rounded-lg bg-red-500 px-4 py-2 text-white hover:bg-red-600"
+              className="rounded-lg bg-red-500 px-4 py-2 text-white transition hover:bg-red-600"
             >
               + Add Incident Report
             </button>
@@ -772,113 +783,22 @@ export default function Incidents() {
         )}
       </div>
 
-      <div className="flex flex-col items-start gap-3 xl:flex-row xl:items-center">
-        <div className="relative w-full max-w-xs">
-          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search incident ID, employee, violation..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-gray-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-          />
-        </div>
-
-        <FilterSelect
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={["ALL", "Open", "Investigating", "For Review", "Closed"]}
-          labels={{ ALL: "All Status" }}
-        />
-
-        <FilterSelect
-          value={severityFilter}
-          onChange={setSeverityFilter}
-          options={["ALL", "Minor", "Major", "Critical"]}
-          labels={{ ALL: "All Severity" }}
-        />
-      </div>
-
-      <div className="overflow-hidden rounded-xl border bg-white shadow dark:border-gray-700 dark:bg-slate-800">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-50 text-gray-700 dark:bg-slate-900/70 dark:text-gray-300">
-              <tr>
-                {[
-                  "Incident ID",
-                  "Employee",
-                  "Violation",
-                  "Severity",
-                  "Status",
-                  "Case Age",
-                  "Alerts",
-                  "Action",
-                ].map((head) => (
-                  <th
-                    key={head}
-                    className={`px-6 py-4 ${
-                      head === "Action" ? "text-right" : ""
-                    }`}
-                  >
-                    {head}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody className="text-gray-700 dark:text-gray-200">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                    Loading incident records...
-                  </td>
-                </tr>
-              ) : filteredIncidents.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                    No incident records found.
-                  </td>
-                </tr>
-              ) : (
-                filteredIncidents.map((incident) => (
-                  <tr
-                    key={incident.id}
-                    className="border-t border-gray-200 dark:border-gray-700"
-                  >
-                    <td className="px-6 py-4 font-semibold">
-                      {incident.displayId || formatIncidentCode(incident.id)}
-                    </td>
-                    <td className="px-6 py-4">{incident.employee}</td>
-                    <td className="px-6 py-4">{incident.violation}</td>
-                    <td className="px-6 py-4">
-                      <SeverityBadge level={incident.severity} />
-                    </td>
-                    <td className="px-6 py-4">
-                      <StatusBadge status={incident.status} />
-                    </td>
-                    <td className="px-6 py-4">
-                      <CaseAgeBadge incident={incident} />
-                    </td>
-                    <td className="px-6 py-4">
-                      <SmartAlertBadge alerts={incident.smartAlerts || []} />
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <ActionButtons
-                        incident={incident}
-                        isSuperAdmin={isSuperAdmin}
-                        onView={setSelectedIncident}
-                        onStartReview={setStartReviewIncident}
-                        onResolve={setResolutionIncident}
-                        onReview={setReviewIncident}
-                      />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <IncidentTable
+        isLoading={isLoading}
+        incidents={filteredIncidents}
+        search={search}
+        onSearchChange={setSearch}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
+        severityFilter={severityFilter}
+        onSeverityFilterChange={setSeverityFilter}
+        isSuperAdmin={isSuperAdmin}
+        formatIncidentCode={formatIncidentCode}
+        onView={setSelectedIncident}
+        onStartReview={setStartReviewIncident}
+        onResolve={setResolutionIncident}
+        onReview={setReviewIncident}
+      />
 
       {selectedIncident && (
         <ViewIncidentModal
