@@ -1,7 +1,7 @@
 const mysql = require("mysql2");
 
 const db = mysql.createConnection({
-  host: "100.119.171.111",
+  host: "localhost",
   user: "remoteuser",
   password: "",
   database: "welljob_db",

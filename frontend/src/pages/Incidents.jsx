@@ -487,7 +487,7 @@ export default function Incidents() {
       showNotice(
         "success",
         "Incident Report Saved",
-        `Incident ${formatIncidentCode(response?.id)} has been saved to MySQL.`
+        `Incident ${formatIncidentCode(response?.id)} has been saved to the system.`
       );
 
       return true;

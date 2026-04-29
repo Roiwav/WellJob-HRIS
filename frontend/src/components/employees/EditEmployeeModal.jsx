@@ -336,9 +336,13 @@ export default function EditEmployeeModal({
       console.log("UPDATED:", res.data);
       alert("Employee updated!");
       setShowReview(false);
-      onClose();
-      if (onSaveSuccess) onSaveSuccess();
-      else window.location.reload();
+      
+      if (onSaveSuccess) {
+        onSaveSuccess(formData.name);
+      } else {
+        window.location.reload();
+      }
+
     } catch (err) {
       console.error("UPDATE ERROR:", err);
       alert("Error updating employee");

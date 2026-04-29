@@ -123,6 +123,13 @@ export default function AuditLogsPage({ category, title, description }) {
     setLoading(true);
 
     try {
+      const endpoint = category === "ALL" || !category 
+        ? API_BASE 
+        : `${API_BASE}/${category}`;
+        
+      const res = await fetch(endpoint);
+      const data = await res.json();
+      setLogs(data);
       const response = await fetch(`${API_BASE}/${category}`);
       const data = await response.json().catch(() => []);
 
