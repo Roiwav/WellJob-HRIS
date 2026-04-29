@@ -82,13 +82,11 @@ function getActionStyle(action) {
   if (!action) return "bg-gray-100 text-gray-700";
 
   const normalizedAction = String(action).toUpperCase().replace(/\s+/g, "_");
-
   return ACTION_STYLE[normalizedAction] || "bg-gray-100 text-gray-700";
 }
 
 function formatAction(action) {
   if (!action) return "-";
-
   return String(action)
     .replace(/_/g, " ")
     .split(" ")
@@ -103,7 +101,6 @@ function formatDate(date) {
   const parsedDate = new Date(date);
 
   if (Number.isNaN(parsedDate.getTime())) return "-";
-
   return parsedDate.toLocaleString("en-PH", {
     year: "numeric",
     month: "short",
@@ -119,6 +116,7 @@ export default function AuditLogsPage({ category, title, description }) {
   const [role, setRole] = useState("All");
   const [loading, setLoading] = useState(true);
 
+  // 🔥 FIX: Nilinis at inayos ang fetch function para hindi mag-clash ang variables
   const fetchLogs = useCallback(async () => {
     setLoading(true);
 
@@ -127,17 +125,14 @@ export default function AuditLogsPage({ category, title, description }) {
         ? API_BASE 
         : `${API_BASE}/${category}`;
         
-      const res = await fetch(endpoint);
-      const data = await res.json();
-      setLogs(data);
-      const response = await fetch(`${API_BASE}/${category}`);
-      const data = await response.json().catch(() => []);
+      const response = await fetch(endpoint);
+      const responseData = await response.json().catch(() => []);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Failed to fetch audit logs.");
+        throw new Error(responseData?.error || "Failed to fetch audit logs.");
       }
 
-      setLogs(Array.isArray(data) ? data : []);
+      setLogs(Array.isArray(responseData) ? responseData : []);
     } catch (err) {
       console.error("FETCH AUDIT LOGS ERROR:", err);
       setLogs([]);
