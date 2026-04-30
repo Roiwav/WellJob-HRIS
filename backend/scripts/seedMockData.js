@@ -6,11 +6,16 @@ const EMPLOYEE_COUNT = 1000;
 
 // WARNING:
 // false = append mock data
-// true = delete all existing employee, document, incident data first
-const CLEAR_EXISTING_DATA = false;
+// true = delete all existing employee, document, and incident data first
+// Recommended: true muna para mabura yung old data na maraming violations
+const CLEAR_EXISTING_DATA = true;
 
 const START_YEAR = 2020;
 const END_YEAR = 2026;
+
+// Only 1 to 10 total employees will have violations/incidents
+const MIN_INCIDENT_EMPLOYEES = 1;
+const MAX_INCIDENT_EMPLOYEES = 10;
 
 const REQUIRED_DOCUMENTS = [
   "Resume",
@@ -160,6 +165,13 @@ const VIOLATIONS = [
 
 const INCIDENT_STATUSES = ["Open", "Investigating", "For Review", "Closed"];
 
+const COMPLIANCE_TYPES = [
+  "Complete Compliance",
+  "Incomplete Compliance",
+  "Expired Document",
+  "Expiring Soon",
+];
+
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
 }
@@ -194,6 +206,41 @@ function makeFullName() {
   return `${randomItem(FIRST_NAMES)} ${randomItem(MIDDLE_INITIALS)} ${randomItem(
     LAST_NAMES
   )}`;
+}
+
+function getTodayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getComplianceType() {
+  const roll = randomInt(1, 100);
+
+  // Majority complete/good compliance
+  if (roll <= 60) return "Complete Compliance";
+
+  // Some employees have incomplete documents
+  if (roll <= 78) return "Incomplete Compliance";
+
+  // Some employees have expired documents
+  if (roll <= 90) return "Expired Document";
+
+  // Some employees have incoming expiration
+  return "Expiring Soon";
+}
+
+function createIncidentEmployeeIndexes() {
+  const totalIncidentEmployees = randomInt(
+    MIN_INCIDENT_EMPLOYEES,
+    Math.min(MAX_INCIDENT_EMPLOYEES, EMPLOYEE_COUNT)
+  );
+
+  const indexes = new Set();
+
+  while (indexes.size < totalIncidentEmployees) {
+    indexes.add(randomInt(1, EMPLOYEE_COUNT));
+  }
+
+  return indexes;
 }
 
 function createMockPdfFile() {
@@ -246,15 +293,18 @@ startxref
 
 async function clearExistingData(connection) {
   await connection.query("SET FOREIGN_KEY_CHECKS = 0");
+
   await connection.query("DELETE FROM incident_evidence");
   await connection.query("DELETE FROM incidents");
   await connection.query("DELETE FROM employee_documents");
   await connection.query("DELETE FROM employees");
+
   await connection.query("SET FOREIGN_KEY_CHECKS = 1");
 }
 
 async function insertEmployee(connection, index) {
   const createdAt = randomDateBetweenYears(START_YEAR, END_YEAR);
+
   const status = chance(72) ? "Deployed" : "Floating / Standby";
   const employmentType = chance(65) ? "Contractual" : "Permanent";
   const company = status === "Deployed" ? randomItem(COMPANIES) : null;
@@ -310,20 +360,41 @@ async function insertEmployee(connection, index) {
 }
 
 async function insertDocuments(connection, employee, mockFilePath) {
+  const complianceType = getComplianceType();
+  const today = getTodayDate();
+
+  const missingDocs = new Set();
+  const affectedExpirableDoc = randomItem(EXPIRABLE_DOCUMENTS);
+
+  if (complianceType === "Incomplete Compliance") {
+    const missingCount = randomInt(1, 3);
+
+    while (missingDocs.size < missingCount) {
+      missingDocs.add(randomItem(REQUIRED_DOCUMENTS));
+    }
+  }
+
   for (const docName of REQUIRED_DOCUMENTS) {
-    // 85% chance may uploaded compliance document
-    const hasFile = chance(85);
+    const hasFile = !missingDocs.has(docName);
 
     let expirationDate = null;
 
     if (EXPIRABLE_DOCUMENTS.includes(docName)) {
-      // Random expired, expiring soon, or future document
-      if (chance(15)) {
-        expirationDate = addDays(new Date().toISOString().slice(0, 10), -randomInt(1, 180));
-      } else if (chance(25)) {
-        expirationDate = addDays(new Date().toISOString().slice(0, 10), randomInt(1, 30));
+      if (
+        complianceType === "Expired Document" &&
+        docName === affectedExpirableDoc
+      ) {
+        // Expired document
+        expirationDate = addDays(today, -randomInt(1, 180));
+      } else if (
+        complianceType === "Expiring Soon" &&
+        docName === affectedExpirableDoc
+      ) {
+        // Incoming expiration within 1 to 30 days
+        expirationDate = addDays(today, randomInt(1, 30));
       } else {
-        expirationDate = addDays(new Date().toISOString().slice(0, 10), randomInt(31, 365));
+        // Valid document
+        expirationDate = addDays(today, randomInt(31, 365));
       }
     }
 
@@ -336,64 +407,66 @@ async function insertDocuments(connection, employee, mockFilePath) {
       [employee.id, docName, expirationDate, hasFile ? mockFilePath : null]
     );
   }
+
+  return complianceType;
 }
 
-async function insertIncidents(connection, employee) {
-  // 55% employees no incidents, 45% may incident
-  if (chance(55)) return;
+async function insertIncidents(connection, employee, shouldHaveIncident) {
+  // Most employees are good/no violation
+  if (!shouldHaveIncident) return 0;
 
-  const incidentCount = randomInt(1, 5);
+  // Only 1 incident per selected employee para 1 to 10 total lang
+  const rule = randomItem(VIOLATIONS);
 
-  for (let i = 0; i < incidentCount; i++) {
-    const rule = randomItem(VIOLATIONS);
-    const incidentDate = randomDateBetweenYears(
-      Math.max(START_YEAR, Number(employee.createdAt.slice(0, 4))),
-      END_YEAR
-    );
+  const incidentDate = randomDateBetweenYears(
+    Math.max(START_YEAR, Number(employee.createdAt.slice(0, 4))),
+    END_YEAR
+  );
 
-    const status = randomItem(INCIDENT_STATUSES);
+  const status = randomItem(INCIDENT_STATUSES);
 
-    await connection.query(
-      `
-      INSERT INTO incidents
-      (
-        employee_id,
-        employee_name,
-        company,
-        violation_type,
-        severity,
-        status,
-        incident_date,
-        location,
-        description,
-        reported_by,
-        action_taken,
-        recommendation,
-        resolution_notes,
-        created_at,
-        updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        employee.id,
-        employee.name,
-        employee.company || "Unassigned",
-        rule.violation,
-        rule.severity,
-        status,
-        incidentDate,
-        employee.company || "Office / Client Site",
-        `Mock incident record for ${rule.violation.toLowerCase()}. Generated for testing KPI and dashboard analytics.`,
-        "System Seeder",
-        rule.action,
-        rule.recommendation,
-        status === "Closed" ? "Mock case closed for testing." : null,
-        `${incidentDate} ${pad(randomInt(8, 17))}:${pad(randomInt(0, 59))}:00`,
-        `${incidentDate} ${pad(randomInt(8, 17))}:${pad(randomInt(0, 59))}:00`,
-      ]
-    );
-  }
+  await connection.query(
+    `
+    INSERT INTO incidents
+    (
+      employee_id,
+      employee_name,
+      company,
+      violation_type,
+      severity,
+      status,
+      incident_date,
+      location,
+      description,
+      reported_by,
+      action_taken,
+      recommendation,
+      resolution_notes,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      employee.id,
+      employee.name,
+      employee.company || "Unassigned",
+      rule.violation,
+      rule.severity,
+      status,
+      incidentDate,
+      employee.company || "Office / Client Site",
+      `Mock incident record for ${rule.violation.toLowerCase()}. Generated for testing KPI and dashboard analytics.`,
+      "System Seeder",
+      rule.action,
+      rule.recommendation,
+      status === "Closed" ? "Mock case closed for testing." : null,
+      `${incidentDate} ${pad(randomInt(8, 17))}:${pad(randomInt(0, 59))}:00`,
+      `${incidentDate} ${pad(randomInt(8, 17))}:${pad(randomInt(0, 59))}:00`,
+    ]
+  );
+
+  return 1;
 }
 
 async function seedMockData() {
@@ -408,14 +481,37 @@ async function seedMockData() {
       await clearExistingData(connection);
     }
 
+    const incidentEmployeeIndexes = createIncidentEmployeeIndexes();
+
     let createdEmployees = 0;
     let createdDocuments = 0;
+    let createdIncidents = 0;
+
+    const complianceStats = {
+      "Complete Compliance": 0,
+      "Incomplete Compliance": 0,
+      "Expired Document": 0,
+      "Expiring Soon": 0,
+    };
 
     for (let i = 1; i <= EMPLOYEE_COUNT; i++) {
       const employee = await insertEmployee(connection, i);
-      await insertDocuments(connection, employee, mockFilePath);
-      await insertIncidents(connection, employee);
 
+      const complianceType = await insertDocuments(
+        connection,
+        employee,
+        mockFilePath
+      );
+
+      complianceStats[complianceType] += 1;
+
+      const incidentCreated = await insertIncidents(
+        connection,
+        employee,
+        incidentEmployeeIndexes.has(i)
+      );
+
+      createdIncidents += incidentCreated;
       createdEmployees += 1;
       createdDocuments += REQUIRED_DOCUMENTS.length;
 
@@ -427,8 +523,21 @@ async function seedMockData() {
     console.log("Mock data seed completed!");
     console.log(`Employees created: ${createdEmployees}`);
     console.log(`Documents created: ${createdDocuments}`);
-    console.log("Incidents created: random per employee");
+    console.log(`Incidents created: ${createdIncidents}`);
+    console.log(`Employees with violations: ${incidentEmployeeIndexes.size}`);
     console.log("Years covered:", `${START_YEAR} - ${END_YEAR}`);
+
+    console.log("Compliance Summary:");
+    console.log(
+      `Complete Compliance: ${complianceStats["Complete Compliance"]}`
+    );
+    console.log(
+      `Incomplete Compliance: ${complianceStats["Incomplete Compliance"]}`
+    );
+    console.log(`Expired Document: ${complianceStats["Expired Document"]}`);
+    console.log(`Expiring Soon: ${complianceStats["Expiring Soon"]}`);
+
+    console.log("Most employees have good/no incident records.");
 
     process.exit(0);
   } catch (error) {

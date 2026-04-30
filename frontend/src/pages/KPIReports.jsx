@@ -7,6 +7,7 @@ import { useAuth } from "../context/useAuth";
 import KPISummarySection from "../components/kpi/sections/KPISummarySection";
 import CriticalAlerts from "../components/kpi/sections/CriticalAlerts";
 import HighRiskEmployees from "../components/kpi/sections/HighRiskEmployees";
+import GoodStandingEmployees from "../components/kpi/sections/GoodStandingEmployees";
 import RiskIntelligenceSection from "../components/kpi/sections/RiskIntelligenceSection";
 import AnalyticsTrendsSection from "../components/kpi/sections/AnalyticsTrendsSection";
 
@@ -25,8 +26,6 @@ const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
 
-// Cache only for temporary compatibility with older pages.
-// Backend/MySQL is still the main source of truth.
 const EMPLOYEES_CACHE_KEY = "employees";
 const INCIDENTS_CACHE_KEY = "incidents";
 
@@ -118,7 +117,8 @@ function normalizeBackendIncident(incident) {
     reportedAt: incident.reportedAt || incident.reported_at || date,
     createdAt: incident.createdAt || incident.created_at || date,
     recommendation: incident.recommendation || "",
-    sanction: incident.sanction || incident.actionTaken || incident.action_taken || "",
+    sanction:
+      incident.sanction || incident.actionTaken || incident.action_taken || "",
     description: incident.description || "",
   };
 }
@@ -149,7 +149,9 @@ export default function KPIReports() {
       ]);
 
       const normalizedEmployees = Array.isArray(employeeData)
-        ? employeeData.map(normalizeBackendEmployee).filter((emp) => !emp.archived)
+        ? employeeData
+            .map(normalizeBackendEmployee)
+            .filter((emp) => !emp.archived)
         : [];
 
       const normalizedIncidents = Array.isArray(incidentData)
@@ -196,6 +198,19 @@ export default function KPIReports() {
   const highRiskEmployees = employees.filter(
     (emp) => emp.riskLevel === "High Risk"
   ).length;
+
+  const goodStandingEmployees = employees.filter((emp) => {
+    const violationCount = Number(emp.violationCount || 0);
+    const criticalIncidentCount = Number(emp.criticalIncidentCount || 0);
+    const riskLevel = String(emp.riskLevel || "").toLowerCase();
+
+    return (
+      violationCount === 0 &&
+      criticalIncidentCount === 0 &&
+      !riskLevel.includes("high") &&
+      !riskLevel.includes("repeat")
+    );
+  }).length;
 
   const compliantEmployees = employees.filter(
     (emp) => emp.violationCount === 0
@@ -266,6 +281,7 @@ export default function KPIReports() {
       complianceRate,
       repeatOffenders,
       highRiskEmployees,
+      goodStandingEmployees,
       criticalAlerts,
       employees,
     });
@@ -321,33 +337,47 @@ export default function KPIReports() {
         </div>
       ) : (
         <>
-          <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
-            <div className="min-w-0 space-y-8">
-              <KPISummarySection
-                totalEmployees={totalEmployees}
-                complianceRate={complianceRate}
-                repeatOffenders={repeatOffenders}
-                highRiskEmployees={highRiskEmployees}
-              />
+          <section className="space-y-8">
+            <KPISummarySection
+              totalEmployees={totalEmployees}
+              complianceRate={complianceRate}
+              repeatOffenders={repeatOffenders}
+              highRiskEmployees={highRiskEmployees}
+            />
 
-              <CriticalAlerts alerts={criticalAlerts} />
-            </div>
+            <CriticalAlerts alerts={criticalAlerts} />
+          </section>
 
-            <aside className="min-w-0 space-y-4">
+          <section className="space-y-4">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  High Risk Monitoring
+                  Employee Standing Monitoring
                 </h2>
 
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Employees requiring priority monitoring based on incident
-                  frequency and severity.
+                <p className="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+                  Balanced KPI monitoring for employees requiring corrective
+                  attention and employees with clean records for positive HR
+                  consideration.
                 </p>
               </div>
 
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-red-100 px-3 py-1 font-bold text-red-700 dark:bg-red-500/20 dark:text-red-300">
+                  {highRiskEmployees} high risk
+                </span>
+
+                <span className="rounded-full bg-emerald-100 px-3 py-1 font-bold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                  {goodStandingEmployees} good standing
+                </span>
+              </div>
+            </div>
+
+            <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2">
               <HighRiskEmployees employees={employees} />
-            </aside>
-          </div>
+              <GoodStandingEmployees employees={employees} />
+            </div>
+          </section>
 
           <RiskIntelligenceSection employees={employees} />
 
