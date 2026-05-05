@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FiCalendar, FiRefreshCw, FiSearch } from "react-icons/fi";
+import axios from "axios"; 
+import { useAuth } from "../context/useAuth"; // Kinuha ang useAuth context
 
 import DeploymentTable from "../components/deployments/table/DeploymentTable";
 import DeploymentModal from "../components/deployments/modals/DeploymentModal";
@@ -12,6 +14,7 @@ import {
 
 const API_BASE = "http://localhost:5000/api";
 const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
+const EMPLOYEES_API_URL = `${API_BASE}/employees`;
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -52,6 +55,9 @@ function normalizeDeployment(item) {
 }
 
 export default function Deployments() {
+  const { user } = useAuth(); // Kinuha ang current user info
+  const isSuperAdmin = user?.role === "SUPER_ADMIN"; // Check kung Super Admin
+
   const [selectedDeployment, setSelectedDeployment] = useState(null);
   const [modalMode, setModalMode] = useState("view");
   const [deployments, setDeployments] = useState([]);
@@ -143,6 +149,26 @@ export default function Deployments() {
     } catch (error) {
       console.error("Update deployment error:", error);
       setFetchError(error.message || "Unable to update deployment.");
+    }
+  };
+
+  const handleInlineUpdateRow = async (updatedDeployment) => {
+    try {
+      await axios.put(`${EMPLOYEES_API_URL}/${updatedDeployment.employeeId || updatedDeployment.id}/contract-end`, {
+        contractEnd: updatedDeployment.contractEnd
+      });
+
+      setDeployments((prev) =>
+        prev.map((dep) =>
+          dep.id === updatedDeployment.id ? updatedDeployment : dep
+        )
+      );
+
+      showSuccessToast("Contract end date updated successfully!");
+
+    } catch (error) {
+      console.error("Error updating contract end date:", error);
+      setFetchError("Failed to update contract end date. Please check your backend.");
     }
   };
 
@@ -256,7 +282,12 @@ export default function Deployments() {
             Loading deployment records from backend...
           </div>
         ) : (
-          <DeploymentTable deployments={filteredDeployments} openView={openView} />
+          <DeploymentTable 
+            deployments={filteredDeployments} 
+            openView={openView} 
+            onUpdateRow={handleInlineUpdateRow} 
+            isSuperAdmin={isSuperAdmin} /* Pinasa natin ang boolean check dito */
+          />
         )}
 
         <DeploymentModal

@@ -82,32 +82,14 @@ exports.createEmployee = async (req, res) => {
   const connection = db.promise();
 
   try {
-    const {
-      name,
-      company,
-      status,
-      employmentType,
-      contractStart,
-      contractEnd,
-    } = req.body;
+    const { name, company, status, contractStart } = req.body;
 
     const actor = getActor(req);
 
     const finalName = toNullable(name);
     const finalStatus = toNullable(status) || "Deployed";
-    const finalEmploymentType = toNullable(employmentType) || "Permanent";
-    const finalCompany =
-      finalStatus === "Deployed" ? toNullable(company) : null;
-
-    const finalContractStart =
-      finalEmploymentType === "Contractual"
-        ? toNullableDate(contractStart)
-        : null;
-
-    const finalContractEnd =
-      finalEmploymentType === "Contractual"
-        ? toNullableDate(contractEnd)
-        : null;
+    const finalCompany = finalStatus === "Deployed" ? toNullable(company) : null;
+    const finalContractStart = toNullableDate(contractStart);
 
     if (!finalName) {
       return res.status(400).json({ error: "Employee name is required." });
@@ -119,32 +101,15 @@ exports.createEmployee = async (req, res) => {
       });
     }
 
-    if (
-      finalEmploymentType === "Contractual" &&
-      (!finalContractStart || !finalContractEnd)
-    ) {
-      return res.status(400).json({
-        error:
-          "Contract start and end dates are required for contractual employees.",
-      });
-    }
-
     const documents = extractDocumentsFromReq(req);
 
     const [result] = await connection.query(
       `
       INSERT INTO employees
-      (name, company, status, employmentType, contractStart, contractEnd)
-      VALUES (?, ?, ?, ?, ?, ?)
+      (name, company, status, contractStart)
+      VALUES (?, ?, ?, ?)
       `,
-      [
-        finalName,
-        finalCompany,
-        finalStatus,
-        finalEmploymentType,
-        finalContractStart,
-        finalContractEnd,
-      ]
+      [finalName, finalCompany, finalStatus, finalContractStart]
     );
 
     const employeeId = result.insertId;
@@ -225,32 +190,14 @@ exports.updateEmployee = async (req, res) => {
   const connection = db.promise();
 
   try {
-    const {
-      name,
-      company,
-      status,
-      employmentType,
-      contractStart,
-      contractEnd,
-    } = req.body;
+    const { name, company, status, contractStart } = req.body;
 
     const actor = getActor(req);
 
     const finalName = toNullable(name);
     const finalStatus = toNullable(status) || "Deployed";
-    const finalEmploymentType = toNullable(employmentType) || "Permanent";
-    const finalCompany =
-      finalStatus === "Deployed" ? toNullable(company) : null;
-
-    const finalContractStart =
-      finalEmploymentType === "Contractual"
-        ? toNullableDate(contractStart)
-        : null;
-
-    const finalContractEnd =
-      finalEmploymentType === "Contractual"
-        ? toNullableDate(contractEnd)
-        : null;
+    const finalCompany = finalStatus === "Deployed" ? toNullable(company) : null;
+    const finalContractStart = toNullableDate(contractStart);
 
     if (!finalName) {
       return res.status(400).json({ error: "Employee name is required." });
@@ -262,16 +209,6 @@ exports.updateEmployee = async (req, res) => {
       });
     }
 
-    if (
-      finalEmploymentType === "Contractual" &&
-      (!finalContractStart || !finalContractEnd)
-    ) {
-      return res.status(400).json({
-        error:
-          "Contract start and end dates are required for contractual employees.",
-      });
-    }
-
     await connection.query(
       `
       UPDATE employees
@@ -279,20 +216,10 @@ exports.updateEmployee = async (req, res) => {
         name = ?,
         company = ?,
         status = ?,
-        employmentType = ?,
-        contractStart = ?,
-        contractEnd = ?
+        contractStart = ?
       WHERE id = ?
       `,
-      [
-        finalName,
-        finalCompany,
-        finalStatus,
-        finalEmploymentType,
-        finalContractStart,
-        finalContractEnd,
-        id,
-      ]
+      [finalName, finalCompany, finalStatus, finalContractStart, id]
     );
 
     const [existingDocs] = await connection.query(
@@ -359,6 +286,43 @@ exports.updateEmployee = async (req, res) => {
 
     res.status(500).json({
       error: err.sqlMessage || err.message || "Update employee error",
+    });
+  }
+};
+
+// BAGONG FUNCTION PARA SA INLINE EDITING NG CONTRACT END
+exports.updateContractEnd = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { contractEnd } = req.body;
+    const actor = getActor(req);
+
+    const finalContractEnd = toNullableDate(contractEnd);
+    const employeeName = await getEmployeeNameById(id);
+
+    await db.promise().query(
+      `UPDATE employees SET contractEnd = ? WHERE id = ?`,
+      [finalContractEnd, id]
+    );
+
+    await logAudit({
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
+      category: AUDIT_CATEGORY.OPERATIONAL,
+      action: "UPDATE_CONTRACT_END",
+      description: `${actor.fullName} updated contract end date for ${employeeName}.`,
+    });
+
+    res.json({
+      success: true,
+      message: "Contract end date updated successfully.",
+    });
+  } catch (err) {
+    console.error("UPDATE CONTRACT END ERROR:", err);
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Failed to update contract end date",
     });
   }
 };

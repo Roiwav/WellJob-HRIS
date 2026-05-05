@@ -35,9 +35,7 @@ export default function AddEmployeeModal({
     name: "",
     status: "Deployed",
     company: "",
-    employmentType: "Permanent",
     contractStart: "",
-    contractEnd: "",
     documents: createDefaultDocuments([]),
   }));
 
@@ -51,7 +49,6 @@ export default function AddEmployeeModal({
     duplicateId: "",
     duplicateConfirm: "",
     contractStart: "",
-    contractEnd: "",
     documents: {},
   });
 
@@ -91,19 +88,11 @@ export default function AddEmployeeModal({
     const totalDocs = DOCUMENT_OPTIONS.length;
     const docsScore = totalDocs > 0 ? (completedDocuments.length / totalDocs) * 40 : 0;
 
-    if (formData.name.trim()) score += 20;
+    if (formData.name.trim()) score += 30;
     if (formData.status) score += 10;
-    if (formData.status !== "Deployed" || formData.company.trim()) score += 15;
-    if (formData.employmentType) score += 15;
+    if (formData.status !== "Deployed" || formData.company.trim()) score += 20;
 
-    if (
-      formData.employmentType === "Permanent" ||
-      (formData.employmentType === "Contractual" && formData.contractStart && formData.contractEnd)
-    ) {
-      score += docsScore;
-    } else {
-      score += docsScore;
-    }
+    score += docsScore;
 
     return Math.min(Math.round(score), 100);
   }, [formData, completedDocuments.length]);
@@ -125,20 +114,13 @@ export default function AddEmployeeModal({
 
     if (name === "status" && value !== "Deployed") {
       setFormData((prev) => ({
-        ...prev, status: value, company: "", employmentType: "Permanent", contractStart: "", contractEnd: "",
+        ...prev, status: value, company: "", contractStart: "",
       }));
       setErrors((prev) => ({
         ...prev, company: "", duplicateConfirm: name === "name" ? "" : prev.duplicateConfirm,
       }));
       setFilteredCompanies(COMPANY_OPTIONS);
       setShowSuggestions(false);
-      return;
-    }
-
-    if (name === "employmentType" && value === "Permanent") {
-      setFormData((prev) => ({
-        ...prev, employmentType: value, contractStart: "", contractEnd: "",
-      }));
       return;
     }
 
@@ -227,7 +209,7 @@ export default function AddEmployeeModal({
 
   const validateForm = () => {
     const nextErrors = {
-      name: "", company: "", duplicateId: "", duplicateConfirm: "", contractStart: "", contractEnd: "", documents: {},
+      name: "", company: "", duplicateId: "", duplicateConfirm: "", contractStart: "", documents: {},
     };
 
     const trimmedName = formData.name.trim().replace(/\s+/g, " ");
@@ -245,12 +227,8 @@ export default function AddEmployeeModal({
       nextErrors.company = "Company name is required for deployed employees.";
     }
 
-    if (formData.employmentType === "Contractual") {
-      if (!formData.contractStart) nextErrors.contractStart = "Contract start date is required.";
-      if (!formData.contractEnd) nextErrors.contractEnd = "Contract end date is required.";
-      if (formData.contractStart && formData.contractEnd && new Date(formData.contractEnd) < new Date(formData.contractStart)) {
-        nextErrors.contractEnd = "Contract end date cannot be earlier than start date.";
-      }
+    if (!formData.contractStart) {
+      nextErrors.contractStart = "Start date is required.";
     }
 
     const duplicateId = employees.some((emp) => {
@@ -281,7 +259,7 @@ export default function AddEmployeeModal({
 
     return !(
       nextErrors.name || nextErrors.company || nextErrors.duplicateId || nextErrors.duplicateConfirm ||
-      nextErrors.contractStart || nextErrors.contractEnd || nextErrors.documents.general || hasDocumentErrors
+      nextErrors.contractStart || nextErrors.documents.general || hasDocumentErrors
     );
   };
 
@@ -297,9 +275,7 @@ export default function AddEmployeeModal({
       formDataToSend.append("name", formData.name);
       formDataToSend.append("company", formData.company);
       formDataToSend.append("status", formData.status);
-      formDataToSend.append("employmentType", formData.employmentType);
       formDataToSend.append("contractStart", formData.contractStart);
-      formDataToSend.append("contractEnd", formData.contractEnd);
 
       const selectedDocs = formData.documents.filter((doc) => doc.checked);
       selectedDocs.forEach((doc, index) => {
@@ -425,31 +401,11 @@ export default function AddEmployeeModal({
                           </div>
                         </div>
 
-                        <div>
-                          <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">Employment Type</label>
-                          <div className="relative">
-                            <select name="employmentType" value={formData.employmentType} onChange={handleChange} className="w-full appearance-none rounded-2xl border border-gray-200 bg-white px-4 py-3 pr-10 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white">
-                              <option value="Permanent">Permanent</option>
-                              <option value="Contractual">Contractual</option>
-                            </select>
-                            <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                          </div>
+                        <div className="md:col-span-2">
+                          <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">Start Date</label>
+                          <input type="date" name="contractStart" value={formData.contractStart} onChange={handleChange} className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white" />
+                          <ErrorText>{errors.contractStart}</ErrorText>
                         </div>
-
-                        {formData.employmentType === "Contractual" && (
-                          <>
-                            <div>
-                              <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">Contract Start Date</label>
-                              <input type="date" name="contractStart" value={formData.contractStart} onChange={handleChange} className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white" />
-                              <ErrorText>{errors.contractStart}</ErrorText>
-                            </div>
-                            <div>
-                              <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">Contract End Date</label>
-                              <input type="date" name="contractEnd" value={formData.contractEnd} onChange={handleChange} className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white" />
-                              <ErrorText>{errors.contractEnd}</ErrorText>
-                            </div>
-                          </>
-                        )}
 
                         <div className="md:col-span-2">
                           <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">Full Name</label>
@@ -661,13 +617,7 @@ export default function AddEmployeeModal({
               <ReviewBox label="Employee ID" value={generatedId} />
               <ReviewBox label="Full Name" value={toProperName(formData.name)} />
               <ReviewBox label="Status" value={formData.status} />
-              <ReviewBox label="Employment Type" value={formData.employmentType} />
-              {formData.employmentType === "Contractual" && (
-                <>
-                  <ReviewBox label="Contract Start" value={formData.contractStart || "-"} />
-                  <ReviewBox label="Contract End" value={formData.contractEnd || "-"} />
-                </>
-              )}
+              <ReviewBox label="Start Date" value={formData.contractStart || "-"} />
               <ReviewBox label="Company" value={formData.status === "Deployed" ? formData.company || "-" : "Not Assigned"} />
             </div>
 
