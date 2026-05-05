@@ -1,4 +1,5 @@
-import { FiBriefcase, FiEye } from "react-icons/fi";
+import { useState } from "react";
+import { FiBriefcase, FiEye, FiEdit2, FiCheck, FiX } from "react-icons/fi";
 
 function formatDisplayDate(dateValue) {
   if (!dateValue || dateValue === "-") return "-";
@@ -13,16 +14,23 @@ function formatDisplayDate(dateValue) {
   });
 }
 
+function formatDateForInput(dateValue) {
+  if (!dateValue || dateValue === "-") return "";
+  try {
+    const d = new Date(dateValue);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toISOString().split("T")[0];
+  } catch {
+    return "";
+  }
+}
+
 function StatusBadge({ status }) {
   const styles = {
-    Active:
-      "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300",
-    Completed:
-      "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
-    Pending:
-      "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
-    Cancelled:
-      "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
+    Active: "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300",
+    Completed: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+    Pending: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+    Cancelled: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
   };
 
   return (
@@ -36,7 +44,28 @@ function StatusBadge({ status }) {
   );
 }
 
-export default function DeploymentTable({ deployments = [], openView }) {
+// Tinatanggap natin ang isSuperAdmin prop dito
+export default function DeploymentTable({ deployments = [], openView, onUpdateRow, isSuperAdmin }) {
+  const [editingId, setEditingId] = useState(null);
+  const [tempDate, setTempDate] = useState("");
+
+  const handleStartEdit = (deployment) => {
+    setEditingId(deployment.id);
+    setTempDate(formatDateForInput(deployment.contractEnd));
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setTempDate("");
+  };
+
+  const handleSaveEdit = (deployment) => {
+    if (onUpdateRow) {
+      onUpdateRow({ ...deployment, contractEnd: tempDate });
+    }
+    setEditingId(null);
+  };
+
   return (
     <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
       <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-white/10">
@@ -102,7 +131,17 @@ export default function DeploymentTable({ deployments = [], openView }) {
                   </td>
 
                   <td className="px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-300">
-                    {formatDisplayDate(deployment.contractEnd)}
+                    {editingId === deployment.id ? (
+                      <input
+                        type="date"
+                        value={tempDate}
+                        onChange={(e) => setTempDate(e.target.value)}
+                        className="w-full rounded-xl border border-indigo-300 bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-indigo-500/50 dark:bg-slate-800 dark:text-white"
+                        autoFocus
+                      />
+                    ) : (
+                      formatDisplayDate(deployment.contractEnd)
+                    )}
                   </td>
 
                   <td className="px-6 py-4">
@@ -110,15 +149,50 @@ export default function DeploymentTable({ deployments = [], openView }) {
                   </td>
 
                   <td className="px-6 py-4">
-                    <div className="flex justify-center">
-                      <button
-                        type="button"
-                        onClick={() => openView(deployment)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-600 hover:text-white dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500"
-                        title="View Deployment"
-                      >
-                        <FiEye />
-                      </button>
+                    <div className="flex justify-center gap-2">
+                      {editingId === deployment.id ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEdit(deployment)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-green-200 bg-green-50 text-green-600 transition hover:bg-green-600 hover:text-white dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-400 dark:hover:bg-green-500"
+                            title="Save Date"
+                          >
+                            <FiCheck />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 transition hover:bg-red-600 hover:text-white dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500"
+                            title="Cancel"
+                          >
+                            <FiX />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {/* Dito natin tinatago ang Edit button kung SUPER_ADMIN */}
+                          {!isSuperAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(deployment)}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 transition hover:bg-blue-600 hover:text-white dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500"
+                              title="Edit Contract End"
+                            >
+                              <FiEdit2 />
+                            </button>
+                          )}
+                          
+                          <button
+                            type="button"
+                            onClick={() => openView(deployment)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-600 hover:text-white dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500"
+                            title="View Deployment"
+                          >
+                            <FiEye />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -130,11 +204,9 @@ export default function DeploymentTable({ deployments = [], openView }) {
                     <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-white/10">
                       <FiBriefcase size={24} />
                     </div>
-
                     <p className="font-extrabold text-gray-900 dark:text-white">
                       No deployments found
                     </p>
-
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                       Deployment records will appear here once an employee is deployed.
                     </p>
