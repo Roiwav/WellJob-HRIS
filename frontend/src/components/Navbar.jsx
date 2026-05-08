@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FiAlertTriangle,
@@ -11,19 +11,133 @@ import {
 } from "react-icons/fi";
 import { useAuth } from "../context/useAuth";
 
-const INCIDENTS_KEY = "incidents";
-
-function safeParse(key) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
+const API_BASE = "http://localhost:5000/api";
+const EMPLOYEE_API_URL = `${API_BASE}/employees`;
+const INCIDENT_API_URL = `${API_BASE}/incidents`;
 
 function getReadKey(role) {
   return `notifications_last_read_${role || "USER"}`;
+}
+
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeStatus(status) {
+  const value = normalizeText(status);
+
+  if (value === "resolved") return "For Review";
+  if (value === "for_review") return "For Review";
+  if (value === "for review") return "For Review";
+  if (value === "closed") return "Closed";
+  if (value === "investigating") return "Investigating";
+
+  return "Open";
+}
+
+function isArchivedEmployee(employee) {
+  return employee?.archived === true || Number(employee?.archived) === 1;
+}
+
+function normalizeBackendEmployee(employee) {
+  return {
+    ...employee,
+    id: employee.id || employee.employeeId || employee.employee_id,
+    employeeId: employee.id || employee.employeeId || employee.employee_id,
+    name:
+      employee.name ||
+      employee.full_name ||
+      employee.fullName ||
+      "Unknown Employee",
+    archived: isArchivedEmployee(employee),
+  };
+}
+
+function normalizeBackendIncident(incident) {
+  const date =
+    incident.reportedAt ||
+    incident.reported_at ||
+    incident.date ||
+    incident.incidentDate ||
+    incident.incident_date ||
+    incident.createdAt ||
+    incident.created_at ||
+    new Date().toISOString();
+
+  const violation =
+    incident.violation ||
+    incident.violationType ||
+    incident.violation_type ||
+    "No violation specified";
+
+  return {
+    ...incident,
+    id: incident.id,
+    employeeId:
+      incident.employeeId ||
+      incident.employee_id ||
+      incident.empId ||
+      incident.employeeID ||
+      "",
+    employee:
+      incident.employee ||
+      incident.employeeName ||
+      incident.employee_name ||
+      "Unknown employee",
+    employeeName:
+      incident.employeeName ||
+      incident.employee ||
+      incident.employee_name ||
+      "Unknown employee",
+    violation,
+    violationType: violation,
+    severity: incident.severity || "Minor",
+    status: normalizeStatus(incident.status || "Open"),
+    date,
+    reportedAt: incident.reportedAt || incident.reported_at || date,
+    createdAt: incident.createdAt || incident.created_at || date,
+    updatedAt: incident.updatedAt || incident.updated_at || date,
+    resolution: incident.resolution || null,
+    review: incident.review || null,
+  };
+}
+
+async function requestJson(url) {
+  const response = await fetch(url);
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error ||
+        data?.message ||
+        `Request failed with status ${response.status}`
+    );
+  }
+
+  return data;
+}
+
+function isSameEmployee(employee, incident) {
+  const employeeId = String(
+    employee?.id || employee?.employeeId || employee?.employee_id || ""
+  );
+
+  const employeeName = normalizeText(
+    employee?.name || employee?.full_name || employee?.fullName || ""
+  );
+
+  const incidentEmployeeId = String(
+    incident?.employeeId || incident?.employee_id || incident?.empId || ""
+  );
+
+  const incidentEmployeeName = normalizeText(
+    incident?.employee || incident?.employeeName || incident?.employee_name || ""
+  );
+
+  return (
+    (!!employeeId && employeeId === incidentEmployeeId) ||
+    (!!employeeName && employeeName === incidentEmployeeName)
+  );
 }
 
 function getIncidentTimeByRole(incident, role) {
@@ -41,11 +155,12 @@ function getIncidentTimeByRole(incident, role) {
         incident?.date;
 
   const time = new Date(raw).getTime();
+
   return Number.isNaN(time) ? 0 : time;
 }
 
 function isNotificationVisibleForRole(incident, role) {
-  const status = incident?.status || "Open";
+  const status = normalizeStatus(incident?.status || "Open");
 
   if (role === "IT_SUPPORT") return false;
 
@@ -64,6 +179,7 @@ function formatNotificationDate(value) {
   if (!value) return "-";
 
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return "-";
 
   return date.toLocaleString("en-PH", {
@@ -75,16 +191,22 @@ function formatNotificationDate(value) {
 }
 
 function getNotificationTitle(incident, role) {
+  const incidentId = incident?.displayId || incident?.id || "Incident";
+
   if (role === "SUPER_ADMIN") {
-    return `Case for Review: ${incident.id || "Incident"}`;
+    return `Case for Review: ${incidentId}`;
   }
 
-  return `New Incident: ${incident.id || "Incident"}`;
+  return `New Incident: ${incidentId}`;
 }
 
 function getNotificationMessage(incident) {
-  const employee = incident?.employee || "Unknown employee";
-  const violation = incident?.violation || "No violation specified";
+  const employee =
+    incident?.employee || incident?.employeeName || "Unknown employee";
+
+  const violation =
+    incident?.violation || incident?.violationType || "No violation specified";
+
   return `${employee} • ${violation}`;
 }
 
@@ -102,27 +224,44 @@ export default function Navbar({
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
 
-  const canViewNotifications =
-    user?.role === "HR_MANAGER" ||
-    user?.role === "HR_STAFF" ||
-    user?.role === "SUPER_ADMIN";
+  const currentRole = user?.role || "USER";
+
+  const canViewNotifications = useMemo(() => {
+    return ["HR_MANAGER", "HR_STAFF", "SUPER_ADMIN"].includes(currentRole);
+  }, [currentRole]);
 
   const roleConfig = useMemo(() => {
     const configs = {
-      HR_MANAGER: { label: "HM", color: "bg-blue-600", roleName: "HR Manager" },
-      HR_STAFF: { label: "HS", color: "bg-amber-500", roleName: "HR Staff" },
-      IT_SUPPORT: { label: "IT", color: "bg-green-600", roleName: "IT Support" },
-      SUPER_ADMIN: { label: "SA", color: "bg-red-600", roleName: "Super Admin" },
+      HR_MANAGER: {
+        label: "HM",
+        color: "bg-blue-600",
+        roleName: "HR Manager",
+      },
+      HR_STAFF: {
+        label: "HS",
+        color: "bg-amber-500",
+        roleName: "HR Staff",
+      },
+      IT_SUPPORT: {
+        label: "IT",
+        color: "bg-green-600",
+        roleName: "IT Support",
+      },
+      SUPER_ADMIN: {
+        label: "SA",
+        color: "bg-red-600",
+        roleName: "Super Admin",
+      },
     };
 
     return (
-      configs[user?.role] || {
+      configs[currentRole] || {
         label: "US",
         color: "bg-gray-500",
         roleName: "User",
       }
     );
-  }, [user?.role]);
+  }, [currentRole]);
 
   const displayName =
     user?.name ||
@@ -132,55 +271,84 @@ export default function Navbar({
     user?.username ||
     "User";
 
-  const refreshNotifications = () => {
+  const username = user?.username || "-";
+
+  const refreshNotifications = useCallback(async () => {
     if (!canViewNotifications) {
       setUnreadCount(0);
       setLatestNotifications([]);
       return;
     }
 
-    const incidents = safeParse(INCIDENTS_KEY);
-    const lastRead = localStorage.getItem(getReadKey(user?.role));
-    const lastReadTime = lastRead ? new Date(lastRead).getTime() : 0;
+    try {
+      const [employeeData, incidentData] = await Promise.all([
+        requestJson(EMPLOYEE_API_URL),
+        requestJson(INCIDENT_API_URL),
+      ]);
 
-    const visibleNotifications = incidents
-      .filter((incident) => isNotificationVisibleForRole(incident, user?.role))
-      .map((incident) => ({
-        ...incident,
-        notificationTime: getIncidentTimeByRole(incident, user?.role),
-      }))
-      .sort((a, b) => b.notificationTime - a.notificationTime);
+      const activeEmployees = Array.isArray(employeeData)
+        ? employeeData
+            .map(normalizeBackendEmployee)
+            .filter((employee) => !employee.archived)
+        : [];
 
-    const unread = visibleNotifications.filter(
-      (incident) => incident.notificationTime > lastReadTime
-    ).length;
+      const incidents = Array.isArray(incidentData)
+        ? incidentData.map(normalizeBackendIncident)
+        : [];
 
-    setUnreadCount(unread);
-    setLatestNotifications(visibleNotifications.slice(0, 5));
-  };
+      const lastRead = localStorage.getItem(getReadKey(currentRole));
+      const lastReadTime = lastRead ? new Date(lastRead).getTime() : 0;
+
+      const visibleNotifications = incidents
+        .filter((incident) => {
+          const employeeIsActive = activeEmployees.some((employee) =>
+            isSameEmployee(employee, incident)
+          );
+
+          return (
+            employeeIsActive &&
+            isNotificationVisibleForRole(incident, currentRole)
+          );
+        })
+        .map((incident) => ({
+          ...incident,
+          notificationTime: getIncidentTimeByRole(incident, currentRole),
+        }))
+        .sort((a, b) => b.notificationTime - a.notificationTime);
+
+      const unread = visibleNotifications.filter(
+        (incident) => incident.notificationTime > lastReadTime
+      ).length;
+
+      setUnreadCount(unread);
+      setLatestNotifications(visibleNotifications.slice(0, 5));
+    } catch (error) {
+      console.error("Navbar notification backend fetch failed:", error);
+      setUnreadCount(0);
+      setLatestNotifications([]);
+    }
+  }, [canViewNotifications, currentRole]);
 
   useEffect(() => {
-    const reload = () => {
-      setTimeout(refreshNotifications, 0);
-    };
+    refreshNotifications();
 
-    reload();
+    const handleDataUpdated = () => refreshNotifications();
+    const handleWindowFocus = () => refreshNotifications();
+    const intervalId = window.setInterval(refreshNotifications, 30000);
 
-    window.addEventListener("dataUpdated", reload);
-    window.addEventListener("storage", reload);
+    window.addEventListener("dataUpdated", handleDataUpdated);
+    window.addEventListener("focus", handleWindowFocus);
 
     return () => {
-      window.removeEventListener("dataUpdated", reload);
-      window.removeEventListener("storage", reload);
+      window.removeEventListener("dataUpdated", handleDataUpdated);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.clearInterval(intervalId);
     };
-  }, [user?.role, canViewNotifications]);
+  }, [refreshNotifications]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (
-        profileRef.current &&
-        !profileRef.current.contains(event.target)
-      ) {
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
         setOpenProfile(false);
       }
 
@@ -201,28 +369,33 @@ export default function Navbar({
     };
   }, [openProfile, openNotifications]);
 
+  const markNotificationsAsRead = useCallback(() => {
+    if (!canViewNotifications) return;
+
+    localStorage.setItem(getReadKey(currentRole), new Date().toISOString());
+    setUnreadCount(0);
+  }, [canViewNotifications, currentRole]);
+
   const handleToggleNotifications = () => {
     if (!canViewNotifications) return;
 
     setOpenNotifications((prev) => !prev);
     setOpenProfile(false);
+    refreshNotifications();
   };
 
   const handleViewNotifications = () => {
     if (!canViewNotifications) return;
 
-    localStorage.setItem(getReadKey(user?.role), new Date().toISOString());
-    window.dispatchEvent(new Event("dataUpdated"));
-
+    markNotificationsAsRead();
     setOpenNotifications(false);
     navigate("/notifications");
   };
 
   const handleViewIncident = (incidentId) => {
-    localStorage.setItem(getReadKey(user?.role), new Date().toISOString());
-    window.dispatchEvent(new Event("dataUpdated"));
-
+    markNotificationsAsRead();
     setOpenNotifications(false);
+
     navigate("/incidents", {
       state: { incidentId },
     });
@@ -231,9 +404,11 @@ export default function Navbar({
   const handleLogout = () => {
     localStorage.removeItem("user");
     localStorage.removeItem("token");
+
     setUser(null);
     setOpenProfile(false);
     setOpenNotifications(false);
+
     navigate("/login", { replace: true });
   };
 
@@ -268,6 +443,7 @@ export default function Navbar({
                     <h3 className="text-sm font-extrabold text-gray-900 dark:text-white">
                       Notifications
                     </h3>
+
                     <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                       Latest incident workflow updates
                     </p>
@@ -307,7 +483,7 @@ export default function Navbar({
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-3">
                               <p className="truncate text-sm font-bold text-gray-900 dark:text-white">
-                                {getNotificationTitle(incident, user?.role)}
+                                {getNotificationTitle(incident, currentRole)}
                               </p>
 
                               <span className="shrink-0 text-[11px] text-gray-400">
@@ -339,9 +515,11 @@ export default function Navbar({
                       <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-slate-800">
                         <FiBell size={22} />
                       </div>
+
                       <p className="text-sm font-semibold text-gray-900 dark:text-white">
                         No notifications
                       </p>
+
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         Incident workflow updates will appear here.
                       </p>
@@ -408,8 +586,9 @@ export default function Navbar({
                     <p className="truncate text-sm font-bold text-gray-900 dark:text-white">
                       {displayName}
                     </p>
+
                     <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                      {user?.username || "-"} • {roleConfig.roleName}
+                      {username} • {roleConfig.roleName}
                     </p>
                   </div>
                 </div>

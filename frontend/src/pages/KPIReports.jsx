@@ -26,8 +26,6 @@ const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
 
-const EMPLOYEES_CACHE_KEY = "employees";
-const INCIDENTS_CACHE_KEY = "incidents";
 
 async function requestJson(url) {
   const response = await fetch(url);
@@ -123,11 +121,6 @@ function normalizeBackendIncident(incident) {
   };
 }
 
-function cacheBackendData({ employees, incidents }) {
-  localStorage.setItem(EMPLOYEES_CACHE_KEY, JSON.stringify(employees));
-  localStorage.setItem(INCIDENTS_CACHE_KEY, JSON.stringify(incidents));
-  window.dispatchEvent(new Event("dataUpdated"));
-}
 
 export default function KPIReports() {
   const { user } = useAuth();
@@ -167,10 +160,6 @@ export default function KPIReports() {
       setEmployeesRaw(normalizedEmployees);
       setIncidentsRaw(visibleIncidents);
 
-      cacheBackendData({
-        employees: normalizedEmployees,
-        incidents: visibleIncidents,
-      });
     } catch (error) {
       console.error("KPI backend fetch error:", error);
       setFetchError(error.message || "Unable to load KPI backend data.");

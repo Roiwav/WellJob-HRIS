@@ -1,7 +1,7 @@
 import { getSeverityWeight } from "../configStorage";
 
-export const EMPLOYEES_KEY = "employees";
-export const INCIDENTS_KEY = "incidents";
+export const EMPLOYEES_KEY = "legacy_employees_disabled";
+export const INCIDENTS_KEY = "legacy_incidents_disabled";
 
 export const KPI_LEVELS = {
   GOOD_STANDING: "Good Standing",
@@ -76,14 +76,8 @@ export const WELLJOB_LOW_KPI_ACTIONS = [
   },
 ];
 
-export function safeParse(key) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error(`Failed to parse ${key}:`, error);
-    return [];
-  }
+export function safeParse() {
+  return [];
 }
 
 export function normalizeText(value) {
@@ -404,7 +398,7 @@ function buildDynamicReason({
   }
 
   if (primaryCode === "EMPLOYEE_TRAINING") {
-    return `Employee is recommended for training because the recorded concern is related to task quality, productivity, safety, or competency improvement. Training can help correct the issue before it becomes repeated.`;
+    return "Employee is recommended for training because the recorded concern is related to task quality, productivity, safety, or competency improvement. Training can help correct the issue before it becomes repeated.";
   }
 
   if (primaryCode === "SEMINAR_WEBINAR") {
@@ -413,17 +407,17 @@ function buildDynamicReason({
     }
 
     if (attendanceOrPolicyConcern) {
-      return `Employee is recommended for a refresher seminar or webinar because the recorded violation is related to attendance, policy compliance, or workplace behavior awareness.`;
+      return "Employee is recommended for a refresher seminar or webinar because the recorded violation is related to attendance, policy compliance, or workplace behavior awareness.";
     }
 
-    return `Employee is recommended for a seminar or webinar to reinforce company policies and prevent repeated KPI standing concerns.`;
+    return "Employee is recommended for a seminar or webinar to reinforce company policies and prevent repeated KPI standing concerns.";
   }
 
   if (primaryCode === "VERBAL_COUNSELING") {
     return `Employee is recommended for verbal counseling because there is an early KPI standing concern with ${violationCount} recorded violation(s), allowing HR to correct the issue before it becomes repeated.`;
   }
 
-  return `Employee recommendation is based on the recorded violation pattern, KPI level, risk level, and severity score.`;
+  return "Employee recommendation is based on the recorded violation pattern, KPI level, risk level, and severity score.";
 }
 
 export function getCorrectiveActionRecommendation({
@@ -548,10 +542,7 @@ export function getCorrectiveActionRecommendation({
       return true;
     }
 
-    if (
-      action.code === "REASSIGNMENT_OF_POSITION" &&
-      possibleRoleMismatch
-    ) {
+    if (action.code === "REASSIGNMENT_OF_POSITION" && possibleRoleMismatch) {
       return true;
     }
 
@@ -606,6 +597,7 @@ export function getMonthLabel(dateString) {
   if (!dateString) return "N/A";
 
   const date = new Date(dateString);
+
   if (Number.isNaN(date.getTime())) return "N/A";
 
   return date.toLocaleString("en-US", { month: "short" });

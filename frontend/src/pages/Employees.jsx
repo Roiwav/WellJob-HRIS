@@ -11,7 +11,7 @@ import { useAuth } from "../context/useAuth";
 import AddEmployeeModal from "../components/employees/AddEmployeeModal";
 import EmployeeModal from "../components/employees/EmployeeModal";
 import EmployeeTable from "../components/employees/EmployeeTable";
-import EditEmployeeModal from '../components/employees/EditEmployeeModal';
+import EditEmployeeModal from "../components/employees/EditEmployeeModal";
 
 const REQUIRED_DOCUMENTS = [
   "Resume",
@@ -68,6 +68,7 @@ export default function Employees() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [fetchError, setFetchError] = useState("");
+  const [isArchiving, setIsArchiving] = useState(false);
 
   const createOperationalLog = useCallback(
     async (action, description) => {
@@ -115,27 +116,71 @@ export default function Employees() {
   useEffect(() => {
     fetchEmployees();
   }, []);
-// 💡 TEST CODE: Para makita natin ang data at search mo
-useEffect(() => {
-  console.log("1. MGA EMPLOYEES MULA DB: ", employees);
-  console.log("2. ANG TINATYPE MO: ", search);
-}, [employees, search]);
-
   const getCompliance = useCallback((docs) => {
-    if (!docs || docs.length === 0) return "No Data";
+    if (!Array.isArray(docs) || docs.length === 0) return "No Data";
 
-    const completedCount = REQUIRED_DOCUMENTS.filter((requiredName) => {
-      const doc = docs.find((d) => d.name === requiredName);
-      if (!doc) return false;
-      if (!doc.filePath && !doc.file) return false;
-      if (["Barangay Clearance", "NBI/Police Clearance"].includes(requiredName) && !doc.expirationDate) {
-        return false;
+    let hasMissing = false;
+    let hasExpired = false;
+    let hasExpiringSoon = false;
+
+    REQUIRED_DOCUMENTS.forEach((requiredName) => {
+      const doc = docs.find((item) => item?.name === requiredName);
+      const hasFile = Boolean(doc?.filePath || doc?.file || doc?.url);
+
+      if (!doc || !hasFile) {
+        hasMissing = true;
+        return;
       }
-      return true;
-    }).length;
 
-    if (completedCount === REQUIRED_DOCUMENTS.length) return "Complete";
-    return "Incomplete";
+      const needsExpiration = [
+        "Barangay Clearance",
+        "NBI/Police Clearance",
+      ].includes(requiredName);
+
+      if (!needsExpiration) return;
+
+      const expirationValue =
+        doc.expirationDate ||
+        doc.expiration_date ||
+        doc.expiryDate ||
+        doc.expiresAt;
+
+      if (!expirationValue) {
+        hasMissing = true;
+        return;
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const expirationDate = new Date(expirationValue);
+
+      if (Number.isNaN(expirationDate.getTime())) {
+        hasMissing = true;
+        return;
+      }
+
+      expirationDate.setHours(0, 0, 0, 0);
+
+      const daysBeforeExpiration = Math.ceil(
+        (expirationDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      if (daysBeforeExpiration < 0) {
+        hasExpired = true;
+        return;
+      }
+
+      if (daysBeforeExpiration <= 30) {
+        hasExpiringSoon = true;
+      }
+    });
+
+    if (hasExpired) return "Expired";
+    if (hasExpiringSoon) return "Expiring Soon";
+    if (hasMissing) return "Incomplete";
+
+    return "Valid";
   }, []);
 
   const generateId = () => {
@@ -165,19 +210,34 @@ useEffect(() => {
   };
 
   const handleArchive = async (id) => {
-    const confirmArchive = window.confirm("Are you sure you want to archive this employee?");
-    if (!confirmArchive) return;
+    if (!archiveTarget || isArchiving) return;
 
     try {
+      setIsArchiving(true);
+
       await axios.put(`http://localhost:5000/api/employees/archive/${id}`);
-      const userName = user?.full_name || user?.fullName || user?.username || "System Admin";
-      createOperationalLog("ARCHIVE_EMPLOYEE", `${userName} archived employee record for ${archiveTarget?.name || id}.`);
-      
-      alert("Employee successfully archived!");
-      window.location.reload();
+
+      const userName =
+        user?.full_name || user?.fullName || user?.username || "System Admin";
+
+      await createOperationalLog(
+        "ARCHIVE_EMPLOYEE",
+        `${userName} archived employee record for ${archiveTarget?.name || id}.`
+      );
+
+      setSuccessMessage("Employee archived successfully.");
+      setArchiveTarget(null);
+      await fetchEmployees();
     } catch (error) {
       console.error("Archive Error:", error);
-      alert("Failed to archive employee.");
+      setFetchError(
+        error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          error.message ||
+          "Failed to archive employee."
+      );
+    } finally {
+      setIsArchiving(false);
     }
   };
 
@@ -367,8 +427,22 @@ useEffect(() => {
               This employee will be marked as <b>Inactive</b> and removed from the employee management table.
             </p>
             <div className="flex gap-2">
-              <button type="button" onClick={() => handleArchive(archiveTarget.id)} className="flex-1 bg-slate-700 text-white py-2 rounded hover:bg-red-600 transition">Yes, Archive</button>
-              <button type="button" onClick={() => setArchiveTarget(null)} className="flex-1 bg-gray-500 text-white py-2 rounded">Cancel</button>
+              <button
+                type="button"
+                onClick={() => handleArchive(archiveTarget.id)}
+                disabled={isArchiving}
+                className="flex-1 bg-slate-700 text-white py-2 rounded transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isArchiving ? "Archiving..." : "Yes, Archive"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setArchiveTarget(null)}
+                disabled={isArchiving}
+                className="flex-1 bg-gray-500 text-white py-2 rounded disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
