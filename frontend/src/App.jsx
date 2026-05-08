@@ -1,4 +1,6 @@
+import React, { useState, useEffect } from 'react'; // --- NEW: In-import ang useState at useEffect ---
 import { Routes, Route, Navigate } from "react-router-dom";
+import axios from 'axios';
 
 import MainLayout from "./layout/MainLayout";
 
@@ -15,6 +17,7 @@ import Settings from "./pages/Settings";
 import SuperAdminPortal from "./pages/SuperAdminPortal";
 import ChangePassword from "./pages/ChangePassword";
 import SystemConfiguration from "./pages/SystemConfiguration";
+import SystemMaintenance from "./pages/SystemMaintenance"; 
 
 // AUDIT PAGES
 import TechnicalAuditLogs from "./pages/TechnicalAuditLogs";
@@ -26,12 +29,42 @@ import ProtectedRoute from "./components/auth/ProtectedRoute";
 import { ROLES } from "./constants/roles";
 
 function App() {
+  // --- NEW: State para kontrolin ang paglabas ng Maintenance Banner ---
+  const [isMaintenance, setIsMaintenance] = useState(false);
+
+  useEffect(() => {
+    // --- NEW: Inilipat natin ang Interceptor sa loob para magamit ang state ---
+    const interceptor = axios.interceptors.response.use(
+      (response) => {
+        // Kung okay na ang system, itago ang banner
+        setIsMaintenance(false);
+        return response;
+      },
+      (error) => {
+        if (error.response && error.response.status === 503) {
+          // Imbes na mag-redirect, i-ON lang natin ang banner!
+          setIsMaintenance(true);
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    // Cleanup function
+    return () => {
+      axios.interceptors.response.eject(interceptor);
+    };
+  }, []);
+
   return (
     <AuthProvider>
+      
+      
+
       <Routes>
 
         {/* PUBLIC */}
         <Route path="/login" element={<Login />} />
+        {/* Tinanggal na natin ang /maintenance route dahil hindi na kailangan */}
 
         {/* ALL AUTHENTICATED USERS */}
         <Route
@@ -103,6 +136,7 @@ function App() {
             element={<ProtectedRoute allowedRoles={[ROLES.IT_SUPPORT]} />}
           >
             <Route path="/settings" element={<Settings />} />
+            <Route path="/system-maintenance" element={<SystemMaintenance />} />
 
             {/* TECHNICAL AUDIT */}
             <Route

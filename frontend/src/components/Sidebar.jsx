@@ -13,9 +13,11 @@ import {
   FiMoon,
   FiShield,
   FiFileText,
+  FiTool, // --- NEW: Icon for Maintenance ---
 } from "react-icons/fi";
 import { sidebarItems } from "../config/sidebarItems";
 import { useAuth } from "../context/useAuth";
+import { ROLES } from "../constants/roles"; // --- NEW: Import ROLES ---
 
 const iconMap = {
   Dashboard: <FiHome />,
@@ -72,6 +74,7 @@ export default function Sidebar({ toggleTheme, darkMode }) {
         </div>
 
         <nav className="mt-5 flex flex-col gap-1">
+          {/* Default dynamically mapped items */}
           {filteredItems.map((item) => (
             <SidebarItem
               key={item.path}
@@ -80,6 +83,15 @@ export default function Sidebar({ toggleTheme, darkMode }) {
               label={item.title}
             />
           ))}
+
+          {/* --- NEW: SYSTEM MAINTENANCE LINK (IT SUPPORT ONLY) --- */}
+          {user?.role === ROLES.IT_SUPPORT && (
+            <SidebarItem
+              to="/system-maintenance"
+              icon={<FiTool className="text-red-500" />} // Gumamit tayo ng FiTool na may kulay red
+              label="System Maintenance"
+            />
+          )}
         </nav>
       </div>
 
@@ -142,7 +154,8 @@ function SidebarItem({ to, icon, label }) {
 
       <span
         className="
-          pointer-events-none absolute -translate-x-2 whitespace-nowrap
+          pointer-events-none absolute 
+          -translate-x-2 whitespace-nowrap
           text-sm font-medium opacity-0 transition-all duration-150
           group-hover/sidebar:relative group-hover/sidebar:translate-x-0
           group-hover/sidebar:opacity-100
