@@ -17,6 +17,23 @@ export const RISK_LEVELS = {
   HIGH_RISK: "High Risk",
 };
 
+export const DECISION_CONFIDENCE = {
+  LOW: "Low Confidence",
+  MODERATE: "Moderate Confidence",
+  HIGH: "High Confidence",
+};
+
+export const HR_ACTION_WORKFLOW = {
+  MONITOR: "Continue Monitoring",
+  HUMAN_REVIEW: "Human Review Required",
+  HR_VALIDATION: "HR Validation Required",
+  INVESTIGATION: "Schedule HR Investigation",
+  PIP: "Performance Improvement Review",
+  ESCALATION: "Priority HR Escalation",
+  SUSPENSION: "Suspension Review",
+  TERMINATION: "Termination Review",
+};
+
 export const SEVERITY_LABELS = {
   NONE: "None",
   MINOR: "Minor",
@@ -180,6 +197,160 @@ export function getSeverityLabelByScore(severityScore, violationCount) {
   if (severityScore >= 4) return SEVERITY_LABELS.MAJOR;
   if (violationCount >= 1) return SEVERITY_LABELS.MINOR;
   return SEVERITY_LABELS.NONE;
+}
+
+export function getDecisionConfidence({
+  violationCount = 0,
+  criticalIncidentCount = 0,
+  severityScore = 0,
+  riskLevel = RISK_LEVELS.LOW_RISK,
+}) {
+  if (
+    criticalIncidentCount >= 1 ||
+    severityScore >= 12 ||
+    violationCount >= 5 ||
+    riskLevel === RISK_LEVELS.HIGH_RISK
+  ) {
+    return DECISION_CONFIDENCE.HIGH;
+  }
+
+  if (
+    severityScore >= 4 ||
+    violationCount >= 2 ||
+    riskLevel === RISK_LEVELS.REPEAT
+  ) {
+    return DECISION_CONFIDENCE.MODERATE;
+  }
+
+  return DECISION_CONFIDENCE.LOW;
+}
+
+export function getSuggestedHRAction({
+  confidence = DECISION_CONFIDENCE.LOW,
+  violationCount = 0,
+  criticalIncidentCount = 0,
+  severityScore = 0,
+  riskLevel = RISK_LEVELS.LOW_RISK,
+}) {
+  if (
+    criticalIncidentCount >= 1 &&
+    violationCount >= 5 &&
+    severityScore >= 12
+  ) {
+    return HR_ACTION_WORKFLOW.TERMINATION;
+  }
+
+  if (criticalIncidentCount >= 1 || riskLevel === RISK_LEVELS.HIGH_RISK) {
+    return HR_ACTION_WORKFLOW.SUSPENSION;
+  }
+
+  if (confidence === DECISION_CONFIDENCE.HIGH && violationCount >= 3) {
+    return HR_ACTION_WORKFLOW.ESCALATION;
+  }
+
+  if (confidence === DECISION_CONFIDENCE.MODERATE && violationCount >= 2) {
+    return HR_ACTION_WORKFLOW.INVESTIGATION;
+  }
+
+  if (confidence === DECISION_CONFIDENCE.MODERATE) {
+    return HR_ACTION_WORKFLOW.HR_VALIDATION;
+  }
+
+  if (confidence === DECISION_CONFIDENCE.LOW && violationCount >= 1) {
+    return HR_ACTION_WORKFLOW.HUMAN_REVIEW;
+  }
+
+  return HR_ACTION_WORKFLOW.MONITOR;
+}
+
+export function getDecisionConfidenceReason({
+  confidence = DECISION_CONFIDENCE.LOW,
+  violationCount = 0,
+  criticalIncidentCount = 0,
+  severityScore = 0,
+  riskLevel = RISK_LEVELS.LOW_RISK,
+}) {
+  if (confidence === DECISION_CONFIDENCE.HIGH) {
+    return `High confidence because the employee record shows strong decision indicators such as ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), ${severityScore} severity score, and ${riskLevel} status. HR review is required before final action.`;
+  }
+
+  if (confidence === DECISION_CONFIDENCE.MODERATE) {
+    return `Moderate confidence because the employee has enough recorded concern for HR validation, including ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), and ${severityScore} severity score.`;
+  }
+
+  if (violationCount >= 1) {
+    return `Low confidence because the record shows an early concern only. Human review is recommended before applying any corrective action.`;
+  }
+
+  return "Low confidence because there is no negative KPI pattern requiring corrective action. The employee may continue under regular monitoring.";
+}
+
+export function getSuggestedHRActionReason({
+  suggestedHRAction = HR_ACTION_WORKFLOW.MONITOR,
+  violationCount = 0,
+  criticalIncidentCount = 0,
+  severityScore = 0,
+  riskLevel = RISK_LEVELS.LOW_RISK,
+}) {
+  switch (suggestedHRAction) {
+    case HR_ACTION_WORKFLOW.TERMINATION:
+      return `Termination review is suggested because the employee has severe indicators such as ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), and ${severityScore} severity score. This is only for HR Manager validation and not an automatic termination decision.`;
+
+    case HR_ACTION_WORKFLOW.SUSPENSION:
+      return `Suspension review is suggested because the employee has a critical incident or high-risk evaluation. Final action must still be validated by HR management.`;
+
+    case HR_ACTION_WORKFLOW.ESCALATION:
+      return `Priority HR escalation is suggested because the employee has repeated concerns with strong decision indicators. The case should be reviewed immediately.`;
+
+    case HR_ACTION_WORKFLOW.INVESTIGATION:
+      return `HR investigation is suggested because the employee has repeated or moderate KPI concerns that require validation and documentation.`;
+
+    case HR_ACTION_WORKFLOW.HR_VALIDATION:
+      return `HR validation is suggested because the system detected a moderate concern that needs confirmation before final action.`;
+
+    case HR_ACTION_WORKFLOW.HUMAN_REVIEW:
+      return `Human review is suggested because the employee has an early concern but the record is not yet strong enough for a higher-level action.`;
+
+    case HR_ACTION_WORKFLOW.PIP:
+      return `Performance improvement review is suggested because the employee has KPI concerns that may require structured monitoring and improvement targets.`;
+
+    case HR_ACTION_WORKFLOW.MONITOR:
+    default:
+      return `Continue monitoring is suggested because the employee does not currently show a strong negative KPI or risk pattern. Current risk level: ${riskLevel}.`;
+  }
+}
+
+export function getDecisionConfidenceClasses(confidence) {
+  switch (confidence) {
+    case DECISION_CONFIDENCE.HIGH:
+      return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300";
+    case DECISION_CONFIDENCE.MODERATE:
+      return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300";
+    case DECISION_CONFIDENCE.LOW:
+    default:
+      return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300";
+  }
+}
+
+export function getSuggestedHRActionClasses(action) {
+  switch (action) {
+    case HR_ACTION_WORKFLOW.TERMINATION:
+    case HR_ACTION_WORKFLOW.SUSPENSION:
+    case HR_ACTION_WORKFLOW.ESCALATION:
+      return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300";
+
+    case HR_ACTION_WORKFLOW.INVESTIGATION:
+    case HR_ACTION_WORKFLOW.HR_VALIDATION:
+    case HR_ACTION_WORKFLOW.PIP:
+      return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300";
+
+    case HR_ACTION_WORKFLOW.HUMAN_REVIEW:
+      return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300";
+
+    case HR_ACTION_WORKFLOW.MONITOR:
+    default:
+      return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300";
+  }
 }
 
 function getActionByCode(code) {
@@ -617,7 +788,7 @@ export function buildKPIEmployees(employeesRaw = [], incidentsRaw = []) {
     );
 
     const totalSeverityScore = relatedIncidents.reduce((sum, incident) => {
-      return sum + getSeverityWeight(incident.severity);
+      return sum + (Number(getSeverityWeight(incident.severity)) || 0);
     }, 0);
 
     const criticalCount = relatedIncidents.filter(
@@ -648,6 +819,37 @@ export function buildKPIEmployees(employeesRaw = [], incidentsRaw = []) {
       relatedIncidents,
     });
 
+    const decisionConfidence = getDecisionConfidence({
+      violationCount: relatedIncidents.length,
+      criticalIncidentCount: criticalCount,
+      severityScore: totalSeverityScore,
+      riskLevel,
+    });
+
+    const suggestedHRAction = getSuggestedHRAction({
+      confidence: decisionConfidence,
+      violationCount: relatedIncidents.length,
+      criticalIncidentCount: criticalCount,
+      severityScore: totalSeverityScore,
+      riskLevel,
+    });
+
+    const decisionConfidenceReason = getDecisionConfidenceReason({
+      confidence: decisionConfidence,
+      violationCount: relatedIncidents.length,
+      criticalIncidentCount: criticalCount,
+      severityScore: totalSeverityScore,
+      riskLevel,
+    });
+
+    const suggestedHRActionReason = getSuggestedHRActionReason({
+      suggestedHRAction,
+      violationCount: relatedIncidents.length,
+      criticalIncidentCount: criticalCount,
+      severityScore: totalSeverityScore,
+      riskLevel,
+    });
+
     return {
       id: employeeId,
       name: employeeName,
@@ -664,6 +866,10 @@ export function buildKPIEmployees(employeesRaw = [], incidentsRaw = []) {
       ),
       kpiLevel,
       riskLevel,
+      decisionConfidence,
+      decisionConfidenceReason,
+      suggestedHRAction,
+      suggestedHRActionReason,
       lastIncidentDate:
         relatedIncidents[0]?.reportedAt || relatedIncidents[0]?.date || null,
       relatedIncidents,
