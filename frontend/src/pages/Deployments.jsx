@@ -1,3 +1,5 @@
+// Deployments.jsx
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FiCalendar, FiRefreshCw, FiSearch } from "react-icons/fi";
 import axios from "axios"; 
@@ -55,8 +57,10 @@ function normalizeDeployment(item) {
 }
 
 export default function Deployments() {
-  const { user } = useAuth(); // Kinuha ang current user info
-  const isSuperAdmin = user?.role === "SUPER_ADMIN"; // Check kung Super Admin
+  const { user } = useAuth();
+  // Kinuha ang current user info
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  // Check kung Super Admin
 
   const [selectedDeployment, setSelectedDeployment] = useState(null);
   const [modalMode, setModalMode] = useState("view");
@@ -65,7 +69,6 @@ export default function Deployments() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState("");
-
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
@@ -122,7 +125,6 @@ export default function Deployments() {
   const updateDeployment = async (updatedDeployment) => {
     try {
       const targetStatus = updatedDeployment.status;
-
       if (!["Completed", "Cancelled"].includes(targetStatus)) {
         showSuccessToast("No backend update needed.");
         return;
@@ -138,7 +140,6 @@ export default function Deployments() {
           }),
         }
       );
-
       await fetchDeployments();
 
       showSuccessToast(
@@ -157,13 +158,11 @@ export default function Deployments() {
       await axios.put(`${EMPLOYEES_API_URL}/${updatedDeployment.employeeId || updatedDeployment.id}/contract-end`, {
         contractEnd: updatedDeployment.contractEnd
       });
-
       setDeployments((prev) =>
         prev.map((dep) =>
           dep.id === updatedDeployment.id ? updatedDeployment : dep
         )
       );
-
       showSuccessToast("Contract end date updated successfully!");
 
     } catch (error) {
@@ -177,18 +176,31 @@ export default function Deployments() {
     await fetchDeployments();
   };
 
+  // UPDATED SEARCH LOGIC (WITH STRING NORMALIZATION & MULTI-TERM SEARCH)
   const filteredDeployments = useMemo(() => {
+    // 1. Linisin ang search bar input (tanggalin ang tuldok, special chars, at gawing lowercase)
+    const cleanSearch = search.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
+    
+    // 2. I-split sa mga salita
+    const searchTerms = cleanSearch ? cleanSearch.split(/\s+/) : [];
+
     return deployments.filter((deployment) => {
-      const keyword = search.toLowerCase().trim();
+      // 3. Linisin ang employee name mula sa database bago i-check
+      const cleanEmployeeName = String(deployment.employee || "").toLowerCase().replace(/[^a-z0-9\s]/g, "");
+      
+      // 4. I-check kung ang BAWAT salitang tinype ay nasa malinis na pangalan ng employee
+      const matchName = searchTerms.every(term => cleanEmployeeName.includes(term));
 
-      const matchSearch =
-        String(deployment.id || "").toLowerCase().includes(keyword) ||
-        String(deployment.employee || "").toLowerCase().includes(keyword) ||
-        String(deployment.company || "").toLowerCase().includes(keyword) ||
-        String(deployment.location || "").toLowerCase().includes(keyword) ||
-        String(deployment.status || "").toLowerCase().includes(keyword) ||
-        String(deployment.employmentType || "").toLowerCase().includes(keyword);
+      // 5. Fallback check para sa ID, Company, Location, Status, at Employment Type
+      const rawSearch = search.toLowerCase().trim();
+      const matchSearch = matchName ||
+        String(deployment.id || "").toLowerCase().includes(rawSearch) ||
+        String(deployment.company || "").toLowerCase().includes(rawSearch) ||
+        String(deployment.location || "").toLowerCase().includes(rawSearch) ||
+        String(deployment.status || "").toLowerCase().includes(rawSearch) ||
+        String(deployment.employmentType || "").toLowerCase().includes(rawSearch);
 
+      // Date filtering logic (walang binago para hindi masira ang Calendar filtering)
       if (!deployment.start || deployment.start === "-") {
         return matchSearch && !selectedMonth && !selectedYear;
       }
@@ -286,7 +298,7 @@ export default function Deployments() {
             deployments={filteredDeployments} 
             openView={openView} 
             onUpdateRow={handleInlineUpdateRow} 
-            isSuperAdmin={isSuperAdmin} /* Pinasa natin ang boolean check dito */
+            isSuperAdmin={isSuperAdmin} 
           />
         )}
 
