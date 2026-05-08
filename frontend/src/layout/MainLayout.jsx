@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
+
 import Sidebar from "../components/Sidebar";
 import Navbar from "../components/Navbar";
+import SmartSuggestionsWidget from "../components/suggestions/SmartSuggestionsWidget";
 
 export default function MainLayout() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -36,6 +38,8 @@ export default function MainLayout() {
           <Outlet />
         </main>
       </div>
+
+      <SmartSuggestionsWidget />
     </div>
   );
 }
