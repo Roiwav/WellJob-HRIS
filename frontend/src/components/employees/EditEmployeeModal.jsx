@@ -27,28 +27,33 @@ import {
   ReviewBox,
 } from "./EmployeeComponents";
 
-// UPDATED: Helper function na nagdudugtong ng Backend URL para hindi mabasag ang image
 function getSafePreviewUrl(fileData, fallbackPath) {
   const path = fileData || fallbackPath;
   if (!path) return "";
 
-  // Kung bagong upload (File object)
   if (path instanceof File || path instanceof Blob) {
     return URL.createObjectURL(path);
   }
 
-  // Kunin ang string value
-  let urlString = typeof path === "string" ? path : path.filePath || path.url || "";
+  const urlString =
+    typeof path === "string"
+      ? path
+      : path.filePath || path.file_path || path.url || "";
+
   if (!urlString) return "";
 
-  // Idikit ang backend URL kung relative path lang ang galing sa DB
-  if (!urlString.startsWith("http") && !urlString.startsWith("blob:")) {
-    // Siguraduhing may slash sa pagitan
+  if (
+    !urlString.startsWith("http") &&
+    !urlString.startsWith("blob:") &&
+    !urlString.startsWith("data:")
+  ) {
     const separator = urlString.startsWith("/") ? "" : "/";
     return `http://localhost:5000${separator}${urlString}`;
   }
 
   return urlString;
+}
+
 const EMPLOYEE_API_URL = "http://localhost:5000/api/employees";
 
 function getApiError(error, fallback = "Something went wrong.") {
