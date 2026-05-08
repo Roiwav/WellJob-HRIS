@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom"; // Idinagdag ang useNavigate
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FiBarChart2, FiDownload, FiRefreshCw } from "react-icons/fi";
@@ -329,6 +330,7 @@ function buildCaseAgingDistribution(incidents = []) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate(); // Hook for redirection
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear().toString();
   const currentMonth = currentDate.getMonth() + 1;
@@ -611,13 +613,22 @@ export default function Dashboard() {
 
   const handleOpenDrilldown = useCallback(
     (key) => {
+      const disabledKeys = ["total", "deployed", "available"];
+      if (disabledKeys.includes(key)) return;
+
+      // Kung "activeIncidents" ang pinindot, i-redirect sa /incidents route
+      if (key === "activeIncidents") {
+        navigate("/incidents");
+        return;
+      }
+
       const detail = dashboardInsights?.drilldowns?.[key];
 
       if (detail) {
         setActiveDrilldown(detail);
       }
     },
-    [dashboardInsights]
+    [dashboardInsights, navigate] // Dependecy updated
   );
 
   const totalIncidentsForYear = useMemo(
@@ -904,7 +915,7 @@ function InsightCard({ title, value, tone = "indigo" }) {
 
   return (
     <div
-      className={`rounded-2xl border border-slate-200 bg-gradient-to-br p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 ${
+      className={`rounded-2xl border border-slate-200 bg-gradient-to-br p-5 shadow-sm dark:border-white/10 ${
         tones[tone] || tones.indigo
       }`}
     >

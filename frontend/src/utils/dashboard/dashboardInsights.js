@@ -553,16 +553,6 @@ function buildRowsForIncidents(incidents = []) {
   }));
 }
 
-function buildEmployeeRows(employees = []) {
-  return employees.map((employee) => ({
-    employeeId: employee.employeeId || employee.id || "-",
-    employee: employee.name || "Unknown Employee",
-    company: employee.company || "Unassigned",
-    status: employee.status || "-",
-    employmentType: employee.employmentType || employee.employment_type || "-",
-  }));
-}
-
 function buildUtilizationRows(employees = []) {
   const map = {};
 
@@ -657,9 +647,6 @@ export function buildDashboardInsights({
     utilizationRate,
   });
 
-  const deployedEmployees = employees.filter(isDeployed);
-  const availableEmployees = employees.filter((employee) => !isDeployed(employee));
-
   return {
     health,
     mom,
@@ -668,42 +655,6 @@ export function buildDashboardInsights({
     complianceBreakdown,
     positiveSignals,
     drilldowns: {
-      total: {
-        title: "Active Workforce Records",
-        description: "All non-archived employee records currently included in dashboard monitoring.",
-        columns: [
-          { key: "employeeId", label: "Employee ID" },
-          { key: "employee", label: "Employee" },
-          { key: "company", label: "Company" },
-          { key: "status", label: "Status" },
-          { key: "employmentType", label: "Type" },
-        ],
-        rows: buildEmployeeRows(employees),
-      },
-      deployed: {
-        title: "Deployed Employees",
-        description: "Employees currently assigned or deployed to client companies.",
-        columns: [
-          { key: "employeeId", label: "Employee ID" },
-          { key: "employee", label: "Employee" },
-          { key: "company", label: "Company" },
-          { key: "status", label: "Status" },
-          { key: "employmentType", label: "Type" },
-        ],
-        rows: buildEmployeeRows(deployedEmployees),
-      },
-      available: {
-        title: "Available / Floating Workers",
-        description: "Employees not currently marked as deployed.",
-        columns: [
-          { key: "employeeId", label: "Employee ID" },
-          { key: "employee", label: "Employee" },
-          { key: "company", label: "Company" },
-          { key: "status", label: "Status" },
-          { key: "employmentType", label: "Type" },
-        ],
-        rows: buildEmployeeRows(availableEmployees),
-      },
       utilizationRate: {
         title: "Deployment Utilization Details",
         description: "Company-level deployment and availability distribution.",
@@ -715,20 +666,6 @@ export function buildDashboardInsights({
           { key: "utilization", label: "Utilization" },
         ],
         rows: buildUtilizationRows(employees),
-      },
-      activeIncidents: {
-        title: "Active Incident Cases",
-        description: "Open, investigating, and for-review cases in the selected report scope.",
-        columns: [
-          { key: "id", label: "Case ID" },
-          { key: "employee", label: "Employee" },
-          { key: "company", label: "Company" },
-          { key: "violation", label: "Violation" },
-          { key: "severity", label: "Severity" },
-          { key: "status", label: "Status" },
-          { key: "age", label: "Age" },
-        ],
-        rows: buildRowsForIncidents(activeIncidents),
       },
       expiringDocuments: {
         title: "Expiring Compliance Documents",
