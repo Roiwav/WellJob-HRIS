@@ -1,6 +1,8 @@
 const db = require("../config/db");
 const { logAudit, AUDIT_CATEGORY } = require("../utils/auditLogger");
 
+const API_BASE = "http://localhost:5000";
+
 function normalizeDate(value) {
   if (!value) return null;
   return String(value).slice(0, 10);
@@ -23,6 +25,82 @@ function buildEvidenceFromReq(req) {
   }));
 }
 
+function normalizeEmployeeLookupId(value) {
+  const raw = String(value || "").trim();
+
+  if (!raw) return "";
+
+  if (/^EMP[-\s]?\d+$/i.test(raw)) {
+    return raw.replace(/^EMP[-\s]?/i, "").replace(/^0+/, "") || raw;
+  }
+
+  return raw.replace(/^0+/, "") || raw;
+}
+
+function serializeEvidenceItem(item) {
+  return {
+    id: item.id,
+    fileName: item.file_name,
+    filePath: item.file_path,
+    url: `${API_BASE}/${item.file_path}`,
+  };
+}
+
+function serializeIncident(incident, evidence = []) {
+  const employeeName =
+    incident.employee_name ||
+    incident.employeeNameFromEmployee ||
+    "Unknown Employee";
+
+  const actionTaken = incident.action_taken || "";
+
+  return {
+    id: incident.id,
+
+    employeeId: incident.employee_id,
+    employee_id: incident.employee_id,
+
+    employee: employeeName,
+    employeeName,
+
+    company: incident.company || incident.employeeCompany || "",
+    employeeStatus: incident.employeeStatus || "",
+
+    violation: incident.violation_type || "",
+    violationType: incident.violation_type || "",
+    violation_type: incident.violation_type || "",
+
+    severity: incident.severity || "Minor",
+    status: incident.status || "Open",
+
+    date: incident.incident_date,
+    incidentDate: incident.incident_date,
+    incident_date: incident.incident_date,
+    reportedAt: incident.incident_date,
+
+    location: incident.location || "",
+    description: incident.description || "",
+    reportedBy: incident.reported_by || "",
+    reported_by: incident.reported_by || "",
+
+    actionTaken,
+    action_taken: actionTaken,
+    sanction: actionTaken,
+
+    recommendation: incident.recommendation || "",
+
+    resolutionNotes: incident.resolution_notes || "",
+    resolution_notes: incident.resolution_notes || "",
+
+    createdAt: incident.created_at,
+    created_at: incident.created_at,
+    updatedAt: incident.updated_at,
+    updated_at: incident.updated_at,
+
+    evidence: evidence.map(serializeEvidenceItem),
+  };
+}
+
 // GET ALL INCIDENTS
 exports.getIncidents = async (req, res) => {
   try {
@@ -34,65 +112,105 @@ exports.getIncidents = async (req, res) => {
         e.status AS employeeStatus
       FROM incidents i
       LEFT JOIN employees e ON e.id = i.employee_id
-      ORDER BY i.created_at DESC
+      ORDER BY i.created_at DESC, i.id DESC
     `);
 
     const [evidence] = await db.promise().query(`
-      SELECT * FROM incident_evidence
-      ORDER BY created_at DESC
+      SELECT * 
+      FROM incident_evidence
+      ORDER BY created_at DESC, id DESC
     `);
 
-    const result = incidents.map((incident) => ({
-      id: incident.id,
-      employeeId: incident.employee_id,
-      employee_id: incident.employee_id,
+    const result = incidents.map((incident) => {
+      const incidentEvidence = evidence.filter(
+        (item) => item.incident_id === incident.id
+      );
 
-      employee:
-        incident.employee_name ||
-        incident.employeeNameFromEmployee ||
-        "Unknown Employee",
-
-      employeeName:
-        incident.employee_name ||
-        incident.employeeNameFromEmployee ||
-        "Unknown Employee",
-
-      company: incident.company || incident.employeeCompany || "",
-      employeeStatus: incident.employeeStatus || "",
-
-      violation: incident.violation_type,
-      violationType: incident.violation_type,
-
-      severity: incident.severity,
-      status: incident.status,
-
-      date: incident.incident_date,
-      incidentDate: incident.incident_date,
-
-      location: incident.location || "",
-      description: incident.description || "",
-      reportedBy: incident.reported_by || "",
-      actionTaken: incident.action_taken || "",
-      recommendation: incident.recommendation || "",
-      resolutionNotes: incident.resolution_notes || "",
-
-      createdAt: incident.created_at,
-      updatedAt: incident.updated_at,
-
-      evidence: evidence
-        .filter((item) => item.incident_id === incident.id)
-        .map((item) => ({
-          id: item.id,
-          fileName: item.file_name,
-          filePath: item.file_path,
-          url: `http://localhost:5000/${item.file_path}`,
-        })),
-    }));
+      return serializeIncident(incident, incidentEvidence);
+    });
 
     res.json(result);
   } catch (err) {
     console.error("GET INCIDENTS ERROR:", err);
     res.status(500).json({ error: "Failed to fetch incidents" });
+  }
+};
+
+// GET INCIDENTS BY EMPLOYEE
+exports.getIncidentsByEmployee = async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { name } = req.query;
+
+    const rawEmployeeId = String(employeeId || "").trim();
+    const lookupEmployeeId = normalizeEmployeeLookupId(rawEmployeeId);
+    const employeeName = String(name || "").trim().toLowerCase();
+
+    if (!lookupEmployeeId && !employeeName) {
+      return res.status(400).json({
+        error: "Employee ID or employee name is required",
+      });
+    }
+
+    const conditions = [];
+    const params = [];
+
+    if (lookupEmployeeId) {
+      conditions.push("CAST(i.employee_id AS CHAR) = ?");
+      params.push(lookupEmployeeId);
+    }
+
+    if (employeeName) {
+      conditions.push("LOWER(TRIM(i.employee_name)) = ?");
+      params.push(employeeName);
+    }
+
+    const [incidents] = await db.promise().query(
+      `
+      SELECT 
+        i.*,
+        e.name AS employeeNameFromEmployee,
+        e.company AS employeeCompany,
+        e.status AS employeeStatus
+      FROM incidents i
+      LEFT JOIN employees e ON e.id = i.employee_id
+      WHERE ${conditions.join(" OR ")}
+      ORDER BY 
+        i.incident_date ASC,
+        i.created_at ASC,
+        i.id ASC
+      `,
+      params
+    );
+
+    if (incidents.length === 0) {
+      return res.json([]);
+    }
+
+    const incidentIds = incidents.map((incident) => incident.id);
+
+    const [evidence] = await db.promise().query(
+      `
+      SELECT *
+      FROM incident_evidence
+      WHERE incident_id IN (?)
+      ORDER BY created_at DESC, id DESC
+      `,
+      [incidentIds]
+    );
+
+    const result = incidents.map((incident) => {
+      const incidentEvidence = evidence.filter(
+        (item) => item.incident_id === incident.id
+      );
+
+      return serializeIncident(incident, incidentEvidence);
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error("GET INCIDENTS BY EMPLOYEE ERROR:", err);
+    res.status(500).json({ error: "Failed to fetch employee incidents" });
   }
 };
 
@@ -123,54 +241,16 @@ exports.getIncidentById = async (req, res) => {
     const incident = rows[0];
 
     const [evidence] = await db.promise().query(
-      `SELECT * FROM incident_evidence WHERE incident_id = ? ORDER BY created_at DESC`,
+      `
+      SELECT *
+      FROM incident_evidence
+      WHERE incident_id = ?
+      ORDER BY created_at DESC, id DESC
+      `,
       [id]
     );
 
-    res.json({
-      id: incident.id,
-      employeeId: incident.employee_id,
-      employee_id: incident.employee_id,
-
-      employee:
-        incident.employee_name ||
-        incident.employeeNameFromEmployee ||
-        "Unknown Employee",
-
-      employeeName:
-        incident.employee_name ||
-        incident.employeeNameFromEmployee ||
-        "Unknown Employee",
-
-      company: incident.company || incident.employeeCompany || "",
-      employeeStatus: incident.employeeStatus || "",
-
-      violation: incident.violation_type,
-      violationType: incident.violation_type,
-
-      severity: incident.severity,
-      status: incident.status,
-
-      date: incident.incident_date,
-      incidentDate: incident.incident_date,
-
-      location: incident.location || "",
-      description: incident.description || "",
-      reportedBy: incident.reported_by || "",
-      actionTaken: incident.action_taken || "",
-      recommendation: incident.recommendation || "",
-      resolutionNotes: incident.resolution_notes || "",
-
-      createdAt: incident.created_at,
-      updatedAt: incident.updated_at,
-
-      evidence: evidence.map((item) => ({
-        id: item.id,
-        fileName: item.file_name,
-        filePath: item.file_path,
-        url: `http://localhost:5000/${item.file_path}`,
-      })),
-    });
+    res.json(serializeIncident(incident, evidence));
   } catch (err) {
     console.error("GET INCIDENT ERROR:", err);
     res.status(500).json({ error: "Failed to fetch incident" });
@@ -236,6 +316,10 @@ exports.createIncident = async (req, res) => {
       return res.status(400).json({ error: "Incident date is required" });
     }
 
+    const finalActionTaken = actionTaken || null;
+    const finalRecommendation = recommendation || null;
+    const finalResolutionNotes = resolutionNotes || null;
+
     const [result] = await db.promise().query(
       `
       INSERT INTO incidents
@@ -267,9 +351,9 @@ exports.createIncident = async (req, res) => {
         location || null,
         description || null,
         reportedBy || null,
-        actionTaken || null,
-        recommendation || null,
-        resolutionNotes || null,
+        finalActionTaken,
+        finalRecommendation,
+        finalResolutionNotes,
       ]
     );
 
@@ -300,6 +384,7 @@ exports.createIncident = async (req, res) => {
       success: true,
       message: "Incident created successfully",
       id: incidentId,
+      incidentId,
     });
   } catch (err) {
     console.error("CREATE INCIDENT ERROR:", err);
@@ -476,7 +561,10 @@ exports.deleteIncident = async (req, res) => {
   try {
     const { id } = req.params;
 
-    await db.promise().query(`DELETE FROM incident_evidence WHERE incident_id = ?`, [id]);
+    await db
+      .promise()
+      .query(`DELETE FROM incident_evidence WHERE incident_id = ?`, [id]);
+
     await db.promise().query(`DELETE FROM incidents WHERE id = ?`, [id]);
 
     res.json({

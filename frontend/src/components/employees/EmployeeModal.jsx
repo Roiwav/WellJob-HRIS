@@ -12,6 +12,8 @@ import {
   FiX,
 } from "react-icons/fi";
 
+import { NORMALIZED_VIOLATION_RULES } from "../../data/violationRules";
+
 const API_BASE = "http://localhost:5000";
 const INCIDENT_API_URL = `${API_BASE}/api/incidents`;
 
@@ -23,6 +25,205 @@ function isExpirableDocument(docName) {
 
 function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function normalizeViolationKey(value) {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function stripSectionPrefix(value) {
+  return String(value || "")
+    .replace(/^\s*sec\.?\s*\d+(\s*[-—–]\s*)?/i, "")
+    .replace(/^\s*section\s*\d+(\s*[-—–]\s*)?/i, "")
+    .replace(/^[IVXLCDM]+\.\s*/i, "")
+    .trim();
+}
+
+function getViolationMatchKeys(value) {
+  const original = String(value || "").trim();
+  const withoutSection = stripSectionPrefix(original);
+
+  return Array.from(
+    new Set([
+      normalizeViolationKey(original),
+      normalizeViolationKey(withoutSection),
+    ])
+  ).filter(Boolean);
+}
+
+function getIncidentTimestamp(incident) {
+  const dateValue =
+    incident?.reportedAt ||
+    incident?.reported_at ||
+    incident?.date ||
+    incident?.incidentDate ||
+    incident?.incident_date ||
+    incident?.createdAt ||
+    incident?.created_at ||
+    "";
+
+  const time = new Date(dateValue).getTime();
+
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function getOrdinalLabel(number) {
+  if (number === 1) return "1st offense";
+  if (number === 2) return "2nd offense";
+  if (number === 3) return "3rd offense";
+  return `${number}th offense`;
+}
+
+const FLATTENED_VIOLATION_RULES = (NORMALIZED_VIOLATION_RULES || []).flatMap(
+  (category) =>
+    (category.rows || []).map((row) => ({
+      ...row,
+      category: category.category,
+      normalizedViolation: normalizeViolationKey(row.violation),
+      normalizedSectionViolation: normalizeViolationKey(
+        `${row.section} - ${row.violation}`
+      ),
+    }))
+);
+
+function findViolationRule(violationName) {
+  const keys = getViolationMatchKeys(violationName);
+
+  if (keys.length === 0) return null;
+
+  const exactMatch = FLATTENED_VIOLATION_RULES.find((rule) =>
+    keys.some(
+      (key) =>
+        key === rule.normalizedViolation ||
+        key === rule.normalizedSectionViolation
+    )
+  );
+
+  if (exactMatch) return exactMatch;
+
+  const partialMatch = FLATTENED_VIOLATION_RULES.find((rule) =>
+    keys.some((key) => {
+      if (!key || !rule.normalizedViolation) return false;
+
+      return (
+        key.includes(rule.normalizedViolation) ||
+        rule.normalizedViolation.includes(key)
+      );
+    })
+  );
+
+  if (partialMatch) return partialMatch;
+
+  const tokenMatch = FLATTENED_VIOLATION_RULES.find((rule) =>
+    keys.some((key) => {
+      const keyWords = key.split(" ").filter((word) => word.length >= 4);
+
+      if (keyWords.length === 0) return false;
+
+      const matchedWords = keyWords.filter((word) =>
+        rule.normalizedViolation.includes(word)
+      );
+
+      return matchedWords.length >= Math.min(3, keyWords.length);
+    })
+  );
+
+  return tokenMatch || null;
+}
+
+function getPenaltyForOffense(rule, offenseNo, incident) {
+  const fallbackSanction =
+    incident?.sanction ||
+    incident?.actionTaken ||
+    incident?.action_taken ||
+    incident?.recommendation ||
+    "For HR Review";
+
+  if (!rule || !Array.isArray(rule.penalties) || rule.penalties.length === 0) {
+    return {
+      offenseNo,
+      label: getOrdinalLabel(offenseNo),
+      action: fallbackSanction,
+      isPolicyMatched: false,
+    };
+  }
+
+  const exactPenalty = rule.penalties.find(
+    (penalty) => Number(penalty.offenseNo) === Number(offenseNo)
+  );
+
+  if (exactPenalty) {
+    return {
+      ...exactPenalty,
+      isPolicyMatched: true,
+    };
+  }
+
+  const lastPenalty = rule.penalties[rule.penalties.length - 1];
+
+  return {
+    ...lastPenalty,
+    offenseNo,
+    label: getOrdinalLabel(offenseNo),
+    action: lastPenalty?.action || fallbackSanction,
+    isPolicyMatched: true,
+  };
+}
+
+function buildProgressiveIncidentSanctions(incidents = []) {
+  const sortedIncidents = [...incidents].sort((a, b) => {
+    const dateA = getIncidentTimestamp(a);
+    const dateB = getIncidentTimestamp(b);
+
+    if (dateA !== dateB) return dateA - dateB;
+
+    return Number(a.id || 0) - Number(b.id || 0);
+  });
+
+  const violationCounter = new Map();
+
+  return sortedIncidents.map((incident) => {
+    const violationName =
+      incident.violation ||
+      incident.violationType ||
+      incident.violation_type ||
+      "No violation type";
+
+    const rule = findViolationRule(violationName);
+
+    const counterKey = rule
+      ? normalizeViolationKey(rule.violation)
+      : normalizeViolationKey(stripSectionPrefix(violationName));
+
+    const previousCount = violationCounter.get(counterKey) || 0;
+    const offenseNo = previousCount + 1;
+
+    violationCounter.set(counterKey, offenseNo);
+
+    const penalty = getPenaltyForOffense(rule, offenseNo, incident);
+
+    return {
+      ...incident,
+      progressiveOffenseNo: offenseNo,
+      progressiveOffenseLabel: penalty.label || getOrdinalLabel(offenseNo),
+      progressiveSanction:
+        penalty.action ||
+        incident.sanction ||
+        incident.actionTaken ||
+        incident.action_taken ||
+        "For HR Review",
+      progressivePenaltyLevel: rule?.penaltyLevel || "",
+      progressivePolicySection: rule?.section || "",
+      progressivePolicyCategory: rule?.category || "",
+      progressivePolicyMatched: Boolean(penalty.isPolicyMatched),
+    };
+  });
 }
 
 function normalizeStatus(status) {
@@ -446,6 +647,10 @@ export default function EmployeeModal({ employee, onClose }) {
     });
   }, [employee]);
 
+  const progressiveIncidents = useMemo(() => {
+    return buildProgressiveIncidentSanctions(employeeIncidents);
+  }, [employeeIncidents]);
+
   if (!employee) return null;
 
   const overallCompliance = getOverallCompliance(normalizedDocuments);
@@ -515,12 +720,8 @@ export default function EmployeeModal({ employee, onClose }) {
     riskLevel,
   });
 
-  const recentIncidents = [...employeeIncidents]
-    .sort(
-      (a, b) =>
-        new Date(b.reportedAt || b.date || 0).getTime() -
-        new Date(a.reportedAt || a.date || 0).getTime()
-    )
+  const recentIncidents = [...progressiveIncidents]
+    .sort((a, b) => getIncidentTimestamp(b) - getIncidentTimestamp(a))
     .slice(0, 5);
 
   return (
@@ -732,16 +933,19 @@ export default function EmployeeModal({ employee, onClose }) {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
               <StatBox label="Total Incidents" value={totalIncidents} />
+
               <StatBox
                 label="Open Cases"
                 value={incidentLoading ? "..." : openIncidents}
                 valueClass="text-red-500"
               />
+
               <StatBox
                 label="Closed Cases"
                 value={incidentLoading ? "..." : resolvedIncidents}
                 valueClass="text-green-500"
               />
+
               <StatBox
                 label="Severity Score"
                 value={severityScore}
@@ -820,7 +1024,7 @@ export default function EmployeeModal({ employee, onClose }) {
               <div className="space-y-3">
                 {recentIncidents.map((incident) => (
                   <div
-                    key={incident.id}
+                    key={`${incident.id}-${incident.progressiveOffenseNo}`}
                     className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40"
                   >
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -864,11 +1068,43 @@ export default function EmployeeModal({ employee, onClose }) {
                       </p>
                     )}
 
-                    {incident.sanction && (
-                      <p className="mt-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Action/Sanction: {incident.sanction}
-                      </p>
-                    )}
+                    <div
+  className={`mt-3 rounded-xl border px-4 py-3 text-xs ${
+    incident.progressivePolicyMatched
+      ? "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
+      : "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
+  }`}
+>
+  <p
+    className={`text-[11px] font-bold uppercase tracking-wide ${
+      incident.progressivePolicyMatched
+        ? "text-red-700 dark:text-red-300"
+        : "text-amber-700 dark:text-amber-300"
+    }`}
+  >
+    Disciplinary Action
+  </p>
+
+  <p className="mt-2 font-bold text-slate-800 dark:text-slate-100">
+    Sanction: {incident.progressiveSanction}
+  </p>
+
+  <p className="mt-1 text-slate-600 dark:text-slate-300">
+    Basis: {incident.progressiveOffenseLabel}
+  </p>
+
+  {incident.progressivePolicyCategory && (
+    <p className="mt-1 text-slate-500 dark:text-slate-400">
+      Policy Reference: {incident.progressivePolicyCategory}
+    </p>
+  )}
+
+  {!incident.progressivePolicyMatched && (
+    <p className="mt-1 text-amber-700 dark:text-amber-300">
+      Based on the saved sanction from the incident report.
+    </p>
+  )}
+</div>
                   </div>
                 ))}
               </div>

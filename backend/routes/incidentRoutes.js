@@ -4,6 +4,7 @@ const upload = require("../middleware/upload");
 
 const {
   getIncidents,
+  getIncidentsByEmployee,
   getIncidentById,
   createIncident,
   updateIncident,
@@ -12,6 +13,14 @@ const {
 } = require("../controllers/incidentController");
 
 router.get("/incidents", getIncidents);
+
+/*
+  IMPORTANT:
+  This route must be placed BEFORE /incidents/:id.
+  If this is below /incidents/:id, Express will treat "employee" as an incident ID.
+*/
+router.get("/incidents/employee/:employeeId", getIncidentsByEmployee);
+
 router.get("/incidents/:id", getIncidentById);
 router.post("/incidents", upload.any(), createIncident);
 router.put("/incidents/:id", upload.any(), updateIncident);
