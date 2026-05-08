@@ -695,14 +695,26 @@ export default function Incidents() {
     }
   };
 
+  // UPDATED SEARCH LOGIC (WITH STRING NORMALIZATION & MULTI-TERM SEARCH)
   const filteredIncidents = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
+    // 1. Linisin ang search bar input (tanggalin ang tuldok, special chars, at gawing lowercase)
+    const cleanSearch = search.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
+    const rawSearch = search.toLowerCase().trim();
+    
+    // 2. I-split sa mga salita
+    const searchTerms = cleanSearch ? cleanSearch.split(/\s+/) : [];
 
     return incidents.filter((incident) => {
-      const matchesSearch = [
+      // 3. Linisin ang employee name mula sa database bago i-check
+      const cleanEmployeeName = String(incident.employee || incident.employeeName || "").toLowerCase().replace(/[^a-z0-9\s]/g, "");
+      
+      // 4. I-check kung ang BAWAT salitang tinype ay nasa malinis na pangalan ng employee
+      const matchName = searchTerms.every(term => cleanEmployeeName.includes(term));
+
+      // 5. Fallback check para sa ibang text fields (tulad ng ID, violation, company)
+      const fallbackString = [
         incident.displayId,
         incident.id,
-        incident.employee,
         incident.employeeId,
         incident.violation,
         incident.company,
@@ -710,18 +722,18 @@ export default function Incidents() {
         incident.status,
         incident.sanction,
         incident.recommendation,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(keyword);
+      ].join(" ").toLowerCase();
 
+      const matchSearch = matchName || fallbackString.includes(rawSearch);
+
+      // Filters for status and severity
       const matchesStatus =
         statusFilter === "ALL" || incident.status === statusFilter;
 
       const matchesSeverity =
         severityFilter === "ALL" || incident.severity === severityFilter;
 
-      return matchesSearch && matchesStatus && matchesSeverity;
+      return matchSearch && matchesStatus && matchesSeverity;
     });
   }, [incidents, search, statusFilter, severityFilter]);
 

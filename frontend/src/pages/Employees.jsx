@@ -35,7 +35,6 @@ const SORT_OPTIONS = [
 
 function SuccessModal({ message, onClose }) {
   if (!message) return null;
-
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl">
@@ -52,7 +51,6 @@ function SuccessModal({ message, onClose }) {
 export default function Employees() {
   const navigate = useNavigate();
   const { user } = useAuth();
-
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const isHRManager = user?.role === "HR_MANAGER";
 
@@ -69,11 +67,8 @@ export default function Employees() {
   const [sortBy, setSortBy] = useState("latest");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  
-  // 1. Inilagay ang Error State gaya ng sa Dashboard [cite: 97, 176]
   const [fetchError, setFetchError] = useState("");
 
-  // 2.createOperationalLog function [cite: 177, 178]
   const createOperationalLog = useCallback(
     async (action, description) => {
       const userName = user?.full_name || user?.fullName || user?.username || "System Admin";
@@ -96,10 +91,9 @@ export default function Employees() {
     [user]
   );
 
-  // 3. Updated fetch function para masalo ang 503 Maintenance error [cite: 105, 179, 183]
   const fetchEmployees = async () => {
     try {
-      setFetchError(""); 
+      setFetchError("");
       const res = await axios.get("http://localhost:5000/api/employees");
       
       if (Array.isArray(res.data)) {
@@ -121,6 +115,11 @@ export default function Employees() {
   useEffect(() => {
     fetchEmployees();
   }, []);
+// 💡 TEST CODE: Para makita natin ang data at search mo
+useEffect(() => {
+  console.log("1. MGA EMPLOYEES MULA DB: ", employees);
+  console.log("2. ANG TINATYPE MO: ", search);
+}, [employees, search]);
 
   const getCompliance = useCallback((docs) => {
     if (!docs || docs.length === 0) return "No Data";
@@ -141,11 +140,9 @@ export default function Employees() {
 
   const generateId = () => {
     if (!Array.isArray(employees) || employees.length === 0) return "EMP001";
-
     const numbers = employees
       .map((emp) => parseInt(String(emp.id || "").replace("EMP", ""), 10))
       .filter((num) => !Number.isNaN(num));
-
     const next = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
     return `EMP${String(next).padStart(3, "0")}`;
   };
@@ -208,13 +205,32 @@ export default function Employees() {
     return employees.filter((emp) => !emp.archived);
   }, [employees]);
 
+  // UPDATED SEARCH LOGIC (WITH STRING NORMALIZATION)
   const filteredEmployees = useMemo(() => {
+    // 1. Linisin ang search bar input (tanggalin ang tuldok, special chars, at gawing lowercase)
+    const cleanSearch = search.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
+    
+    // 2. I-split sa mga salita
+    const searchTerms = cleanSearch ? cleanSearch.split(/\s+/) : [];
+
     const filtered = activeEmployees.filter((emp) => {
-      const keyword = search.toLowerCase().trim();
-      const matchSearch = String(emp.name || "").toLowerCase().includes(keyword) || String(emp.id || "").toLowerCase().includes(keyword) || String(emp.company || "").toLowerCase().includes(keyword);
+      // 3. Linisin din ang pangalan mula sa database bago i-check
+      const cleanName = String(emp.name || "").toLowerCase().replace(/[^a-z0-9\s]/g, "");
+      const empId = String(emp.id || "").toLowerCase();
+      const empCompany = String(emp.company || "").toLowerCase();
+
+      // 4. I-check kung ang BAWAT salitang tinype ay nasa malinis na pangalan ng employee
+      const matchName = searchTerms.every(term => cleanName.includes(term));
+
+      // 5. Fallback check para sa ID at Company gamit ang orihinal na search
+      const rawSearch = search.toLowerCase().trim();
+      const matchSearch = matchName || empId.includes(rawSearch) || empCompany.includes(rawSearch);
+
+      // Filters
       const matchStatus = filterStatus === "All" || emp.status === filterStatus;
       const compliance = getCompliance(emp.documents);
       const matchCompliance = filterCompliance === "All" || compliance === filterCompliance;
+      
       return matchSearch && matchStatus && matchCompliance;
     });
 
@@ -238,10 +254,9 @@ export default function Employees() {
       }
     });
   }, [activeEmployees, search, filterStatus, filterCompliance, sortBy, getCompliance]);
-
+  
   return (
     <div className="p-8 space-y-6">
-      {/* 4. Manual na inilagay ang Banner Alert sa pinakataas [cite: 208] */}
       {fetchError && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
           {fetchError}
@@ -348,7 +363,8 @@ export default function Employees() {
           <div className="bg-white dark:bg-slate-800 p-6 rounded-xl w-full max-w-md">
             <h2 className="text-lg font-bold mb-4 text-slate-700 dark:text-white">Archive Employee</h2>
             <p className="text-sm mb-6 text-gray-900 dark:text-white">
-              Are you sure you want to archive <b>{archiveTarget.name}</b>? This employee will be marked as <b>Inactive</b> and removed from the employee management table.
+              Are you sure you want to archive <b>{archiveTarget.name}</b>?
+              This employee will be marked as <b>Inactive</b> and removed from the employee management table.
             </p>
             <div className="flex gap-2">
               <button type="button" onClick={() => handleArchive(archiveTarget.id)} className="flex-1 bg-slate-700 text-white py-2 rounded hover:bg-red-600 transition">Yes, Archive</button>

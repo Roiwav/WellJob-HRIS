@@ -1,4 +1,5 @@
-import { FiFileText, FiSearch } from "react-icons/fi";
+import React, { useMemo, useState } from "react";
+import { FiFileText, FiSearch, FiChevronDown, FiChevronUp, FiCornerDownRight } from "react-icons/fi";
 
 import FilterSelect from "./IncidentFilters";
 import ActionButtons from "./IncidentActionButtons";
@@ -26,6 +27,8 @@ export default function IncidentTable({
   onResolve,
   onReview,
 }) {
+  const [expandedGroups, setExpandedGroups] = useState({});
+
   const getIncidentDisplayId = (incident) => {
     if (incident.displayId) return incident.displayId;
 
@@ -35,6 +38,36 @@ export default function IncidentTable({
 
     return incident.id ? `INC-${String(incident.id).padStart(4, "0")}` : "-";
   };
+
+  const toggleGroup = (key) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // GROUPING LOGIC: Pinagsasama ang parehong violation ng isang employee
+  const groupedIncidents = useMemo(() => {
+    const groups = {};
+
+    incidents.forEach((incident) => {
+      const groupKey = `${incident.employeeId || incident.employee}-${incident.violation}`;
+      
+      if (!groups[groupKey]) {
+        groups[groupKey] = [];
+      }
+      groups[groupKey].push(incident);
+    });
+
+    return Object.values(groups).map((group) => {
+      group.sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0));
+      return {
+        key: `${group[0].employeeId || group[0].employee}-${group[0].violation}`,
+        latest: group[0],
+        history: group.slice(1),
+      };
+    });
+  }, [incidents]);
 
   return (
     <section className="space-y-4">
@@ -80,7 +113,7 @@ export default function IncidentTable({
 
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Severity can be filtered above and is shown as a compact badge under
-            the violation to keep the table readable.
+            the violation to keep the table readable. Recurring violations are grouped together.
           </p>
         </div>
 
@@ -112,7 +145,7 @@ export default function IncidentTable({
                   Alerts
                 </th>
 
-                <th className="w-[8%] px-4 py-4 text-right text-xs font-extrabold uppercase tracking-wide">
+                <th className="w-[15%] px-4 py-4 text-right text-xs font-extrabold uppercase tracking-wide">
                   Action
                 </th>
               </tr>
@@ -134,7 +167,7 @@ export default function IncidentTable({
                     </div>
                   </td>
                 </tr>
-              ) : incidents.length === 0 ? (
+              ) : groupedIncidents.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-14">
                     <div className="flex flex-col items-center justify-center text-center">
@@ -154,74 +187,151 @@ export default function IncidentTable({
                   </td>
                 </tr>
               ) : (
-                incidents.map((incident) => (
-                  <tr
-                    key={incident.id}
-                    className="border-t border-gray-200 transition hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-900/40"
-                  >
-                    <td className="px-4 py-4 align-top">
-                      <p className="truncate font-extrabold text-gray-900 dark:text-white">
-                        {getIncidentDisplayId(incident)}
-                      </p>
-                    </td>
+                groupedIncidents.map((group) => {
+                  const isExpanded = expandedGroups[group.key];
+                  const hasHistory = group.history.length > 0;
 
-                    <td className="px-4 py-4 align-top">
-                      <div className="min-w-0">
-                        <p
-                          className="truncate font-bold text-gray-900 dark:text-white"
-                          title={incident.employee || "Unknown Employee"}
-                        >
-                          {incident.employee || "Unknown Employee"}
-                        </p>
+                  return (
+                    <React.Fragment key={group.key}>
+                      {/* MAIN ROW (LATEST INCIDENT) */}
+                      <tr className="border-t border-gray-200 transition hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-900/40">
+                        <td className="px-4 py-4 align-top">
+                          <p className="truncate font-extrabold text-gray-900 dark:text-white">
+                            {getIncidentDisplayId(group.latest)}
+                          </p>
+                          {hasHistory && (
+                            <span className="mt-1 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">
+                              {group.history.length + 1} Records
+                            </span>
+                          )}
+                        </td>
 
-                        <p
-                          className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
-                          title={incident.company || "Unassigned"}
-                        >
-                          {incident.company || "Unassigned"}
-                        </p>
-                      </div>
-                    </td>
+                        <td className="px-4 py-4 align-top">
+                          <div className="min-w-0">
+                            <p
+                              className="truncate font-bold text-gray-900 dark:text-white"
+                              title={group.latest.employee || "Unknown Employee"}
+                            >
+                              {group.latest.employee || "Unknown Employee"}
+                            </p>
 
-                    <td className="px-4 py-4 align-top">
-                      <div className="min-w-0 space-y-2">
-                        <p
-                          className="line-clamp-2 break-words text-sm font-semibold leading-5 text-gray-800 dark:text-gray-100"
-                          title={incident.violation || "No violation type"}
-                        >
-                          {incident.violation || "No violation type"}
-                        </p>
+                            <p
+                              className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
+                              title={group.latest.company || "Unassigned"}
+                            >
+                              {group.latest.company || "Unassigned"}
+                            </p>
+                          </div>
+                        </td>
 
-                        <SeverityBadge level={incident.severity} />
-                      </div>
-                    </td>
+                        <td className="px-4 py-4 align-top">
+                          <div className="min-w-0 space-y-2">
+                            <p
+                              className="line-clamp-2 break-words text-sm font-semibold leading-5 text-gray-800 dark:text-gray-100"
+                              title={group.latest.violation || "No violation type"}
+                            >
+                              {group.latest.violation || "No violation type"}
+                            </p>
 
-                    <td className="px-4 py-4 align-top">
-                      <StatusBadge status={incident.status} />
-                    </td>
+                            <SeverityBadge level={group.latest.severity} />
+                          </div>
+                        </td>
 
-                    <td className="px-4 py-4 align-top">
-                      <CaseAgeBadge incident={incident} />
-                    </td>
+                        <td className="px-4 py-4 align-top">
+                          <StatusBadge status={group.latest.status} />
+                        </td>
 
-                    <td className="px-4 py-4 align-top">
-                      <SmartAlertBadge alerts={incident.smartAlerts || []} />
-                    </td>
+                        <td className="px-4 py-4 align-top">
+                          <CaseAgeBadge incident={group.latest} />
+                        </td>
 
-                    <td className="px-4 py-4 text-right align-top">
-                      <div className="flex justify-end">
-                        <ActionButtons
-                          incident={incident}
-                          isSuperAdmin={isSuperAdmin}
-                          onView={onView}
-                          onStartReview={onStartReview}
-                          onResolve={onResolve}
-                          onReview={onReview}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                        <td className="px-4 py-4 align-top">
+                          <SmartAlertBadge alerts={group.latest.smartAlerts || []} />
+                        </td>
+
+                        {/* ACTION COLUMN */}
+                        <td className="px-4 py-4 text-right align-top">
+                          <div className="flex items-center justify-end gap-2">
+                            {/* EXPAND ICON BUTTON */}
+                            {hasHistory && (
+                              <button
+                                onClick={() => toggleGroup(group.key)}
+                                title={isExpanded ? "Hide History" : "View History"}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 hover:text-indigo-800 dark:border-indigo-800/30 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
+                              >
+                                {isExpanded ? <FiChevronUp size={18} /> : <FiChevronDown size={18} />}
+                              </button>
+                            )}
+
+                            <ActionButtons
+                              incident={group.latest}
+                              isSuperAdmin={isSuperAdmin}
+                              onView={onView}
+                              onStartReview={onStartReview}
+                              onResolve={onResolve}
+                              onReview={onReview}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* HISTORY DROPDOWN ROWS */}
+                      {isExpanded &&
+                        group.history.map((historyItem) => (
+                          <tr
+                            key={historyItem.id}
+                            className="bg-gray-50/50 transition hover:bg-gray-100 dark:bg-slate-800/50 dark:hover:bg-slate-800"
+                          >
+                            <td className="px-4 py-3 align-top pl-8">
+                              <div className="flex items-center gap-2">
+                                <FiCornerDownRight className="text-gray-400" />
+                                <p className="truncate font-semibold text-gray-700 dark:text-gray-300">
+                                  {getIncidentDisplayId(historyItem)}
+                                </p>
+                              </div>
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <p className="truncate text-gray-500 dark:text-gray-400 text-xs">
+                                {new Date(historyItem.date || historyItem.createdAt).toLocaleDateString()}
+                              </p>
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <div className="min-w-0 space-y-1">
+                                <SeverityBadge level={historyItem.severity} />
+                              </div>
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <StatusBadge status={historyItem.status} />
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <CaseAgeBadge incident={historyItem} />
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <SmartAlertBadge alerts={historyItem.smartAlerts || []} />
+                            </td>
+
+                            <td className="px-4 py-3 text-right align-top">
+                              <div className="flex justify-end">
+                                <ActionButtons
+                                  incident={historyItem}
+                                  isSuperAdmin={isSuperAdmin}
+                                  onView={onView}
+                                  onStartReview={onStartReview}
+                                  onResolve={onResolve}
+                                  onReview={onReview}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
