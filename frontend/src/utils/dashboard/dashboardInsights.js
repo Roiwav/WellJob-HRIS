@@ -536,6 +536,102 @@ function buildWorkforceHealth({
   };
 }
 
+// ================= ADAPTIVE FORECASTING ENGINE (8 CATEGORIES) =================
+
+function getIncidentsLastNDays(incidents, days) {
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  
+  const pastDate = new Date();
+  pastDate.setDate(today.getDate() - days);
+  pastDate.setHours(0, 0, 0, 0);
+
+  return incidents.filter(inc => {
+    const d = new Date(getIncidentDate(inc));
+    return d >= pastDate && d <= today;
+  });
+}
+
+// Adaptive Risk Logic: Base sa porsyento ng populasyon ng kumpanya (Adaptive sa 1,700+ employees)
+function getDynamicRisk(count, range, totalEmployees) {
+  const empCount = Math.max(totalEmployees, 100); 
+
+  if (range === 'weekly') {
+    const crit = Math.max(10, Math.ceil(0.01 * empCount));   // 1.0% Threshold
+    const high = Math.max(5, Math.ceil(0.005 * empCount));  // 0.5% Threshold
+    if (count >= crit) return { priority: "Critical", tone: "red" };
+    if (count >= high) return { priority: "High", tone: "amber" };
+    return { priority: "Medium", tone: "blue" };
+  } else {
+    const crit = Math.max(25, Math.ceil(0.03 * empCount));  // 3.0% Threshold
+    const high = Math.max(12, Math.ceil(0.015 * empCount)); // 1.5% Threshold
+    if (count >= crit) return { priority: "Critical", tone: "red" };
+    if (count >= high) return { priority: "High", tone: "amber" };
+    return { priority: "Medium", tone: "blue" };
+  }
+}
+
+function generateCategoryForecast(incidents, range, totalEmployees) {
+  const empCount = Math.max(totalEmployees, 100);
+  // Minimum count para lumabas ang card (Weekly: 0.1% | Monthly: 0.3%)
+  const minToShow = range === 'weekly' 
+    ? Math.max(2, Math.ceil(0.001 * empCount)) 
+    : Math.max(5, Math.ceil(0.003 * empCount));
+
+  // 8 Major Categories ayon sa inyong Code of Conduct
+  const counts = { c1:0, c2:0, c3:0, c4:0, c5:0, c6:0, c7:0, c8:0 };
+
+  incidents.forEach((incident) => {
+    const v = (incident.violation || incident.violationType || "").toLowerCase();
+    
+    // I. ABSENCES AND TARDINESS
+    if (v.includes("awol") || v.includes("absence") || v.includes("tardiness") || v.includes("undertime") || v.includes("leave") || v.includes("abandonment")) counts.c1++;
+    // II. DISORDERLY CONDUCT AND MISBEHAVIOR
+    else if (v.includes("fight") || v.includes("assault") || v.includes("threat") || v.includes("misbehavior") || v.includes("quarrel") || v.includes("discourteous") || v.includes("scandal") || v.includes("gambling")) counts.c2++;
+    // III. INSUBORDINATION / DISOBEDIENCE
+    else if (v.includes("insubordination") || v.includes("disobey") || v.includes("refusal") || v.includes("defiance") || v.includes("disrespect")) counts.c3++;
+    // IV. NEGLECT OF DUTY
+    else if (v.includes("neglect") || v.includes("sleeping") || v.includes("loitering") || v.includes("careless") || v.includes("abandoning post") || v.includes("non-work")) counts.c4++;
+    // V. BETRAYAL OF TRUST / DISHONESTY (Zero Tolerance)
+    else if (v.includes("theft") || v.includes("steal") || v.includes("fraud") || v.includes("falsification") || v.includes("integrity") || v.includes("dishonesty") || v.includes("property damage") || v.includes("sabotage")) counts.c5++;
+    // VI. HEALTH, SAFETY, SECURITY, AND SANITATION
+    else if (v.includes("safety") || v.includes("ppe") || v.includes("hazard") || v.includes("smoking") || v.includes("sanitation") || v.includes("id") || v.includes("uniform")) counts.c6++;
+    // VII. SEXUAL HARASSMENT (Zero Tolerance)
+    else if (v.includes("harassment") || v.includes("sexual") || v.includes("lewd") || v.includes("indecent")) counts.c7++;
+    // VIII. HABITUAL VIOLATIONS
+    else if (v.includes("habitual") || v.includes("recurring") || v.includes("repeated")) counts.c8++;
+  });
+
+  const predictions = [];
+  const addPred = (id, category, count, title, actionW, actionM, zeroTolerance = false) => {
+    if (count >= (zeroTolerance ? 1 : minToShow)) {
+      const risk = getDynamicRisk(count, range, totalEmployees);
+      predictions.push({
+        id, 
+        category, 
+        title, 
+        count,
+        action: range === 'weekly' ? actionW : actionM,
+        priority: zeroTolerance ? "Critical" : risk.priority,
+        tone: zeroTolerance ? "red" : risk.tone
+      });
+    }
+  };
+
+  addPred("c1", "I. ABSENCES AND TARDINESS", counts.c1, "Manpower Shortage Forecast", "Spike in absences detected this week. Alert standby personnel immediately.", "Consistent attendance issues this month. Review deployment schedules and shift viability.");
+  addPred("c2", "II. DISORDERLY CONDUCT AND MISBEHAVIOR", counts.c2, "Workplace Harmony Risk", "Misbehavior reported recently. Intervention required to prevent site tension.", "Misconduct trend detected. Initiate site-wide Code of Conduct re-orientation.");
+  addPred("c3", "III. INSUBORDINATION / DISOBEDIENCE", counts.c3, "Command Breakdown Alert", "Refusal to follow orders noted. Stern warnings required to maintain authority.", "Pattern of defiance forming. Review supervisor effectiveness and site command chain.");
+  addPred("c4", "IV. NEGLECT OF DUTY", counts.c4, "Service Quality Degradation", "Duty neglect or sleeping on post detected. Immediate coaching required.", "Habitual neglect suggests low engagement. Re-assess workload or site placement.");
+  addPred("c5", "V. BETRAYAL OF TRUST / DISHONESTY", counts.c5, "Security & Integrity Breach", "Dishonesty/Theft detected. Secure premises and initiate immediate investigation.", "Zero tolerance breach. Immediate replacement and legal clearance processing needed.", true);
+  addPred("c6", "VI. HEALTH, SAFETY, SECURITY, AND SANITATION", counts.c6, "Liability & Hazard Alert", "Safety violation reported. Correct immediately to prevent accidents or penalties.", "Consistent safety non-compliance. Schedule mandatory safety refresher for the team.");
+  addPred("c7", "VII. SEXUAL HARASSMENT", counts.c7, "Legal & Compliance Risk", "Harassment complaint detected. Enforce preventive suspension immediately.", "Harassment case recorded. Review site security and legal compliance protocols.", true);
+  addPred("c8", "VIII. HABITUAL VIOLATIONS", counts.c8, "Policy Failure Forecast", "Employee reaching habitual status. Prepare disciplinary committee review.", "Pattern of recidivism detected. Systematic review of disciplinary history required.");
+
+  return predictions.sort((a, b) => b.count - a.count);
+}
+
+// ==========================================================
+
 function buildRowsForIncidents(incidents = []) {
   return incidents.map((incident) => ({
     id: incident.id || "-",
@@ -647,6 +743,17 @@ export function buildDashboardInsights({
     utilizationRate,
   });
 
+  // I-pass natin ang kabuuang bilang ng mga empleyado at BUONG raw incidents list
+  const totalEmployees = employees.length;
+  const incidentsLast7Days = getIncidentsLastNDays(incidents, 7);
+  const incidentsLast30Days = getIncidentsLastNDays(incidents, 30);
+
+  const predictions = {
+    weekly: generateCategoryForecast(incidentsLast7Days, 'weekly', totalEmployees),
+    monthly: generateCategoryForecast(incidentsLast30Days, 'monthly', totalEmployees),
+    totalEmployees: totalEmployees,
+  };
+
   return {
     health,
     mom,
@@ -654,6 +761,7 @@ export function buildDashboardInsights({
     caseAging,
     complianceBreakdown,
     positiveSignals,
+    predictions, 
     drilldowns: {
       utilizationRate: {
         title: "Deployment Utilization Details",

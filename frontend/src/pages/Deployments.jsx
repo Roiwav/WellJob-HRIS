@@ -289,7 +289,7 @@ export default function Deployments() {
 
         {isLoading ? (
           <div className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center text-sm font-semibold text-gray-500 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-gray-400">
-            Loading deployment records from backend...
+            Loading deployment records...
           </div>
         ) : (
           <DeploymentTable 

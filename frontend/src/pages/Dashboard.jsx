@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom"; // Idinagdag ang useNavigate
+import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { FiBarChart2, FiDownload, FiRefreshCw } from "react-icons/fi";
+import { FiBarChart2, FiDownload, FiRefreshCw, FiTrendingUp } from "react-icons/fi";
 
 import ExecutiveActionItems from "../components/dashboard/insights/ExecutiveActionItems";
 import WorkforceHealthBanner from "../components/dashboard/insights/WorkforceHealthBanner";
@@ -330,7 +330,7 @@ function buildCaseAgingDistribution(incidents = []) {
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate(); // Hook for redirection
+  const navigate = useNavigate();
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear().toString();
   const currentMonth = currentDate.getMonth() + 1;
@@ -407,6 +407,9 @@ export default function Dashboard() {
         rawIncidents: incidentsRaw,
       });
 
+      localStorage.setItem("employees", JSON.stringify(activeEmployees));
+      localStorage.setItem("incidents", JSON.stringify(incidentsRaw));
+      window.dispatchEvent(new Event("dataUpdated"));
 
       setLastUpdated(formatLastUpdated());
     } catch (error) {
@@ -549,10 +552,11 @@ export default function Dashboard() {
     });
   }, [data.rawEmployees, reportScope.incidents, currentKPIS, utilizationRate]);
 
+  // UPDATED: Ipinapasa ang buong rawIncidents list papunta sa insights engine
   const dashboardInsights = useMemo(() => {
     return buildDashboardInsights({
       employees: data.rawEmployees,
-      incidents: data.rawIncidents,
+      incidents: data.rawIncidents, 
       selectedYear,
       selectedMonth,
       kpis: currentKPIS,
@@ -613,7 +617,6 @@ export default function Dashboard() {
       const disabledKeys = ["total", "deployed", "available"];
       if (disabledKeys.includes(key)) return;
 
-      // Kung "activeIncidents" ang pinindot, i-redirect sa /incidents route
       if (key === "activeIncidents") {
         navigate("/incidents");
         return;
@@ -625,7 +628,7 @@ export default function Dashboard() {
         setActiveDrilldown(detail);
       }
     },
-    [dashboardInsights, navigate] // Dependecy updated
+    [dashboardInsights, navigate]
   );
 
   const totalIncidentsForYear = useMemo(
@@ -857,6 +860,9 @@ export default function Dashboard() {
         onOpenDrilldown={handleOpenDrilldown}
       />
 
+      {/* NEW: Updated Predictive Insights Panel */}
+      <PredictiveInsightsPanel predictions={dashboardInsights.predictions} />
+
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <InsightCard
           title="Peak Deployment Month"
@@ -924,5 +930,103 @@ function InsightCard({ title, value, tone = "indigo" }) {
         {value}
       </h3>
     </div>
+  );
+}
+
+// ====================================================================
+// NEW COMPONENT: System Forecasting Panel (Pinakababa ng Dashboard.jsx)
+// ====================================================================
+
+function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [] } }) {
+  const [forecastRange, setForecastRange] = useState('weekly');
+  const [selectedCategory, setSelectedCategory] = useState('All Categories');
+
+  const CATEGORIES = [
+    "All Categories",
+    "I. ABSENCES AND TARDINESS",
+    "II. DISORDERLY CONDUCT AND MISBEHAVIOR",
+    "III. INSUBORDINATION / DISOBEDIENCE",
+    "IV. NEGLECT OF DUTY",
+    "V. BETRAYAL OF TRUST / DISHONESTY",
+    "VI. HEALTH, SAFETY, SECURITY, AND SANITATION",
+    "VII. SEXUAL HARASSMENT",
+    "VIII. HABITUAL VIOLATIONS"
+  ];
+
+  const basePredictions = predictions[forecastRange] || [];
+  const activePredictions = basePredictions.filter(p => 
+    selectedCategory === 'All Categories' || p.category === selectedCategory
+  );
+
+  const tones = {
+    red: "bg-red-50 border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-900/50 dark:text-red-300",
+    amber: "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/30 dark:border-amber-900/50 dark:text-amber-300",
+    blue: "bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-950/30 dark:border-blue-900/50 dark:text-blue-300",
+    slate: "bg-slate-50 border-slate-200 text-slate-800 dark:bg-slate-900/50 dark:border-slate-700 dark:text-slate-300",
+  };
+
+  const badgeTones = {
+    Critical: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
+    High: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+    Medium: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+  };
+
+  return (
+    <section className="rounded-3xl border border-indigo-200 bg-gradient-to-b from-indigo-50/40 to-white p-6 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/20 dark:to-slate-900">
+      <div className="mb-5 flex flex-col items-start justify-between gap-4 xl:flex-row xl:items-center">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md">
+            <FiTrendingUp size={20} />
+          </div>
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900 dark:text-white">System Forecasting & Next Steps</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Adaptive trend analysis based on {predictions.totalEmployees || '1,700+'} employees.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="h-[34px] cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+          >
+            {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+          </select>
+
+          <div className="flex shrink-0 rounded-xl bg-indigo-100/50 p-1 dark:bg-slate-800/80">
+            {['weekly', 'monthly'].map(range => (
+              <button
+                key={range}
+                onClick={() => setForecastRange(range)}
+                className={`rounded-lg px-4 py-1.5 text-xs font-bold transition-all ${forecastRange === range ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white" : "text-slate-600 dark:text-slate-400"}`}
+              >
+                {range.charAt(0).toUpperCase() + range.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {activePredictions.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/50 p-8 text-center dark:border-white/10 dark:bg-slate-950/30">
+          <p className="text-sm font-bold text-slate-600 dark:text-slate-400">No operational risk detected for this category and threshold.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {activePredictions.map((pred) => (
+            <div key={pred.id} className={`rounded-2xl border p-4 ${tones[pred.tone] || tones.slate}`}>
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-xs font-bold uppercase tracking-wide opacity-80">{pred.category} ({pred.count} cases)</span>
+                <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${badgeTones[pred.priority]}`}>
+                  {pred.priority} Risk
+                </span>
+              </div>
+              <h3 className="mt-2 text-sm font-extrabold">{pred.title}</h3>
+              <p className="mt-1 text-xs leading-5 opacity-90">{pred.action}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
