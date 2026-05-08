@@ -141,6 +141,26 @@ function RecommendationBadge({ recommendation }) {
   );
 }
 
+function MiniStat({ label, value, tone }) {
+  const styles = {
+    emerald:
+      "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-800/70",
+    sky: "bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800/70",
+    amber:
+      "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800/70",
+    rose: "bg-rose-50 text-rose-700 ring-1 ring-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:ring-rose-800/70",
+    indigo:
+      "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:ring-indigo-800/70",
+  };
+
+  return (
+    <div className={`rounded-2xl px-4 py-3 ${styles[tone] || styles.sky}`}>
+      <p className="text-[11px] font-bold uppercase tracking-wide">{label}</p>
+      <p className="mt-1 text-xl font-extrabold">{value}</p>
+    </div>
+  );
+}
+
 export default function RiskTable({
   employees = [],
   getSeverity,
@@ -334,7 +354,7 @@ export default function RiskTable({
 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <MiniStat
-                label="Pending"
+                label="For HR Action"
                 value={decisionSummary.pending}
                 tone="indigo"
               />
@@ -348,11 +368,7 @@ export default function RiskTable({
                 value={decisionSummary.moderate}
                 tone="amber"
               />
-              <MiniStat
-                label="Low"
-                value={decisionSummary.low}
-                tone="sky"
-              />
+              <MiniStat label="Low" value={decisionSummary.low} tone="sky" />
             </div>
           </div>
 
@@ -418,7 +434,6 @@ export default function RiskTable({
                 className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
               >
                 <option value="ALL">All Confidence</option>
-
                 {CONFIDENCE_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -435,7 +450,6 @@ export default function RiskTable({
                 className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
               >
                 <option value="ALL">All Next Steps</option>
-
                 {WORKFLOW_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -452,7 +466,6 @@ export default function RiskTable({
                 className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
               >
                 <option value="ALL">All HR Actions</option>
-
                 {RECOMMENDATION_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -511,25 +524,19 @@ export default function RiskTable({
                 <th className="px-4 py-4 text-left font-extrabold">
                   Employee
                 </th>
-
                 <th className="px-1 py-4 text-center font-extrabold">Vio.</th>
-
                 <th className="px-1 py-4 text-center font-extrabold">
                   Severity
                 </th>
-
                 <th className="px-2 py-4 text-center font-extrabold">
                   Evaluation
                 </th>
-
                 <th className="px-2 py-4 text-center font-extrabold">
                   Recommendation & Next Step
                 </th>
-
                 <th className="px-4 py-4 text-left font-extrabold">
                   Decision Basis
                 </th>
-
                 <th className="px-1 py-4 text-center font-extrabold">View</th>
               </tr>
             </thead>
@@ -618,7 +625,6 @@ export default function RiskTable({
                           <RecommendationBadge
                             recommendation={recommendation}
                           />
-
                           <SuggestedActionBadge action={suggestedHRAction} />
                         </div>
                       </td>
@@ -695,25 +701,5 @@ export default function RiskTable({
         />
       )}
     </>
-  );
-}
-
-function MiniStat({ label, value, tone }) {
-  const styles = {
-    emerald:
-      "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-800/70",
-    sky: "bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800/70",
-    amber:
-      "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800/70",
-    rose: "bg-rose-50 text-rose-700 ring-1 ring-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:ring-rose-800/70",
-    indigo:
-      "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:ring-indigo-800/70",
-  };
-
-  return (
-    <div className={`rounded-2xl px-4 py-3 ${styles[tone] || styles.sky}`}>
-      <p className="text-[11px] font-bold uppercase tracking-wide">{label}</p>
-      <p className="mt-1 text-xl font-extrabold">{value}</p>
-    </div>
   );
 }

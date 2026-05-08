@@ -13,9 +13,8 @@ import { useAuth } from "../context/useAuth";
 
 import KPISummarySection from "../components/kpi/sections/KPISummarySection";
 import CriticalAlerts from "../components/kpi/sections/CriticalAlerts";
-import HighRiskEmployees from "../components/kpi/sections/HighRiskEmployees";
-import GoodStandingEmployees from "../components/kpi/sections/GoodStandingEmployees";
 import RiskIntelligenceSection from "../components/kpi/sections/RiskIntelligenceSection";
+import WorkforceStandingSnapshot from "../components/kpi/sections/WorkforceStandingSnapshot";
 import AnalyticsTrendsSection from "../components/kpi/sections/AnalyticsTrendsSection";
 import RecommendationReviewSection from "../components/kpi/sections/RecommendationReviewSection";
 import DecisionHistorySection from "../components/kpi/sections/DecisionHistorySection";
@@ -29,8 +28,7 @@ import {
 
 import { exportKPIReportPDF } from "../utils/kpi/kpiPdfExport";
 import { useKPIDataQuery } from "../hooks/useKPIQueries";
-
-const DECISION_HISTORY_KEY = "welljob_kpi_decision_history";
+import { useKPIDecisionHistoryQuery } from "../hooks/useKPIDecisionQueries";
 
 const TABS = [
   {
@@ -65,17 +63,6 @@ const TABS = [
   },
 ];
 
-function getDecisionHistoryRecords() {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DECISION_HISTORY_KEY));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 function isPendingForReview(employee, decidedEmployeeIds) {
   if (decidedEmployeeIds.has(String(employee.id))) {
     return false;
@@ -102,31 +89,44 @@ function isPendingForReview(employee, decidedEmployeeIds) {
 export default function KPIReports() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
-
   const [activeTab, setActiveTab] = useState("overview");
-  const [decisionHistoryRefreshKey, setDecisionHistoryRefreshKey] = useState(0);
 
   const {
-    data,
-    isLoading,
-    isFetching,
-    error,
-    refetch,
+    data: kpiData,
+    isLoading: isKpiLoading,
+    isFetching: isKpiFetching,
+    error: kpiError,
+    refetch: refetchKPIData,
   } = useKPIDataQuery({
     refetchInterval: 10000,
   });
 
-  const employeesRaw = data?.employeesRaw || [];
-  const incidentsRaw = data?.incidentsRaw || [];
+  const {
+    data: decisionHistoryData,
+    isFetching: isDecisionHistoryFetching,
+    refetch: refetchDecisionHistory,
+  } = useKPIDecisionHistoryQuery({
+    refetchInterval: 10000,
+  });
+
+  const employeesRawSource = kpiData?.employeesRaw;
+  const incidentsRawSource = kpiData?.incidentsRaw;
+
+  const employeesRaw = useMemo(() => {
+    return Array.isArray(employeesRawSource) ? employeesRawSource : [];
+  }, [employeesRawSource]);
+
+  const incidentsRaw = useMemo(() => {
+    return Array.isArray(incidentsRawSource) ? incidentsRawSource : [];
+  }, [incidentsRawSource]);
+
+  const decisionHistory = useMemo(() => {
+    return Array.isArray(decisionHistoryData) ? decisionHistoryData : [];
+  }, [decisionHistoryData]);
 
   const employees = useMemo(() => {
     return buildKPIEmployees(employeesRaw, incidentsRaw);
   }, [employeesRaw, incidentsRaw]);
-
-  const decisionHistory = useMemo(() => {
-    decisionHistoryRefreshKey;
-    return getDecisionHistoryRecords();
-  }, [decisionHistoryRefreshKey]);
 
   const decidedEmployeeIds = useMemo(() => {
     return new Set(decisionHistory.map((record) => String(record.employeeId)));
@@ -134,74 +134,89 @@ export default function KPIReports() {
 
   const totalEmployees = employees.length;
 
-  const deployedEmployees = employees.filter((emp) => emp.isDeployed).length;
+  const deployedEmployees = useMemo(() => {
+    return employees.filter((emp) => emp.isDeployed).length;
+  }, [employees]);
 
-  const repeatOffenders = employees.filter(
-    (emp) => emp.riskLevel === "Repeat" || emp.violationCount >= 3
-  ).length;
+  const repeatOffenders = useMemo(() => {
+    return employees.filter(
+      (emp) => emp.riskLevel === "Repeat" || emp.violationCount >= 3
+    ).length;
+  }, [employees]);
 
-  const highRiskEmployees = employees.filter(
-    (emp) => emp.riskLevel === "High Risk"
-  ).length;
+  const highRiskEmployees = useMemo(() => {
+    return employees.filter((emp) => emp.riskLevel === "High Risk").length;
+  }, [employees]);
 
-  const goodStandingEmployees = employees.filter((emp) => {
-    const violationCount = Number(emp.violationCount || 0);
-    const criticalIncidentCount = Number(emp.criticalIncidentCount || 0);
-    const riskLevel = String(emp.riskLevel || "").toLowerCase();
+  const goodStandingEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      const violationCount = Number(emp.violationCount || 0);
+      const criticalIncidentCount = Number(emp.criticalIncidentCount || 0);
+      const riskLevel = String(emp.riskLevel || "").toLowerCase();
 
-    return (
-      violationCount === 0 &&
-      criticalIncidentCount === 0 &&
-      !riskLevel.includes("high") &&
-      !riskLevel.includes("repeat")
-    );
-  }).length;
+      return (
+        violationCount === 0 &&
+        criticalIncidentCount === 0 &&
+        !riskLevel.includes("high") &&
+        !riskLevel.includes("repeat")
+      );
+    }).length;
+  }, [employees]);
 
-  const compliantEmployees = employees.filter(
-    (emp) => emp.violationCount === 0
-  ).length;
+  const compliantEmployees = useMemo(() => {
+    return employees.filter((emp) => emp.violationCount === 0).length;
+  }, [employees]);
 
   const complianceRate =
     totalEmployees > 0
       ? Math.round((compliantEmployees / totalEmployees) * 100)
       : 0;
 
-  const pendingRecommendationCount = employees.filter((employee) =>
-    isPendingForReview(employee, decidedEmployeeIds)
+  const pendingRecommendationCount = useMemo(() => {
+    return employees.filter((employee) =>
+      isPendingForReview(employee, decidedEmployeeIds)
+    ).length;
+  }, [employees, decidedEmployeeIds]);
+
+const criticalAlerts = useMemo(() => {
+  const activeStatuses = ["Open", "Investigating", "For Review"];
+
+  const activeIncidents = incidentsRaw.filter((incident) =>
+    activeStatuses.includes(incident.status)
+  );
+
+  const activeCriticalCases = activeIncidents.filter(
+    (incident) => incident.severity === "Critical"
   ).length;
 
-  const criticalAlerts = useMemo(() => {
-    const openIncidents = incidentsRaw.filter(
-      (incident) => incident.status === "Open"
-    ).length;
+  const activeNonCriticalIncidents = activeIncidents.filter(
+    (incident) => incident.severity !== "Critical"
+  );
 
-    const investigatingIncidents = incidentsRaw.filter(
-      (incident) => incident.status === "Investigating"
-    ).length;
+  const underInvestigationCases = activeNonCriticalIncidents.filter(
+    (incident) =>
+      incident.status === "Investigating" || incident.status === "For Review"
+  ).length;
 
-    const forReviewIncidents = incidentsRaw.filter(
-      (incident) => incident.status === "For Review"
-    ).length;
+  const openMonitoringCases = activeNonCriticalIncidents.filter(
+    (incident) => incident.status === "Open"
+  ).length;
 
-    const criticalIncidents = incidentsRaw.filter(
-      (incident) => incident.severity === "Critical"
-    ).length;
-
-    return [
-      {
-        level: "HIGH",
-        text: `${criticalIncidents} critical incident case(s) detected`,
-      },
-      {
-        level: "MEDIUM",
-        text: `${investigatingIncidents} incident(s) under investigation`,
-      },
-      {
-        level: "LOW",
-        text: `${openIncidents} open case(s), ${forReviewIncidents} for Super Admin review`,
-      },
-    ];
-  }, [incidentsRaw]);
+  return [
+    {
+      level: "HIGH",
+      text: `${activeCriticalCases} active critical case(s) requiring priority HR attention`,
+    },
+    {
+      level: "MEDIUM",
+      text: `${underInvestigationCases} non-critical case(s) under investigation or review`,
+    },
+    {
+      level: "LOW",
+      text: `${openMonitoringCases} non-critical open case(s) for monitoring`,
+    },
+  ];
+}, [incidentsRaw]);
 
   const violationTrend = useMemo(() => {
     return buildViolationTrend(incidentsRaw);
@@ -222,13 +237,16 @@ export default function KPIReports() {
     });
   }, [totalEmployees, deployedEmployees]);
 
+  const isLoading = isKpiLoading;
+  const isFetching = isKpiFetching || isDecisionHistoryFetching;
+  const error = kpiError;
+
   const handleRefreshData = async () => {
-    await refetch();
-    setDecisionHistoryRefreshKey((prev) => prev + 1);
+    await Promise.all([refetchKPIData(), refetchDecisionHistory()]);
   };
 
-  const handleDecisionSaved = () => {
-    setDecisionHistoryRefreshKey((prev) => prev + 1);
+  const handleDecisionSaved = async () => {
+    await Promise.all([refetchKPIData(), refetchDecisionHistory()]);
   };
 
   const handleExportPDF = () => {
@@ -259,9 +277,9 @@ export default function KPIReports() {
               : "A tab-based KPI workspace for workforce overview, decision intelligence, recommendation review, decision history, and analytics."}
           </p>
 
-          {data?.fetchedAt && (
+          {kpiData?.fetchedAt && (
             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              Last synced: {new Date(data.fetchedAt).toLocaleTimeString()}
+              Last synced: {new Date(kpiData.fetchedAt).toLocaleTimeString()}
             </p>
           )}
         </div>
@@ -376,39 +394,13 @@ export default function KPIReports() {
                 <CriticalAlerts alerts={criticalAlerts} />
               </section>
 
-              <section className="space-y-4">
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                      Employee Standing Monitoring
-                    </h2>
-
-                    <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500 dark:text-gray-400">
-                      A quick balanced view of employees requiring corrective
-                      attention and employees with no recorded violations.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-full bg-red-100 px-3 py-1 font-bold text-red-700 dark:bg-red-500/20 dark:text-red-300">
-                      {highRiskEmployees} high risk
-                    </span>
-
-                    <span className="rounded-full bg-emerald-100 px-3 py-1 font-bold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-                      {goodStandingEmployees} good standing
-                    </span>
-
-                    <span className="rounded-full bg-indigo-100 px-3 py-1 font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-                      {pendingRecommendationCount} pending review
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2">
-                  <HighRiskEmployees employees={employees} />
-                  <GoodStandingEmployees employees={employees} />
-                </div>
-              </section>
+              <WorkforceStandingSnapshot
+              employees={employees}
+              totalEmployees={totalEmployees}
+              goodStandingEmployees={goodStandingEmployees}
+              highRiskEmployees={highRiskEmployees}
+              pendingRecommendationCount={pendingRecommendationCount}
+            />
             </>
           )}
 

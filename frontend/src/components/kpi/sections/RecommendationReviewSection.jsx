@@ -8,7 +8,6 @@ import {
   FiSearch,
   FiShield,
   FiThumbsUp,
-  FiUser,
   FiX,
   FiXCircle,
   FiZap,
@@ -23,28 +22,21 @@ import {
   getSuggestedHRActionClasses,
 } from "../../../utils/kpi/kpiHelpers";
 
-const DECISION_HISTORY_KEY = "welljob_kpi_decision_history";
+import {
+  useCreateKPIDecisionMutation,
+  useKPIDecisionHistoryQuery,
+} from "../../../hooks/useKPIDecisionQueries";
 
-const FINAL_ACTION_OPTIONS = [
-  RECOMMENDATION_LABELS.RETAIN,
-  ...WELLJOB_LOW_KPI_ACTIONS.map((action) => action.title),
-  "Suspension Review",
-  "Termination Review",
-  "No Action Required",
-];
-
-function getDecisionHistory() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DECISION_HISTORY_KEY));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveDecisionHistory(records = []) {
-  localStorage.setItem(DECISION_HISTORY_KEY, JSON.stringify(records));
-}
+const FINAL_ACTION_OPTIONS = Array.from(
+  new Set([
+    RECOMMENDATION_LABELS.RETAIN,
+    ...WELLJOB_LOW_KPI_ACTIONS.map((action) => action.title),
+    ...Object.values(HR_ACTION_WORKFLOW),
+    "Suspension Review",
+    "Termination Review",
+    "No Action Required",
+  ])
+);
 
 function formatEmployeeId(id) {
   return String(id || "-").replace(/^KPI-/i, "");
@@ -75,7 +67,10 @@ function isPendingRecommendation(employee) {
     recommendation === "Retain" ||
     recommendation === "Retain / Maintain Good Standing";
 
-  return hasConcern && (!isRetain || suggestedHRAction !== HR_ACTION_WORKFLOW.MONITOR);
+  return (
+    hasConcern &&
+    (!isRetain || suggestedHRAction !== HR_ACTION_WORKFLOW.MONITOR)
+  );
 }
 
 function StatusBadge({ children, className }) {
@@ -89,6 +84,8 @@ function StatusBadge({ children, className }) {
 }
 
 function DecisionModal({ employee, mode, user, onClose, onSaved }) {
+  const createDecisionMutation = useCreateKPIDecisionMutation();
+
   const systemRecommendation =
     employee?.recommendation || RECOMMENDATION_LABELS.RETAIN;
 
@@ -135,34 +132,33 @@ function DecisionModal({ employee, mode, user, onClose, onSaved }) {
   const config = modeConfig[mode] || modeConfig.accept;
   const isRejectMissingNotes = mode === "reject" && !notes.trim();
 
-  const handleSave = () => {
-    if (isRejectMissingNotes) return;
+  const handleSave = async () => {
+    if (isRejectMissingNotes || createDecisionMutation.isPending) return;
 
-    const history = getDecisionHistory();
-
-    const record = {
-      id: `DEC-${Date.now()}`,
+    const payload = {
       employeeId: employee.id,
       employeeName: employee.name,
       company: employee.company || "Unassigned",
+
       riskLevel: employee.riskLevel || "Low Risk",
       kpiLevel: employee.kpiLevel || "Good Standing",
       violationCount: Number(employee.violationCount || 0),
       severityScore: Number(employee.severityScore || 0),
       criticalIncidentCount: Number(employee.criticalIncidentCount || 0),
+
       decisionConfidence:
         employee.decisionConfidence || DECISION_CONFIDENCE.LOW,
       suggestedHRAction: systemSuggestedAction,
       systemRecommendation,
       finalAction,
       decisionType: config.decisionType,
+
       notes:
         notes.trim() ||
         `${config.decisionType} based on HR review of the system-generated recommendation.`,
       decidedBy: user?.name || user?.username || "HR User",
       decidedByRole: user?.role || "Authorized User",
-      decidedAt: new Date().toISOString(),
-      status: "Recorded",
+
       recommendationReason:
         employee.recommendationReason ||
         employee.correctiveActionReason ||
@@ -172,8 +168,8 @@ function DecisionModal({ employee, mode, user, onClose, onSaved }) {
       correctiveActionBasis: employee.correctiveActionBasis || "",
     };
 
-    saveDecisionHistory([record, ...history]);
-    onSaved(record);
+    const result = await createDecisionMutation.mutateAsync(payload);
+    onSaved(result?.record || result);
   };
 
   return (
@@ -300,13 +296,21 @@ function DecisionModal({ employee, mode, user, onClose, onSaved }) {
               Rejection requires HR notes for accountability.
             </div>
           )}
+
+          {createDecisionMutation.isError && (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">
+              {createDecisionMutation.error?.message ||
+                "Failed to save KPI decision."}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-2 border-t border-slate-200 px-6 py-4 dark:border-slate-800 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            disabled={createDecisionMutation.isPending}
+            className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
           >
             Cancel
           </button>
@@ -314,10 +318,10 @@ function DecisionModal({ employee, mode, user, onClose, onSaved }) {
           <button
             type="button"
             onClick={handleSave}
-            disabled={isRejectMissingNotes}
+            disabled={isRejectMissingNotes || createDecisionMutation.isPending}
             className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {config.button}
+            {createDecisionMutation.isPending ? "Saving..." : config.button}
           </button>
         </div>
       </div>
@@ -332,12 +336,12 @@ export default function RecommendationReviewSection({
 }) {
   const [search, setSearch] = useState("");
   const [selectedReview, setSelectedReview] = useState(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  const decisionHistory = useMemo(() => {
-    refreshKey;
-    return getDecisionHistory();
-  }, [refreshKey]);
+  const {
+    data: decisionHistory = [],
+    isLoading: isHistoryLoading,
+    error: historyError,
+  } = useKPIDecisionHistoryQuery();
 
   const decidedEmployeeIds = useMemo(() => {
     return new Set(decisionHistory.map((record) => String(record.employeeId)));
@@ -385,7 +389,6 @@ export default function RecommendationReviewSection({
 
   const handleSaved = (record) => {
     setSelectedReview(null);
-    setRefreshKey((prev) => prev + 1);
     onDecisionSaved?.(record);
   };
 
@@ -401,9 +404,7 @@ export default function RecommendationReviewSection({
               </h2>
 
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                HR validates the system-generated recommendation here. Accepted,
-                modified, or rejected decisions are recorded and removed from
-                the pending queue.
+                HR validates system-generated recommendations here. Accepted, modified, or rejected decisions will appear in Decision History.
               </p>
             </div>
 
@@ -448,7 +449,17 @@ export default function RecommendationReviewSection({
           </div>
         </div>
 
-        {pendingEmployees.length === 0 ? (
+        {historyError && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">
+            {historyError.message || "Failed to load decision history."}
+          </div>
+        )}
+
+        {isHistoryLoading ? (
+          <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+            Loading recommendation review queue...
+          </div>
+        ) : pendingEmployees.length === 0 ? (
           <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-8 text-center text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40">
               <FiCheckCircle size={22} />

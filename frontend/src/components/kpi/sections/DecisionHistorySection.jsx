@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import {
   FiCheckCircle,
   FiClock,
-  FiDownload,
   FiEdit3,
   FiFileText,
   FiRefreshCw,
@@ -21,20 +20,10 @@ import {
   getSuggestedHRActionClasses,
 } from "../../../utils/kpi/kpiHelpers";
 
-const DECISION_HISTORY_KEY = "welljob_kpi_decision_history";
-
-function getDecisionHistory() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DECISION_HISTORY_KEY));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveDecisionHistory(records = []) {
-  localStorage.setItem(DECISION_HISTORY_KEY, JSON.stringify(records));
-}
+import {
+  useDeleteKPIDecisionMutation,
+  useKPIDecisionHistoryQuery,
+} from "../../../hooks/useKPIDecisionQueries";
 
 function formatEmployeeId(id) {
   return String(id || "-").replace(/^KPI-/i, "");
@@ -101,7 +90,7 @@ function StatusBadge({ children, className }) {
   );
 }
 
-function HistoryCard({ record, onDelete }) {
+function HistoryCard({ record, onDelete, isDeleting }) {
   const decisionType = record.decisionType || "Recorded";
 
   const decisionConfidence =
@@ -159,11 +148,12 @@ function HistoryCard({ record, onDelete }) {
         <button
           type="button"
           onClick={() => onDelete(record.id)}
-          className="inline-flex w-fit items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300 dark:hover:bg-rose-950/40"
-          title="Remove from local decision history"
+          disabled={isDeleting}
+          className="inline-flex w-fit items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300 dark:hover:bg-rose-950/40"
+          title="Remove decision history record"
         >
           <FiTrash2 />
-          Remove
+          {isDeleting ? "Removing..." : "Remove"}
         </button>
       </div>
 
@@ -234,12 +224,16 @@ function HistoryCard({ record, onDelete }) {
 export default function DecisionHistorySection() {
   const [search, setSearch] = useState("");
   const [decisionFilter, setDecisionFilter] = useState("ALL");
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  const history = useMemo(() => {
-    refreshKey;
-    return getDecisionHistory();
-  }, [refreshKey]);
+  const {
+    data: history = [],
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+  } = useKPIDecisionHistoryQuery();
+
+  const deleteDecisionMutation = useDeleteKPIDecisionMutation();
 
   const filteredHistory = useMemo(() => {
     const keyword = search.toLowerCase().trim();
@@ -285,81 +279,12 @@ export default function DecisionHistorySection() {
     };
   }, [history]);
 
-  const handleDelete = (recordId) => {
-    const nextHistory = history.filter((record) => record.id !== recordId);
-    saveDecisionHistory(nextHistory);
-    setRefreshKey((prev) => prev + 1);
+  const handleDelete = async (recordId) => {
+    await deleteDecisionMutation.mutateAsync(recordId);
   };
 
   const handleRefresh = () => {
-    setRefreshKey((prev) => prev + 1);
-  };
-
-  const handleExportCSV = () => {
-    const headers = [
-      "Decision ID",
-      "Employee ID",
-      "Employee Name",
-      "Company",
-      "Decision Type",
-      "System Recommendation",
-      "Suggested HR Action",
-      "Final HR Action",
-      "Decision Confidence",
-      "Risk Level",
-      "KPI Level",
-      "Violations",
-      "Severity Score",
-      "Critical Cases",
-      "Decided By",
-      "Role",
-      "Date",
-      "Notes",
-    ];
-
-    const rows = filteredHistory.map((record) => [
-      record.id,
-      record.employeeId,
-      record.employeeName,
-      record.company,
-      record.decisionType,
-      record.systemRecommendation,
-      record.suggestedHRAction,
-      record.finalAction,
-      record.decisionConfidence,
-      record.riskLevel,
-      record.kpiLevel,
-      record.violationCount,
-      record.severityScore,
-      record.criticalIncidentCount,
-      record.decidedBy,
-      record.decidedByRole,
-      formatDateTime(record.decidedAt),
-      record.notes,
-    ]);
-
-    const csvContent = [headers, ...rows]
-      .map((row) =>
-        row
-          .map((value) => `"${String(value || "").replace(/"/g, '""')}"`)
-          .join(",")
-      )
-      .join("\n");
-
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.setAttribute("download", "welljob_kpi_decision_history.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
+    refetch();
   };
 
   return (
@@ -373,9 +298,7 @@ export default function DecisionHistorySection() {
             </h2>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Stores HR decisions from the Recommendation Review queue. This
-              creates traceability for accepted, modified, and rejected
-              system-generated suggestions.
+              Stores reviewed HR decisions from the Recommendation Review queue for monitoring, reference, and employee case tracking.
             </p>
           </div>
 
@@ -414,7 +337,7 @@ export default function DecisionHistorySection() {
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_130px_130px]">
+        <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_130px]">
           <div className="relative min-w-0">
             <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
@@ -441,25 +364,33 @@ export default function DecisionHistorySection() {
           <button
             type="button"
             onClick={handleRefresh}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
+            disabled={isFetching}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
           >
             <FiRefreshCw />
-            Refresh
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            disabled={filteredHistory.length === 0}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <FiDownload />
-            CSV
+            {isFetching ? "Syncing" : "Refresh"}
           </button>
         </div>
       </div>
 
-      {filteredHistory.length === 0 ? (
+      {error && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">
+          {error.message || "Failed to load decision history."}
+        </div>
+      )}
+
+      {deleteDecisionMutation.isError && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">
+          {deleteDecisionMutation.error?.message ||
+            "Failed to delete decision record."}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          Loading decision history...
+        </div>
+      ) : filteredHistory.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-500 dark:bg-slate-800 dark:text-slate-300">
             <FiFileText size={22} />
@@ -481,23 +412,11 @@ export default function DecisionHistorySection() {
               key={record.id}
               record={record}
               onDelete={handleDelete}
+              isDeleting={deleteDecisionMutation.isPending}
             />
           ))}
         </div>
       )}
-
-      <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm leading-6 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-300">
-        <div className="mb-1 flex items-center gap-2 font-extrabold">
-          <FiUser />
-          Decision history note
-        </div>
-
-        <p>
-          For now, decision history is saved in localStorage for frontend
-          demonstration. Later, this should be moved to the backend database for
-          permanent audit trail storage.
-        </p>
-      </div>
     </section>
   );
 }

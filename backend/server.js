@@ -11,6 +11,7 @@ const employeeRoutes = require("./routes/employeeRoutes");
 const incidentRoutes = require("./routes/incidentRoutes");
 const deploymentRoutes = require("./routes/deploymentRoutes");
 const auditLogRoutes = require("./routes/auditLogRoutes");
+const kpiDecisionRoutes = require("./routes/kpiDecisionRoutes");
 
 // 🔥 KUNIN ANG CHANGE PASSWORD FUNCTION
 const { changePassword } = require("./controllers/userController");
@@ -34,6 +35,7 @@ app.use("/api", userRoutes);
 app.use("/api", employeeRoutes);
 app.use("/api", incidentRoutes);
 app.use("/api", deploymentRoutes);
+app.use("/api", kpiDecisionRoutes);
 
 app.use("/api", auditLogRoutes);
 
