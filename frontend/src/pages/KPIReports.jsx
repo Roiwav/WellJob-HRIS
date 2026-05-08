@@ -298,7 +298,7 @@ export default function KPIReports() {
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
             {isSuperAdmin
               ? "View-only KPI analytics access for Super Admin."
-              : "Detailed KPI analytics, risk monitoring, and report generation for workforce decision-making."}
+              : "Detailed KPI analytics, risk monitoring, employee standing, and report generation for workforce decision-making."}
           </p>
         </div>
 
@@ -356,8 +356,8 @@ export default function KPIReports() {
                 </h2>
 
                 <p className="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-                  Balanced KPI monitoring for employees requiring corrective
-                  attention and employees with clean records for positive HR
+                  Balanced KPI standing monitoring for employees requiring corrective
+                  attention and employees with no recorded violations for positive HR
                   consideration.
                 </p>
               </div>

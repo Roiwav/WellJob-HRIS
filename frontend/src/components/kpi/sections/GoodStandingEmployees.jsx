@@ -65,8 +65,8 @@ export default function GoodStandingEmployees({ employees = [] }) {
           </h3>
 
           <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-            Employees with clean incident records recommended for positive HR
-            monitoring.
+            Employees with no recorded violations recommended for retention or
+            positive HR monitoring.
           </p>
         </div>
 
@@ -139,7 +139,7 @@ export default function GoodStandingEmployees({ employees = [] }) {
                   </div>
 
                   <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                    Clean
+                    Good Standing
                   </span>
                 </div>
 
@@ -153,10 +153,10 @@ export default function GoodStandingEmployees({ employees = [] }) {
                   </div>
 
                   <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
-                    <p className="text-slate-400">Recommendation</p>
+                    <p className="text-slate-400">HR Action</p>
 
                     <p className="mt-1 font-bold text-emerald-700 dark:text-emerald-300">
-                      Retain
+                      Retain / Maintain
                     </p>
                   </div>
                 </div>

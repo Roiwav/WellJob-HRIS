@@ -2,20 +2,13 @@ const fs = require("fs");
 const path = require("path");
 const db = require("../config/db");
 
-const EMPLOYEE_COUNT = 1000;
+const EMPLOYEE_COUNT = 1700;
 
-// WARNING:
-// false = append mock data
-// true = delete all existing employee, document, and incident data first
-// Recommended: true muna para mabura yung old data na maraming violations
 const CLEAR_EXISTING_DATA = true;
+const CLEAR_AUDIT_LOGS = true;
 
-const START_YEAR = 2020;
-const END_YEAR = 2026;
-
-// Only 1 to 10 total employees will have violations/incidents
-const MIN_INCIDENT_EMPLOYEES = 1;
-const MAX_INCIDENT_EMPLOYEES = 10;
+const START_DATE = "2020-01-01";
+const END_DATE = new Date().toISOString().slice(0, 10);
 
 const REQUIRED_DOCUMENTS = [
   "Resume",
@@ -62,6 +55,26 @@ const FIRST_NAMES = [
   "Alvin",
   "Marlon",
   "Shiela",
+  "Nikko",
+  "Ryan",
+  "Jomar",
+  "Paolo",
+  "Mikaela",
+  "Jasmine",
+  "Rachelle",
+  "Erika",
+  "Bianca",
+  "Louie",
+  "Lester",
+  "Allan",
+  "Karen",
+  "Elaine",
+  "Francis",
+  "Joanne",
+  "Hazel",
+  "April",
+  "Renz",
+  "Marco",
 ];
 
 const MIDDLE_INITIALS = [
@@ -72,9 +85,13 @@ const MIDDLE_INITIALS = [
   "E.",
   "F.",
   "G.",
+  "H.",
+  "J.",
   "M.",
   "R.",
   "S.",
+  "T.",
+  "V.",
 ];
 
 const LAST_NAMES = [
@@ -98,6 +115,16 @@ const LAST_NAMES = [
   "Rivera",
   "Mercado",
   "Salazar",
+  "Soriano",
+  "Valdez",
+  "Pascual",
+  "Manalo",
+  "Cabrera",
+  "Rosales",
+  "Tolentino",
+  "Santiago",
+  "Aguilar",
+  "Francisco",
 ];
 
 const COMPANIES = [
@@ -112,65 +139,189 @@ const COMPANIES = [
   "Metrobank",
   "Puregold Price Club",
   "Wilcon Depot",
+  "DMCI Holdings",
+  "Megaworld Corporation",
+  "Unilab Inc.",
+  "Nestlé Philippines",
+  "Coca-Cola Philippines",
+  "Pepsi-Cola Products Philippines",
   "Toyota Philippines",
   "Honda Philippines",
   "Accenture Philippines",
+  "IBM Philippines",
+  "Teleperformance Philippines",
   "Concentrix Philippines",
+  "Sitel Philippines",
 ];
 
 const VIOLATIONS = [
   {
     violation: "Tardiness",
     severity: "Minor",
-    action: "Verbal or written warning",
-    recommendation: "Monitor Employee",
+    action: "Verbal counseling",
+    recommendation: "Verbal Counseling",
   },
   {
     violation: "Absenteeism without proper notice",
     severity: "Major",
-    action: "Written warning or suspension review",
-    recommendation: "Final Warning",
+    action: "Written warning and attendance review",
+    recommendation: "Seminar & Webinar",
   },
   {
     violation: "Negligence of duty",
     severity: "Major",
-    action: "Suspension review",
-    recommendation: "Suspension Review",
+    action: "Performance review",
+    recommendation: "Employee Training",
   },
   {
     violation: "Improper uniform or grooming violation",
     severity: "Minor",
-    action: "Warning",
-    recommendation: "Monitor Employee",
+    action: "Verbal counseling",
+    recommendation: "Verbal Counseling",
+  },
+  {
+    violation: "Failure to follow company policy",
+    severity: "Major",
+    action: "Policy refresher and written warning",
+    recommendation: "Seminar & Webinar",
+  },
+  {
+    violation: "Failure to follow work instruction",
+    severity: "Major",
+    action: "Skills coaching and performance review",
+    recommendation: "Employee Training",
+  },
+  {
+    violation: "Poor task quality output",
+    severity: "Major",
+    action: "Quality improvement coaching",
+    recommendation: "Employee Training",
+  },
+  {
+    violation: "Repeated deployment mismatch concern",
+    severity: "Major",
+    action: "Role fit review",
+    recommendation: "Reassignment of Position",
   },
   {
     violation: "Insubordination",
     severity: "Critical",
     action: "Administrative review",
-    recommendation: "Suspension Review",
+    recommendation: "Performance Improvement Plan",
   },
   {
     violation: "Workplace misconduct",
     severity: "Critical",
     action: "Disciplinary review",
-    recommendation: "Termination Review",
+    recommendation: "Performance Improvement Plan",
+  },
+];
+
+const INCIDENT_STATUSES = [
+  { status: "Open", weight: 28 },
+  { status: "Investigating", weight: 34 },
+  { status: "For Review", weight: 16 },
+  { status: "Closed", weight: 22 },
+];
+
+const DEMO_EMPLOYEES = [
+  {
+    index: 1,
+    name: "Carlo R. Gonzales",
+    company: "SM Supermalls",
+    status: "Deployed",
+    employmentType: "Permanent",
+    complianceType: "Complete Compliance",
+    caseType: "GOOD_STANDING",
   },
   {
-    violation: "Failure to follow company policy",
-    severity: "Major",
-    action: "Final warning",
-    recommendation: "Final Warning",
+    index: 2,
+    name: "Rica E. Morales",
+    company: "Jollibee Foods Corporation",
+    status: "Deployed",
+    employmentType: "Contractual",
+    complianceType: "Complete Compliance",
+    caseType: "MINOR_CONCERN",
+  },
+  {
+    index: 3,
+    name: "Dennis S. Ramos",
+    company: "Puregold Price Club",
+    status: "Deployed",
+    employmentType: "Contractual",
+    complianceType: "Complete Compliance",
+    caseType: "REPEAT_ATTENDANCE",
+  },
+  {
+    index: 4,
+    name: "Angelica F. Navarro",
+    company: "Concentrix Philippines",
+    status: "Deployed",
+    employmentType: "Contractual",
+    complianceType: "Complete Compliance",
+    caseType: "CRITICAL_HIGH_RISK",
+  },
+  {
+    index: 5,
+    name: "Jayson M. Torres",
+    company: "Toyota Philippines",
+    status: "Deployed",
+    employmentType: "Contractual",
+    complianceType: "Complete Compliance",
+    caseType: "ACTIVE_DUPLICATE",
+  },
+  {
+    index: 6,
+    name: "Michelle A. Santos",
+    company: "BDO Unibank",
+    status: "Deployed",
+    employmentType: "Permanent",
+    complianceType: "Complete Compliance",
+    caseType: "CLOSED_THEN_NEW",
+  },
+  {
+    index: 7,
+    name: "Princess M. Reyes",
+    company: "Globe Telecom",
+    status: "Deployed",
+    employmentType: "Contractual",
+    complianceType: "Expiring Soon",
+    caseType: "EXPIRING_DOCUMENT",
+  },
+  {
+    index: 8,
+    name: "Christian C. Dela Cruz",
+    company: null,
+    status: "Floating / Standby",
+    employmentType: "Contractual",
+    complianceType: "Incomplete Compliance",
+    caseType: "INCOMPLETE_COMPLIANCE",
+  },
+  {
+    index: 9,
+    name: "Marvin D. Bautista",
+    company: "Accenture Philippines",
+    status: "Deployed",
+    employmentType: "Contractual",
+    complianceType: "Complete Compliance",
+    caseType: "ROLE_MISMATCH",
+  },
+  {
+    index: 10,
+    name: "Grace V. Rivera",
+    company: "Unilab Inc.",
+    status: "Deployed",
+    employmentType: "Permanent",
+    complianceType: "Complete Compliance",
+    caseType: "TRAINING_NEEDED",
   },
 ];
 
-const INCIDENT_STATUSES = ["Open", "Investigating", "For Review", "Closed"];
+const usedNames = new Set(DEMO_EMPLOYEES.map((employee) => employee.name));
 
-const COMPLIANCE_TYPES = [
-  "Complete Compliance",
-  "Incomplete Compliance",
-  "Expired Document",
-  "Expiring Soon",
-];
+function getDemoProfile(index) {
+  return DEMO_EMPLOYEES.find((employee) => employee.index === index) || null;
+}
 
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
@@ -188,59 +339,115 @@ function pad(number) {
   return String(number).padStart(2, "0");
 }
 
-function randomDateBetweenYears(startYear, endYear) {
-  const year = randomInt(startYear, endYear);
-  const month = randomInt(1, 12);
-  const day = randomInt(1, 28);
-
-  return `${year}-${pad(month)}-${pad(day)}`;
+function toDate(dateString) {
+  return new Date(`${dateString}T00:00:00`);
 }
 
-function addDays(dateString, days) {
-  const date = new Date(dateString);
-  date.setDate(date.getDate() + days);
+function formatDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function makeFullName() {
-  return `${randomItem(FIRST_NAMES)} ${randomItem(MIDDLE_INITIALS)} ${randomItem(
-    LAST_NAMES
+function randomDateBetween(startDateString, endDateString) {
+  const start = toDate(startDateString).getTime();
+  const end = toDate(endDateString).getTime();
+  const randomTime = randomInt(start, end);
+
+  return formatDate(new Date(randomTime));
+}
+
+function addDays(dateString, days) {
+  const date = toDate(dateString);
+  date.setDate(date.getDate() + days);
+  return formatDate(date);
+}
+
+function addDaysCapped(dateString, days, maxDateString = END_DATE) {
+  const added = toDate(addDays(dateString, days));
+  const maxDate = toDate(maxDateString);
+
+  if (added > maxDate) return maxDateString;
+
+  return formatDate(added);
+}
+
+function randomTime() {
+  return `${pad(randomInt(8, 17))}:${pad(randomInt(0, 59))}:${pad(
+    randomInt(0, 59)
   )}`;
+}
+
+function weightedRandom(items) {
+  const total = items.reduce((sum, item) => sum + item.weight, 0);
+  let roll = randomInt(1, total);
+
+  for (const item of items) {
+    roll -= item.weight;
+    if (roll <= 0) return item;
+  }
+
+  return items[0];
+}
+
+function makeFullName() {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const name = `${randomItem(FIRST_NAMES)} ${randomItem(
+      MIDDLE_INITIALS
+    )} ${randomItem(LAST_NAMES)}`;
+
+    if (!usedNames.has(name)) {
+      usedNames.add(name);
+      return name;
+    }
+  }
+
+  const fallback = `${randomItem(FIRST_NAMES)} ${randomItem(
+    MIDDLE_INITIALS
+  )} ${randomItem(LAST_NAMES)} ${randomInt(100, 999)}`;
+
+  usedNames.add(fallback);
+  return fallback;
 }
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function getComplianceType() {
+function getEmploymentStatus(profile) {
+  if (profile?.status) return profile.status;
+
   const roll = randomInt(1, 100);
 
-  // Majority complete/good compliance
-  if (roll <= 60) return "Complete Compliance";
+  if (roll <= 76) return "Deployed";
+  if (roll <= 91) return "Floating / Standby";
+  return "Available";
+}
 
-  // Some employees have incomplete documents
-  if (roll <= 78) return "Incomplete Compliance";
+function getEmploymentTypeForStatsOnly(profile) {
+  if (profile?.employmentType) return profile.employmentType;
 
-  // Some employees have expired documents
+  return chance(68) ? "Contractual" : "Permanent";
+}
+
+function getComplianceType(profile) {
+  if (profile?.complianceType) return profile.complianceType;
+
+  const roll = randomInt(1, 100);
+
+  if (roll <= 64) return "Complete Compliance";
+  if (roll <= 79) return "Incomplete Compliance";
   if (roll <= 90) return "Expired Document";
-
-  // Some employees have incoming expiration
   return "Expiring Soon";
 }
 
-function createIncidentEmployeeIndexes() {
-  const totalIncidentEmployees = randomInt(
-    MIN_INCIDENT_EMPLOYEES,
-    Math.min(MAX_INCIDENT_EMPLOYEES, EMPLOYEE_COUNT)
-  );
+function getIncidentCountForEmployee() {
+  const roll = randomInt(1, 1000);
 
-  const indexes = new Set();
-
-  while (indexes.size < totalIncidentEmployees) {
-    indexes.add(randomInt(1, EMPLOYEE_COUNT));
-  }
-
-  return indexes;
+  if (roll <= 850) return 0;
+  if (roll <= 930) return 1;
+  if (roll <= 965) return 2;
+  if (roll <= 990) return randomInt(3, 4);
+  if (roll <= 998) return randomInt(5, 6);
+  return randomInt(7, 8);
 }
 
 function createMockPdfFile() {
@@ -291,60 +498,103 @@ startxref
   return "documents/mock/mock-document.pdf";
 }
 
+async function safeQuery(connection, sql) {
+  try {
+    await connection.query(sql);
+  } catch (error) {
+    console.warn(`Skipped query: ${sql}`);
+    console.warn(error.message);
+  }
+}
+
+async function getTableColumns(connection, tableName) {
+  const [columns] = await connection.query(`SHOW COLUMNS FROM \`${tableName}\``);
+  return new Set(columns.map((column) => column.Field));
+}
+
+function addField(fields, values, columns, possibleNames, value) {
+  const selectedColumn = possibleNames.find((column) => columns.has(column));
+
+  if (!selectedColumn) return;
+
+  fields.push(selectedColumn);
+  values.push(value);
+}
+
+async function insertRow(connection, tableName, columns, specs) {
+  const fields = [];
+  const values = [];
+
+  specs.forEach((spec) => {
+    addField(fields, values, columns, spec.names, spec.value);
+  });
+
+  if (fields.length === 0) {
+    throw new Error(`No matching columns found for table ${tableName}.`);
+  }
+
+  const escapedFields = fields.map((field) => `\`${field}\``).join(", ");
+  const placeholders = fields.map(() => "?").join(", ");
+
+  const [result] = await connection.query(
+    `INSERT INTO \`${tableName}\` (${escapedFields}) VALUES (${placeholders})`,
+    values
+  );
+
+  return result;
+}
+
 async function clearExistingData(connection) {
   await connection.query("SET FOREIGN_KEY_CHECKS = 0");
 
-  await connection.query("DELETE FROM incident_evidence");
-  await connection.query("DELETE FROM incidents");
-  await connection.query("DELETE FROM employee_documents");
-  await connection.query("DELETE FROM employees");
+  await safeQuery(connection, "DELETE FROM incident_evidence");
+  await safeQuery(connection, "DELETE FROM incidents");
+  await safeQuery(connection, "DELETE FROM employee_documents");
+  await safeQuery(connection, "DELETE FROM employees");
+
+  if (CLEAR_AUDIT_LOGS) {
+    await safeQuery(connection, "DELETE FROM audit_logs");
+  }
+
+  await safeQuery(connection, "ALTER TABLE incident_evidence AUTO_INCREMENT = 1");
+  await safeQuery(connection, "ALTER TABLE incidents AUTO_INCREMENT = 1");
+  await safeQuery(connection, "ALTER TABLE employee_documents AUTO_INCREMENT = 1");
+  await safeQuery(connection, "ALTER TABLE employees AUTO_INCREMENT = 1");
+
+  if (CLEAR_AUDIT_LOGS) {
+    await safeQuery(connection, "ALTER TABLE audit_logs AUTO_INCREMENT = 1");
+  }
 
   await connection.query("SET FOREIGN_KEY_CHECKS = 1");
 }
 
-async function insertEmployee(connection, index) {
-  const createdAt = randomDateBetweenYears(START_YEAR, END_YEAR);
+async function insertEmployee(connection, employeeColumns, index) {
+  const profile = getDemoProfile(index);
+  const createdAt =
+    profile?.caseType === "GOOD_STANDING"
+      ? randomDateBetween("2026-01-01", END_DATE)
+      : randomDateBetween(START_DATE, END_DATE);
 
-  const status = chance(72) ? "Deployed" : "Floating / Standby";
-  const employmentType = chance(65) ? "Contractual" : "Permanent";
-  const company = status === "Deployed" ? randomItem(COMPANIES) : null;
+  const status = getEmploymentStatus(profile);
+  const employmentType = getEmploymentTypeForStatsOnly(profile);
+  const company =
+    status === "Deployed" ? profile?.company || randomItem(COMPANIES) : null;
 
   const contractStart =
-    status === "Deployed" ? addDays(createdAt, randomInt(0, 30)) : null;
+    status === "Deployed" ? addDaysCapped(createdAt, randomInt(0, 45)) : null;
 
-  const contractEnd =
-    employmentType === "Contractual" && contractStart
-      ? addDays(contractStart, randomInt(90, 540))
-      : null;
+  const contractEnd = null;
+  const name = profile?.name || makeFullName();
 
-  const name = makeFullName();
-
-  const [result] = await connection.query(
-    `
-    INSERT INTO employees
-    (
-      name,
-      company,
-      status,
-      employmentType,
-      contractStart,
-      contractEnd,
-      archived,
-      created_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      name,
-      company,
-      status,
-      employmentType,
-      contractStart,
-      contractEnd,
-      0,
-      `${createdAt} 08:${pad(randomInt(0, 59))}:00`,
-    ]
-  );
+  const result = await insertRow(connection, "employees", employeeColumns, [
+    { names: ["name", "full_name", "fullName"], value: name },
+    { names: ["company"], value: company },
+    { names: ["status"], value: status },
+    { names: ["contractStart", "contract_start"], value: contractStart },
+    { names: ["contractEnd", "contract_end"], value: contractEnd },
+    { names: ["archived"], value: 0 },
+    { names: ["created_at", "createdAt"], value: `${createdAt} ${randomTime()}` },
+  ]);
 
   return {
     id: result.insertId,
@@ -356,21 +606,35 @@ async function insertEmployee(connection, index) {
     contractEnd,
     createdAt,
     index,
+    profile,
   };
 }
 
-async function insertDocuments(connection, employee, mockFilePath) {
-  const complianceType = getComplianceType();
+async function insertDocuments(connection, documentColumns, employee, mockFilePath) {
+  const complianceType = getComplianceType(employee.profile);
   const today = getTodayDate();
 
   const missingDocs = new Set();
-  const affectedExpirableDoc = randomItem(EXPIRABLE_DOCUMENTS);
+  const affectedExpirableDocs = new Set();
 
   if (complianceType === "Incomplete Compliance") {
-    const missingCount = randomInt(1, 3);
+    const missingCount = employee.profile ? 3 : randomInt(1, 4);
 
     while (missingDocs.size < missingCount) {
       missingDocs.add(randomItem(REQUIRED_DOCUMENTS));
+    }
+  }
+
+  if (complianceType === "Expired Document" || complianceType === "Expiring Soon") {
+    if (employee.profile?.caseType === "EXPIRING_DOCUMENT") {
+      affectedExpirableDocs.add("Barangay Clearance");
+      affectedExpirableDocs.add("NBI/Police Clearance");
+    } else {
+      const affectedCount = chance(25) ? 2 : 1;
+
+      while (affectedExpirableDocs.size < affectedCount) {
+        affectedExpirableDocs.add(randomItem(EXPIRABLE_DOCUMENTS));
+      }
     }
   }
 
@@ -380,93 +644,244 @@ async function insertDocuments(connection, employee, mockFilePath) {
     let expirationDate = null;
 
     if (EXPIRABLE_DOCUMENTS.includes(docName)) {
-      if (
-        complianceType === "Expired Document" &&
-        docName === affectedExpirableDoc
-      ) {
-        // Expired document
-        expirationDate = addDays(today, -randomInt(1, 180));
+      if (complianceType === "Expired Document" && affectedExpirableDocs.has(docName)) {
+        expirationDate = addDays(today, -randomInt(1, 365));
       } else if (
         complianceType === "Expiring Soon" &&
-        docName === affectedExpirableDoc
+        affectedExpirableDocs.has(docName)
       ) {
-        // Incoming expiration within 1 to 30 days
         expirationDate = addDays(today, randomInt(1, 30));
       } else {
-        // Valid document
-        expirationDate = addDays(today, randomInt(31, 365));
+        expirationDate = addDays(today, randomInt(31, 730));
       }
     }
 
-    await connection.query(
-      `
-      INSERT INTO employee_documents
-      (employee_id, name, expiration_date, file_path)
-      VALUES (?, ?, ?, ?)
-      `,
-      [employee.id, docName, expirationDate, hasFile ? mockFilePath : null]
-    );
+    await insertRow(connection, "employee_documents", documentColumns, [
+      { names: ["employee_id", "employeeId"], value: employee.id },
+      { names: ["name", "document_name", "documentName"], value: docName },
+      { names: ["expiration_date", "expirationDate"], value: expirationDate },
+      { names: ["file_path", "filePath"], value: hasFile ? mockFilePath : null },
+    ]);
   }
 
   return complianceType;
 }
 
-async function insertIncidents(connection, employee, shouldHaveIncident) {
-  // Most employees are good/no violation
-  if (!shouldHaveIncident) return 0;
+async function insertIncidentRecord(
+  connection,
+  incidentColumns,
+  employee,
+  rule,
+  options = {}
+) {
+  const minIncidentDate =
+    employee.createdAt > START_DATE ? employee.createdAt : START_DATE;
 
-  // Only 1 incident per selected employee para 1 to 10 total lang
-  const rule = randomItem(VIOLATIONS);
+  const incidentDate =
+    options.incidentDate || randomDateBetween(minIncidentDate, END_DATE);
 
-  const incidentDate = randomDateBetweenYears(
-    Math.max(START_YEAR, Number(employee.createdAt.slice(0, 4))),
-    END_YEAR
-  );
+  const status = options.status || weightedRandom(INCIDENT_STATUSES).status || "Open";
 
-  const status = randomItem(INCIDENT_STATUSES);
+  const location =
+    options.location ||
+    employee.company ||
+    randomItem(["Main Office", "Client Site", "Deployment Area", "HR Office"]);
 
-  await connection.query(
-    `
-    INSERT INTO incidents
-    (
-      employee_id,
-      employee_name,
-      company,
-      violation_type,
-      severity,
-      status,
-      incident_date,
-      location,
-      description,
-      reported_by,
-      action_taken,
-      recommendation,
-      resolution_notes,
-      created_at,
-      updated_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      employee.id,
-      employee.name,
-      employee.company || "Unassigned",
-      rule.violation,
-      rule.severity,
-      status,
-      incidentDate,
-      employee.company || "Office / Client Site",
-      `Mock incident record for ${rule.violation.toLowerCase()}. Generated for testing KPI and dashboard analytics.`,
-      "System Seeder",
-      rule.action,
-      rule.recommendation,
-      status === "Closed" ? "Mock case closed for testing." : null,
-      `${incidentDate} ${pad(randomInt(8, 17))}:${pad(randomInt(0, 59))}:00`,
-      `${incidentDate} ${pad(randomInt(8, 17))}:${pad(randomInt(0, 59))}:00`,
-    ]
-  );
+  await insertRow(connection, "incidents", incidentColumns, [
+    { names: ["employee_id", "employeeId"], value: employee.id },
+    { names: ["employee_name", "employeeName", "employee"], value: employee.name },
+    { names: ["company"], value: employee.company || "Unassigned" },
+    { names: ["violation_type", "violationType", "violation"], value: rule.violation },
+    { names: ["severity"], value: rule.severity },
+    { names: ["status"], value: status },
+    { names: ["incident_date", "incidentDate", "date"], value: incidentDate },
+    { names: ["location"], value: location },
+    {
+      names: ["description"],
+      value:
+        options.description ||
+        `Mock incident record for ${rule.violation.toLowerCase()}. Generated for KPI, dashboard, duplicate-check, and disciplinary workflow testing.`,
+    },
+    {
+      names: ["reported_by", "reportedBy"],
+      value: options.reportedBy || randomItem(["HR Manager", "HR Staff", "System Seeder"]),
+    },
+    { names: ["action_taken", "actionTaken", "sanction"], value: rule.action },
+    { names: ["recommendation"], value: rule.recommendation },
+    {
+      names: ["resolution_notes", "resolutionNotes"],
+      value:
+        status === "Closed"
+          ? "Mock case closed for testing."
+          : options.resolutionNotes || null,
+    },
+    { names: ["created_at", "createdAt"], value: `${incidentDate} ${randomTime()}` },
+    { names: ["updated_at", "updatedAt"], value: `${incidentDate} ${randomTime()}` },
+  ]);
 
   return 1;
+}
+
+function findViolation(violationName) {
+  return VIOLATIONS.find((item) => item.violation === violationName);
+}
+
+async function insertSpecialIncidents(connection, incidentColumns, employee) {
+  const profile = employee.profile;
+
+  if (!profile) return null;
+
+  const baseDate = randomDateBetween("2026-04-01", END_DATE);
+
+  if (
+    profile.caseType === "GOOD_STANDING" ||
+    profile.caseType === "EXPIRING_DOCUMENT" ||
+    profile.caseType === "INCOMPLETE_COMPLIANCE"
+  ) {
+    return 0;
+  }
+
+  if (profile.caseType === "MINOR_CONCERN") {
+    return insertIncidentRecord(connection, incidentColumns, employee, findViolation("Tardiness"), {
+      status: "Open",
+      incidentDate: baseDate,
+      description:
+        "DEMO CASE: One minor attendance concern. Shows Minor Concern, Monitor risk, and Verbal Counseling or Seminar recommendation.",
+    });
+  }
+
+  if (profile.caseType === "REPEAT_ATTENDANCE") {
+    let count = 0;
+    const rule = findViolation("Absenteeism without proper notice");
+
+    for (let i = 0; i < 3; i++) {
+      count += await insertIncidentRecord(connection, incidentColumns, employee, rule, {
+        status: i === 2 ? "Investigating" : "Closed",
+        incidentDate: addDays(baseDate, i),
+        description:
+          "DEMO CASE: Repeated attendance concern. Shows Needs Improvement or Repeat monitoring.",
+      });
+    }
+
+    return count;
+  }
+
+  if (profile.caseType === "CRITICAL_HIGH_RISK") {
+    let count = 0;
+    const rule = findViolation("Workplace misconduct");
+
+    for (let i = 0; i < 2; i++) {
+      count += await insertIncidentRecord(connection, incidentColumns, employee, rule, {
+        status: i === 0 ? "Open" : "For Review",
+        incidentDate: addDays(baseDate, i),
+        description:
+          "DEMO CASE: Critical incident. Shows Critical Concern, High Risk, and Performance Improvement Plan.",
+      });
+    }
+
+    return count;
+  }
+
+  if (profile.caseType === "ACTIVE_DUPLICATE") {
+    let count = 0;
+    const rule = findViolation("Tardiness");
+
+    count += await insertIncidentRecord(connection, incidentColumns, employee, rule, {
+      status: "Open",
+      incidentDate: baseDate,
+      description:
+        "DEMO CASE: Active duplicate test case 1. Same employee, same violation, same date.",
+    });
+
+    count += await insertIncidentRecord(connection, incidentColumns, employee, rule, {
+      status: "Investigating",
+      incidentDate: baseDate,
+      description:
+        "DEMO CASE: Active duplicate test case 2. Should appear in duplicate verification warning.",
+    });
+
+    return count;
+  }
+
+  if (profile.caseType === "CLOSED_THEN_NEW") {
+    let count = 0;
+    const rule = findViolation("Failure to follow company policy");
+
+    count += await insertIncidentRecord(connection, incidentColumns, employee, rule, {
+      status: "Closed",
+      incidentDate: baseDate,
+      description:
+        "DEMO CASE: Closed same-day case. This proves closed cases do not block new reporting.",
+    });
+
+    count += await insertIncidentRecord(connection, incidentColumns, employee, rule, {
+      status: "Open",
+      incidentDate: baseDate,
+      description:
+        "DEMO CASE: New active same-day case after a closed case. Should still allow HR verification.",
+    });
+
+    return count;
+  }
+
+  if (profile.caseType === "ROLE_MISMATCH") {
+    let count = 0;
+    const rule = findViolation("Repeated deployment mismatch concern");
+
+    for (let i = 0; i < 3; i++) {
+      count += await insertIncidentRecord(connection, incidentColumns, employee, rule, {
+        status: i === 2 ? "Investigating" : "Closed",
+        incidentDate: addDays(baseDate, i),
+        description:
+          "DEMO CASE: Repeated role mismatch concern. Shows Reassignment of Position recommendation.",
+      });
+    }
+
+    return count;
+  }
+
+  if (profile.caseType === "TRAINING_NEEDED") {
+    let count = 0;
+    const rule = findViolation("Poor task quality output");
+
+    for (let i = 0; i < 2; i++) {
+      count += await insertIncidentRecord(connection, incidentColumns, employee, rule, {
+        status: i === 1 ? "Investigating" : "Closed",
+        incidentDate: addDays(baseDate, i),
+        description:
+          "DEMO CASE: Quality or competency concern. Shows Employee Training recommendation.",
+      });
+    }
+
+    return count;
+  }
+
+  return 0;
+}
+
+async function insertRandomIncidents(connection, incidentColumns, employee) {
+  const incidentCount = getIncidentCountForEmployee();
+
+  if (incidentCount === 0) return 0;
+
+  let created = 0;
+  const useSameViolationPattern = incidentCount >= 2 && chance(60);
+  const fixedRule = randomItem(VIOLATIONS);
+
+  for (let i = 0; i < incidentCount; i++) {
+    const rule = useSameViolationPattern ? fixedRule : randomItem(VIOLATIONS);
+    created += await insertIncidentRecord(connection, incidentColumns, employee, rule);
+  }
+
+  return created;
+}
+
+async function insertIncidents(connection, incidentColumns, employee) {
+  const specialCount = await insertSpecialIncidents(connection, incidentColumns, employee);
+
+  if (specialCount !== null) return specialCount;
+
+  return insertRandomIncidents(connection, incidentColumns, employee);
 }
 
 async function seedMockData() {
@@ -474,18 +889,35 @@ async function seedMockData() {
   const mockFilePath = createMockPdfFile();
 
   try {
-    console.log("Starting mock data seed...");
+    console.log("Starting Welljob REDEF demo mock data seed...");
+    console.log(`Employee count target: ${EMPLOYEE_COUNT}`);
+    console.log(`Date range: ${START_DATE} to ${END_DATE}`);
+    console.log("Company list: official frontend COMPANY_OPTIONS only.");
+    console.log("Contract end date rule: NULL / blank for all employees.");
 
     if (CLEAR_EXISTING_DATA) {
-      console.log("Clearing existing employee, document, and incident data...");
+      console.log("Clearing existing employee, document, incident data...");
       await clearExistingData(connection);
     }
 
-    const incidentEmployeeIndexes = createIncidentEmployeeIndexes();
+    const employeeColumns = await getTableColumns(connection, "employees");
+    const documentColumns = await getTableColumns(connection, "employee_documents");
+    const incidentColumns = await getTableColumns(connection, "incidents");
 
     let createdEmployees = 0;
     let createdDocuments = 0;
     let createdIncidents = 0;
+
+    const employeeStatusStats = {
+      Deployed: 0,
+      "Floating / Standby": 0,
+      Available: 0,
+    };
+
+    const employmentTypeStats = {
+      Contractual: 0,
+      Permanent: 0,
+    };
 
     const complianceStats = {
       "Complete Compliance": 0,
@@ -495,10 +927,14 @@ async function seedMockData() {
     };
 
     for (let i = 1; i <= EMPLOYEE_COUNT; i++) {
-      const employee = await insertEmployee(connection, i);
+      const employee = await insertEmployee(connection, employeeColumns, i);
+
+      employeeStatusStats[employee.status] += 1;
+      employmentTypeStats[employee.employmentType] += 1;
 
       const complianceType = await insertDocuments(
         connection,
+        documentColumns,
         employee,
         mockFilePath
       );
@@ -507,13 +943,13 @@ async function seedMockData() {
 
       const incidentCreated = await insertIncidents(
         connection,
-        employee,
-        incidentEmployeeIndexes.has(i)
+        incidentColumns,
+        employee
       );
 
-      createdIncidents += incidentCreated;
       createdEmployees += 1;
       createdDocuments += REQUIRED_DOCUMENTS.length;
+      createdIncidents += incidentCreated;
 
       if (i % 100 === 0) {
         console.log(`Seeded ${i}/${EMPLOYEE_COUNT} employees...`);
@@ -524,20 +960,22 @@ async function seedMockData() {
     console.log(`Employees created: ${createdEmployees}`);
     console.log(`Documents created: ${createdDocuments}`);
     console.log(`Incidents created: ${createdIncidents}`);
-    console.log(`Employees with violations: ${incidentEmployeeIndexes.size}`);
-    console.log("Years covered:", `${START_YEAR} - ${END_YEAR}`);
+    console.log("Contract end values: all NULL / blank");
+    console.log("Audit logs cleared:", CLEAR_AUDIT_LOGS ? "Yes" : "No");
+
+    console.log("Employee Status Summary:");
+    console.log(employeeStatusStats);
+
+    console.log("Employment Type Summary:");
+    console.log(employmentTypeStats);
 
     console.log("Compliance Summary:");
-    console.log(
-      `Complete Compliance: ${complianceStats["Complete Compliance"]}`
-    );
-    console.log(
-      `Incomplete Compliance: ${complianceStats["Incomplete Compliance"]}`
-    );
-    console.log(`Expired Document: ${complianceStats["Expired Document"]}`);
-    console.log(`Expiring Soon: ${complianceStats["Expiring Soon"]}`);
+    console.log(complianceStats);
 
-    console.log("Most employees have good/no incident records.");
+    console.log("Search these demo employees during REDEF:");
+    DEMO_EMPLOYEES.forEach((employee) => {
+      console.log(`- ${employee.name} | ${employee.caseType}`);
+    });
 
     process.exit(0);
   } catch (error) {

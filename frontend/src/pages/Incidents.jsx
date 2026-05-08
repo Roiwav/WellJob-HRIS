@@ -254,6 +254,7 @@ export default function Incidents() {
       cacheIncidentsForOtherPages(backendIncidents);
     } catch (error) {
       console.error("Fetch incident page data error:", error);
+
       showNotice(
         "error",
         "Backend Fetch Failed",
@@ -368,11 +369,13 @@ export default function Incidents() {
         return true;
       } catch (error) {
         console.error("Patch incident status error:", error);
+
         showNotice(
           "error",
           "Update Failed",
           error.message || "Unable to update this incident."
         );
+
         return false;
       }
     },
@@ -388,92 +391,94 @@ export default function Incidents() {
     ]
   );
 
-const handleAddIncident = async (newIncident) => {
-  if (isSuperAdmin) return false;
+  const handleAddIncident = async (newIncident) => {
+    if (isSuperAdmin) return false;
 
-  const totalEmployeeCases = incidents.filter(
-    (inc) => String(inc.employeeId) === String(newIncident.employeeId)
-  ).length;
+    const totalEmployeeCases = incidents.filter(
+      (inc) => String(inc.employeeId) === String(newIncident.employeeId)
+    ).length;
 
-  const escalatedIncident = {
-    ...newIncident,
-    severity:
-      totalEmployeeCases >= 4 && newIncident.severity !== "Critical"
-        ? "Critical"
-        : newIncident.severity,
-    status: "Open",
+    const escalatedIncident = {
+      ...newIncident,
+      severity:
+        totalEmployeeCases >= 4 && newIncident.severity !== "Critical"
+          ? "Critical"
+          : newIncident.severity,
+      status: "Open",
+    };
+
+    const normalizedIncident = normalizeIncidentWithRules(
+      escalatedIncident,
+      incidents
+    );
+
+    try {
+      const response = await requestJson(INCIDENT_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId: normalizedIncident.employeeId,
+          employee: normalizedIncident.employee,
+          employeeName: normalizedIncident.employee,
+          company: normalizedIncident.company,
+
+          violation: normalizedIncident.violation,
+          violationType: normalizedIncident.violation,
+          severity: normalizedIncident.severity,
+          status: "Open",
+
+          date: normalizedIncident.date,
+          incidentDate: normalizedIncident.date,
+
+          location: normalizedIncident.location || "",
+          description: normalizedIncident.description || "",
+
+          reportedBy: actorFullName,
+          actionTaken: normalizedIncident.sanction || "",
+          recommendation: normalizedIncident.recommendation || "",
+          resolutionNotes: "",
+
+          duplicateVerified: Boolean(normalizedIncident.duplicateVerified),
+          duplicateVerificationNote:
+            normalizedIncident.duplicateVerificationNote || "",
+
+          userId: user?.userId || user?.id,
+          username: user?.username,
+          fullName: actorFullName,
+          role: user?.role,
+        }),
+      });
+
+      await fetchPageData();
+
+      await createOperationalLog(
+        "CREATE_INCIDENT",
+        `${actorFullName} created an incident report for employee ${normalizedIncident.employee}.`
+      );
+
+      setOpenAddModal(false);
+
+      showNotice(
+        "success",
+        "Incident Report Saved",
+        `Incident ${formatIncidentCode(
+          response?.id
+        )} has been saved to the system.`
+      );
+
+      return true;
+    } catch (error) {
+      console.error("Create incident error:", error);
+
+      showNotice(
+        "error",
+        "Save Failed",
+        error.message || "Unable to save incident report."
+      );
+
+      return false;
+    }
   };
-
-  const normalizedIncident = normalizeIncidentWithRules(
-    escalatedIncident,
-    incidents
-  );
-
-  try {
-    const response = await requestJson(INCIDENT_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        employeeId: normalizedIncident.employeeId,
-        employee: normalizedIncident.employee,
-        employeeName: normalizedIncident.employee,
-        company: normalizedIncident.company,
-
-        violation: normalizedIncident.violation,
-        violationType: normalizedIncident.violation,
-        severity: normalizedIncident.severity,
-        status: "Open",
-
-        date: normalizedIncident.date,
-        incidentDate: normalizedIncident.date,
-
-        location: normalizedIncident.location || "",
-        description: normalizedIncident.description || "",
-
-        reportedBy: actorFullName,
-        actionTaken: normalizedIncident.sanction || "",
-        recommendation: normalizedIncident.recommendation || "",
-        resolutionNotes: "",
-
-        duplicateVerified: Boolean(normalizedIncident.duplicateVerified),
-        duplicateVerificationNote:
-          normalizedIncident.duplicateVerificationNote || "",
-
-        userId: user?.userId || user?.id,
-        username: user?.username,
-        fullName: actorFullName,
-        role: user?.role,
-      }),
-    });
-
-    await fetchPageData();
-
-    await createOperationalLog(
-      "CREATE_INCIDENT",
-      `${actorFullName} created an incident report for employee ${normalizedIncident.employee}.`
-    );
-
-    setOpenAddModal(false);
-
-    showNotice(
-      "success",
-      "Incident Report Saved",
-      `Incident ${formatIncidentCode(response?.id)} has been saved to the system.`
-    );
-
-    return true;
-  } catch (error) {
-    console.error("Create incident error:", error);
-
-    showNotice(
-      "error",
-      "Save Failed",
-      error.message || "Unable to save incident report."
-    );
-
-    return false;
-  }
-};
 
   const handleConfirmStartInvestigation = async (incident) => {
     if (isSuperAdmin) return;
@@ -701,6 +706,8 @@ const handleAddIncident = async (newIncident) => {
         incident.employeeId,
         incident.violation,
         incident.company,
+        incident.severity,
+        incident.status,
         incident.sanction,
         incident.recommendation,
       ]
@@ -719,9 +726,9 @@ const handleAddIncident = async (newIncident) => {
   }, [incidents, search, statusFilter, severityFilter]);
 
   return (
-    <div className="space-y-6 p-8">
+    <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Incident Reports
           </h1>
@@ -746,22 +753,24 @@ const handleAddIncident = async (newIncident) => {
         )}
       </div>
 
-      <IncidentTable
-        isLoading={isLoading}
-        incidents={filteredIncidents}
-        search={search}
-        onSearchChange={setSearch}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-        severityFilter={severityFilter}
-        onSeverityFilterChange={setSeverityFilter}
-        isSuperAdmin={isSuperAdmin}
-        formatIncidentCode={formatIncidentCode}
-        onView={setSelectedIncident}
-        onStartReview={setStartReviewIncident}
-        onResolve={setResolutionIncident}
-        onReview={setReviewIncident}
-      />
+      <div className="min-w-0">
+        <IncidentTable
+          isLoading={isLoading}
+          incidents={filteredIncidents}
+          search={search}
+          onSearchChange={setSearch}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          severityFilter={severityFilter}
+          onSeverityFilterChange={setSeverityFilter}
+          isSuperAdmin={isSuperAdmin}
+          formatIncidentCode={formatIncidentCode}
+          onView={setSelectedIncident}
+          onStartReview={setStartReviewIncident}
+          onResolve={setResolutionIncident}
+          onReview={setReviewIncident}
+        />
+      </div>
 
       {selectedIncident && (
         <ViewIncidentModal
