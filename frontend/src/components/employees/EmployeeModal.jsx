@@ -12,8 +12,6 @@ import {
   FiX,
 } from "react-icons/fi";
 
-import { NORMALIZED_VIOLATION_RULES } from "../../data/violationRules";
-
 const API_BASE = "http://localhost:5000";
 const INCIDENT_API_URL = `${API_BASE}/api/incidents`;
 
@@ -27,215 +25,17 @@ function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-function normalizeViolationKey(value) {
-  return String(value || "")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/[–—]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function stripSectionPrefix(value) {
-  return String(value || "")
-    .replace(/^\s*sec\.?\s*\d+(\s*[-—–]\s*)?/i, "")
-    .replace(/^\s*section\s*\d+(\s*[-—–]\s*)?/i, "")
-    .replace(/^[IVXLCDM]+\.\s*/i, "")
-    .trim();
-}
-
-function getViolationMatchKeys(value) {
-  const original = String(value || "").trim();
-  const withoutSection = stripSectionPrefix(original);
-
-  return Array.from(
-    new Set([
-      normalizeViolationKey(original),
-      normalizeViolationKey(withoutSection),
-    ])
-  ).filter(Boolean);
-}
-
-function getIncidentTimestamp(incident) {
-  const dateValue =
-    incident?.reportedAt ||
-    incident?.reported_at ||
-    incident?.date ||
-    incident?.incidentDate ||
-    incident?.incident_date ||
-    incident?.createdAt ||
-    incident?.created_at ||
-    "";
-
-  const time = new Date(dateValue).getTime();
-
-  return Number.isNaN(time) ? 0 : time;
-}
-
-function getOrdinalLabel(number) {
-  if (number === 1) return "1st offense";
-  if (number === 2) return "2nd offense";
-  if (number === 3) return "3rd offense";
-  return `${number}th offense`;
-}
-
-const FLATTENED_VIOLATION_RULES = (NORMALIZED_VIOLATION_RULES || []).flatMap(
-  (category) =>
-    (category.rows || []).map((row) => ({
-      ...row,
-      category: category.category,
-      normalizedViolation: normalizeViolationKey(row.violation),
-      normalizedSectionViolation: normalizeViolationKey(
-        `${row.section} - ${row.violation}`
-      ),
-    }))
-);
-
-function findViolationRule(violationName) {
-  const keys = getViolationMatchKeys(violationName);
-
-  if (keys.length === 0) return null;
-
-  const exactMatch = FLATTENED_VIOLATION_RULES.find((rule) =>
-    keys.some(
-      (key) =>
-        key === rule.normalizedViolation ||
-        key === rule.normalizedSectionViolation
-    )
-  );
-
-  if (exactMatch) return exactMatch;
-
-  const partialMatch = FLATTENED_VIOLATION_RULES.find((rule) =>
-    keys.some((key) => {
-      if (!key || !rule.normalizedViolation) return false;
-
-      return (
-        key.includes(rule.normalizedViolation) ||
-        rule.normalizedViolation.includes(key)
-      );
-    })
-  );
-
-  if (partialMatch) return partialMatch;
-
-  const tokenMatch = FLATTENED_VIOLATION_RULES.find((rule) =>
-    keys.some((key) => {
-      const keyWords = key.split(" ").filter((word) => word.length >= 4);
-
-      if (keyWords.length === 0) return false;
-
-      const matchedWords = keyWords.filter((word) =>
-        rule.normalizedViolation.includes(word)
-      );
-
-      return matchedWords.length >= Math.min(3, keyWords.length);
-    })
-  );
-
-  return tokenMatch || null;
-}
-
-function getPenaltyForOffense(rule, offenseNo, incident) {
-  const fallbackSanction =
-    incident?.sanction ||
-    incident?.actionTaken ||
-    incident?.action_taken ||
-    incident?.recommendation ||
-    "For HR Review";
-
-  if (!rule || !Array.isArray(rule.penalties) || rule.penalties.length === 0) {
-    return {
-      offenseNo,
-      label: getOrdinalLabel(offenseNo),
-      action: fallbackSanction,
-      isPolicyMatched: false,
-    };
+function parseDocuments(documents) {
+  if (typeof documents === "string") {
+    try {
+      const parsed = JSON.parse(documents);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 
-  const exactPenalty = rule.penalties.find(
-    (penalty) => Number(penalty.offenseNo) === Number(offenseNo)
-  );
-
-  if (exactPenalty) {
-    return {
-      ...exactPenalty,
-      isPolicyMatched: true,
-    };
-  }
-
-  const lastPenalty = rule.penalties[rule.penalties.length - 1];
-
-  return {
-    ...lastPenalty,
-    offenseNo,
-    label: getOrdinalLabel(offenseNo),
-    action: lastPenalty?.action || fallbackSanction,
-    isPolicyMatched: true,
-  };
-}
-
-function buildProgressiveIncidentSanctions(incidents = []) {
-  const sortedIncidents = [...incidents].sort((a, b) => {
-    const dateA = getIncidentTimestamp(a);
-    const dateB = getIncidentTimestamp(b);
-
-    if (dateA !== dateB) return dateA - dateB;
-
-    return Number(a.id || 0) - Number(b.id || 0);
-  });
-
-  const violationCounter = new Map();
-
-  return sortedIncidents.map((incident) => {
-    const violationName =
-      incident.violation ||
-      incident.violationType ||
-      incident.violation_type ||
-      "No violation type";
-
-    const rule = findViolationRule(violationName);
-
-    const counterKey = rule
-      ? normalizeViolationKey(rule.violation)
-      : normalizeViolationKey(stripSectionPrefix(violationName));
-
-    const previousCount = violationCounter.get(counterKey) || 0;
-    const offenseNo = previousCount + 1;
-
-    violationCounter.set(counterKey, offenseNo);
-
-    const penalty = getPenaltyForOffense(rule, offenseNo, incident);
-
-    return {
-      ...incident,
-      progressiveOffenseNo: offenseNo,
-      progressiveOffenseLabel: penalty.label || getOrdinalLabel(offenseNo),
-      progressiveSanction:
-        penalty.action ||
-        incident.sanction ||
-        incident.actionTaken ||
-        incident.action_taken ||
-        "For HR Review",
-      progressivePenaltyLevel: rule?.penaltyLevel || "",
-      progressivePolicySection: rule?.section || "",
-      progressivePolicyCategory: rule?.category || "",
-      progressivePolicyMatched: Boolean(penalty.isPolicyMatched),
-    };
-  });
-}
-
-function normalizeStatus(status) {
-  const value = normalizeText(status);
-
-  if (value === "resolved") return "Closed";
-  if (value === "closed") return "Closed";
-  if (value === "for_review") return "For Review";
-  if (value === "for review") return "For Review";
-  if (value === "investigating") return "Investigating";
-
-  return "Open";
+  return Array.isArray(documents) ? documents : [];
 }
 
 function formatIncidentId(id) {
@@ -263,10 +63,22 @@ function formatDate(dateString) {
   });
 }
 
+function normalizeStatus(status) {
+  const value = normalizeText(status);
+
+  if (value === "resolved") return "Closed";
+  if (value === "closed") return "Closed";
+  if (value === "for_review") return "For Review";
+  if (value === "for review") return "For Review";
+  if (value === "investigating") return "Investigating";
+
+  return "Open";
+}
+
 function getDocumentStatus(doc) {
   if (!doc) return "No Data";
 
-  const hasFile = !!doc.file || !!doc.filePath || !!doc.file_path;
+  const hasFile = Boolean(doc.file || doc.filePath || doc.file_path);
   const isExpirable = isExpirableDocument(doc.name);
 
   if (!hasFile) return "No Data";
@@ -308,9 +120,7 @@ function getDaysLabel(expirationDate) {
   );
 
   if (diffDays < 0) {
-    return `Expired ${Math.abs(diffDays)} day${
-      Math.abs(diffDays) > 1 ? "s" : ""
-    } ago`;
+    return `Expired ${Math.abs(diffDays)} day${Math.abs(diffDays) > 1 ? "s" : ""} ago`;
   }
 
   if (diffDays === 0) return "Expires today";
@@ -328,8 +138,6 @@ function getStatusClasses(status) {
       "bg-red-100 text-red-700 border border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/30",
     "No Data":
       "bg-gray-100 text-gray-700 border border-gray-200 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/30",
-    Missing:
-      "bg-orange-100 text-orange-700 border border-orange-200 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30",
     Incomplete:
       "bg-orange-100 text-orange-700 border border-orange-200 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30",
     Inactive:
@@ -358,8 +166,7 @@ function getOverallCompliance(documents) {
 
   if (statuses.includes("Expired")) return "Expired";
   if (statuses.includes("Expiring Soon")) return "Expiring Soon";
-  if (statuses.includes("Missing")) return "Incomplete";
-  if (statuses.includes("No Data")) return "No Data";
+  if (statuses.includes("No Data")) return "Incomplete";
   if (statuses.every((status) => status === "Valid")) return "Valid";
 
   return "Incomplete";
@@ -419,35 +226,25 @@ function getKPIClasses(level) {
 
 function getRecommendation({ totalIncidents, criticalIncidents, riskLevel }) {
   if (criticalIncidents >= 2) return "Termination Review";
-  if (criticalIncidents >= 1 || riskLevel === "High Risk") {
-    return "Suspension Review";
-  }
+  if (criticalIncidents >= 1 || riskLevel === "High Risk") return "Suspension Review";
   if (totalIncidents >= 3 || riskLevel === "Repeat") return "Final Warning";
   if (totalIncidents >= 1 || riskLevel === "Monitor") return "Monitor Employee";
   return "Retain";
 }
 
-function getRecommendationReason({
-  totalIncidents,
-  criticalIncidents,
-  riskLevel,
-}) {
+function getRecommendationReason({ totalIncidents, criticalIncidents, riskLevel }) {
   if (criticalIncidents >= 2) {
     return `Employee has ${criticalIncidents} critical incident(s), requiring termination review.`;
   }
-
   if (criticalIncidents >= 1 || riskLevel === "High Risk") {
     return "Employee has critical or high-risk incident records requiring suspension review.";
   }
-
   if (totalIncidents >= 3 || riskLevel === "Repeat") {
     return "Employee has repeated violations and should receive final warning.";
   }
-
   if (totalIncidents >= 1 || riskLevel === "Monitor") {
     return "Employee has recorded violation(s) and should be monitored.";
   }
-
   return "Employee has no recorded violation and may be retained.";
 }
 
@@ -466,6 +263,21 @@ function getRecommendationClasses(recommendation) {
   };
 
   return styles[recommendation] || styles.Retain;
+}
+
+function getIncidentTimestamp(incident) {
+  const dateValue =
+    incident?.reportedAt ||
+    incident?.reported_at ||
+    incident?.date ||
+    incident?.incidentDate ||
+    incident?.incident_date ||
+    incident?.createdAt ||
+    incident?.created_at ||
+    "";
+
+  const time = new Date(dateValue).getTime();
+  return Number.isNaN(time) ? 0 : time;
 }
 
 function isSameEmployee(employee, incident) {
@@ -533,21 +345,8 @@ function normalizeIncident(incident) {
     description: incident.description || "",
     recommendation: incident.recommendation || "",
     sanction:
-      incident.sanction || incident.actionTaken || incident.action_taken || "",
+      incident.sanction || incident.actionTaken || incident.action_taken || "For HR Review",
   };
-}
-
-function getLocalIncidentsFallback(employee) {
-  try {
-    const stored = JSON.parse(localStorage.getItem("incidents") || "[]");
-
-    return stored
-      .map(normalizeIncident)
-      .filter((incident) => isSameEmployee(employee, incident));
-  } catch (error) {
-    console.error("Failed to load local incidents fallback:", error);
-    return [];
-  }
 }
 
 function buildDocumentFile(doc) {
@@ -565,7 +364,7 @@ function buildDocumentFile(doc) {
 
   return {
     url,
-    name: doc.name || "Uploaded file",
+    name: doc.fileName || doc.file_name || doc.name || "Uploaded file",
     type: lowerPath.endsWith(".pdf") ? "application/pdf" : "image/*",
   };
 }
@@ -598,21 +397,19 @@ export default function EmployeeModal({ employee, onClose }) {
         }
 
         const normalized = Array.isArray(data) ? data.map(normalizeIncident) : [];
-
         const matched = normalized.filter((incident) =>
           isSameEmployee(employee, incident)
         );
 
         if (isMounted) {
           setEmployeeIncidents(matched);
-          localStorage.setItem("incidents", JSON.stringify(normalized));
         }
       } catch (error) {
         console.error("Employee incidents backend fetch failed:", error);
 
         if (isMounted) {
           setIncidentError("Unable to load latest incidents from backend.");
-          setEmployeeIncidents(getLocalIncidentsFallback(employee));
+          setEmployeeIncidents([]);
         }
       } finally {
         if (isMounted) {
@@ -629,7 +426,7 @@ export default function EmployeeModal({ employee, onClose }) {
   }, [employee]);
 
   const normalizedDocuments = useMemo(() => {
-    return (employee?.documents || []).map((doc) => {
+    return parseDocuments(employee?.documents).map((doc) => {
       const expirationDate = doc.expirationDate || doc.expiration_date || "";
       const file = buildDocumentFile(doc);
 
@@ -638,18 +435,10 @@ export default function EmployeeModal({ employee, onClose }) {
         expirationDate,
         file,
         expirable: isExpirableDocument(doc.name),
-        status: getDocumentStatus({
-          ...doc,
-          expirationDate,
-          file,
-        }),
+        status: getDocumentStatus({ ...doc, expirationDate, file }),
       };
     });
   }, [employee]);
-
-  const progressiveIncidents = useMemo(() => {
-    return buildProgressiveIncidentSanctions(employeeIncidents);
-  }, [employeeIncidents]);
 
   if (!employee) return null;
 
@@ -658,17 +447,11 @@ export default function EmployeeModal({ employee, onClose }) {
   const expiringDocs = normalizedDocuments.filter(
     (doc) => doc.status === "Expiring Soon"
   );
-
-  const expiredDocs = normalizedDocuments.filter(
-    (doc) => doc.status === "Expired"
-  );
-
-  const missingDocs = normalizedDocuments.filter(
-    (doc) => doc.status === "Missing"
-  );
+  const expiredDocs = normalizedDocuments.filter((doc) => doc.status === "Expired");
+  const noDataDocs = normalizedDocuments.filter((doc) => doc.status === "No Data");
 
   const hasAttentionNeeded =
-    expiredDocs.length > 0 || expiringDocs.length > 0 || missingDocs.length > 0;
+    expiredDocs.length > 0 || expiringDocs.length > 0 || noDataDocs.length > 0;
 
   const companyDisplay =
     employee.status === "Floating / Standby" || employee.status === "Inactive"
@@ -683,44 +466,38 @@ export default function EmployeeModal({ employee, onClose }) {
     .join("");
 
   const totalIncidents = employeeIncidents.length;
-
   const openIncidents = employeeIncidents.filter((incident) =>
     ["Open", "Investigating", "For Review"].includes(incident.status)
   ).length;
-
-  const resolvedIncidents = employeeIncidents.filter(
+  const closedIncidents = employeeIncidents.filter(
     (incident) => incident.status === "Closed"
   ).length;
-
   const criticalIncidents = employeeIncidents.filter(
     (incident) => incident.severity === "Critical"
   ).length;
-
-  const severityScore = employeeIncidents.reduce((sum, incident) => {
-    return sum + getSeverityWeight(incident.severity);
-  }, 0);
+  const severityScore = employeeIncidents.reduce(
+    (sum, incident) => sum + getSeverityWeight(incident.severity),
+    0
+  );
 
   const kpiLevel = getKPILevel(severityScore, totalIncidents);
-
   const riskLevel = getRiskLevel({
     kpiLevel,
     totalIncidents,
     criticalIncidents,
   });
-
   const recommendation = getRecommendation({
     totalIncidents,
     criticalIncidents,
     riskLevel,
   });
-
   const recommendationReason = getRecommendationReason({
     totalIncidents,
     criticalIncidents,
     riskLevel,
   });
 
-  const recentIncidents = [...progressiveIncidents]
+  const recentIncidents = [...employeeIncidents]
     .sort((a, b) => getIncidentTimestamp(b) - getIncidentTimestamp(a))
     .slice(0, 5);
 
@@ -752,14 +529,10 @@ export default function EmployeeModal({ employee, onClose }) {
 
                   <span
                     className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getStatusClasses(
-                      employee.status === "Inactive"
-                        ? "Inactive"
-                        : employee.status
+                      employee.status === "Inactive" ? "Inactive" : employee.status
                     )}`}
                   >
-                    {employee.status === "Inactive" && (
-                      <FiShield className="text-sm" />
-                    )}
+                    {employee.status === "Inactive" && <FiShield className="text-sm" />}
                     {employee.status}
                   </span>
 
@@ -780,9 +553,7 @@ export default function EmployeeModal({ employee, onClose }) {
                       riskLevel
                     )}`}
                   >
-                    {riskLevel === "High Risk" && (
-                      <FiAlertTriangle className="text-sm" />
-                    )}
+                    {riskLevel === "High Risk" && <FiAlertTriangle className="text-sm" />}
                     Risk: {riskLevel}
                   </span>
 
@@ -823,54 +594,20 @@ export default function EmployeeModal({ employee, onClose }) {
               }`}
             >
               <div className="flex items-start gap-3">
-                <FiAlertTriangle
-                  className={`mt-0.5 ${
-                    expiredDocs.length > 0
-                      ? "text-red-600 dark:text-red-300"
-                      : "text-amber-600 dark:text-amber-300"
-                  }`}
-                  size={18}
-                />
-
+                <FiAlertTriangle className="mt-0.5 text-amber-600 dark:text-amber-300" size={18} />
                 <div>
-                  <p
-                    className={`font-semibold ${
-                      expiredDocs.length > 0
-                        ? "text-red-700 dark:text-red-300"
-                        : "text-amber-700 dark:text-amber-300"
-                    }`}
-                  >
+                  <p className="font-semibold text-amber-700 dark:text-amber-300">
                     Compliance Attention Needed
                   </p>
-
-                  <div
-                    className={`mt-1 space-y-1 text-sm ${
-                      expiredDocs.length > 0
-                        ? "text-red-700/90 dark:text-red-200"
-                        : "text-amber-700/90 dark:text-amber-200"
-                    }`}
-                  >
+                  <div className="mt-1 space-y-1 text-sm text-amber-700/90 dark:text-amber-200">
                     {expiredDocs.length > 0 && (
-                      <p>
-                        {expiredDocs.length} document
-                        {expiredDocs.length > 1 ? "s are" : " is"} already
-                        expired.
-                      </p>
+                      <p>{expiredDocs.length} document(s) already expired.</p>
                     )}
-
                     {expiringDocs.length > 0 && (
-                      <p>
-                        {expiringDocs.length} document
-                        {expiringDocs.length > 1 ? "s are" : " is"} expiring
-                        soon.
-                      </p>
+                      <p>{expiringDocs.length} document(s) expiring soon.</p>
                     )}
-
-                    {missingDocs.length > 0 && (
-                      <p>
-                        {missingDocs.length} required document
-                        {missingDocs.length > 1 ? "s are" : " is"} missing.
-                      </p>
+                    {noDataDocs.length > 0 && (
+                      <p>{noDataDocs.length} document(s) missing proof or expiration data.</p>
                     )}
                   </div>
                 </div>
@@ -882,25 +619,10 @@ export default function EmployeeModal({ employee, onClose }) {
             <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Basic Information
             </h3>
-
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <InfoBox
-                icon={<FiUser size={16} />}
-                label="Employee Name"
-                value={employee.name}
-              />
-
-              <InfoBox
-                icon={<FiShield size={16} />}
-                label="Employee ID"
-                value={employee.id}
-              />
-
-              <InfoBox
-                icon={<FiBriefcase size={16} />}
-                label="Company Assignment"
-                value={companyDisplay}
-              />
+              <InfoBox icon={<FiUser size={16} />} label="Employee Name" value={employee.name} />
+              <InfoBox icon={<FiShield size={16} />} label="Employee ID" value={employee.id} />
+              <InfoBox icon={<FiBriefcase size={16} />} label="Company Assignment" value={companyDisplay} />
             </div>
           </div>
 
@@ -908,16 +630,12 @@ export default function EmployeeModal({ employee, onClose }) {
             <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Employment Status
             </h3>
-
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <BadgeBox
                 label="Current Status"
                 value={employee.status}
-                className={getStatusClasses(
-                  employee.status === "Inactive" ? "Inactive" : employee.status
-                )}
+                className={getStatusClasses(employee.status === "Inactive" ? "Inactive" : employee.status)}
               />
-
               <BadgeBox
                 label="Compliance Summary"
                 value={overallCompliance}
@@ -930,41 +648,15 @@ export default function EmployeeModal({ employee, onClose }) {
             <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Incident and KPI Summary
             </h3>
-
             <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-              <StatBox label="Total Incidents" value={totalIncidents} />
-
-              <StatBox
-                label="Open Cases"
-                value={incidentLoading ? "..." : openIncidents}
-                valueClass="text-red-500"
-              />
-
-              <StatBox
-                label="Closed Cases"
-                value={incidentLoading ? "..." : resolvedIncidents}
-                valueClass="text-green-500"
-              />
-
-              <StatBox
-                label="Severity Score"
-                value={severityScore}
-                valueClass="text-indigo-500"
-              />
-
+              <StatBox label="Total Incidents" value={incidentLoading ? "..." : totalIncidents} />
+              <StatBox label="Open Cases" value={incidentLoading ? "..." : openIncidents} valueClass="text-red-500" />
+              <StatBox label="Closed Cases" value={incidentLoading ? "..." : closedIncidents} valueClass="text-green-500" />
+              <StatBox label="Severity Score" value={incidentLoading ? "..." : severityScore} valueClass="text-indigo-500" />
               <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-                <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                  Risk Level
-                </p>
-
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getRiskClasses(
-                    riskLevel
-                  )}`}
-                >
-                  {riskLevel === "High Risk" && (
-                    <FiAlertTriangle className="text-sm" />
-                  )}
+                <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">Risk Level</p>
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getRiskClasses(riskLevel)}`}>
+                  {riskLevel === "High Risk" && <FiAlertTriangle className="text-sm" />}
                   {riskLevel}
                 </span>
               </div>
@@ -975,28 +667,17 @@ export default function EmployeeModal({ employee, onClose }) {
             <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               System Recommendation
             </h3>
-
             <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getRecommendationClasses(
-                      recommendation
-                    )}`}
-                  >
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getRecommendationClasses(recommendation)}`}>
                     {recommendation}
                   </span>
-
                   <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
                     {recommendationReason}
                   </p>
                 </div>
-
-                <span
-                  className={`inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold ${getKPIClasses(
-                    kpiLevel
-                  )}`}
-                >
+                <span className={`inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold ${getKPIClasses(kpiLevel)}`}>
                   KPI Level: {kpiLevel}
                 </span>
               </div>
@@ -1007,104 +688,45 @@ export default function EmployeeModal({ employee, onClose }) {
             <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Recent Incident History
             </h3>
-
             {incidentLoading ? (
-              <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Loading incident history from backend...
-                </p>
-              </div>
+              <EmptyBox text="Loading incident history from backend..." />
             ) : recentIncidents.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  No incident history found for this employee.
-                </p>
-              </div>
+              <EmptyBox text="No incident history found for this employee." />
             ) : (
               <div className="space-y-3">
-                {recentIncidents.map((incident) => (
-                  <div
-                    key={`${incident.id}-${incident.progressiveOffenseNo}`}
-                    className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40"
-                  >
+                {recentIncidents.map((incident, index) => (
+                  <div key={`${incident.id}-${index}`} className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <p className="font-semibold text-gray-900 dark:text-white">
                           {incident.violation || "No violation type"}
                         </p>
-
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                          {incident.displayId} •{" "}
-                          {formatDate(incident.reportedAt || incident.date)}
+                          {incident.displayId} • {formatDate(incident.reportedAt || incident.date)}
                         </p>
                       </div>
-
                       <div className="flex flex-wrap gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-                            incident.severity === "Critical"
-                              ? "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300"
-                              : incident.severity === "Major"
-                              ? "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300"
-                              : "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300"
-                          }`}
-                        >
-                          {incident.severity || "Minor"}
-                        </span>
-
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getStatusClasses(
-                            incident.status
-                          )}`}
-                        >
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getStatusClasses(incident.status)}`}>
                           {incident.status || "Open"}
+                        </span>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getKPIClasses(incident.severity === "Critical" ? "Critical Concern" : incident.severity === "Major" ? "Needs Improvement" : "Minor Concern")}`}>
+                          {incident.severity || "Minor"}
                         </span>
                       </div>
                     </div>
-
                     {incident.description && (
                       <p className="mt-3 text-sm leading-6 text-gray-700 dark:text-gray-300">
                         {incident.description}
                       </p>
                     )}
-
-                    <div
-  className={`mt-3 rounded-xl border px-4 py-3 text-xs ${
-    incident.progressivePolicyMatched
-      ? "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
-      : "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
-  }`}
->
-  <p
-    className={`text-[11px] font-bold uppercase tracking-wide ${
-      incident.progressivePolicyMatched
-        ? "text-red-700 dark:text-red-300"
-        : "text-amber-700 dark:text-amber-300"
-    }`}
-  >
-    Disciplinary Action
-  </p>
-
-  <p className="mt-2 font-bold text-slate-800 dark:text-slate-100">
-    Sanction: {incident.progressiveSanction}
-  </p>
-
-  <p className="mt-1 text-slate-600 dark:text-slate-300">
-    Basis: {incident.progressiveOffenseLabel}
-  </p>
-
-  {incident.progressivePolicyCategory && (
-    <p className="mt-1 text-slate-500 dark:text-slate-400">
-      Policy Reference: {incident.progressivePolicyCategory}
-    </p>
-  )}
-
-  {!incident.progressivePolicyMatched && (
-    <p className="mt-1 text-amber-700 dark:text-amber-300">
-      Based on the saved sanction from the incident report.
-    </p>
-  )}
-</div>
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                        Disciplinary Action
+                      </p>
+                      <p className="mt-2 font-bold text-slate-800 dark:text-slate-100">
+                        Sanction: {incident.sanction || "For HR Review"}
+                      </p>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1115,176 +737,90 @@ export default function EmployeeModal({ employee, onClose }) {
             <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Compliance Documents
             </h3>
-
             <div className="space-y-4">
-              {normalizedDocuments.map((doc) => {
-                const isExpired = doc.status === "Expired";
-                const isExpiringSoon = doc.status === "Expiring Soon";
-                const isMissing = doc.status === "Missing";
-                const isNoData = doc.status === "No Data";
-                const isExpirable = doc.expirable;
+              {normalizedDocuments.length === 0 ? (
+                <EmptyBox text="No compliance documents found for this employee." />
+              ) : (
+                normalizedDocuments.map((doc) => {
+                  const isExpired = doc.status === "Expired";
+                  const isExpiringSoon = doc.status === "Expiring Soon";
+                  const isNoData = doc.status === "No Data";
+                  const isExpirable = doc.expirable;
 
-                return (
-                  <div
-                    key={doc.name}
-                    className={`rounded-2xl border p-5 ${
-                      isExpired
-                        ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
-                        : isExpiringSoon
-                        ? "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
-                        : isMissing || isNoData
-                        ? "border-orange-300 bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10"
-                        : "border-gray-200 bg-white dark:border-white/10 dark:bg-slate-900/40"
-                    }`}
-                  >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`mt-1 ${
-                            isExpired
-                              ? "text-red-500"
-                              : isExpiringSoon
-                              ? "text-amber-500"
-                              : isMissing || isNoData
-                              ? "text-orange-500"
-                              : "text-indigo-500"
-                          }`}
-                        >
-                          <FiFileText size={18} />
-                        </div>
-
-                        <div>
-                          <p className="text-base font-semibold text-gray-900 dark:text-white">
-                            {doc.name}
-                          </p>
-
-                          <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
-                            {isExpirable && (
-                              <>
-                                <div className="flex items-center gap-2">
-                                  <FiCalendar size={14} />
-                                  <span>
-                                    Expiration Date:{" "}
-                                    {doc.expirationDate
-                                      ? formatDate(doc.expirationDate)
-                                      : "Not Set"}
-                                  </span>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                  <FiClock size={14} />
-                                  <span>
-                                    {getDaysLabel(doc.expirationDate)}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-
-                            {!isExpirable && (
-                              <p className="text-sm text-gray-500 dark:text-gray-400">
-                                Permanent compliance document
-                              </p>
-                            )}
-
-                            {!doc.file && (
-                              <p className="text-sm font-medium text-orange-600 dark:text-orange-300">
-                                No uploaded file found
-                              </p>
-                            )}
+                  return (
+                    <div
+                      key={doc.name}
+                      className={`rounded-2xl border p-5 ${
+                        isExpired
+                          ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
+                          : isExpiringSoon
+                          ? "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
+                          : isNoData
+                          ? "border-orange-300 bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10"
+                          : "border-gray-200 bg-white dark:border-white/10 dark:bg-slate-900/40"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex items-start gap-3">
+                          <div className={`mt-1 ${isExpired ? "text-red-500" : isExpiringSoon ? "text-amber-500" : isNoData ? "text-orange-500" : "text-indigo-500"}`}>
+                            <FiFileText size={18} />
+                          </div>
+                          <div>
+                            <p className="text-base font-semibold text-gray-900 dark:text-white">
+                              {doc.name}
+                            </p>
+                            <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                              {isExpirable ? (
+                                <>
+                                  <div className="flex items-center gap-2">
+                                    <FiCalendar size={14} />
+                                    <span>Expiration Date: {doc.expirationDate ? formatDate(doc.expirationDate) : "Not Set"}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <FiClock size={14} />
+                                    <span>{getDaysLabel(doc.expirationDate)}</span>
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  Permanent compliance document
+                                </p>
+                              )}
+                              {!doc.file && (
+                                <p className="text-sm font-medium text-orange-600 dark:text-orange-300">
+                                  No uploaded file found
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex flex-col items-start gap-2 lg:items-end">
-                        {doc.file && (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewFile(doc.file)}
-                            className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700"
-                          >
-                            <FiEye /> View
-                          </button>
-                        )}
-
-                        <span
-                          className={`inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getStatusClasses(
-                            doc.status
-                          )}`}
-                        >
-                          {(isExpired ||
-                            isExpiringSoon ||
-                            isMissing ||
-                            isNoData) && (
-                            <FiAlertTriangle className="text-sm" />
+                        <div className="flex flex-col items-start gap-2 lg:items-end">
+                          {doc.file && (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewFile(doc.file)}
+                              className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700"
+                            >
+                              <FiEye /> View
+                            </button>
                           )}
-                          {doc.status}
-                        </span>
-
-                        {doc.status === "Valid" && (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-300">
-                            <FiCheckCircle size={14} />
-                            Document verified
+                          <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${getStatusClasses(doc.status)}`}>
+                            {(isExpired || isExpiringSoon || isNoData) && <FiAlertTriangle className="text-sm" />}
+                            {doc.status}
                           </span>
-                        )}
-
-                        {(isMissing || isNoData) && (
-                          <span className="text-xs font-medium text-orange-700 dark:text-orange-300">
-                            Upload proof file recommended
-                          </span>
-                        )}
+                          {doc.status === "Valid" && (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-300">
+                              <FiCheckCircle size={14} /> Document verified
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
-
-            {previewFile && (
-              <div
-                className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4"
-                onClick={() => setPreviewFile(null)}
-              >
-                <div
-                  className="relative w-full max-w-5xl rounded-xl bg-white p-4 dark:bg-slate-900"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <div className="mb-3 flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-bold text-gray-900 dark:text-white">
-                        File Preview
-                      </p>
-
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {previewFile.name || "Uploaded file"}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setPreviewFile(null)}
-                      className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-white/10"
-                    >
-                      <FiX size={20} />
-                    </button>
-                  </div>
-
-                  {previewFile.type?.startsWith("image/") ||
-                  previewFile.data?.startsWith("data:image") ? (
-                    <img
-                      src={previewFile.url}
-                      alt={previewFile.name || "preview"}
-                      className="mx-auto max-h-[80vh] w-full rounded-lg object-contain"
-                    />
-                  ) : (
-                    <iframe
-                      src={previewFile.url}
-                      title={previewFile.name || "file preview"}
-                      className="h-[80vh] w-full rounded-lg border border-gray-200 dark:border-white/10"
-                    />
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1300,6 +836,50 @@ export default function EmployeeModal({ employee, onClose }) {
           </div>
         </div>
       </div>
+
+      {previewFile && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setPreviewFile(null)}
+        >
+          <div
+            className="relative w-full max-w-5xl rounded-xl bg-white p-4 dark:bg-slate-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold text-gray-900 dark:text-white">
+                  File Preview
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {previewFile.name || "Uploaded file"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewFile(null)}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-white/10"
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            {previewFile.type?.startsWith("image/") || previewFile.type === "image/*" ? (
+              <img
+                src={previewFile.url}
+                alt={previewFile.name || "preview"}
+                className="mx-auto max-h-[80vh] w-full rounded-lg object-contain"
+              />
+            ) : (
+              <iframe
+                src={previewFile.url}
+                title={previewFile.name || "file preview"}
+                className="h-[80vh] w-full rounded-lg border border-gray-200 dark:border-white/10"
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1311,7 +891,6 @@ function InfoBox({ icon, label, value }) {
         {icon}
         <span className="text-sm">{label}</span>
       </div>
-
       <p className="text-base font-semibold">{value || "-"}</p>
     </div>
   );
@@ -1321,10 +900,7 @@ function BadgeBox({ label, value, className }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
       <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">{label}</p>
-
-      <span
-        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${className}`}
-      >
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${className}`}>
         {value}
       </span>
     </div>
@@ -1335,8 +911,15 @@ function StatBox({ label, value, valueClass = "text-gray-900 dark:text-white" })
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
       <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">{label}</p>
-
       <p className={`text-2xl font-bold ${valueClass}`}>{value}</p>
+    </div>
+  );
+}
+
+function EmptyBox({ text }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
+      <p className="text-sm text-gray-500 dark:text-gray-400">{text}</p>
     </div>
   );
 }

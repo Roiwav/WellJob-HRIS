@@ -25,32 +25,12 @@ export const COMPANY_LOCATIONS = {
   "Sitel Philippines": "Makati City",
 };
 
-export function safeParse(key) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+export function safeParse() {
+  return [];
 }
 
 export function getDeploymentsFromStorage() {
-  const employees = safeParse("employees");
-
-  return employees
-    .filter((emp) => emp.status === "Deployed" && !emp.archived)
-    .map((emp) => ({
-      id: emp.id,
-      employee: emp.name,
-      company: emp.company || "-",
-      location: COMPANY_LOCATIONS[emp.company] || "-",
-      start: emp.deployment?.start || new Date().toISOString().split("T")[0],
-      status: emp.deployment?.status || "Active",
-
-      employmentType: emp.employmentType || "Permanent",
-      contractStart: emp.contractStart || "-",
-      contractEnd: emp.contractEnd || "-",
-    }));
+  return [];
 }
 
 export function getMonthOptions() {
@@ -71,12 +51,20 @@ export function getMonthOptions() {
   ];
 }
 
-export function getYearOptions(deployments) {
+export function getYearOptions(deployments = []) {
   const years = deployments
     .map((deployment) => {
-      if (!deployment.start || deployment.start === "-") return null;
+      const rawDate =
+        deployment?.start ||
+        deployment?.contractStart ||
+        deployment?.contract_start ||
+        deployment?.createdAt ||
+        deployment?.created_at;
 
-      const date = new Date(deployment.start);
+      if (!rawDate || rawDate === "-") return null;
+
+      const date = new Date(rawDate);
+
       if (Number.isNaN(date.getTime())) return null;
 
       return String(date.getFullYear());
@@ -95,6 +83,7 @@ export function formatDisplayDate(dateValue) {
   if (!dateValue || dateValue === "-") return "-";
 
   const date = new Date(dateValue);
+
   if (Number.isNaN(date.getTime())) return dateValue;
 
   return date.toLocaleDateString("en-PH", {
@@ -108,6 +97,7 @@ export function formatLongDisplayDate(dateValue) {
   if (!dateValue || dateValue === "-") return "Not Set";
 
   const date = new Date(dateValue);
+
   if (Number.isNaN(date.getTime())) return dateValue;
 
   return date.toLocaleDateString("en-PH", {
@@ -132,7 +122,11 @@ export function getStatusBadgeClass(status) {
   return styles[status] || "bg-gray-100 text-gray-700 border border-gray-200";
 }
 
-export function getContractTimelineInfo(contractStart, contractEnd, employmentType) {
+export function getContractTimelineInfo(
+  contractStart,
+  contractEnd,
+  employmentType
+) {
   if (employmentType === "Permanent") {
     return "Permanent employee. No contract end date required.";
   }
@@ -156,7 +150,9 @@ export function getContractTimelineInfo(contractStart, contractEnd, employmentTy
     (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
   );
 
-  if (diffDays < 0) return "Contract end date is earlier than contract start.";
+  if (diffDays < 0) {
+    return "Contract end date is earlier than contract start.";
+  }
 
   return `Contract duration: ${diffDays + 1} day${
     diffDays + 1 > 1 ? "s" : ""

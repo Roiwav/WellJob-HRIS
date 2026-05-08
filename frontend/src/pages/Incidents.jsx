@@ -25,8 +25,6 @@ const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
 const AUDIT_API_URL = `${API_BASE}/audit-logs`;
 
-const INCIDENTS_CACHE_KEY = "incidents";
-
 function formatIncidentCode(id) {
   if (!id) return "-";
 
@@ -112,15 +110,22 @@ function normalizeBackendIncident(incident) {
 
     location: incident.location || "",
     description: incident.description || "",
+
     sanction:
       incident.sanction || incident.actionTaken || incident.action_taken || "",
+
     actionTaken:
       incident.actionTaken || incident.action_taken || incident.sanction || "",
+
     recommendation: incident.recommendation || "",
+
     resolutionNotes:
       incident.resolutionNotes || incident.resolution_notes || "",
 
-    smartAlerts: incident.smartAlerts || [],
+    smartAlerts: Array.isArray(incident.smartAlerts)
+      ? incident.smartAlerts
+      : [],
+
     timeline: Array.isArray(incident.timeline) ? incident.timeline : [],
   };
 }
@@ -131,11 +136,6 @@ function buildIncidentList(rawIncidents = []) {
   return normalized.map((incident) =>
     normalizeIncidentWithRules(incident, normalized)
   );
-}
-
-function cacheIncidentsForOtherPages(incidents = []) {
-  localStorage.setItem(INCIDENTS_CACHE_KEY, JSON.stringify(incidents));
-  window.dispatchEvent(new Event("dataUpdated"));
 }
 
 async function requestJson(url, options = {}) {
@@ -250,8 +250,6 @@ export default function Incidents() {
 
       setEmployees(Array.isArray(employeeData) ? employeeData : []);
       setIncidents(backendIncidents);
-
-      cacheIncidentsForOtherPages(backendIncidents);
     } catch (error) {
       console.error("Fetch incident page data error:", error);
 
@@ -314,13 +312,9 @@ export default function Incidents() {
             : incident
         );
 
-        const nextEnriched = nextRaw.map((incident) =>
+        return nextRaw.map((incident) =>
           normalizeIncidentWithRules(incident, nextRaw)
         );
-
-        cacheIncidentsForOtherPages(nextEnriched);
-
-        return nextEnriched;
       });
 
       syncModalIncident(updatedIncident);
@@ -695,23 +689,26 @@ export default function Incidents() {
     }
   };
 
-  // UPDATED SEARCH LOGIC (WITH STRING NORMALIZATION & MULTI-TERM SEARCH)
   const filteredIncidents = useMemo(() => {
-    // 1. Linisin ang search bar input (tanggalin ang tuldok, special chars, at gawing lowercase)
-    const cleanSearch = search.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
+    const cleanSearch = search
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .trim();
+
     const rawSearch = search.toLowerCase().trim();
-    
-    // 2. I-split sa mga salita
     const searchTerms = cleanSearch ? cleanSearch.split(/\s+/) : [];
 
     return incidents.filter((incident) => {
-      // 3. Linisin ang employee name mula sa database bago i-check
-      const cleanEmployeeName = String(incident.employee || incident.employeeName || "").toLowerCase().replace(/[^a-z0-9\s]/g, "");
-      
-      // 4. I-check kung ang BAWAT salitang tinype ay nasa malinis na pangalan ng employee
-      const matchName = searchTerms.every(term => cleanEmployeeName.includes(term));
+      const cleanEmployeeName = String(
+        incident.employee || incident.employeeName || ""
+      )
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, "");
 
-      // 5. Fallback check para sa ibang text fields (tulad ng ID, violation, company)
+      const matchName =
+        searchTerms.length === 0 ||
+        searchTerms.every((term) => cleanEmployeeName.includes(term));
+
       const fallbackString = [
         incident.displayId,
         incident.id,
@@ -722,11 +719,13 @@ export default function Incidents() {
         incident.status,
         incident.sanction,
         incident.recommendation,
-      ].join(" ").toLowerCase();
+      ]
+        .join(" ")
+        .toLowerCase();
 
-      const matchSearch = matchName || fallbackString.includes(rawSearch);
+      const matchSearch =
+        !rawSearch || matchName || fallbackString.includes(rawSearch);
 
-      // Filters for status and severity
       const matchesStatus =
         statusFilter === "ALL" || incident.status === statusFilter;
 

@@ -49,6 +49,29 @@ function getSafePreviewUrl(fileData, fallbackPath) {
   }
 
   return urlString;
+const EMPLOYEE_API_URL = "http://localhost:5000/api/employees";
+
+function getApiError(error, fallback = "Something went wrong.") {
+  return (
+    error?.response?.data?.error ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback
+  );
+}
+
+function validateUploadFile(file) {
+  const validTypes = ["image/png", "image/jpeg", "application/pdf"];
+  const maxSize = 5 * 1024 * 1024;
+
+  if (!file) return "";
+  if (!validTypes.includes(file.type)) {
+    return "Only PNG, JPEG, and PDF files are allowed.";
+  }
+  if (file.size > maxSize) {
+    return "File must be less than 5MB.";
+  }
+  return "";
 }
 
 function parseEmployeeDocuments(documents) {
@@ -61,11 +84,14 @@ function parseEmployeeDocuments(documents) {
     }
   }
 
-  if (Array.isArray(documents)) {
-    return documents;
-  }
+  return Array.isArray(documents) ? documents : [];
+}
 
-  return [];
+function normalizeDateInput(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return date.toISOString().slice(0, 10);
 }
 
 function buildInitialFormData(employeeToEdit) {
@@ -79,7 +105,9 @@ function buildInitialFormData(employeeToEdit) {
       "",
     company: employeeToEdit?.company || "",
     status: employeeToEdit?.status || "Deployed",
-    contractStart: employeeToEdit?.contractStart || "",
+    contractStart: normalizeDateInput(
+      employeeToEdit?.contractStart || employeeToEdit?.contract_start || ""
+    ),
     documents: createDefaultDocuments(parsedDocs),
   };
 }
@@ -110,11 +138,12 @@ function EditEmployeeModalContent({
   const [showReview, setShowReview] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const [errors, setErrors] = useState({
     name: "",
     company: "",
-    duplicateId: "",
     duplicateConfirm: "",
     contractStart: "",
     documents: {},
@@ -130,14 +159,14 @@ function EditEmployeeModalContent({
         name: doc.name,
         expirationDate: doc.expirationDate,
         file: doc.file || null,
-        filePath: doc.filePath || "",
+        filePath: doc.filePath || doc.file_path || "",
       }));
   }, [formData.documents]);
 
   const completedDocuments = useMemo(() => {
     return formData.documents.filter((doc) => {
       if (!doc.checked) return false;
-      if (!doc.file && !doc.filePath) return false;
+      if (!doc.file && !doc.filePath && !doc.file_path) return false;
       if (doc.expirable && !doc.expirationDate) return false;
       return true;
     });
@@ -148,26 +177,21 @@ function EditEmployeeModalContent({
     if (!normalizedInput) return null;
 
     return employees.find((emp) => {
-      if (employeeToEdit && String(emp.id) === String(employeeToEdit.id)) {
-        return false;
-      }
-
-      return normalizeName(emp.name) === normalizedInput;
+      if (String(emp?.id) === String(employeeToEdit?.id)) return false;
+      return normalizeName(emp?.name) === normalizedInput;
     });
   }, [employees, employeeToEdit, formData.name]);
 
   const completion = useMemo(() => {
     let score = 0;
     const totalDocs = DOCUMENT_OPTIONS.length;
-    const docsScore =
-      totalDocs > 0 ? (completedDocuments.length / totalDocs) * 40 : 0;
+    const docsScore = totalDocs > 0 ? (completedDocuments.length / totalDocs) * 40 : 0;
 
     if (formData.name.trim()) score += 30;
     if (formData.status) score += 10;
     if (formData.status !== "Deployed" || formData.company.trim()) score += 20;
 
     score += docsScore;
-
     return Math.min(Math.round(score), 100);
   }, [formData, completedDocuments.length]);
 
@@ -198,31 +222,22 @@ function EditEmployeeModalContent({
         company: "",
         contractStart: "",
       }));
-
-      setErrors((prev) => ({
-        ...prev,
-        company: "",
-        duplicateConfirm: "",
-      }));
-
+      setErrors((prev) => ({ ...prev, company: "", duplicateConfirm: "" }));
       setFilteredCompanies(COMPANY_OPTIONS);
       setShowSuggestions(false);
       return;
     }
 
     if (name === "company") {
-      const filtered = COMPANY_OPTIONS.filter((company) =>
-        company.toLowerCase().includes(value.toLowerCase())
+      setFilteredCompanies(
+        COMPANY_OPTIONS.filter((company) =>
+          company.toLowerCase().includes(value.toLowerCase())
+        )
       );
-
-      setFilteredCompanies(filtered);
       setShowSuggestions(true);
     }
 
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
 
     if (name === "name") {
       setDuplicateConfirmed(false);
@@ -233,32 +248,21 @@ function EditEmployeeModalContent({
       [name]: "",
       duplicateConfirm: name === "name" ? "" : prev.duplicateConfirm,
     }));
+    setSaveError("");
   };
 
   const handleNameBlur = () => {
-    setFormData((prev) => ({
-      ...prev,
-      name: toProperName(prev.name),
-    }));
+    setFormData((prev) => ({ ...prev, name: toProperName(prev.name) }));
   };
 
   const handleSelectCompany = (company) => {
-    setFormData((prev) => ({
-      ...prev,
-      company,
-    }));
-
-    setErrors((prev) => ({
-      ...prev,
-      company: "",
-    }));
-
+    setFormData((prev) => ({ ...prev, company }));
+    setErrors((prev) => ({ ...prev, company: "" }));
     setFilteredCompanies(
       COMPANY_OPTIONS.filter((item) =>
         item.toLowerCase().includes(company.toLowerCase())
       )
     );
-
     setShowSuggestions(false);
   };
 
@@ -276,14 +280,15 @@ function EditEmployeeModalContent({
           : doc
       ),
     }));
-
     setErrors((prev) => ({
       ...prev,
       documents: {
         ...prev.documents,
         [docName]: "",
+        [`${docName}_file`]: "",
       },
     }));
+    setSaveError("");
   };
 
   const handleDocumentDateChange = (docName, value) => {
@@ -293,30 +298,25 @@ function EditEmployeeModalContent({
         doc.name === docName ? { ...doc, expirationDate: value } : doc
       ),
     }));
-
     setErrors((prev) => ({
       ...prev,
-      documents: {
-        ...prev.documents,
-        [docName]: "",
-      },
+      documents: { ...prev.documents, [docName]: "" },
     }));
+    setSaveError("");
   };
 
   const handleFileInput = (docName, file) => {
     if (!file) return;
 
-    const validTypes = ["image/png", "image/jpeg", "application/pdf"];
-
-    if (!validTypes.includes(file.type)) {
-      alert("Only PNG, JPEG, and PDF files are allowed.");
-      return;
-    }
-
-    const maxSize = 5 * 1024 * 1024;
-
-    if (file.size > maxSize) {
-      alert("File must be less than 5MB.");
+    const validationError = validateUploadFile(file);
+    if (validationError) {
+      setErrors((prev) => ({
+        ...prev,
+        documents: {
+          ...prev.documents,
+          [`${docName}_file`]: validationError,
+        },
+      }));
       return;
     }
 
@@ -326,21 +326,17 @@ function EditEmployeeModalContent({
         doc.name === docName ? { ...doc, file } : doc
       ),
     }));
-
     setErrors((prev) => ({
       ...prev,
-      documents: {
-        ...prev.documents,
-        [`${docName}_file`]: "",
-      },
+      documents: { ...prev.documents, [`${docName}_file`]: "" },
     }));
+    setSaveError("");
   };
 
   const validateForm = () => {
     const nextErrors = {
       name: "",
       company: "",
-      duplicateId: "",
       duplicateConfirm: "",
       contractStart: "",
       documents: {},
@@ -373,11 +369,9 @@ function EditEmployeeModalContent({
 
     formData.documents.forEach((doc) => {
       if (!doc.checked) return;
-
-      if (!doc.file && !doc.filePath) {
+      if (!doc.file && !doc.filePath && !doc.file_path) {
         nextErrors.documents[`${doc.name}_file`] = "File is required";
       }
-
       if (doc.expirable && !doc.expirationDate) {
         nextErrors.documents[doc.name] = "Expiration date is required";
       }
@@ -391,7 +385,6 @@ function EditEmployeeModalContent({
     }
 
     setErrors(nextErrors);
-
     const hasDocumentErrors = Object.values(nextErrors.documents).some(Boolean);
 
     return !(
@@ -406,23 +399,25 @@ function EditEmployeeModalContent({
 
   const handleSubmit = (event) => {
     event.preventDefault();
-
+    setSaveError("");
     if (!validateForm()) return;
-
     setShowReview(true);
   };
 
   const handleConfirmUpdate = async () => {
-    try {
-      const formDataToSend = new FormData();
+    if (isSaving) return;
 
-      formDataToSend.append("name", formData.name);
-      formDataToSend.append("company", formData.company);
+    try {
+      setIsSaving(true);
+      setSaveError("");
+
+      const formDataToSend = new FormData();
+      formDataToSend.append("name", toProperName(formData.name));
+      formDataToSend.append("company", formData.status === "Deployed" ? formData.company : "");
       formDataToSend.append("status", formData.status);
       formDataToSend.append("contractStart", formData.contractStart);
 
       const selectedDocs = formData.documents.filter((doc) => doc.checked);
-
       selectedDocs.forEach((doc, index) => {
         formDataToSend.append(`documents[${index}][name]`, doc.name);
         formDataToSend.append(
@@ -435,22 +430,22 @@ function EditEmployeeModalContent({
         }
       });
 
-      await axios.put(
-        `http://localhost:5000/api/employees/${employeeToEdit?.id}`,
-        formDataToSend
-      );
+      await axios.put(`${EMPLOYEE_API_URL}/${employeeToEdit?.id}`, formDataToSend, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
-      alert("Employee updated!");
       setShowReview(false);
 
       if (typeof onSaveSuccess === "function") {
-        onSaveSuccess(formData.name);
-      } else {
-        window.location.reload();
+        onSaveSuccess(toProperName(formData.name));
       }
-    } catch (err) {
-      console.error("UPDATE ERROR:", err);
-      alert("Error updating employee");
+
+      onClose?.();
+    } catch (error) {
+      console.error("UPDATE EMPLOYEE ERROR:", error);
+      setSaveError(getApiError(error, "Error updating employee record."));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -464,12 +459,10 @@ function EditEmployeeModalContent({
                 <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
                   <FiUser size={26} />
                 </div>
-
                 <h2 className="text-2xl font-extrabold">Update Employee</h2>
-
                 <p className="mt-3 text-sm leading-6 text-white/75">
-                  Register employee details, verify possible duplicate names,
-                  and attach compliance proof files for HR monitoring.
+                  Update employee details, verify possible duplicate names, and
+                  attach compliance proof files for HR monitoring.
                 </p>
               </div>
 
@@ -478,14 +471,12 @@ function EditEmployeeModalContent({
                   <span>Completion</span>
                   <span>{completion}%</span>
                 </div>
-
                 <div className="h-2 overflow-hidden rounded-full bg-white/15">
                   <div
                     className="h-full rounded-full bg-white transition-all duration-300"
                     style={{ width: `${completion}%` }}
                   />
                 </div>
-
                 {remainingDocuments > 0 && (
                   <p className="mt-3 text-xs text-white/70">
                     {remainingDocuments} compliance document
@@ -498,16 +489,12 @@ function EditEmployeeModalContent({
               <div className="mt-5 space-y-3 text-sm">
                 <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
                   <p className="font-bold">Employee ID</p>
-                  <p className="mt-1 text-white/75">
-                    {employeeToEdit?.id || "-"}
-                  </p>
+                  <p className="mt-1 text-white/75">{employeeToEdit?.id || "-"}</p>
                 </div>
-
                 <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
                   <p className="font-bold">Selected Documents</p>
                   <p className="mt-1 text-white/75">
-                    {completedDocuments.length}/{DOCUMENT_OPTIONS.length}{" "}
-                    completed
+                    {completedDocuments.length}/{DOCUMENT_OPTIONS.length} completed
                   </p>
                 </div>
               </div>
@@ -521,27 +508,20 @@ function EditEmployeeModalContent({
                   <StatusPill tone="indigo">
                     <FiUser /> Edit Mode
                   </StatusPill>
-
                   {duplicatePreview && (
                     <StatusPill tone={duplicateConfirmed ? "amber" : "red"}>
                       <FiAlertTriangle />{" "}
-                      {duplicateConfirmed
-                        ? "Duplicate Verified"
-                        : "Possible Duplicate"}
+                      {duplicateConfirmed ? "Duplicate Verified" : "Possible Duplicate"}
                     </StatusPill>
                   )}
                 </div>
-
                 <h2 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">
                   Edit Employee Record
                 </h2>
-
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Complete the required employee information and review before
-                  saving.
+                  Complete the required employee information and review before updating.
                 </p>
               </div>
-
               <button
                 type="button"
                 onClick={onClose}
@@ -563,12 +543,10 @@ function EditEmployeeModalContent({
                         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
                           <FiUser />
                         </div>
-
                         <div>
                           <h3 className="font-extrabold text-gray-900 dark:text-white">
                             Basic Employee Information
                           </h3>
-
                           <p className="text-xs text-gray-500 dark:text-gray-400">
                             Employee ID remains the official unique identifier.
                           </p>
@@ -580,7 +558,6 @@ function EditEmployeeModalContent({
                           <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
                             Employee ID
                           </label>
-
                           <input
                             type="text"
                             value={employeeToEdit?.id || ""}
@@ -593,7 +570,6 @@ function EditEmployeeModalContent({
                           <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
                             Employment Status
                           </label>
-
                           <div className="relative">
                             <select
                               name="status"
@@ -606,7 +582,6 @@ function EditEmployeeModalContent({
                                 Floating / Standby
                               </option>
                             </select>
-
                             <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" />
                           </div>
                         </div>
@@ -615,7 +590,6 @@ function EditEmployeeModalContent({
                           <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
                             Start Date
                           </label>
-
                           <input
                             type="date"
                             name="contractStart"
@@ -623,7 +597,6 @@ function EditEmployeeModalContent({
                             onChange={handleChange}
                             className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white"
                           />
-
                           <ErrorText>{errors.contractStart}</ErrorText>
                         </div>
 
@@ -631,7 +604,6 @@ function EditEmployeeModalContent({
                           <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
                             Full Name
                           </label>
-
                           <input
                             type="text"
                             name="name"
@@ -646,7 +618,6 @@ function EditEmployeeModalContent({
                                 : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500/10 dark:border-white/10"
                             }`}
                           />
-
                           <ErrorText>{errors.name}</ErrorText>
                         </div>
 
@@ -655,7 +626,6 @@ function EditEmployeeModalContent({
                             <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
                               Company Assignment
                             </label>
-
                             <div className="relative">
                               <input
                                 type="text"
@@ -667,18 +637,13 @@ function EditEmployeeModalContent({
                                     COMPANY_OPTIONS.filter((company) =>
                                       company
                                         .toLowerCase()
-                                        .includes(
-                                          formData.company.toLowerCase()
-                                        )
+                                        .includes(formData.company.toLowerCase())
                                     )
                                   );
                                   setShowSuggestions(true);
                                 }}
                                 onBlur={() =>
-                                  setTimeout(
-                                    () => setShowSuggestions(false),
-                                    150
-                                  )
+                                  setTimeout(() => setShowSuggestions(false), 150)
                                 }
                                 placeholder="Type or select company name..."
                                 autoComplete="off"
@@ -688,30 +653,23 @@ function EditEmployeeModalContent({
                                     : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500/10 dark:border-white/10"
                                 }`}
                               />
-
-                              {showSuggestions &&
-                                filteredCompanies.length > 0 && (
-                                  <div className="absolute z-50 mt-2 max-h-56 w-full overflow-y-auto rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-slate-900">
-                                    {filteredCompanies.map((company) => (
-                                      <button
-                                        key={company}
-                                        type="button"
-                                        onMouseDown={(event) =>
-                                          event.preventDefault()
-                                        }
-                                        onClick={() =>
-                                          handleSelectCompany(company)
-                                        }
-                                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-gray-800 transition hover:bg-indigo-50 dark:text-white dark:hover:bg-white/10"
-                                      >
-                                        <FiBriefcase className="text-indigo-500" />
-                                        {company}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
+                              {showSuggestions && filteredCompanies.length > 0 && (
+                                <div className="absolute z-50 mt-2 max-h-56 w-full overflow-y-auto rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-slate-900">
+                                  {filteredCompanies.map((company) => (
+                                    <button
+                                      key={company}
+                                      type="button"
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => handleSelectCompany(company)}
+                                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-gray-800 transition hover:bg-indigo-50 dark:text-white dark:hover:bg-white/10"
+                                    >
+                                      <FiBriefcase className="text-indigo-500" />
+                                      {company}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-
                             <ErrorText>{errors.company}</ErrorText>
                           </div>
                         )}
@@ -720,27 +678,21 @@ function EditEmployeeModalContent({
                           <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                             <div className="flex gap-3">
                               <FiAlertTriangle className="mt-0.5 shrink-0" />
-
                               <div>
                                 <p className="font-extrabold">
                                   Possible duplicate employee found.
                                 </p>
-
                                 <p className="mt-1">
-                                  Existing record:{" "}
-                                  <b>{duplicatePreview.name}</b> (
-                                  {duplicatePreview.id}). Verify through resume
-                                  or supporting documents before saving.
+                                  Existing record: <b>{duplicatePreview.name}</b> (
+                                  {duplicatePreview.id}). Verify through resume or
+                                  supporting documents before saving.
                                 </p>
-
                                 <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs font-bold">
                                   <input
                                     type="checkbox"
                                     checked={duplicateConfirmed}
                                     onChange={(event) => {
-                                      setDuplicateConfirmed(
-                                        event.target.checked
-                                      );
+                                      setDuplicateConfirmed(event.target.checked);
                                       setErrors((prev) => ({
                                         ...prev,
                                         duplicateConfirm: "",
@@ -751,10 +703,7 @@ function EditEmployeeModalContent({
                                   I verified the resume/supporting documents and
                                   confirm this is a different employee.
                                 </label>
-
-                                <ErrorText>
-                                  {errors.duplicateConfirm}
-                                </ErrorText>
+                                <ErrorText>{errors.duplicateConfirm}</ErrorText>
                               </div>
                             </div>
                           </div>
@@ -769,31 +718,22 @@ function EditEmployeeModalContent({
                         <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
                           <FiInfo />
                         </div>
-
                         <div>
                           <h3 className="font-extrabold text-gray-900 dark:text-white">
                             Record Summary
                           </h3>
-
                           <p className="text-xs text-gray-500 dark:text-gray-400">
                             Live preview before review.
                           </p>
                         </div>
                       </div>
-
                       <div className="space-y-3 text-sm">
-                        <SummaryRow
-                          label="Employee ID"
-                          value={employeeToEdit?.id}
-                        />
-
+                        <SummaryRow label="Employee ID" value={employeeToEdit?.id} />
                         <SummaryRow
                           label="Full Name"
                           value={toProperName(formData.name) || "-"}
                         />
-
                         <SummaryRow label="Status" value={formData.status} />
-
                         <SummaryRow
                           label="Company"
                           value={
@@ -802,19 +742,16 @@ function EditEmployeeModalContent({
                               : "Not Assigned"
                           }
                         />
-
                         <SummaryRow
                           label="Documents"
                           value={`${completedDocuments.length}/${DOCUMENT_OPTIONS.length} completed`}
                         />
                       </div>
                     </div>
-
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                       <div className="mb-1 flex items-center gap-2 font-extrabold">
                         <FiAlertTriangle /> HRIS Reminder
                       </div>
-
                       <p className="leading-5">
                         Verify duplicate names using supporting documents.
                       </p>
@@ -832,31 +769,24 @@ function EditEmployeeModalContent({
                       <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
                         <FiFileText />
                       </div>
-
                       <div>
                         <h3 className="font-extrabold text-gray-900 dark:text-white">
                           Compliance Documents
                         </h3>
-
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Click to show or hide document requirements and proof
-                          uploads.
+                          Click to show or hide document requirements and proof uploads.
                         </p>
                       </div>
                     </div>
-
                     <div className="flex items-center gap-3">
                       <StatusPill tone="slate">
-                        {completedDocuments.length}/{DOCUMENT_OPTIONS.length}{" "}
-                        completed
+                        {completedDocuments.length}/{DOCUMENT_OPTIONS.length} completed
                       </StatusPill>
-
                       {errors.documents.general && (
                         <p className="mt-2 text-xs font-semibold text-red-600 dark:text-red-400">
                           {errors.documents.general}
                         </p>
                       )}
-
                       <FiChevronDown
                         className={`text-gray-400 transition-transform ${
                           showDocuments ? "rotate-180" : ""
@@ -872,8 +802,7 @@ function EditEmployeeModalContent({
                           const status = getDocumentStatus(doc.expirationDate);
                           const isRisky =
                             doc.checked &&
-                            (status === "Expired" ||
-                              status === "Expiring Soon");
+                            (status === "Expired" || status === "Expiring Soon");
 
                           return (
                             <div
@@ -891,21 +820,15 @@ function EditEmployeeModalContent({
                                   onChange={() => handleDocumentCheck(doc.name)}
                                   className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                 />
-
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center justify-between gap-3">
                                     <p className="font-bold text-gray-900 dark:text-white">
                                       {doc.name}
                                     </p>
-
                                     {doc.expirable ? (
-                                      <StatusPill tone="amber">
-                                        Expirable
-                                      </StatusPill>
+                                      <StatusPill tone="amber">Expirable</StatusPill>
                                     ) : (
-                                      <StatusPill tone="green">
-                                        Permanent
-                                      </StatusPill>
+                                      <StatusPill tone="green">Permanent</StatusPill>
                                     )}
                                   </div>
 
@@ -916,7 +839,6 @@ function EditEmployeeModalContent({
                                           <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">
                                             Expiration Date
                                           </label>
-
                                           <input
                                             type="date"
                                             value={doc.expirationDate}
@@ -932,11 +854,9 @@ function EditEmployeeModalContent({
                                                 : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500/10 dark:border-white/10"
                                             }`}
                                           />
-
                                           <ErrorText>
                                             {errors.documents[doc.name]}
                                           </ErrorText>
-
                                           {doc.expirationDate && (
                                             <p
                                               className={`mt-1.5 text-xs font-semibold ${
@@ -955,18 +875,15 @@ function EditEmployeeModalContent({
                                         <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">
                                           Proof Upload
                                         </label>
-
                                         <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-4 text-sm font-semibold text-gray-500 transition hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300 dark:hover:bg-indigo-500/10">
                                           <div className="flex items-center gap-2">
                                             <FiUploadCloud />
-
                                             <span>
-                                              {doc.file || doc.filePath
+                                              {doc.file || doc.filePath || doc.file_path
                                                 ? "Change proof file"
                                                 : "Upload proof file"}
                                             </span>
                                           </div>
-
                                           <input
                                             type="file"
                                             accept="image/png, image/jpeg, application/pdf"
@@ -979,24 +896,15 @@ function EditEmployeeModalContent({
                                             }
                                           />
                                         </label>
-
                                         <p className="mt-1 text-xs text-gray-400">
-                                          PNG, JPEG, or PDF only. Max file size:
-                                          5MB.
+                                          PNG, JPEG, or PDF only. Max file size: 5MB.
                                         </p>
-
                                         <ErrorText>
-                                          {
-                                            errors.documents[
-                                              `${doc.name}_file`
-                                            ]
-                                          }
+                                          {errors.documents[`${doc.name}_file`]}
                                         </ErrorText>
-
-                                        {(doc.file || doc.filePath) && (
+                                        {(doc.file || doc.filePath || doc.file_path) && (
                                           <div className="mt-2 flex min-w-0 items-start gap-1.5 rounded-xl bg-green-500/10 px-3 py-2 text-xs font-bold text-green-600 dark:text-green-400">
                                             <FiCheck className="mt-0.5 shrink-0" />
-
                                             <span className="block min-w-0 max-w-full break-all leading-5">
                                               {doc.file?.name || (typeof doc.file === "string" ? doc.file.split("/").pop() : "Existing file attached")}
                                             </span>
@@ -1024,7 +932,6 @@ function EditEmployeeModalContent({
                 >
                   Cancel
                 </button>
-
                 <button
                   type="submit"
                   className="rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-indigo-700"
@@ -1045,16 +952,13 @@ function EditEmployeeModalContent({
                 <StatusPill tone="green">
                   <FiCheck /> Ready for Confirmation
                 </StatusPill>
-
                 <h3 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">
                   Review Update Details
                 </h3>
-
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   Please verify all employee details before updating.
                 </p>
               </div>
-
               <button
                 type="button"
                 onClick={() => setShowReview(false)}
@@ -1068,12 +972,10 @@ function EditEmployeeModalContent({
               <div className="mb-4 rounded-2xl border border-red-300 bg-red-50 p-4 dark:border-red-500/30 dark:bg-red-500/10">
                 <div className="flex gap-3">
                   <FiAlertTriangle className="mt-0.5 text-red-600 dark:text-red-300" />
-
                   <div>
                     <p className="font-bold text-red-700 dark:text-red-300">
                       Duplicate Not Verified
                     </p>
-
                     <p className="text-sm text-red-700 dark:text-red-200">
                       Please confirm duplicate verification before saving.
                     </p>
@@ -1086,7 +988,6 @@ function EditEmployeeModalContent({
               <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                 <div className="flex gap-3">
                   <FiAlertTriangle className="mt-0.5 shrink-0" />
-
                   <div>
                     <p className="font-extrabold">Compliance Warning</p>
                     <p className="mt-1">{complianceReviewWarning}</p>
@@ -1097,16 +998,12 @@ function EditEmployeeModalContent({
 
             <div className="grid gap-4 md:grid-cols-2">
               <ReviewBox label="Employee ID" value={employeeToEdit?.id} />
-              <ReviewBox
-                label="Full Name"
-                value={toProperName(formData.name)}
-              />
+              <ReviewBox label="Full Name" value={toProperName(formData.name)} />
               <ReviewBox label="Status" value={formData.status} />
               <ReviewBox
                 label="Start Date"
                 value={formData.contractStart || "-"}
               />
-
               <ReviewBox
                 label="Company"
                 value={
@@ -1121,7 +1018,6 @@ function EditEmployeeModalContent({
               <p className="mb-4 text-sm font-extrabold text-gray-900 dark:text-white">
                 Compliance Documents
               </p>
-
               {selectedDocuments.length > 0 ? (
                 <div className="space-y-3">
                   {selectedDocuments.map((doc) => {
@@ -1188,15 +1084,11 @@ function EditEmployeeModalContent({
                             </p>
                           )}
                         </div>
-
                         <div className="text-sm font-semibold text-gray-600 dark:text-gray-300">
                           {isExpirable
-                            ? `Expires: ${
-                                doc.expirationDate || "-"
-                              } • ${status}`
+                            ? `Expires: ${doc.expirationDate || "-"} • ${status}`
                             : "Permanent Document"}
                         </div>
-
                         {isValid && (
                           <span className="text-xs font-bold text-green-600 dark:text-green-400">
                             ✔ Document is valid
@@ -1213,21 +1105,28 @@ function EditEmployeeModalContent({
               )}
             </div>
 
+            {saveError && (
+              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                {saveError}
+              </div>
+            )}
+
             <div className="mt-6 flex flex-col-reverse justify-end gap-3 sm:flex-row">
               <button
                 type="button"
                 onClick={() => setShowReview(false)}
-                className="rounded-2xl border border-gray-200 px-5 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10"
+                disabled={isSaving}
+                className="rounded-2xl border border-gray-200 px-5 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10"
               >
                 Back to Edit
               </button>
-
               <button
                 type="button"
                 onClick={handleConfirmUpdate}
-                className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-bold text-white hover:bg-green-700"
+                disabled={isSaving}
+                className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Confirm Update
+                {isSaving ? "Updating..." : "Confirm Update"}
               </button>
             </div>
           </div>
