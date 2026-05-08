@@ -1,14 +1,7 @@
 import { enrichIncidentIntelligence } from "../incidentIntelligence";
 
-const EMPLOYEES_KEY = "employees";
-
-export function safeParse(key) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+export function safeParse() {
+  return [];
 }
 
 export function getUserIdentity(user) {
@@ -24,6 +17,7 @@ export function formatDateTime(isoDate) {
   if (!isoDate) return "-";
 
   const date = new Date(isoDate);
+
   if (Number.isNaN(date.getTime())) return "-";
 
   return date.toLocaleString("en-PH", {
@@ -36,6 +30,11 @@ export function formatDateTime(isoDate) {
 }
 
 export function normalizeStatus(status) {
+  const normalized = String(status || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_");
+
   const map = {
     OPEN: "Open",
     INVESTIGATING: "Investigating",
@@ -44,7 +43,7 @@ export function normalizeStatus(status) {
     RESOLVED: "For Review",
   };
 
-  return map[status] || status || "Open";
+  return map[normalized] || status || "Open";
 }
 
 export function normalizeIncidentWithRules(incident, allIncidents = []) {
@@ -62,19 +61,31 @@ export function normalizeIncidentWithRules(incident, allIncidents = []) {
 }
 
 export function getVisibleIncidents(rawIncidents = [], rawEmployees = []) {
-  const activeEmployees = rawEmployees.filter((emp) => !emp.archived);
+  const activeEmployees = rawEmployees.filter((emp) => {
+    const isArchived = emp?.archived === true || Number(emp?.archived) === 1;
+    return !isArchived;
+  });
 
   const enriched = rawIncidents.map((item) =>
     normalizeIncidentWithRules(item, rawIncidents)
   );
 
   return enriched.filter((incident) =>
-    activeEmployees.some(
-      (emp) =>
-        String(emp.id || emp.employeeId || emp.name) ===
-          String(incident.employeeId || incident.employee) ||
-        String(emp.name) === String(incident.employee)
-    )
+    activeEmployees.some((emp) => {
+      const employeeId = String(emp.id || emp.employeeId || emp.employee_id || "");
+      const employeeName = String(emp.name || emp.full_name || emp.fullName || "");
+      const incidentEmployeeId = String(
+        incident.employeeId || incident.employee_id || incident.empId || ""
+      );
+      const incidentEmployeeName = String(
+        incident.employee || incident.employeeName || incident.employee_name || ""
+      );
+
+      return (
+        (!!employeeId && employeeId === incidentEmployeeId) ||
+        (!!employeeName && employeeName === incidentEmployeeName)
+      );
+    })
   );
 }
 
@@ -91,11 +102,11 @@ export function createTimelineItem({ title, description, createdBy, status }) {
 
 export function getEmployeeIncidentStats(employeeId, incidents = []) {
   const employeeCases = incidents.filter(
-    (inc) => String(inc.employeeId) === String(employeeId)
+    (inc) => String(inc.employeeId || inc.employee_id || "") === String(employeeId)
   );
 
   const openCases = employeeCases.filter((inc) =>
-    ["Open", "Investigating", "For Review"].includes(inc.status)
+    ["Open", "Investigating", "For Review"].includes(normalizeStatus(inc.status))
   );
 
   const criticalCases = employeeCases.filter(
@@ -107,43 +118,13 @@ export function getEmployeeIncidentStats(employeeId, incidents = []) {
     openCases: openCases.length,
     criticalCases: criticalCases.length,
     lastIncidentDate:
-      employeeCases[0]?.reportedAt || employeeCases[0]?.date || null,
+      employeeCases[0]?.reportedAt ||
+      employeeCases[0]?.reported_at ||
+      employeeCases[0]?.date ||
+      null,
   };
 }
 
-export function updateEmployeeKpiAfterIncident(
-  employeeId,
-  incident,
-  incidents = []
-) {
-  const employees = safeParse(EMPLOYEES_KEY);
-  const stats = getEmployeeIncidentStats(employeeId, incidents);
-
-  const updatedEmployees = employees.map((emp) => {
-    const sameEmployee =
-      String(emp.id || emp.employeeId || "") === String(employeeId);
-
-    if (!sameEmployee) return emp;
-
-    const currentScore = Number(emp.performanceScore || emp.kpiScore || 100);
-
-    const penalty =
-      incident.severity === "Critical"
-        ? 10
-        : incident.severity === "Major"
-        ? 5
-        : 2;
-
-    return {
-      ...emp,
-      incidentCount: stats.totalCases,
-      openIncidentCount: stats.openCases,
-      criticalIncidentCount: stats.criticalCases,
-      lastIncidentDate: incident.reportedAt || incident.date,
-      performanceScore: Math.max(0, currentScore - penalty),
-      kpiScore: Math.max(0, currentScore - penalty),
-    };
-  });
-
-  localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(updatedEmployees));
+export function updateEmployeeKpiAfterIncident() {
+  return null;
 }

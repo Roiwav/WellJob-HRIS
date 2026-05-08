@@ -3,23 +3,41 @@ import {
   FiBarChart2,
   FiBriefcase,
   FiCheckCircle,
+  FiClipboard,
+  FiEdit3,
   FiFileText,
   FiMessageSquare,
   FiRefreshCw,
   FiShield,
   FiTarget,
+  FiThumbsUp,
   FiUser,
   FiUsers,
   FiVideo,
   FiX,
+  FiXCircle,
+  FiZap,
 } from "react-icons/fi";
 
 import KPIBadge from "../badges/KPIBadge";
 import RiskBadge from "../badges/RiskBadge";
-import { WELLJOB_LOW_KPI_ACTIONS } from "../../../utils/kpi/kpiHelpers";
+
+import {
+  DECISION_CONFIDENCE,
+  HR_ACTION_WORKFLOW,
+  WELLJOB_LOW_KPI_ACTIONS,
+  getDecisionConfidenceClasses,
+  getSuggestedHRActionClasses,
+} from "../../../utils/kpi/kpiHelpers";
 
 function formatEmployeeId(id) {
   return String(id || "-").replace(/^KPI-/i, "");
+}
+
+function getDisplayValue(value) {
+  if (value === 0) return 0;
+  if (value === null || value === undefined || value === "") return "-";
+  return value;
 }
 
 function DetailCard({ icon, label, value }) {
@@ -33,9 +51,68 @@ function DetailCard({ icon, label, value }) {
       </div>
 
       <p className="text-sm font-bold text-slate-900 dark:text-white">
-        {value || "-"}
+        {getDisplayValue(value)}
       </p>
     </div>
+  );
+}
+
+function DecisionBadge({ icon, label, className }) {
+  return (
+    <span
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-extrabold leading-5 ${className}`}
+      title={label}
+    >
+      {icon}
+      <span className="line-clamp-1">{label}</span>
+    </span>
+  );
+}
+
+function ExplanationBox({ title, children }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+      <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {title}
+      </p>
+
+      <p className="text-sm leading-7 text-slate-600 dark:text-slate-300">
+        {children}
+      </p>
+    </div>
+  );
+}
+
+function ReviewActionButton({ icon, label, description, tone }) {
+  const tones = {
+    accept:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300",
+    modify:
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300",
+    reject:
+      "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300",
+  };
+
+  return (
+    <button
+      type="button"
+      disabled
+      className={`rounded-2xl border p-4 text-left opacity-80 transition ${tones[tone]}`}
+      title="This workflow will be connected in the Recommendation Review tab."
+    >
+      <div className="mb-2 flex items-center gap-2 text-sm font-extrabold">
+        {icon}
+        {label}
+      </div>
+
+      <p className="text-xs font-medium leading-5 opacity-90">
+        {description}
+      </p>
+
+      <p className="mt-3 text-[11px] font-extrabold uppercase tracking-wide opacity-70">
+        Workflow preview
+      </p>
+    </button>
   );
 }
 
@@ -113,12 +190,28 @@ export default function EmployeeKpiDetailsModal({ employee, onClose }) {
   if (!employee) return null;
 
   const recommendation =
-  employee.recommendation || "Retain / Maintain Good Standing";
-const correctiveActionCode = employee.correctiveActionCode || "RETAIN";
-const isRetain =
-  correctiveActionCode === "RETAIN" ||
-  recommendation === "Retain" ||
-  recommendation === "Retain / Maintain Good Standing";
+    employee.recommendation || "Retain / Maintain Good Standing";
+
+  const correctiveActionCode = employee.correctiveActionCode || "RETAIN";
+
+  const isRetain =
+    correctiveActionCode === "RETAIN" ||
+    recommendation === "Retain" ||
+    recommendation === "Retain / Maintain Good Standing";
+
+  const decisionConfidence =
+    employee.decisionConfidence || DECISION_CONFIDENCE.LOW;
+
+  const suggestedHRAction =
+    employee.suggestedHRAction || HR_ACTION_WORKFLOW.MONITOR;
+
+  const decisionConfidenceReason =
+    employee.decisionConfidenceReason ||
+    "Decision confidence is based on incident count, severity score, critical cases, and risk level.";
+
+  const suggestedHRActionReason =
+    employee.suggestedHRActionReason ||
+    "Suggested HR action is generated from the employee KPI evaluation and still requires HR validation.";
 
   return (
     <div
@@ -126,10 +219,10 @@ const isRetain =
       onClick={onClose}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+        className="flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-white px-6 py-5 dark:border-slate-800 dark:from-slate-950 dark:to-slate-900">
+        <div className="border-b border-slate-200 bg-slate-50 px-6 py-5 dark:border-slate-800 dark:bg-slate-950/50">
           <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-center gap-4">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-xl font-extrabold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
@@ -187,10 +280,10 @@ const isRetain =
 
           <section>
             <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              KPI and Risk Evaluation
+              KPI, Risk, and Decision Evaluation
             </h3>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
                 <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">
                   KPI Level
@@ -207,6 +300,30 @@ const isRetain =
                 <RiskBadge level={employee.riskLevel || "Low Risk"} />
               </div>
 
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Decision Confidence
+                </p>
+
+                <DecisionBadge
+                  icon={<FiZap size={13} />}
+                  label={decisionConfidence}
+                  className={getDecisionConfidenceClasses(decisionConfidence)}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Suggested Next Step
+                </p>
+
+                <DecisionBadge
+                  icon={<FiShield size={13} />}
+                  label={suggestedHRAction}
+                  className={getSuggestedHRActionClasses(suggestedHRAction)}
+                />
+              </div>
+
               <DetailCard
                 icon={<FiBarChart2 />}
                 label="Severity Score"
@@ -221,6 +338,16 @@ const isRetain =
             </div>
           </section>
 
+          <section className="grid gap-4 xl:grid-cols-2">
+            <ExplanationBox title="Why this confidence level?">
+              {decisionConfidenceReason}
+            </ExplanationBox>
+
+            <ExplanationBox title="Why this suggested next step?">
+              {suggestedHRActionReason}
+            </ExplanationBox>
+          </section>
+
           <section>
             <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Recommended HR Action
@@ -233,7 +360,7 @@ const isRetain =
                   : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300"
               }`}
             >
-              <div className="mb-3 flex items-center gap-2 font-extrabold">
+              <div className="mb-3 flex flex-wrap items-center gap-2 font-extrabold">
                 {isRetain ? <FiCheckCircle /> : <FiShield />}
                 {recommendation}
               </div>
@@ -252,6 +379,55 @@ const isRetain =
             </div>
           </section>
 
+          <section>
+            <div className="mb-3 flex flex-col gap-1">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                HR Review Workflow Preview
+              </h3>
+
+              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                This shows how HR may validate the system-generated suggestion.
+                Actual recording will be connected in the Recommendation Review
+                tab.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <ReviewActionButton
+                icon={<FiThumbsUp />}
+                label="Accept Suggestion"
+                tone="accept"
+                description="Use when HR agrees with the system recommendation and wants to record it as the final action."
+              />
+
+              <ReviewActionButton
+                icon={<FiEdit3 />}
+                label="Modify Action"
+                tone="modify"
+                description="Use when HR agrees with the concern but chooses a different final action after review."
+              />
+
+              <ReviewActionButton
+                icon={<FiXCircle />}
+                label="Reject Suggestion"
+                tone="reject"
+                description="Use when HR does not follow the suggestion and must provide a reason for rejection."
+              />
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm leading-6 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-300">
+              <div className="mb-1 flex items-center gap-2 font-extrabold">
+                <FiClipboard />
+                Decision-support reminder
+              </div>
+
+              <p>
+                The system recommends and explains the action, but the HR
+                Manager remains responsible for the final decision.
+              </p>
+            </div>
+          </section>
+
           {!isRetain && (
             <section>
               <div className="mb-3 flex flex-col gap-1">
@@ -260,7 +436,7 @@ const isRetain =
                 </h3>
 
                 <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  All available HR actions are shown below. The system marks the
+                  Available HR actions are shown below. The system marks the
                   most suitable recommendation based on the employee KPI record.
                 </p>
               </div>
@@ -283,7 +459,13 @@ const isRetain =
           )}
         </div>
 
-        <div className="border-t border-slate-200 px-6 py-4 text-right dark:border-slate-800">
+        <div className="flex flex-col gap-3 border-t border-slate-200 px-6 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+            Decision confidence and suggested next step are generated from
+            recorded employee incidents, severity score, KPI level, and risk
+            level.
+          </p>
+
           <button
             type="button"
             onClick={onClose}

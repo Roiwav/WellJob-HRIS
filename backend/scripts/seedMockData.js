@@ -2,10 +2,15 @@ const fs = require("fs");
 const path = require("path");
 const db = require("../config/db");
 
-const EMPLOYEE_COUNT = 1700;
+const EMPLOYEE_COUNT = 1000;
+const GOOD_RECORD_COUNT = 500;
+const BAD_RECORD_COUNT = 500;
 
 const CLEAR_EXISTING_DATA = true;
 const CLEAR_AUDIT_LOGS = true;
+
+const START_DATE = "2024-01-01";
+const END_DATE = new Date().toISOString().slice(0, 10);
 
 const REQUIRED_DOCUMENTS = [
   "Resume",
@@ -48,66 +53,198 @@ const COMPANIES = [
   "Sitel Philippines",
 ];
 
+const POLICY_RULES = {
+  UNEXCUSED_TARDINESS: {
+    violation: "Unexcused Tardiness",
+    severity: "Minor",
+    penalties: [
+      { offenseNo: 1, label: "1st offense", action: "Verbal Warning" },
+      { offenseNo: 2, label: "2nd offense", action: "Written Warning" },
+      { offenseNo: 3, label: "3rd offense", action: "1 day suspension" },
+      {
+        offenseNo: 4,
+        label: "4th offense",
+        action:
+          "3 days suspension or equivalent number of suspensions from habitual tardiness",
+      },
+      {
+        offenseNo: 5,
+        label: "5th offense",
+        action:
+          "5 days suspension or equivalent number of suspensions from habitual tardiness and subject to commitment letter",
+      },
+    ],
+  },
+
+  AWOL_SINGLE: {
+    violation: "Absence Without Official Leave (Single Absence)",
+    severity: "Minor",
+    penalties: [
+      {
+        offenseNo: 1,
+        label: "1st offense",
+        action: "Written and Verbal Warning",
+      },
+      { offenseNo: 2, label: "2nd offense", action: "1 day suspension" },
+      { offenseNo: 3, label: "3rd offense", action: "3 days suspension" },
+      {
+        offenseNo: 4,
+        label: "4th offense",
+        action: "5 days suspension and subject to commitment letter",
+      },
+      {
+        offenseNo: 5,
+        label: "5th offense",
+        action: "7 days suspension or management review based on repeated AWOL record",
+      },
+    ],
+  },
+
+  UNIFORM: {
+    violation: "Reporting for Work Not in Prescribed Uniform",
+    severity: "Minor",
+    penalties: [
+      {
+        offenseNo: 1,
+        label: "1st offense",
+        action: "Written and Verbal Warning",
+      },
+      { offenseNo: 2, label: "2nd offense", action: "3 days suspension" },
+      { offenseNo: 3, label: "3rd offense", action: "5 days suspension" },
+      {
+        offenseNo: 4,
+        label: "4th offense",
+        action: "7 days suspension and subject to commitment letter",
+      },
+      {
+        offenseNo: 5,
+        label: "5th offense",
+        action: "HR management review due to repeated uniform violation",
+      },
+    ],
+  },
+
+  JOB_INSTRUCTIONS: {
+    violation: "Willful Failure to Carry Out Job Instructions",
+    severity: "Major",
+    penalties: [
+      { offenseNo: 1, label: "1st offense", action: "7 days suspension" },
+      { offenseNo: 2, label: "2nd offense", action: "15 days suspension" },
+      {
+        offenseNo: 3,
+        label: "3rd offense",
+        action: "30 days suspension and subject to commitment letter",
+      },
+      { offenseNo: 4, label: "4th offense", action: "Dismissal" },
+      { offenseNo: 5, label: "5th offense", action: "Dismissal" },
+    ],
+  },
+
+  SAFETY: {
+    violation: "Violation of Safety Rules and Regulations",
+    severity: "Major",
+    penalties: [
+      { offenseNo: 1, label: "1st offense", action: "15 days suspension" },
+      {
+        offenseNo: 2,
+        label: "2nd offense",
+        action: "30 days suspension and subject to commitment letter",
+      },
+      { offenseNo: 3, label: "3rd offense", action: "Dismissal" },
+      { offenseNo: 4, label: "4th offense", action: "Dismissal" },
+      { offenseNo: 5, label: "5th offense", action: "Dismissal" },
+    ],
+  },
+};
+
+const BAD_RULE_KEYS = [
+  "UNEXCUSED_TARDINESS",
+  "AWOL_SINGLE",
+  "UNIFORM",
+  "JOB_INSTRUCTIONS",
+  "SAFETY",
+];
+
 const DEMO_EMPLOYEES = [
   {
     index: 1,
     name: "Carlo R. Gonzales",
     company: "SM Supermalls",
     status: "Deployed",
+    recordGroup: "GOOD",
+    offenseTarget: 0,
+    demoNote: "Good record / no incident",
   },
   {
     index: 2,
-    name: "Rica E. Morales",
-    company: "Jollibee Foods Corporation",
-    status: "Deployed",
-  },
-  {
-    index: 3,
-    name: "Dennis S. Ramos",
-    company: "Puregold Price Club",
-    status: "Deployed",
-  },
-  {
-    index: 4,
-    name: "Angelica F. Navarro",
-    company: "Concentrix Philippines",
-    status: "Deployed",
-  },
-  {
-    index: 5,
-    name: "Jayson M. Torres",
-    company: "Toyota Philippines",
-    status: "Deployed",
-  },
-  {
-    index: 6,
-    name: "Michelle A. Santos",
-    company: "BDO Unibank",
-    status: "Deployed",
-  },
-  {
-    index: 7,
     name: "Princess M. Reyes",
     company: "Globe Telecom",
     status: "Deployed",
+    recordGroup: "GOOD",
+    offenseTarget: 0,
+    demoNote: "Good deployed employee",
   },
   {
-    index: 8,
+    index: 3,
     name: "Christian C. Dela Cruz",
     company: null,
     status: "Floating / Standby",
+    recordGroup: "GOOD",
+    offenseTarget: 0,
+    demoNote: "Good floating employee",
   },
   {
-    index: 9,
+    index: 501,
+    name: "Dennis S. Ramos",
+    company: "Puregold Price Club",
+    status: "Deployed",
+    recordGroup: "BAD",
+    offenseTarget: 5,
+    ruleKey: "UNEXCUSED_TARDINESS",
+    demoNote: "5th offense tardiness",
+  },
+  {
+    index: 502,
     name: "Marvin D. Bautista",
     company: "Accenture Philippines",
     status: "Deployed",
+    recordGroup: "BAD",
+    offenseTarget: 3,
+    ruleKey: "JOB_INSTRUCTIONS",
+    demoNote: "3rd offense major violation",
   },
   {
-    index: 10,
-    name: "Grace V. Rivera",
-    company: "Unilab Inc.",
+    index: 503,
+    name: "Rica E. Morales",
+    company: "Jollibee Foods Corporation",
     status: "Deployed",
+    recordGroup: "BAD",
+    offenseTarget: 2,
+    ruleKey: "AWOL_SINGLE",
+    demoNote: "2nd offense AWOL",
+  },
+  {
+    index: 504,
+    name: "Jayson M. Torres",
+    company: "Toyota Philippines",
+    status: "Deployed",
+    recordGroup: "BAD",
+    offenseTarget: 2,
+    ruleKey: "AWOL_SINGLE",
+    sameDay: true,
+    demoNote: "Same-day duplicate test",
+  },
+  {
+    index: 505,
+    name: "Michelle A. Santos",
+    company: "BDO Unibank",
+    status: "Deployed",
+    recordGroup: "BAD",
+    offenseTarget: 2,
+    ruleKey: "UNIFORM",
+    sameDay: true,
+    closedThenNew: true,
+    demoNote: "Closed then new same-day case",
   },
 ];
 
@@ -162,16 +299,6 @@ const FIRST_NAMES = [
   "April",
   "Renz",
   "Marco",
-  "Bryan",
-  "Irish",
-  "Liza",
-  "Rose",
-  "Anthony",
-  "Gerald",
-  "Patrick",
-  "Kathleen",
-  "Janine",
-  "Mary Joy",
 ];
 
 const MIDDLE_INITIALS = [
@@ -244,10 +371,6 @@ function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function chance(percent) {
-  return Math.random() * 100 < percent;
-}
-
 function pad(number) {
   return String(number).padStart(2, "0");
 }
@@ -274,6 +397,15 @@ function addDays(dateString, days) {
   const date = toDate(dateString);
   date.setDate(date.getDate() + days);
   return formatDate(date);
+}
+
+function addDaysCapped(dateString, days, maxDateString = END_DATE) {
+  const added = toDate(addDays(dateString, days));
+  const maxDate = toDate(maxDateString);
+
+  if (added > maxDate) return maxDateString;
+
+  return formatDate(added);
 }
 
 function randomDateBetween(startDateString, endDateString) {
@@ -310,14 +442,89 @@ function getDemoProfile(index) {
   return DEMO_EMPLOYEES.find((employee) => employee.index === index) || null;
 }
 
-function getCleanEmployeeStatus(index, profile) {
+function getRecordGroup(index, profile) {
+  if (profile?.recordGroup) return profile.recordGroup;
+  return index <= GOOD_RECORD_COUNT ? "GOOD" : "BAD";
+}
+
+function getOffenseTarget(index, profile) {
+  if (profile?.offenseTarget !== undefined) return profile.offenseTarget;
+
+  const badIndex = index - GOOD_RECORD_COUNT;
+
+  if (badIndex <= 170) return 2;
+  if (badIndex <= 340) return 3;
+
+  return 5;
+}
+
+function getEmployeeStatus(index, profile) {
   if (profile?.status) return profile.status;
 
-  const roll = index % 100;
+  if (index % 12 === 0) return "Floating / Standby";
+  if (index % 20 === 0) return "Available";
 
-  if (roll < 82) return "Deployed";
-  if (roll < 94) return "Floating / Standby";
-  return "Available";
+  return "Deployed";
+}
+
+function getEmployeeCompany(status, profile) {
+  if (status !== "Deployed") return null;
+  return profile?.company || randomItem(COMPANIES);
+}
+
+function getRuleForEmployee(index, profile) {
+  if (profile?.ruleKey && POLICY_RULES[profile.ruleKey]) {
+    return POLICY_RULES[profile.ruleKey];
+  }
+
+  const ruleKey = BAD_RULE_KEYS[index % BAD_RULE_KEYS.length];
+  return POLICY_RULES[ruleKey];
+}
+
+function getPenaltyByOffense(rule, offenseNo) {
+  const exact = rule.penalties.find(
+    (penalty) => Number(penalty.offenseNo) === Number(offenseNo)
+  );
+
+  if (exact) return exact;
+
+  const last = rule.penalties[rule.penalties.length - 1];
+
+  return {
+    ...last,
+    offenseNo,
+    label: `${offenseNo}th offense`,
+  };
+}
+
+function getRecommendationForPenalty(rule, penalty) {
+  const action = String(penalty?.action || "").toLowerCase();
+
+  if (action.includes("dismissal")) return "Termination Review";
+  if (action.includes("suspension")) return "Suspension Review";
+  if (action.includes("written")) return "Written Warning";
+  if (action.includes("verbal")) return "Verbal Counseling";
+
+  if (rule.severity === "Critical") return "Termination Review";
+  if (rule.severity === "Major") return "Suspension Review";
+
+  return "Verbal Counseling";
+}
+
+function getIncidentStatusForOffense({ offenseNo, offenseTarget, profile }) {
+  if (profile?.closedThenNew) {
+    return offenseNo === 1 ? "Closed" : "Open";
+  }
+
+  if (profile?.sameDay) {
+    return offenseNo === 1 ? "Open" : "Investigating";
+  }
+
+  if (offenseNo < offenseTarget) return "Closed";
+  if (offenseTarget >= 5) return "For Review";
+  if (offenseTarget >= 3) return "Investigating";
+
+  return "Open";
 }
 
 function createMockPdfFile() {
@@ -422,6 +629,8 @@ async function clearExistingData(connection) {
   await safeQuery(connection, "DELETE FROM incident_evidence");
   await safeQuery(connection, "DELETE FROM incidents");
   await safeQuery(connection, "DELETE FROM employee_documents");
+  await safeQuery(connection, "DELETE FROM deployments");
+  await safeQuery(connection, "DELETE FROM contracts");
   await safeQuery(connection, "DELETE FROM employees");
 
   if (CLEAR_AUDIT_LOGS) {
@@ -431,6 +640,8 @@ async function clearExistingData(connection) {
   await safeQuery(connection, "ALTER TABLE incident_evidence AUTO_INCREMENT = 1");
   await safeQuery(connection, "ALTER TABLE incidents AUTO_INCREMENT = 1");
   await safeQuery(connection, "ALTER TABLE employee_documents AUTO_INCREMENT = 1");
+  await safeQuery(connection, "ALTER TABLE deployments AUTO_INCREMENT = 1");
+  await safeQuery(connection, "ALTER TABLE contracts AUTO_INCREMENT = 1");
   await safeQuery(connection, "ALTER TABLE employees AUTO_INCREMENT = 1");
 
   if (CLEAR_AUDIT_LOGS) {
@@ -444,18 +655,15 @@ async function clearExistingData(connection) {
 
 async function insertEmployee(connection, employeeColumns, index) {
   const profile = getDemoProfile(index);
+  const recordGroup = getRecordGroup(index, profile);
 
-  const createdAt = randomDateBetween("2024-01-01", getTodayDate());
-  const status = getCleanEmployeeStatus(index, profile);
+  const createdAt = randomDateBetween(START_DATE, END_DATE);
+  const status = getEmployeeStatus(index, profile);
   const name = profile?.name || makeFullName();
-
-  const company =
-    status === "Deployed" ? profile?.company || randomItem(COMPANIES) : null;
+  const company = getEmployeeCompany(status, profile);
 
   const contractStart =
-    status === "Deployed"
-      ? randomDateBetween(createdAt, getTodayDate())
-      : null;
+    status === "Deployed" ? randomDateBetween(createdAt, END_DATE) : null;
 
   const result = await insertRow(connection, "employees", employeeColumns, [
     { names: ["name", "full_name", "fullName"], value: name },
@@ -473,6 +681,9 @@ async function insertEmployee(connection, employeeColumns, index) {
     company,
     status,
     createdAt,
+    index,
+    profile,
+    recordGroup,
   };
 }
 
@@ -495,14 +706,105 @@ async function insertDocuments(connection, documentColumns, employee, mockFilePa
   }
 }
 
+async function insertIncidentRecord(
+  connection,
+  incidentColumns,
+  employee,
+  rule,
+  options = {}
+) {
+  const offenseNo = Number(options.offenseNo || 1);
+  const offenseTarget = Number(options.offenseTarget || offenseNo);
+  const penalty = getPenaltyByOffense(rule, offenseNo);
+  const recommendation = getRecommendationForPenalty(rule, penalty);
+
+  const baseDate = options.baseDate || randomDateBetween("2026-04-01", END_DATE);
+
+  const incidentDate = options.sameDay
+    ? baseDate
+    : addDaysCapped(baseDate, offenseNo - 1);
+
+  const status = getIncidentStatusForOffense({
+    offenseNo,
+    offenseTarget,
+    profile: employee.profile,
+  });
+
+  const location =
+    employee.company ||
+    randomItem(["Main Office", "Client Site", "Deployment Area", "HR Office"]);
+
+  await insertRow(connection, "incidents", incidentColumns, [
+    { names: ["employee_id", "employeeId"], value: employee.id },
+    { names: ["employee_name", "employeeName", "employee"], value: employee.name },
+    { names: ["company"], value: employee.company || "Unassigned" },
+    { names: ["violation_type", "violationType", "violation"], value: rule.violation },
+    { names: ["severity"], value: rule.severity },
+    { names: ["status"], value: status },
+    { names: ["incident_date", "incidentDate", "date"], value: incidentDate },
+    { names: ["location"], value: location },
+    {
+      names: ["description"],
+      value: `Demo incident: ${penalty.label} for ${rule.violation}. Saved sanction: ${penalty.action}.`,
+    },
+    { names: ["reported_by", "reportedBy"], value: "System Seeder" },
+    { names: ["action_taken", "actionTaken", "sanction"], value: penalty.action },
+    { names: ["recommendation"], value: recommendation },
+    {
+      names: ["resolution_notes", "resolutionNotes"],
+      value:
+        status === "Closed"
+          ? `Closed demo case. ${penalty.label}: ${penalty.action}.`
+          : `Policy basis: ${penalty.label}: ${penalty.action}.`,
+    },
+    { names: ["created_at", "createdAt"], value: `${incidentDate} ${randomTime()}` },
+    { names: ["updated_at", "updatedAt"], value: `${incidentDate} ${randomTime()}` },
+  ]);
+
+  return 1;
+}
+
+async function insertIncidentSeries(connection, incidentColumns, employee) {
+  if (employee.recordGroup !== "BAD") return 0;
+
+  const offenseTarget = getOffenseTarget(employee.index, employee.profile);
+
+  if (offenseTarget <= 0) return 0;
+
+  const rule = getRuleForEmployee(employee.index, employee.profile);
+  const baseDate = randomDateBetween("2026-04-01", END_DATE);
+
+  let created = 0;
+
+  for (let offenseNo = 1; offenseNo <= offenseTarget; offenseNo += 1) {
+    created += await insertIncidentRecord(
+      connection,
+      incidentColumns,
+      employee,
+      rule,
+      {
+        offenseNo,
+        offenseTarget,
+        baseDate,
+        sameDay: Boolean(employee.profile?.sameDay),
+      }
+    );
+  }
+
+  return created;
+}
+
 async function seedMockData() {
   const connection = db.promise();
   const mockFilePath = createMockPdfFile();
 
   try {
-    console.log("Starting clean Welljob 1700 employee seed...");
+    console.log("Starting Welljob 1000 employee demo seed...");
     console.log(`Target employees: ${EMPLOYEE_COUNT}`);
-    console.log("Mode: Complete compliance, valid documents, ZERO incidents.");
+    console.log(`Good records: ${GOOD_RECORD_COUNT}`);
+    console.log(`Bad records: ${BAD_RECORD_COUNT}`);
+    console.log("Compliance: all complete and valid.");
+    console.log("Companies: official company list only.");
 
     if (CLEAR_EXISTING_DATA) {
       await clearExistingData(connection);
@@ -510,11 +812,18 @@ async function seedMockData() {
 
     const employeeColumns = await getTableColumns(connection, "employees");
     const documentColumns = await getTableColumns(connection, "employee_documents");
+    const incidentColumns = await getTableColumns(connection, "incidents");
 
     let createdEmployees = 0;
     let createdDocuments = 0;
+    let createdIncidents = 0;
 
-    const statusStats = {
+    const stats = {
+      GOOD: 0,
+      BAD: 0,
+      "2nd offense employees": 0,
+      "3rd offense employees": 0,
+      "5th offense employees": 0,
       Deployed: 0,
       "Floating / Standby": 0,
       Available: 0,
@@ -523,38 +832,50 @@ async function seedMockData() {
     for (let i = 1; i <= EMPLOYEE_COUNT; i += 1) {
       const employee = await insertEmployee(connection, employeeColumns, i);
 
-      statusStats[employee.status] = (statusStats[employee.status] || 0) + 1;
+      stats[employee.recordGroup] += 1;
+      stats[employee.status] = (stats[employee.status] || 0) + 1;
 
       await insertDocuments(connection, documentColumns, employee, mockFilePath);
 
+      const incidentCount = await insertIncidentSeries(
+        connection,
+        incidentColumns,
+        employee
+      );
+
+      if (employee.recordGroup === "BAD") {
+        const offenseTarget = getOffenseTarget(employee.index, employee.profile);
+
+        if (offenseTarget === 2) stats["2nd offense employees"] += 1;
+        if (offenseTarget === 3) stats["3rd offense employees"] += 1;
+        if (offenseTarget === 5) stats["5th offense employees"] += 1;
+      }
+
       createdEmployees += 1;
       createdDocuments += REQUIRED_DOCUMENTS.length;
+      createdIncidents += incidentCount;
 
       if (i % 100 === 0) {
         console.log(`Seeded ${i}/${EMPLOYEE_COUNT} employees...`);
       }
     }
 
-    console.log("Clean seed completed!");
+    console.log("Seed completed!");
     console.log(`Employees created: ${createdEmployees}`);
     console.log(`Documents created: ${createdDocuments}`);
-    console.log("Incidents created: 0");
-    console.log("Incident evidence created: 0");
+    console.log(`Incidents created: ${createdIncidents}`);
     console.log("Audit logs cleared:", CLEAR_AUDIT_LOGS ? "Yes" : "No");
-    console.log("Status Summary:", statusStats);
+    console.log("Stats:", stats);
 
-    console.log("\nManual incident test employees:");
-    DEMO_EMPLOYEES.forEach((employee) => {
-      console.log(`- ${employee.name}`);
-    });
-
-    console.log("\nManual test flow:");
-    console.log("1. Add incident for Dennis S. Ramos.");
-    console.log("2. Select a policy violation such as Unexcused Tardiness.");
-    console.log("3. Open Employee Record modal.");
-    console.log("4. Confirm sanction appears as 1st offense.");
-    console.log("5. Add same violation again.");
-    console.log("6. Confirm sanction appears as 2nd offense.");
+    console.log("\nDemo employees to search:");
+    console.log("- Carlo R. Gonzales      -> Good record / no incident");
+    console.log("- Princess M. Reyes      -> Good deployed employee");
+    console.log("- Christian C. Dela Cruz -> Good floating employee");
+    console.log("- Rica E. Morales        -> 2nd offense AWOL");
+    console.log("- Marvin D. Bautista     -> 3rd offense job instruction");
+    console.log("- Dennis S. Ramos        -> 5th offense tardiness");
+    console.log("- Jayson M. Torres       -> Same-day duplicate test");
+    console.log("- Michelle A. Santos     -> Closed then new same-day case");
 
     process.exit(0);
   } catch (error) {
@@ -563,7 +884,7 @@ async function seedMockData() {
     try {
       await connection.query("SET FOREIGN_KEY_CHECKS = 1");
     } catch (restoreError) {
-      console.error("Failed to restore FK checks:", restoreError.message);
+      console.error("Failed to restore foreign key checks:", restoreError.message);
     }
 
     process.exit(1);

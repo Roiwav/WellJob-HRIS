@@ -138,10 +138,7 @@ function isSameEmployee(employee, incident) {
   );
 
   const incidentEmployeeName = normalizeText(
-    incident?.employee ||
-      incident?.employeeName ||
-      incident?.employee_name ||
-      ""
+    incident?.employee || incident?.employeeName || incident?.employee_name || ""
   );
 
   return (
@@ -261,10 +258,6 @@ export default function Notifications() {
         .sort((a, b) => b.timestamp - a.timestamp);
 
       setNotifications(mapped);
-
-      localStorage.setItem("employees", JSON.stringify(activeEmployees));
-      localStorage.setItem("incidents", JSON.stringify(incidents));
-      window.dispatchEvent(new Event("dataUpdated"));
     } catch (error) {
       console.error("Notification backend fetch error:", error);
       setFetchError(error.message || "Unable to load notifications.");

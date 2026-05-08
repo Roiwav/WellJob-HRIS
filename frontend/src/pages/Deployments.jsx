@@ -101,8 +101,6 @@ export default function Deployments() {
 
       setDeployments(normalized);
 
-      localStorage.setItem("deployments", JSON.stringify(normalized));
-      window.dispatchEvent(new Event("dataUpdated"));
     } catch (error) {
       console.error("Fetch deployments error:", error);
       setFetchError(error.message || "Unable to load deployments.");

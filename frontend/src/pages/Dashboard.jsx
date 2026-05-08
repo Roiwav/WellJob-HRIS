@@ -407,9 +407,6 @@ export default function Dashboard() {
         rawIncidents: incidentsRaw,
       });
 
-      localStorage.setItem("employees", JSON.stringify(activeEmployees));
-      localStorage.setItem("incidents", JSON.stringify(incidentsRaw));
-      window.dispatchEvent(new Event("dataUpdated"));
 
       setLastUpdated(formatLastUpdated());
     } catch (error) {
