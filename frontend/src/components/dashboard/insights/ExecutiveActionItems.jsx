@@ -134,7 +134,7 @@ function ActionRow({ action }) {
 
   return (
     <article
-      className={`rounded-2xl border bg-white p-3.5 transition hover:-translate-y-0.5 hover:shadow-sm dark:bg-slate-950/30 ${tone.row}`}
+      className={`rounded-2xl border bg-white p-3.5 dark:bg-slate-950/30 ${tone.row}`}
     >
       <div className="flex gap-3">
         <div

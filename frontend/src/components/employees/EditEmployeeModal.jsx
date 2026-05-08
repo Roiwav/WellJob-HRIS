@@ -27,6 +27,28 @@ import {
   ReviewBox,
 } from "./EmployeeComponents";
 
+// UPDATED: Helper function na nagdudugtong ng Backend URL para hindi mabasag ang image
+function getSafePreviewUrl(fileData, fallbackPath) {
+  const path = fileData || fallbackPath;
+  if (!path) return "";
+
+  // Kung bagong upload (File object)
+  if (path instanceof File || path instanceof Blob) {
+    return URL.createObjectURL(path);
+  }
+
+  // Kunin ang string value
+  let urlString = typeof path === "string" ? path : path.filePath || path.url || "";
+  if (!urlString) return "";
+
+  // Idikit ang backend URL kung relative path lang ang galing sa DB
+  if (!urlString.startsWith("http") && !urlString.startsWith("blob:")) {
+    // Siguraduhing may slash sa pagitan
+    const separator = urlString.startsWith("/") ? "" : "/";
+    return `http://localhost:5000${separator}${urlString}`;
+  }
+
+  return urlString;
 const EMPLOYEE_API_URL = "http://localhost:5000/api/employees";
 
 function getApiError(error, fallback = "Something went wrong.") {
@@ -884,9 +906,7 @@ function EditEmployeeModalContent({
                                           <div className="mt-2 flex min-w-0 items-start gap-1.5 rounded-xl bg-green-500/10 px-3 py-2 text-xs font-bold text-green-600 dark:text-green-400">
                                             <FiCheck className="mt-0.5 shrink-0" />
                                             <span className="block min-w-0 max-w-full break-all leading-5">
-                                              {doc.file
-                                                ? doc.file.name
-                                                : "Existing file attached"}
+                                              {doc.file?.name || (typeof doc.file === "string" ? doc.file.split("/").pop() : "Existing file attached")}
                                             </span>
                                           </div>
                                         )}
@@ -1012,6 +1032,24 @@ function EditEmployeeModalContent({
                       !isExpirable ||
                       (status !== "Expired" && status !== "Expiring Soon");
 
+                    // TINGNAN: Dito inaayos ang preview logic
+                    const previewUrl = getSafePreviewUrl(doc.file, doc.filePath);
+                    
+                    let isImage = false;
+                    let isPdf = false;
+                    let fileName = "Document";
+
+                    if (doc.file && doc.file.type) {
+                      isImage = doc.file.type.includes("image");
+                      isPdf = doc.file.type === "application/pdf";
+                      fileName = doc.file.name || "Document";
+                    } else if (previewUrl) {
+                      const lowerUrl = previewUrl.toLowerCase();
+                      isImage = lowerUrl.match(/\.(jpeg|jpg|gif|png|webp)$/) != null;
+                      isPdf = lowerUrl.endsWith(".pdf");
+                      fileName = previewUrl.split('/').pop() || "Existing Document";
+                    }
+
                     return (
                       <div
                         key={doc.name}
@@ -1021,28 +1059,25 @@ function EditEmployeeModalContent({
                           <p className="font-bold text-gray-900 dark:text-white">
                             {doc.name}
                           </p>
-                          {doc.file ? (
-                            doc.file.type?.includes("image") ? (
+
+                          {previewUrl ? (
+                            isImage ? (
                               <img
-                                src={URL.createObjectURL(doc.file)}
-                                alt={doc.file.name}
+                                src={previewUrl}
+                                alt={fileName}
                                 className="mt-2 max-h-40 rounded border"
                               />
-                            ) : doc.file.type === "application/pdf" ? (
+                            ) : isPdf ? (
                               <iframe
-                                src={URL.createObjectURL(doc.file)}
-                                title={doc.file.name}
+                                src={previewUrl}
+                                title={fileName}
                                 className="mt-2 h-40 w-full rounded border"
                               />
                             ) : (
                               <p className="mt-1 text-xs text-gray-500">
-                                File: {doc.file.name}
+                                File: {fileName}
                               </p>
                             )
-                          ) : doc.filePath ? (
-                            <p className="mt-1 text-xs text-gray-500">
-                              Existing file attached
-                            </p>
                           ) : (
                             <p className="mt-1 text-xs text-gray-400">
                               No file uploaded
