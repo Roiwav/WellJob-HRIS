@@ -1,4 +1,4 @@
-//Employees.jsx
+// Employees.jsx
 
 import { useCallback, useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -35,6 +35,7 @@ const SORT_OPTIONS = [
 
 function SuccessModal({ message, onClose }) {
   if (!message) return null;
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl">
@@ -68,7 +69,11 @@ export default function Employees() {
   const [sortBy, setSortBy] = useState("latest");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  
+  // 1. Inilagay ang Error State gaya ng sa Dashboard [cite: 97, 176]
+  const [fetchError, setFetchError] = useState("");
 
+  // 2.createOperationalLog function [cite: 177, 178]
   const createOperationalLog = useCallback(
     async (action, description) => {
       const userName = user?.full_name || user?.fullName || user?.username || "System Admin";
@@ -91,13 +96,25 @@ export default function Employees() {
     [user]
   );
 
+  // 3. Updated fetch function para masalo ang 503 Maintenance error [cite: 105, 179, 183]
   const fetchEmployees = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/employees");
-      const data = await res.json();
-      setEmployees(data);
+      setFetchError(""); 
+      const res = await axios.get("http://localhost:5000/api/employees");
+      
+      if (Array.isArray(res.data)) {
+        setEmployees(res.data);
+      } else {
+        setEmployees([]);
+      }
     } catch (err) {
       console.error("Fetch error:", err);
+      setEmployees([]);
+      if (err.response && err.response.status === 503) {
+        setFetchError("System is currently under maintenance. Please try again later.");
+      } else {
+        setFetchError(err.message || "Unable to load employees data.");
+      }
     }
   };
 
@@ -123,10 +140,12 @@ export default function Employees() {
   }, []);
 
   const generateId = () => {
-    if (!employees || employees.length === 0) return "EMP001";
+    if (!Array.isArray(employees) || employees.length === 0) return "EMP001";
+
     const numbers = employees
       .map((emp) => parseInt(String(emp.id || "").replace("EMP", ""), 10))
       .filter((num) => !Number.isNaN(num));
+
     const next = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
     return `EMP${String(next).padStart(3, "0")}`;
   };
@@ -165,14 +184,13 @@ export default function Employees() {
     }
   };
 
-  // 🔥 FIX: Mga bagong functions para saluhin ang signal mula sa Modals at gumawa ng Audit Logs
   const handleAddSuccess = (employeeName) => {
     const userName = user?.full_name || user?.fullName || user?.username || "System Admin";
     createOperationalLog("ADD_EMPLOYEE", `${userName} added employee record for ${employeeName}.`);
     
     setSuccessMessage("Employee saved successfully.");
     setShowModal(false);
-    fetchEmployees(); // I-refresh ang data galing sa database
+    fetchEmployees();
   };
 
   const handleEditSuccess = (employeeName) => {
@@ -182,10 +200,13 @@ export default function Employees() {
     setSuccessMessage("Employee information updated successfully.");
     setShowModal(false);
     setEditingEmployee(null);
-    fetchEmployees(); // I-refresh ang data galing sa database
+    fetchEmployees();
   };
 
-  const activeEmployees = useMemo(() => employees.filter((emp) => !emp.archived), [employees]);
+  const activeEmployees = useMemo(() => {
+    if (!Array.isArray(employees)) return [];
+    return employees.filter((emp) => !emp.archived);
+  }, [employees]);
 
   const filteredEmployees = useMemo(() => {
     const filtered = activeEmployees.filter((emp) => {
@@ -220,6 +241,13 @@ export default function Employees() {
 
   return (
     <div className="p-8 space-y-6">
+      {/* 4. Manual na inilagay ang Banner Alert sa pinakataas [cite: 208] */}
+      {fetchError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+          {fetchError}
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Employees Management</h1>
@@ -299,7 +327,7 @@ export default function Employees() {
           generatedId={generatedId}
           onClose={() => setShowModal(false)}
           employees={employees}
-          onSaveSuccess={handleAddSuccess} // 🔥 FIX: Ikinabit na natin ang success signal!
+          onSaveSuccess={handleAddSuccess}
         />
       )}
 
@@ -307,7 +335,7 @@ export default function Employees() {
         <EditEmployeeModal 
           employeeToEdit={editingEmployee}  
           onClose={() => setShowModal(false)}
-          onSaveSuccess={handleEditSuccess} // 🔥 FIX: Ikinabit na rin ang edit signal!
+          onSaveSuccess={handleEditSuccess}
         />
       )}
 
