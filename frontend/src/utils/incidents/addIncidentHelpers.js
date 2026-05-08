@@ -15,6 +15,56 @@ export const penaltyLevelStyle = {
   "Dismissal / RTA": "bg-red-100 text-red-700 border-red-200",
 };
 
+const ACTIVE_CASE_STATUSES = ["Open", "Investigating", "For Review"];
+
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeIncidentStatus(status) {
+  const normalized = String(status || "Open").trim().toUpperCase();
+
+  const map = {
+    OPEN: "Open",
+    INVESTIGATING: "Investigating",
+    FOR_REVIEW: "For Review",
+    CLOSED: "Closed",
+    RESOLVED: "For Review",
+  };
+
+  return map[normalized] || status || "Open";
+}
+
+function getIncidentViolation(incident) {
+  return (
+    incident?.violation ||
+    incident?.violationType ||
+    incident?.violation_type ||
+    ""
+  );
+}
+
+function getIncidentDateValue(incident) {
+  return (
+    incident?.reportedAt ||
+    incident?.reported_at ||
+    incident?.date ||
+    incident?.incidentDate ||
+    incident?.incident_date ||
+    incident?.createdAt ||
+    incident?.created_at ||
+    ""
+  );
+}
+
+function isClosedIncident(incident) {
+  return normalizeIncidentStatus(incident?.status) === "Closed";
+}
+
+function isActiveIncident(incident) {
+  return ACTIVE_CASE_STATUSES.includes(normalizeIncidentStatus(incident?.status));
+}
+
 export function generateIncidentId(existingIncidents = []) {
   const maxNumber = existingIncidents.reduce((max, item) => {
     const rawId = item.displayId || item.id || "";
@@ -85,26 +135,28 @@ export function findActiveDeployment(deployments = [], employee) {
   });
 }
 
-export function hasDuplicateSameDay(existingIncidents = [], formData) {
-  return existingIncidents.some((inc) => {
-    const sameEmployee =
-      String(inc.employeeId) === String(formData.employeeId);
+export function getDuplicateIncidentCandidates(existingIncidents = [], formData) {
+  if (!formData?.employeeId || !formData?.violation) return [];
 
-    const sameViolation = inc.violation === formData.violation;
+  return existingIncidents
+    .filter((incident) => {
+      if (isClosedIncident(incident)) return false;
 
-    const oldDate = new Date(inc.date).toDateString();
-    const newDate = new Date(formData.date).toDateString();
+      const sameEmployee =
+        String(incident.employeeId || incident.employee_id || "").trim() ===
+        String(formData.employeeId || "").trim();
 
-    return sameEmployee && sameViolation && oldDate === newDate;
-  });
-}
+      const sameViolation =
+        normalizeText(getIncidentViolation(incident)) ===
+        normalizeText(formData.violation);
 
-export function hasActiveCase(existingIncidents = [], formData) {
-  return existingIncidents.some(
-    (inc) =>
-      String(inc.employeeId) === String(formData.employeeId) &&
-      ["Open", "Investigating"].includes(inc.status)
-  );
+      return sameEmployee && sameViolation && isActiveIncident(incident);
+    })
+    .sort((a, b) => {
+      const dateA = new Date(getIncidentDateValue(a)).getTime() || 0;
+      const dateB = new Date(getIncidentDateValue(b)).getTime() || 0;
+      return dateB - dateA;
+    });
 }
 
 export function buildFinalIncident({
@@ -132,11 +184,15 @@ export function buildFinalIncident({
       reportedBy: createdBy,
       actions: [],
       reviewComments: [],
+      duplicateVerified: Boolean(formData.duplicateVerified),
+      duplicateVerificationNote: formData.duplicateVerificationNote || "",
       timeline: [
         {
           id: `TL-${Date.now()}`,
           title: "Incident Reported",
-          description: "Incident report was created and saved.",
+          description: formData.duplicateVerified
+            ? "Incident report was created after duplicate verification."
+            : "Incident report was created and saved.",
           createdAt: now,
           createdBy,
           status: "Open",

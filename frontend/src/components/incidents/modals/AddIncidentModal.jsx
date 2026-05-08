@@ -27,15 +27,15 @@ import {
   formatDateTime,
   generateIncidentId,
   getDateOnly,
+  getDuplicateIncidentCandidates,
   getOrdinalSuffix,
-  hasActiveCase,
-  hasDuplicateSameDay,
   penaltyLevelStyle,
   severityStyle,
 } from "../../../utils/incidents/addIncidentHelpers";
 
 import {
   CustomAlert,
+  DuplicateIncidentVerificationPanel,
   Field,
   FooterButtons,
   ModalStyle,
@@ -97,6 +97,8 @@ export default function AddIncidentModal({
       description: "",
       actions: [],
       reviewComments: [],
+      duplicateVerified: false,
+      duplicateVerificationNote: "",
       timeline: [],
     };
   }, [existingIncidents]);
@@ -107,6 +109,7 @@ export default function AddIncidentModal({
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [showViolationDropdown, setShowViolationDropdown] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
 
   const [customAlert, setCustomAlert] = useState({
     show: false,
@@ -141,6 +144,7 @@ export default function AddIncidentModal({
       setShowEmployeeDropdown(false);
       setShowViolationDropdown(false);
       setIsReviewing(false);
+      setDuplicateConfirmed(false);
       closeCustomAlert();
     }, 0);
 
@@ -213,6 +217,12 @@ export default function AddIncidentModal({
       .slice(0, 12);
   }, [violationOptions, violationSearch]);
 
+  const duplicateCandidates = useMemo(() => {
+    return getDuplicateIncidentCandidates(existingIncidents, formData);
+  }, [existingIncidents, formData]);
+
+  const needsDuplicateVerification = duplicateCandidates.length > 0;
+
   const computePenaltyData = useCallback(
     ({ employeeId, violation, penalties, description }) => {
       if (!violation) {
@@ -254,6 +264,10 @@ export default function AddIncidentModal({
     [existingIncidents, violationOptions]
   );
 
+  const resetDuplicateVerification = () => {
+    setDuplicateConfirmed(false);
+  };
+
   const handleSelectEmployee = (selectedEmployee) => {
     const activeDeployment = findActiveDeployment(deployments, selectedEmployee);
 
@@ -270,11 +284,14 @@ export default function AddIncidentModal({
       selectedPenalty: null,
       sanction: "",
       severity: "",
+      duplicateVerified: false,
+      duplicateVerificationNote: "",
     }));
 
     setEmployeeSearch(`${selectedEmployee.name} (${selectedEmployee.id})`);
     setShowEmployeeDropdown(false);
     setIsReviewing(false);
+    resetDuplicateVerification();
   };
 
   const handleEmployeeInputChange = (event) => {
@@ -283,6 +300,7 @@ export default function AddIncidentModal({
     setEmployeeSearch(value);
     setShowEmployeeDropdown(true);
     setIsReviewing(false);
+    resetDuplicateVerification();
 
     setFormData((prev) => ({
       ...prev,
@@ -293,6 +311,8 @@ export default function AddIncidentModal({
       selectedPenalty: null,
       sanction: "",
       severity: "",
+      duplicateVerified: false,
+      duplicateVerificationNote: "",
     }));
   };
 
@@ -315,6 +335,8 @@ export default function AddIncidentModal({
         violationDescription: selectedRule.description || "",
         penaltyLevel: selectedRule.penaltyLevel || "",
         penalties,
+        duplicateVerified: false,
+        duplicateVerificationNote: "",
         ...penaltyData,
       };
     });
@@ -322,6 +344,7 @@ export default function AddIncidentModal({
     setViolationSearch(`${selectedRule.section} — ${selectedRule.violation}`);
     setShowViolationDropdown(false);
     setIsReviewing(false);
+    resetDuplicateVerification();
   };
 
   const handleViolationInputChange = (event) => {
@@ -330,6 +353,7 @@ export default function AddIncidentModal({
     setViolationSearch(value);
     setShowViolationDropdown(true);
     setIsReviewing(false);
+    resetDuplicateVerification();
 
     setFormData((prev) => ({
       ...prev,
@@ -343,6 +367,8 @@ export default function AddIncidentModal({
       selectedPenalty: null,
       severity: "",
       sanction: "",
+      duplicateVerified: false,
+      duplicateVerificationNote: "",
     }));
   };
 
@@ -448,21 +474,12 @@ export default function AddIncidentModal({
       return;
     }
 
-    if (hasDuplicateSameDay(existingIncidents, formData)) {
+    if (needsDuplicateVerification && !duplicateConfirmed) {
       showCustomAlert({
         type: "error",
-        title: "Duplicate Incident",
-        message: "This employee already has the same violation reported today.",
-      });
-      return;
-    }
-
-    if (hasActiveCase(existingIncidents, formData)) {
-      showCustomAlert({
-        type: "warning",
-        title: "Active Case Exists",
+        title: "Duplicate Verification Required",
         message:
-          "This employee already has an ongoing case. Please resolve it first before creating a new one.",
+          "A related active incident exists for the same employee and violation. Please verify the duplicate-check box before saving.",
       });
       return;
     }
@@ -475,7 +492,15 @@ export default function AddIncidentModal({
     });
 
     const finalIncident = buildFinalIncident({
-      formData,
+      formData: {
+        ...formData,
+        duplicateVerified: needsDuplicateVerification
+          ? duplicateConfirmed
+          : false,
+        duplicateVerificationNote: needsDuplicateVerification
+          ? "Possible duplicate or related active incident was verified by HR before saving."
+          : "",
+      },
       penaltyData,
       existingIncidents,
     });
@@ -553,7 +578,10 @@ export default function AddIncidentModal({
             className="flex-1 space-y-6 overflow-y-auto px-6 py-6"
           >
             <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950/50">
-              <SectionTitle icon={<FiFileText />} title="Incident Information" />
+              <SectionTitle
+                icon={<FiFileText />}
+                title="Incident Information"
+              />
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <Field label="Incident ID" icon={<FiHash />}>
@@ -654,7 +682,10 @@ export default function AddIncidentModal({
             </section>
 
             <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950/50">
-              <SectionTitle icon={<FiShield />} title="Violation Classification" />
+              <SectionTitle
+                icon={<FiShield />}
+                title="Violation Classification"
+              />
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div ref={violationBoxRef} className="relative">
@@ -730,6 +761,7 @@ export default function AddIncidentModal({
               {formData.violation && (
                 <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <PolicyCard formData={formData} />
+
                   <PenaltiesCard
                     penalties={formData.penalties}
                     offenseCount={formData.offenseCount}
@@ -740,6 +772,7 @@ export default function AddIncidentModal({
               {formData.violation && (
                 <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
                   <p className="font-bold">Auto-selected Sanction</p>
+
                   <p className="mt-1">
                     {formData.offenseCount}
                     {getOrdinalSuffix(Number(formData.offenseCount))} offense:{" "}
@@ -750,6 +783,14 @@ export default function AddIncidentModal({
                 </div>
               )}
             </section>
+
+            {formData.employeeId && formData.violation && (
+              <DuplicateIncidentVerificationPanel
+                candidates={duplicateCandidates}
+                checked={duplicateConfirmed}
+                onChange={setDuplicateConfirmed}
+              />
+            )}
 
             <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950/50">
               <Field label="Incident Description" required>
@@ -787,8 +828,10 @@ export default function AddIncidentModal({
             <section className="rounded-2xl border border-green-200 bg-green-50 p-5 text-green-800 dark:border-green-900/40 dark:bg-green-950/30 dark:text-green-300">
               <div className="flex gap-3">
                 <FiCheckCircle className="mt-0.5 shrink-0" />
+
                 <div>
                   <h3 className="font-bold">Review Incident Report</h3>
+
                   <p className="mt-1 text-sm">
                     Please check all details carefully before final saving.
                   </p>
@@ -796,30 +839,45 @@ export default function AddIncidentModal({
               </div>
             </section>
 
+            {formData.employeeId && formData.violation && (
+              <DuplicateIncidentVerificationPanel
+                candidates={duplicateCandidates}
+                checked={duplicateConfirmed}
+                onChange={setDuplicateConfirmed}
+              />
+            )}
+
             <section className="grid gap-4 md:grid-cols-2">
               <ReviewItem label="Incident ID" value={formData.id} />
+
               <ReviewItem
                 label="Reported Date and Time"
                 value={formatDateTime(formData.reportedAt)}
               />
+
               <ReviewItem label="Status" value="Open" />
+
               <ReviewItem
                 label="Employee"
                 value={`${formData.employee} (${formData.employeeId})`}
               />
+
               <ReviewItem label="Company / Client" value={formData.company} />
               <ReviewItem label="Violation" value={formData.violation} />
               <ReviewItem label="Penalty Level" value={formData.penaltyLevel} />
               <ReviewItem label="Severity" value={formData.severity} />
+
               <ReviewItem
                 label="Offense Count"
                 value={`${formData.offenseCount} offense`}
               />
+
               <ReviewItem label="Auto Sanction" value={formData.sanction} />
             </section>
 
             <section className="grid gap-4 lg:grid-cols-2">
               <PolicyCard formData={formData} />
+
               <PenaltiesCard
                 penalties={formData.penalties}
                 offenseCount={formData.offenseCount}
@@ -830,6 +888,7 @@ export default function AddIncidentModal({
               <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
                 Incident Description
               </p>
+
               <p className="mt-3 whitespace-pre-line text-sm leading-6 text-gray-700 dark:text-gray-300">
                 {formData.description}
               </p>

@@ -388,129 +388,92 @@ export default function Incidents() {
     ]
   );
 
-  const handleAddIncident = async (newIncident) => {
-    if (isSuperAdmin) return false;
+const handleAddIncident = async (newIncident) => {
+  if (isSuperAdmin) return false;
 
-    const hasActiveSameCase = incidents.some(
-      (inc) =>
-        String(inc.employeeId) === String(newIncident.employeeId) &&
-        String(inc.violation) === String(newIncident.violation) &&
-        ["Open", "Investigating", "For Review"].includes(
-          normalizeStatus(inc.status)
-        )
-    );
+  const totalEmployeeCases = incidents.filter(
+    (inc) => String(inc.employeeId) === String(newIncident.employeeId)
+  ).length;
 
-    if (hasActiveSameCase) {
-      showNotice(
-        "error",
-        "Active Case Exists",
-        "This employee already has an active case with the same violation. Resolve or close it first before creating another one."
-      );
-      return false;
-    }
+  const escalatedIncident = {
+    ...newIncident,
+    severity:
+      totalEmployeeCases >= 4 && newIncident.severity !== "Critical"
+        ? "Critical"
+        : newIncident.severity,
+    status: "Open",
+  };
 
-    const sameDayCase = incidents.some((inc) => {
-      const sameEmployee =
-        String(inc.employeeId) === String(newIncident.employeeId);
+  const normalizedIncident = normalizeIncidentWithRules(
+    escalatedIncident,
+    incidents
+  );
 
-      const sameViolation =
-        String(inc.violation) === String(newIncident.violation);
+  try {
+    const response = await requestJson(INCIDENT_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employeeId: normalizedIncident.employeeId,
+        employee: normalizedIncident.employee,
+        employeeName: normalizedIncident.employee,
+        company: normalizedIncident.company,
 
-      const oldDate = new Date(inc.reportedAt || inc.date).toDateString();
+        violation: normalizedIncident.violation,
+        violationType: normalizedIncident.violation,
+        severity: normalizedIncident.severity,
+        status: "Open",
 
-      const newDate = new Date(
-        newIncident.reportedAt || newIncident.date
-      ).toDateString();
+        date: normalizedIncident.date,
+        incidentDate: normalizedIncident.date,
 
-      return sameEmployee && sameViolation && oldDate === newDate;
+        location: normalizedIncident.location || "",
+        description: normalizedIncident.description || "",
+
+        reportedBy: actorFullName,
+        actionTaken: normalizedIncident.sanction || "",
+        recommendation: normalizedIncident.recommendation || "",
+        resolutionNotes: "",
+
+        duplicateVerified: Boolean(normalizedIncident.duplicateVerified),
+        duplicateVerificationNote:
+          normalizedIncident.duplicateVerificationNote || "",
+
+        userId: user?.userId || user?.id,
+        username: user?.username,
+        fullName: actorFullName,
+        role: user?.role,
+      }),
     });
 
-    if (sameDayCase) {
-      showNotice(
-        "error",
-        "Duplicate Incident",
-        "The same employee already has the same violation reported today."
-      );
-      return false;
-    }
+    await fetchPageData();
 
-    const totalEmployeeCases = incidents.filter(
-      (inc) => String(inc.employeeId) === String(newIncident.employeeId)
-    ).length;
-
-    const escalatedIncident = {
-      ...newIncident,
-      severity:
-        totalEmployeeCases >= 4 && newIncident.severity !== "Critical"
-          ? "Critical"
-          : newIncident.severity,
-      status: "Open",
-    };
-
-    const normalizedIncident = normalizeIncidentWithRules(
-      escalatedIncident,
-      incidents
+    await createOperationalLog(
+      "CREATE_INCIDENT",
+      `${actorFullName} created an incident report for employee ${normalizedIncident.employee}.`
     );
 
-    try {
-      const response = await requestJson(INCIDENT_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          employeeId: normalizedIncident.employeeId,
-          employee: normalizedIncident.employee,
-          employeeName: normalizedIncident.employee,
-          company: normalizedIncident.company,
+    setOpenAddModal(false);
 
-          violation: normalizedIncident.violation,
-          violationType: normalizedIncident.violation,
-          severity: normalizedIncident.severity,
-          status: "Open",
+    showNotice(
+      "success",
+      "Incident Report Saved",
+      `Incident ${formatIncidentCode(response?.id)} has been saved to the system.`
+    );
 
-          date: normalizedIncident.date,
-          incidentDate: normalizedIncident.date,
+    return true;
+  } catch (error) {
+    console.error("Create incident error:", error);
 
-          location: normalizedIncident.location || "",
-          description: normalizedIncident.description || "",
+    showNotice(
+      "error",
+      "Save Failed",
+      error.message || "Unable to save incident report."
+    );
 
-          reportedBy: actorFullName,
-          actionTaken: normalizedIncident.sanction || "",
-          recommendation: normalizedIncident.recommendation || "",
-          resolutionNotes: "",
-
-          userId: user?.userId || user?.id,
-          username: user?.username,
-          fullName: actorFullName,
-          role: user?.role,
-        }),
-      });
-
-      await fetchPageData();
-
-      await createOperationalLog(
-        "CREATE_INCIDENT",
-        `${actorFullName} created an incident report for employee ${normalizedIncident.employee}.`
-      );
-
-      setOpenAddModal(false);
-
-      showNotice(
-        "success",
-        "Incident Report Saved",
-        `Incident ${formatIncidentCode(response?.id)} has been saved to the system.`
-      );
-
-      return true;
-    } catch (error) {
-      console.error("Create incident error:", error);
-      showNotice(
-        "error",
-        "Save Failed",
-        error.message || "Unable to save incident report."
-      );
-      return false;
-    }
-  };
+    return false;
+  }
+};
 
   const handleConfirmStartInvestigation = async (incident) => {
     if (isSuperAdmin) return;
