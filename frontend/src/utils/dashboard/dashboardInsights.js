@@ -536,6 +536,118 @@ function buildWorkforceHealth({
   };
 }
 
+// ================= SYSTEM FORECASTING ENGINE =================
+// Dito nagbabase ang prediction gamit lang ang mga data at conditions mula sa Code of Conduct
+function getRuleBasedForecast(violationName) {
+  const v = violationName.toLowerCase();
+
+  // Absences / AWOL / Abandonment of Duty
+  if (v.includes("abandonment") || v.includes("absence without official") || v.includes("awol") || v.includes("excessive absence")) {
+    return {
+      title: "High Risk of Manpower Shortage",
+      action: "Possible long suspensions or dismissal up ahead. Immediately contact floating/standby employees or initiate emergency hiring to ensure client operations are not disrupted.",
+      priority: "Critical",
+      tone: "red"
+    };
+  }
+
+  // Non-Work-Related Activities / Sleeping / Loitering
+  if (v.includes("non-work-related") || v.includes("sleeping") || v.includes("loitering") || v.includes("unauthorized activities")) {
+    return {
+      title: "Productivity Drop & Reliever Requirement",
+      action: "Violators face 15-30 days suspension based on rules. Prepare reliever staff to cover their shifts. Consider re-evaluating site supervision.",
+      priority: "High",
+      tone: "amber"
+    };
+  }
+
+  // Tardiness / Undertime
+  if (v.includes("tardiness") || v.includes("undertime") || v.includes("punching") || v.includes("attendance")) {
+    return {
+      title: "Attendance Habituation Alert",
+      action: "Schedule immediate counseling before this turns into habitual violations. Assess if current shift schedules are still viable for the deployed team.",
+      priority: "Medium",
+      tone: "blue"
+    };
+  }
+
+  // Stealing, Drugs, Harassment, Weapons, Damage
+  if (v.includes("theft") || v.includes("steal") || v.includes("damage") || v.includes("fraud") || v.includes("drugs") || v.includes("harassment") || v.includes("weapon") || v.includes("falsification") || v.includes("sabotage")) {
+    return {
+      title: "Imminent Dismissal & Legal Risk",
+      action: "Immediate dismissal expected based on CoC. Process clearance immediately, secure company/client assets, and deploy emergency replacements today.",
+      priority: "Critical",
+      tone: "red"
+    };
+  }
+
+  // Safety, PPE, Health, Sanitation
+  if (v.includes("safety") || v.includes("ppe") || v.includes("health") || v.includes("sanitation") || v.includes("contagious")) {
+    return {
+      title: "Workplace Hazard & Liability Risk",
+      action: "Conduct an emergency safety audit/briefing. Non-compliance may lead to client penalties or accidents. Ensure PPE inventory is restocked.",
+      priority: "High",
+      tone: "amber"
+    };
+  }
+
+  // Insubordination, Disobedience, Inappropriate relationships
+  if (v.includes("insubordination") || v.includes("disobey") || v.includes("refusal") || v.includes("relationship") || v.includes("discourteous") || v.includes("fight")) {
+     return {
+      title: "Toxic Workplace Dynamics",
+      action: "Intervene immediately via HR mediation. Prepare to re-assign or reshuffle deployed personnel to different sites to defuse conflict.",
+      priority: "Medium",
+      tone: "amber"
+    };
+  }
+
+  // Neglect of Duty, Errors
+  if (v.includes("neglect") || v.includes("error") || v.includes("information")) {
+     return {
+      title: "Service Quality Degradation",
+      action: "High risk of client dissatisfaction. Schedule immediate refresher training. Assess if workload is balanced or if personnel need reassignment.",
+      priority: "Medium",
+      tone: "blue"
+    };
+  }
+
+  // Default Prediction
+  return {
+    title: "Policy Enforcement Required",
+    action: "Monitor this active violation closely. If a trend forms, conduct a site-wide policy orientation to prevent escalation.",
+    priority: "Low",
+    tone: "slate"
+  };
+}
+
+function buildPredictiveInsights(activeIncidents) {
+  const predictionsMap = {};
+
+  activeIncidents.forEach((incident) => {
+    const vName = incident.violation || "Unknown Violation";
+    if (!predictionsMap[vName]) {
+      const insight = getRuleBasedForecast(vName);
+      predictionsMap[vName] = {
+        id: vName,
+        violation: vName,
+        title: insight.title,
+        action: insight.action,
+        priority: insight.priority,
+        tone: insight.tone,
+        count: 1,
+      };
+    } else {
+      predictionsMap[vName].count += 1;
+    }
+  });
+
+  return Object.values(predictionsMap).sort((a, b) => {
+    const pVals = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+    return (pVals[b.priority] || 0) - (pVals[a.priority] || 0) || b.count - a.count;
+  });
+}
+// ==========================================================
+
 function buildRowsForIncidents(incidents = []) {
   return incidents.map((incident) => ({
     id: incident.id || "-",
@@ -647,6 +759,8 @@ export function buildDashboardInsights({
     utilizationRate,
   });
 
+  const predictions = buildPredictiveInsights(activeIncidents);
+
   return {
     health,
     mom,
@@ -654,6 +768,7 @@ export function buildDashboardInsights({
     caseAging,
     complianceBreakdown,
     positiveSignals,
+    predictions, 
     drilldowns: {
       utilizationRate: {
         title: "Deployment Utilization Details",
