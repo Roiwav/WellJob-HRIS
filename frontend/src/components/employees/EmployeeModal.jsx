@@ -69,11 +69,9 @@ function getDocumentStatus(doc) {
   const isExpirable = isExpirableDocument(doc.name);
 
   if (!hasFile) return "No Data";
-
   if (!isExpirable) return "Valid";
 
   const expirationDate = doc.expirationDate || doc.expiration_date;
-
   if (!expirationDate) return "No Data";
 
   const today = new Date();
@@ -174,18 +172,18 @@ function getSeverityWeight(severity) {
 }
 
 function getKPILevel(severityScore, totalIncidents) {
-  if (severityScore >= 8) return "High";
-  if (severityScore >= 4) return "Medium";
-  if (totalIncidents >= 1) return "Low";
-  return "Clean";
+  if (severityScore >= 8) return "Critical Concern";
+  if (severityScore >= 4) return "Needs Improvement";
+  if (totalIncidents >= 1) return "Minor Concern";
+  return "Good Standing";
 }
 
 function getRiskLevel({ kpiLevel, totalIncidents, criticalIncidents }) {
   if (criticalIncidents >= 1) return "High Risk";
-  if (kpiLevel === "High") return "High Risk";
-  if (kpiLevel === "Medium") return "Repeat";
-  if (kpiLevel === "Low" || totalIncidents >= 1) return "Monitor";
-  return "Clean";
+  if (kpiLevel === "Critical Concern") return "High Risk";
+  if (kpiLevel === "Needs Improvement") return "Repeat";
+  if (kpiLevel === "Minor Concern" || totalIncidents >= 1) return "Monitor";
+  return "Low Risk";
 }
 
 function getRiskClasses(level) {
@@ -196,26 +194,26 @@ function getRiskClasses(level) {
       "bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30",
     Monitor:
       "bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/30",
-    Clean:
+    "Low Risk":
       "bg-green-100 text-green-700 border border-green-200 dark:bg-green-500/20 dark:text-green-300 dark:border-green-500/30",
   };
 
-  return styles[level] || styles.Clean;
+  return styles[level] || styles["Low Risk"];
 }
 
 function getKPIClasses(level) {
   const styles = {
-    High:
+    "Critical Concern":
       "bg-red-100 text-red-700 border border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/30",
-    Medium:
+    "Needs Improvement":
       "bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30",
-    Low:
+    "Minor Concern":
       "bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/30",
-    Clean:
+    "Good Standing":
       "bg-green-100 text-green-700 border border-green-200 dark:bg-green-500/20 dark:text-green-300 dark:border-green-500/30",
   };
 
-  return styles[level] || styles.Clean;
+  return styles[level] || styles["Good Standing"];
 }
 
 function getRecommendation({ totalIncidents, criticalIncidents, riskLevel }) {
@@ -333,7 +331,8 @@ function normalizeIncident(incident) {
     createdAt: incident.createdAt || incident.created_at || date,
     description: incident.description || "",
     recommendation: incident.recommendation || "",
-    sanction: incident.sanction || incident.actionTaken || incident.action_taken || "",
+    sanction:
+      incident.sanction || incident.actionTaken || incident.action_taken || "",
   };
 }
 

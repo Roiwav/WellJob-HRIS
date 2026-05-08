@@ -205,6 +205,20 @@ function getViolationText(incident) {
   );
 }
 
+function toTitleCase(value = "") {
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getReadableViolationName(value = "") {
+  if (!value) return "Recorded Violation";
+  return toTitleCase(value);
+}
+
 function countByViolation(relatedIncidents = []) {
   const counts = new Map();
 
@@ -247,6 +261,7 @@ function hasAttendanceOrPolicyConcern(relatedIncidents = []) {
 
     return (
       text.includes("tardiness") ||
+      text.includes("late") ||
       text.includes("absence") ||
       text.includes("absenteeism") ||
       text.includes("awol") ||
@@ -291,6 +306,126 @@ function hasPossibleRoleMismatchConcern(relatedIncidents = []) {
   });
 }
 
+function getSeverityBreakdown(relatedIncidents = []) {
+  return relatedIncidents.reduce(
+    (acc, incident) => {
+      const severity = incident?.severity || SEVERITY_LABELS.MINOR;
+
+      if (severity === SEVERITY_LABELS.CRITICAL) acc.critical += 1;
+      else if (severity === SEVERITY_LABELS.MAJOR) acc.major += 1;
+      else if (severity === SEVERITY_LABELS.MINOR) acc.minor += 1;
+      else acc.none += 1;
+
+      return acc;
+    },
+    {
+      critical: 0,
+      major: 0,
+      minor: 0,
+      none: 0,
+    }
+  );
+}
+
+function buildSeveritySummary(relatedIncidents = []) {
+  const breakdown = getSeverityBreakdown(relatedIncidents);
+  const parts = [];
+
+  if (breakdown.critical > 0) parts.push(`${breakdown.critical} critical`);
+  if (breakdown.major > 0) parts.push(`${breakdown.major} major`);
+  if (breakdown.minor > 0) parts.push(`${breakdown.minor} minor`);
+
+  if (parts.length === 0) return "no severity-bearing incident";
+
+  return parts.join(", ");
+}
+
+function buildDynamicBasis({
+  violationCount = 0,
+  criticalIncidentCount = 0,
+  severityScore = 0,
+  normalizedRisk = RISK_LEVELS.LOW_RISK,
+  normalizedKPI = KPI_LEVELS.GOOD_STANDING,
+  relatedIncidents = [],
+  commonViolation = { violation: "", count: 0 },
+}) {
+  const severitySummary = buildSeveritySummary(relatedIncidents);
+  const commonViolationName = getReadableViolationName(commonViolation.violation);
+
+  if (violationCount === 0) {
+    return "No recorded incident, no severity score, and good standing KPI status.";
+  }
+
+  if (commonViolation.count >= 2) {
+    return `${violationCount} recorded violation(s), including ${commonViolation.count} recurring ${commonViolationName} case(s), with ${severitySummary} classification and a total severity score of ${severityScore}.`;
+  }
+
+  if (criticalIncidentCount >= 1) {
+    return `${criticalIncidentCount} critical incident(s), ${violationCount} total recorded violation(s), and a severity score of ${severityScore}.`;
+  }
+
+  return `${violationCount} recorded violation(s), ${severitySummary} classification, KPI level of ${normalizedKPI}, risk level of ${normalizedRisk}, and total severity score of ${severityScore}.`;
+}
+
+function buildDynamicReason({
+  primaryCode,
+  violationCount = 0,
+  criticalIncidentCount = 0,
+  severityScore = 0,
+  normalizedRisk = RISK_LEVELS.LOW_RISK,
+  normalizedKPI = KPI_LEVELS.GOOD_STANDING,
+  relatedIncidents = [],
+  commonViolation = { violation: "", count: 0 },
+  repeatedSameViolation = false,
+  attendanceOrPolicyConcern = false,
+}) {
+  const commonViolationName = getReadableViolationName(commonViolation.violation);
+  const severitySummary = buildSeveritySummary(relatedIncidents);
+
+  if (primaryCode === "PERFORMANCE_IMPROVEMENT_PLAN") {
+    if (criticalIncidentCount >= 1 || severityScore >= 8) {
+      return `Employee requires a structured Performance Improvement Plan because the record shows ${severitySummary} classification with a total severity score of ${severityScore}, placing the employee under ${normalizedKPI} and ${normalizedRisk}.`;
+    }
+
+    if (repeatedSameViolation && commonViolation.count >= 2) {
+      return `Employee requires a Performance Improvement Plan because recurring ${commonViolationName} was detected ${commonViolation.count} time(s), showing a repeated KPI standing concern.`;
+    }
+
+    return `Employee requires a Performance Improvement Plan because there are ${violationCount} recorded violation(s), resulting in ${normalizedKPI} and ${normalizedRisk} status.`;
+  }
+
+  if (primaryCode === "REASSIGNMENT_OF_POSITION") {
+    const baseViolation =
+      commonViolation.count >= 2
+        ? `recurring ${commonViolationName} was detected ${commonViolation.count} time(s)`
+        : "repeated task, quality, or performance-related concern was detected";
+
+    return `Employee may need reassignment review because ${baseViolation}. This may indicate possible role mismatch in the current assignment.`;
+  }
+
+  if (primaryCode === "EMPLOYEE_TRAINING") {
+    return `Employee is recommended for training because the recorded concern is related to task quality, productivity, safety, or competency improvement. Training can help correct the issue before it becomes repeated.`;
+  }
+
+  if (primaryCode === "SEMINAR_WEBINAR") {
+    if (repeatedSameViolation && commonViolation.count >= 2) {
+      return `Employee is recommended for a refresher seminar or webinar because recurring ${commonViolationName} was detected ${commonViolation.count} time(s), indicating the need for policy awareness reinforcement.`;
+    }
+
+    if (attendanceOrPolicyConcern) {
+      return `Employee is recommended for a refresher seminar or webinar because the recorded violation is related to attendance, policy compliance, or workplace behavior awareness.`;
+    }
+
+    return `Employee is recommended for a seminar or webinar to reinforce company policies and prevent repeated KPI standing concerns.`;
+  }
+
+  if (primaryCode === "VERBAL_COUNSELING") {
+    return `Employee is recommended for verbal counseling because there is an early KPI standing concern with ${violationCount} recorded violation(s), allowing HR to correct the issue before it becomes repeated.`;
+  }
+
+  return `Employee recommendation is based on the recorded violation pattern, KPI level, risk level, and severity score.`;
+}
+
 export function getCorrectiveActionRecommendation({
   violationCount = 0,
   criticalIncidentCount = 0,
@@ -313,7 +448,7 @@ export function getCorrectiveActionRecommendation({
     return {
       recommendation: RECOMMENDATION_LABELS.RETAIN,
       recommendationReason:
-        "Employee has no recorded violation and may maintain good standing under regular HR monitoring.",
+        "Employee has no recorded violation, no active incident severity score, and may maintain good standing under regular HR monitoring.",
       correctiveActionCode: "RETAIN",
       correctiveAction: RECOMMENDATION_LABELS.RETAIN,
       correctiveActionDescription:
@@ -321,7 +456,7 @@ export function getCorrectiveActionRecommendation({
       correctiveActionReason:
         "No corrective action is required because the employee has no recorded KPI standing concern.",
       correctiveActionBasis:
-        "No violation, no critical incident, and good standing KPI status.",
+        "No violation, no critical incident, zero severity score, and good standing KPI status.",
       applicableActions: [],
     };
   }
@@ -335,9 +470,6 @@ export function getCorrectiveActionRecommendation({
     hasPossibleRoleMismatchConcern(relatedIncidents);
 
   let primaryCode = "VERBAL_COUNSELING";
-  let reason =
-    "Employee has a minor KPI standing concern. Initial coaching or verbal counseling is recommended before the concern becomes repeated.";
-  let basis = `${violationCount} recorded violation(s).`;
 
   if (
     criticalIncidentCount >= 1 ||
@@ -346,42 +478,52 @@ export function getCorrectiveActionRecommendation({
     normalizedKPI === KPI_LEVELS.CRITICAL_CONCERN
   ) {
     primaryCode = "PERFORMANCE_IMPROVEMENT_PLAN";
-    reason =
-      "Employee has a critical KPI standing concern and needs a structured improvement plan with close HR monitoring.";
-    basis = `${criticalIncidentCount} critical incident(s), severity score of ${severityScore}, and risk level of ${normalizedRisk}.`;
   } else if (possibleRoleMismatch) {
     primaryCode = "REASSIGNMENT_OF_POSITION";
-    reason =
-      "Employee shows repeated task or performance-related concerns that may indicate possible role mismatch.";
-    basis =
-      commonViolation.count > 1
-        ? `Recurring concern detected: ${commonViolation.violation}.`
-        : `${violationCount} recorded performance-related concern(s).`;
+  } else if (skillsOrQualityConcern) {
+    primaryCode =
+      violationCount >= 3 || repeatedSameViolation
+        ? "REASSIGNMENT_OF_POSITION"
+        : "EMPLOYEE_TRAINING";
+  } else if (attendanceOrPolicyConcern) {
+    primaryCode =
+      violationCount >= 3 || repeatedSameViolation
+        ? "SEMINAR_WEBINAR"
+        : "VERBAL_COUNSELING";
+  } else if (repeatedSameViolation) {
+    primaryCode = "SEMINAR_WEBINAR";
   } else if (
     violationCount >= 3 ||
     normalizedRisk === RISK_LEVELS.REPEAT ||
     normalizedKPI === KPI_LEVELS.NEEDS_IMPROVEMENT
   ) {
     primaryCode = "PERFORMANCE_IMPROVEMENT_PLAN";
-    reason =
-      "Employee has repeated KPI standing concerns and needs measurable improvement targets and monitoring.";
-    basis = `${violationCount} recorded violation(s) and ${normalizedRisk} risk level.`;
-  } else if (skillsOrQualityConcern) {
-    primaryCode = "EMPLOYEE_TRAINING";
-    reason =
-      "Employee concern appears connected to task quality, safety, productivity, or competency gaps. Skills-based training is recommended.";
-    basis = `${violationCount} recorded skills or quality-related concern(s).`;
-  } else if (attendanceOrPolicyConcern || repeatedSameViolation) {
-    primaryCode = "SEMINAR_WEBINAR";
-    reason =
-      "Employee concern appears connected to attendance, policy awareness, or recurring behavior. A refresher seminar or webinar is recommended.";
-    basis =
-      commonViolation.count > 1
-        ? `Recurring concern detected: ${commonViolation.violation}.`
-        : `${violationCount} recorded policy or attendance-related concern(s).`;
   }
 
   const primaryAction = getActionByCode(primaryCode);
+
+  const reason = buildDynamicReason({
+    primaryCode,
+    violationCount,
+    criticalIncidentCount,
+    severityScore,
+    normalizedRisk,
+    normalizedKPI,
+    relatedIncidents,
+    commonViolation,
+    repeatedSameViolation,
+    attendanceOrPolicyConcern,
+  });
+
+  const basis = buildDynamicBasis({
+    violationCount,
+    criticalIncidentCount,
+    severityScore,
+    normalizedRisk,
+    normalizedKPI,
+    relatedIncidents,
+    commonViolation,
+  });
 
   const applicableActions = WELLJOB_LOW_KPI_ACTIONS.filter((action) => {
     if (action.code === primaryCode) return true;
@@ -406,7 +548,10 @@ export function getCorrectiveActionRecommendation({
       return true;
     }
 
-    if (action.code === "REASSIGNMENT_OF_POSITION" && possibleRoleMismatch) {
+    if (
+      action.code === "REASSIGNMENT_OF_POSITION" &&
+      possibleRoleMismatch
+    ) {
       return true;
     }
 
