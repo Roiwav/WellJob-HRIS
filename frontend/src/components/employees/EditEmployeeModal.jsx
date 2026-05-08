@@ -19,11 +19,13 @@ import {
   toProperName,
   createDefaultDocuments,
   getDocumentStatus,
+} from "./employeeConstants";
+import {
   ErrorText,
   StatusPill,
   SummaryRow,
   ReviewBox,
-} from "./EmployeeUtils";
+} from "./EmployeeComponents";
 
 function parseEmployeeDocuments(documents) {
   if (typeof documents === "string") {
