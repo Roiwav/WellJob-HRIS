@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { FiBarChart2, FiDownload, FiRefreshCw, FiTrendingUp } from "react-icons/fi";
+import {
+  FiBarChart2,
+  FiDownload,
+  FiRefreshCw,
+  FiTrendingDown,
+  FiTrendingUp,
+} from "react-icons/fi";
 
 import ExecutiveActionItems from "../components/dashboard/insights/ExecutiveActionItems";
 import WorkforceHealthBanner from "../components/dashboard/insights/WorkforceHealthBanner";
@@ -25,6 +31,7 @@ import CaseAgingChart from "../components/dashboard/charts/CaseAgingChart";
 const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
+const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
 
 const monthList = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun", 
@@ -43,8 +50,9 @@ function normalizeStatus(status) {
   if (value === "for review") return "For Review";
   if (value === "closed") return "Closed";
   if (value === "investigating") return "Investigating";
+  if (value === "open") return "Open";
 
-  return "Open";
+  return status || "Open";
 }
 
 function isArchivedEmployee(employee) {
@@ -116,6 +124,45 @@ function normalizeBackendIncident(incident) {
   };
 }
 
+function normalizeBackendDeployment(deployment) {
+  const date =
+    deployment.deploymentDate ||
+    deployment.deployment_date ||
+    deployment.startDate ||
+    deployment.start_date ||
+    deployment.contractStart ||
+    deployment.contract_start ||
+    deployment.createdAt ||
+    deployment.created_at ||
+    deployment.date ||
+    "";
+
+  return {
+    ...deployment,
+    id: deployment.id,
+    employeeId:
+      deployment.employeeId ||
+      deployment.employee_id ||
+      deployment.empId ||
+      deployment.employeeID ||
+      "",
+    employee:
+      deployment.employee ||
+      deployment.employeeName ||
+      deployment.employee_name ||
+      "Unknown Employee",
+    company:
+      deployment.company ||
+      deployment.clientCompany ||
+      deployment.client_company ||
+      "Unassigned",
+    status: deployment.status || deployment.deployment_status || "Active",
+    date,
+    deploymentDate: date,
+    createdAt: deployment.createdAt || deployment.created_at || date,
+  };
+}
+
 async function requestJson(url) {
   const response = await fetch(url);
   const data = await response.json().catch(() => null);
@@ -131,11 +178,20 @@ async function requestJson(url) {
   return data;
 }
 
+async function safeRequestJson(url, fallback = []) {
+  try {
+    return await requestJson(url);
+  } catch (error) {
+    console.warn(`Optional dashboard request failed: ${url}`, error.message);
+    return fallback;
+  }
+}
+
 function normalizeDateValue(value) {
   if (!value) return "";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
 
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -164,6 +220,78 @@ function getDeploymentTrendDate(employee) {
     employee?.date ||
     ""
   );
+}
+
+function getDeploymentRecordDate(record) {
+  return (
+    record?.deploymentDate ||
+    record?.deployment_date ||
+    record?.startDate ||
+    record?.start_date ||
+    record?.contractStart ||
+    record?.contract_start ||
+    record?.createdAt ||
+    record?.created_at ||
+    record?.date ||
+    ""
+  );
+}
+
+function countRecordsByYear(records = [], getDate, year) {
+  return records.filter((record) => {
+    const dateValue = normalizeDateValue(getDate(record));
+    return dateValue && dateValue.slice(0, 4) === String(year);
+  }).length;
+}
+
+function buildYearComparison({ current, previous, goodWhenUp = true }) {
+  const currentValue = Number(current) || 0;
+  const previousValue = Number(previous) || 0;
+  const diff = currentValue - previousValue;
+
+  let percent = 0;
+
+  if (previousValue > 0) {
+    percent = Math.round((Math.abs(diff) / previousValue) * 100);
+  }
+
+  const isUp = diff > 0;
+  const isDown = diff < 0;
+
+  let label = "No change vs last year";
+
+  if (previousValue === 0 && currentValue > 0) {
+    label = "New records this year";
+  } else if (isUp) {
+    label = `↑ ${percent}% vs last year`;
+  } else if (isDown) {
+    label = `↓ ${percent}% vs last year`;
+  }
+
+  let tone = "neutral";
+
+  if (isUp) {
+    tone = goodWhenUp ? "good" : "bad";
+  } else if (isDown) {
+    tone = goodWhenUp ? "bad" : "good";
+  }
+
+  return {
+    current: currentValue,
+    previous: previousValue,
+    diff,
+    percent,
+    label,
+    direction: isUp ? "up" : isDown ? "down" : "flat",
+    tone,
+  };
+}
+
+function formatDiff(value) {
+  const number = Number(value) || 0;
+
+  if (number > 0) return `+${number}`;
+  return String(number);
 }
 
 function isInSelectedDashboardRange(value, selectedYear, selectedMonth) {
@@ -348,15 +476,17 @@ export default function Dashboard() {
     incidents: [],
     rawEmployees: [],
     rawIncidents: [],
+    rawDeployments: [],
   });
 
   const loadData = useCallback(async () => {
     try {
       setFetchError("");
 
-      const [employeeData, incidentData] = await Promise.all([
+      const [employeeData, incidentData, deploymentData] = await Promise.all([
         requestJson(EMPLOYEE_API_URL),
         requestJson(INCIDENT_API_URL),
+        safeRequestJson(DEPLOYMENT_API_URL, []),
       ]);
 
       const employeesRaw = Array.isArray(employeeData)
@@ -367,12 +497,24 @@ export default function Dashboard() {
         ? incidentData.map(normalizeBackendIncident)
         : [];
 
+      const deploymentsRaw = Array.isArray(deploymentData)
+        ? deploymentData.map(normalizeBackendDeployment)
+        : [];
+
       const activeEmployees = employeesRaw.filter((emp) => !emp.archived);
       const deployedEmployees = activeEmployees.filter(isEmployeeDeployed);
 
-      const workforce = deployedEmployees
-        .map((employee) => ({
-          date: normalizeDateValue(getDeploymentTrendDate(employee)),
+      const workforceSource =
+        deploymentsRaw.length > 0
+          ? deploymentsRaw
+          : deployedEmployees.map((employee) => ({
+              ...employee,
+              date: getDeploymentTrendDate(employee),
+            }));
+
+      const workforce = workforceSource
+        .map((record) => ({
+          date: normalizeDateValue(getDeploymentRecordDate(record)),
           employees: 1,
         }))
         .filter((item) => item.date);
@@ -398,10 +540,12 @@ export default function Dashboard() {
         incidents,
         rawEmployees: activeEmployees,
         rawIncidents: incidentsRaw,
+        rawDeployments: deploymentsRaw,
       });
 
       localStorage.setItem("employees", JSON.stringify(activeEmployees));
       localStorage.setItem("incidents", JSON.stringify(incidentsRaw));
+      localStorage.setItem("deployments", JSON.stringify(deploymentsRaw));
       window.dispatchEvent(new Event("dataUpdated"));
 
       setLastUpdated(formatLastUpdated());
@@ -442,8 +586,13 @@ export default function Dashboard() {
       if (item?.date) years.add(item.date.slice(0, 4));
     });
 
+    data.rawDeployments.forEach((item) => {
+      const date = normalizeDateValue(getDeploymentRecordDate(item));
+      if (date) years.add(date.slice(0, 4));
+    });
+
     return [...years].sort((a, b) => Number(b) - Number(a));
-  }, [data.workforce, data.incidents, currentYear]);
+  }, [data.workforce, data.incidents, data.rawDeployments, currentYear]);
 
   const availableMonths = useMemo(() => {
     return monthList.map((month, index) => {
@@ -504,7 +653,11 @@ export default function Dashboard() {
 
   const reportScope = useMemo(() => {
     const scopedIncidents = data.rawIncidents.filter((incident) =>
-      isInSelectedDashboardRange(getRecordDate(incident), selectedYear, selectedMonth)
+      isInSelectedDashboardRange(
+        getRecordDate(incident),
+        selectedYear,
+        selectedMonth
+      )
     );
 
     return {
@@ -548,7 +701,7 @@ export default function Dashboard() {
   const dashboardInsights = useMemo(() => {
     return buildDashboardInsights({
       employees: data.rawEmployees,
-      incidents: data.rawIncidents, 
+      incidents: data.rawIncidents,
       selectedYear,
       selectedMonth,
       kpis: currentKPIS,
@@ -563,6 +716,53 @@ export default function Dashboard() {
     utilizationRate,
   ]);
 
+  const yearlyComparison = useMemo(() => {
+    const currentSelectedYear = Number(selectedYear);
+    const previousYear = currentSelectedYear - 1;
+
+    const deploymentSource =
+      data.rawDeployments.length > 0 ? data.rawDeployments : data.workforce;
+
+    const currentDeploymentRecords = countRecordsByYear(
+      deploymentSource,
+      getDeploymentRecordDate,
+      currentSelectedYear
+    );
+
+    const previousDeploymentRecords = countRecordsByYear(
+      deploymentSource,
+      getDeploymentRecordDate,
+      previousYear
+    );
+
+    const currentIncidentRecords = countRecordsByYear(
+      data.rawIncidents,
+      getRecordDate,
+      currentSelectedYear
+    );
+
+    const previousIncidentRecords = countRecordsByYear(
+      data.rawIncidents,
+      getRecordDate,
+      previousYear
+    );
+
+    return {
+      selectedYear: currentSelectedYear,
+      previousYear,
+      deployment: buildYearComparison({
+        current: currentDeploymentRecords,
+        previous: previousDeploymentRecords,
+        goodWhenUp: true,
+      }),
+      incident: buildYearComparison({
+        current: currentIncidentRecords,
+        previous: previousIncidentRecords,
+        goodWhenUp: false,
+      }),
+    };
+  }, [data.rawDeployments, data.workforce, data.rawIncidents, selectedYear]);
+
   const kpiTrendData = useMemo(
     () => ({
       total: {
@@ -571,9 +771,9 @@ export default function Dashboard() {
         tone: "neutral",
       },
       deployed: {
-        label: "Current deployed",
-        direction: "flat",
-        tone: "neutral",
+        label: yearlyComparison.deployment.label,
+        direction: yearlyComparison.deployment.direction,
+        tone: yearlyComparison.deployment.tone,
       },
       available: {
         label: "Current available",
@@ -591,9 +791,9 @@ export default function Dashboard() {
             : "neutral",
       },
       activeIncidents: {
-        label: "Current active cases",
-        direction: "flat",
-        tone: currentKPIS.activeIncidents > 0 ? "bad" : "good",
+        label: yearlyComparison.incident.label,
+        direction: yearlyComparison.incident.direction,
+        tone: yearlyComparison.incident.tone,
       },
       expiringDocs: {
         label: `${currentKPIS.expiringDocs} due soon`,
@@ -601,7 +801,7 @@ export default function Dashboard() {
         tone: currentKPIS.expiringDocs > 0 ? "bad" : "good",
       },
     }),
-    [currentKPIS, utilizationRate]
+    [currentKPIS, utilizationRate, yearlyComparison]
   );
 
   const handleOpenDrilldown = useCallback(
@@ -693,6 +893,24 @@ export default function Dashboard() {
         ["Peak Deployment Month", peakDeploymentMonth],
         ["Highest Incident Month", highestIncidentMonth],
         ["Top Severity in Scope", topSeverity],
+        [
+          `Deployment Records ${yearlyComparison.previousYear}`,
+          yearlyComparison.deployment.previous,
+        ],
+        [
+          `Deployment Records ${yearlyComparison.selectedYear}`,
+          yearlyComparison.deployment.current,
+        ],
+        ["Deployment Change", formatDiff(yearlyComparison.deployment.diff)],
+        [
+          `Incident Records ${yearlyComparison.previousYear}`,
+          yearlyComparison.incident.previous,
+        ],
+        [
+          `Incident Records ${yearlyComparison.selectedYear}`,
+          yearlyComparison.incident.current,
+        ],
+        ["Incident Change", formatDiff(yearlyComparison.incident.diff)],
       ],
       theme: "grid",
       headStyles: { fillColor: [79, 70, 229] },
@@ -745,6 +963,7 @@ export default function Dashboard() {
     workforceTrend,
     incidentTrend,
     executiveActions,
+    yearlyComparison,
   ]);
 
   if (loading) {
@@ -856,6 +1075,8 @@ export default function Dashboard() {
         onCardClick={handleOpenDrilldown}
       />
 
+      <YearlyComparisonPanel comparison={yearlyComparison} />
+
       <WorkforceHealthBanner health={dashboardInsights.health} />
 
       <ExecutiveActionItems actions={executiveActions} />
@@ -922,6 +1143,154 @@ export default function Dashboard() {
   );
 }
 
+function YearlyComparisonPanel({ comparison }) {
+  if (!comparison) return null;
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+            Yearly Performance Comparison
+          </h2>
+
+          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            Compares selected year records against the previous year using
+            deployment and incident history.
+          </p>
+        </div>
+
+        <span className="w-fit rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-extrabold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+          {comparison.previousYear} vs {comparison.selectedYear}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <YearlyComparisonCard
+          title="Deployment Growth"
+          description="Tracks deployment records created per year."
+          previousYear={comparison.previousYear}
+          selectedYear={comparison.selectedYear}
+          data={comparison.deployment}
+          positiveIcon={<FiTrendingUp />}
+          goodLabel="Deployment increased compared to the previous year."
+          badLabel="Deployment decreased compared to the previous year."
+          neutralLabel="Deployment remained stable compared to the previous year."
+        />
+
+        <YearlyComparisonCard
+          title="Incident Reduction"
+          description="Tracks incident records created per year."
+          previousYear={comparison.previousYear}
+          selectedYear={comparison.selectedYear}
+          data={comparison.incident}
+          positiveIcon={<FiTrendingDown />}
+          goodLabel="Incident records decreased compared to the previous year."
+          badLabel="Incident records increased compared to the previous year."
+          neutralLabel="Incident level remained stable compared to the previous year."
+        />
+      </div>
+    </section>
+  );
+}
+
+function YearlyComparisonCard({
+  title,
+  description,
+  previousYear,
+  selectedYear,
+  data,
+  positiveIcon,
+  goodLabel,
+  badLabel,
+  neutralLabel,
+}) {
+  const toneClasses = {
+    good: {
+      card: "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
+      icon: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+      text: "text-emerald-700 dark:text-emerald-300",
+      badge:
+        "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+    },
+    bad: {
+      card: "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10",
+      icon: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
+      text: "text-red-700 dark:text-red-300",
+      badge: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
+    },
+    neutral: {
+      card: "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40",
+      icon: "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
+      text: "text-slate-700 dark:text-slate-300",
+      badge: "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
+    },
+  };
+
+  const styles = toneClasses[data?.tone] || toneClasses.neutral;
+
+  const interpretation =
+    data?.tone === "good"
+      ? goodLabel
+      : data?.tone === "bad"
+      ? badLabel
+      : neutralLabel;
+
+  return (
+    <article className={`rounded-2xl border p-5 ${styles.card}`}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg ${styles.icon}`}
+          >
+            {data?.tone === "good" ? positiveIcon : <FiTrendingUp />}
+          </div>
+
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+              {title}
+            </h3>
+
+            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              {description}
+            </p>
+          </div>
+        </div>
+
+        <span
+          className={`w-fit rounded-full px-3 py-1 text-xs font-extrabold ${styles.badge}`}
+        >
+          {data?.label || "No comparison"}
+        </span>
+      </div>
+
+      <div className="mt-5 grid grid-cols-3 gap-3">
+        <MiniYearMetric label={previousYear} value={data?.previous || 0} />
+        <MiniYearMetric label={selectedYear} value={data?.current || 0} />
+        <MiniYearMetric label="Change" value={formatDiff(data?.diff || 0)} />
+      </div>
+
+      <p className={`mt-4 text-sm font-bold ${styles.text}`}>
+        {interpretation}
+      </p>
+    </article>
+  );
+}
+
+function MiniYearMetric({ label, value }) {
+  return (
+    <div className="rounded-xl bg-white/70 px-3 py-3 text-center dark:bg-slate-950/30">
+      <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-1 text-lg font-black text-slate-900 dark:text-white">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function InsightCard({ title, value, tone = "indigo" }) {
   const tones = {
     indigo:
@@ -967,12 +1336,14 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
     "V. BETRAYAL OF TRUST / DISHONESTY",
     "VI. HEALTH, SAFETY, SECURITY, AND SANITATION",
     "VII. SEXUAL HARASSMENT",
-    "VIII. HABITUAL VIOLATIONS"
+    "VIII. HABITUAL VIOLATIONS",
   ];
 
   const basePredictions = predictions[forecastRange] || [];
-  const activePredictions = basePredictions.filter(p => 
-    selectedCategory === 'All Categories' || p.category === selectedCategory
+  const activePredictions = basePredictions.filter(
+    (prediction) =>
+      selectedCategory === "All Categories" ||
+      prediction.category === selectedCategory
   );
 
   return (
@@ -984,6 +1355,7 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 dark:shadow-none">
             <FiTrendingUp size={24} />
           </div>
+
           <div>
             <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">System Forecasting & Next Steps</h2>
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Run-rate predictive analysis based on current workforce data.</p>
@@ -996,13 +1368,18 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="h-10 cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           >
-            {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+            {CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
           </select>
 
           <div className="flex shrink-0 rounded-xl bg-indigo-100/60 p-1 dark:bg-slate-800/80">
             {['weekly', 'monthly', 'yearly'].map(range => (
               <button
                 key={range}
+                type="button"
                 onClick={() => setForecastRange(range)}
                 className={`rounded-lg px-5 py-2 text-xs font-bold transition-all ${
                   forecastRange === range 

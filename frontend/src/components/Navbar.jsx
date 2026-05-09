@@ -313,25 +313,24 @@ export default function Navbar({
                 setOpenProfile((prev) => !prev);
                 setOpenNotifications(false);
               }}
-              className="flex items-center gap-3 rounded-xl px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10"
+className="flex max-w-[260px] items-center gap-3 rounded-xl px-2 py-1.5 text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10"            >
+            <div
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${roleConfig.color}`}
             >
-              <div
-                className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white ${roleConfig.color}`}
-              >
-                {roleConfig.label}
-              </div>
+              {roleConfig.label}
+            </div>
 
-              <div className="hidden text-left sm:block">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  {roleConfig.roleName}
-                </p>
-              </div>
+            <div className="hidden min-w-0 text-left sm:block">
+              <p className="max-w-[190px] truncate text-sm font-bold leading-5 text-gray-900 dark:text-white">
+                {displayName}
+              </p>
+            </div>
 
-              <FiChevronDown
-                className={`text-sm transition-transform ${
-                  openProfile ? "rotate-180" : ""
-                }`}
-              />
+            <FiChevronDown
+              className={`shrink-0 text-sm transition-transform ${
+                openProfile ? "rotate-180" : ""
+              }`}
+            />
             </button>
 
             {openProfile && (
