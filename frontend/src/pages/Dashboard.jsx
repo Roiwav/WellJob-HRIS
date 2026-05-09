@@ -73,9 +73,8 @@ function normalizeStatus(status) {
   if (value === "for review") return "For Review";
   if (value === "closed") return "Closed";
   if (value === "investigating") return "Investigating";
-  if (value === "open") return "Open";
 
-  return status || "Open";
+  return "Open";
 }
 
 function isArchivedEmployee(employee) {
@@ -148,40 +147,64 @@ function normalizeBackendIncident(incident) {
 }
 
 function normalizeBackendDeployment(deployment) {
+  const employeeId =
+    deployment.employeeId ||
+    deployment.employee_id ||
+    deployment.empId ||
+    deployment.employeeID ||
+    deployment.id ||
+    "";
+
   const date =
+    deployment.start ||
     deployment.deploymentDate ||
     deployment.deployment_date ||
-    deployment.startDate ||
-    deployment.start_date ||
     deployment.contractStart ||
     deployment.contract_start ||
+    deployment.startDate ||
+    deployment.start_date ||
     deployment.createdAt ||
     deployment.created_at ||
-    deployment.date ||
     "";
 
   return {
     ...deployment,
-    id: deployment.id,
-    employeeId:
-      deployment.employeeId ||
-      deployment.employee_id ||
-      deployment.empId ||
-      deployment.employeeID ||
-      "",
+    id: deployment.deploymentId || deployment.deployment_id || deployment.id,
+    deploymentId:
+      deployment.deploymentId || deployment.deployment_id || deployment.id,
+    employeeId,
     employee:
       deployment.employee ||
       deployment.employeeName ||
       deployment.employee_name ||
+      deployment.name ||
       "Unknown Employee",
     company:
       deployment.company ||
       deployment.clientCompany ||
       deployment.client_company ||
       "Unassigned",
-    status: deployment.status || deployment.deployment_status || "Active",
+    status:
+      deployment.status ||
+      deployment.deploymentStatus ||
+      deployment.deployment_status ||
+      "Active",
     date,
-    deploymentDate: date,
+    start: date,
+    contractStart:
+      deployment.contractStart ||
+      deployment.contract_start ||
+      deployment.deploymentDate ||
+      deployment.deployment_date ||
+      date,
+    contractEnd:
+      deployment.contractEnd ||
+      deployment.contract_end ||
+      deployment.endDate ||
+      deployment.end_date ||
+      deployment.deploymentEnd ||
+      deployment.deployment_end ||
+      null,
     createdAt: deployment.createdAt || deployment.created_at || date,
   };
 }
@@ -205,7 +228,7 @@ async function safeRequestJson(url, fallback = []) {
   try {
     return await requestJson(url);
   } catch (error) {
-    console.warn(`Optional dashboard request failed: ${url}`, error.message);
+    console.warn(`Optional request failed: ${url}`, error);
     return fallback;
   }
 }
@@ -214,7 +237,7 @@ function normalizeDateValue(value) {
   if (!value) return "";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  if (Number.isNaN(date.getTime())) return String(value);
 
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -226,7 +249,9 @@ function normalizeDateValue(value) {
 function getRecordDate(record) {
   return (
     record?.reportedAt ||
+    record?.reported_at ||
     record?.createdAt ||
+    record?.created_at ||
     record?.incidentDate ||
     record?.incident_date ||
     record?.date ||
@@ -247,74 +272,18 @@ function getDeploymentTrendDate(employee) {
 
 function getDeploymentRecordDate(record) {
   return (
+    record?.start ||
     record?.deploymentDate ||
     record?.deployment_date ||
-    record?.startDate ||
-    record?.start_date ||
     record?.contractStart ||
     record?.contract_start ||
+    record?.startDate ||
+    record?.start_date ||
     record?.createdAt ||
     record?.created_at ||
     record?.date ||
     ""
   );
-}
-
-function countRecordsByYear(records = [], getDate, year) {
-  return records.filter((record) => {
-    const dateValue = normalizeDateValue(getDate(record));
-    return dateValue && dateValue.slice(0, 4) === String(year);
-  }).length;
-}
-
-function buildYearComparison({ current, previous, goodWhenUp = true }) {
-  const currentValue = Number(current) || 0;
-  const previousValue = Number(previous) || 0;
-  const diff = currentValue - previousValue;
-
-  let percent = 0;
-
-  if (previousValue > 0) {
-    percent = Math.round((Math.abs(diff) / previousValue) * 100);
-  }
-
-  const isUp = diff > 0;
-  const isDown = diff < 0;
-
-  let label = "No change vs last year";
-
-  if (previousValue === 0 && currentValue > 0) {
-    label = "New records this year";
-  } else if (isUp) {
-    label = `↑ ${percent}% vs last year`;
-  } else if (isDown) {
-    label = `↓ ${percent}% vs last year`;
-  }
-
-  let tone = "neutral";
-
-  if (isUp) {
-    tone = goodWhenUp ? "good" : "bad";
-  } else if (isDown) {
-    tone = goodWhenUp ? "bad" : "good";
-  }
-
-  return {
-    current: currentValue,
-    previous: previousValue,
-    diff,
-    percent,
-    label,
-    direction: isUp ? "up" : isDown ? "down" : "flat",
-    tone,
-  };
-}
-
-function formatDiff(value) {
-  const number = Number(value) || 0;
-
-  if (number > 0) return `+${number}`;
-  return String(number);
 }
 
 function isInSelectedDashboardRange(value, selectedYear, selectedMonth) {
@@ -346,7 +315,7 @@ function aggregateByMonth(dataset = [], key, year, isCurrentYear) {
 
         if (
           !itemDate ||
-          !itemDate.startsWith(year) ||
+          !itemDate.startsWith(String(year)) ||
           itemDate.slice(5, 7) !== monthNumber
         ) {
           return sum;
@@ -571,7 +540,23 @@ export default function Dashboard() {
           : [];
 
         const activeEmployees = employeesRaw.filter((emp) => !emp.archived);
-        const deployedEmployees = activeEmployees.filter(isEmployeeDeployed);
+
+        const deployedEmployeeIdSet = new Set(
+          deploymentsRaw
+            .filter((deployment) => {
+              const status = normalizeText(deployment.status);
+              return status === "active" || status === "deployed";
+            })
+            .map((deployment) => String(deployment.employeeId || ""))
+            .filter(Boolean)
+        );
+
+        const deployedEmployees =
+          deployedEmployeeIdSet.size > 0
+            ? activeEmployees.filter((employee) =>
+                deployedEmployeeIdSet.has(String(employee.employeeId || employee.id))
+              )
+            : activeEmployees.filter(isEmployeeDeployed);
 
         const workforceSource =
           deploymentsRaw.length > 0
@@ -691,13 +676,8 @@ export default function Dashboard() {
       if (item?.date) years.add(item.date.slice(0, 4));
     });
 
-    data.rawDeployments.forEach((item) => {
-      const date = normalizeDateValue(getDeploymentRecordDate(item));
-      if (date) years.add(date.slice(0, 4));
-    });
-
     return [...years].sort((a, b) => Number(b) - Number(a));
-  }, [data.workforce, data.incidents, data.rawDeployments, currentYear]);
+  }, [data.workforce, data.incidents, currentYear]);
 
   const availableMonths = useMemo(() => {
     return monthList.map((month, index) => {
@@ -852,53 +832,6 @@ export default function Dashboard() {
     utilizationRate,
   ]);
 
-  const yearlyComparison = useMemo(() => {
-    const currentSelectedYear = Number(selectedYear);
-    const previousYear = currentSelectedYear - 1;
-
-    const deploymentSource =
-      data.rawDeployments.length > 0 ? data.rawDeployments : data.workforce;
-
-    const currentDeploymentRecords = countRecordsByYear(
-      deploymentSource,
-      getDeploymentRecordDate,
-      currentSelectedYear
-    );
-
-    const previousDeploymentRecords = countRecordsByYear(
-      deploymentSource,
-      getDeploymentRecordDate,
-      previousYear
-    );
-
-    const currentIncidentRecords = countRecordsByYear(
-      data.rawIncidents,
-      getRecordDate,
-      currentSelectedYear
-    );
-
-    const previousIncidentRecords = countRecordsByYear(
-      data.rawIncidents,
-      getRecordDate,
-      previousYear
-    );
-
-    return {
-      selectedYear: currentSelectedYear,
-      previousYear,
-      deployment: buildYearComparison({
-        current: currentDeploymentRecords,
-        previous: previousDeploymentRecords,
-        goodWhenUp: true,
-      }),
-      incident: buildYearComparison({
-        current: currentIncidentRecords,
-        previous: previousIncidentRecords,
-        goodWhenUp: false,
-      }),
-    };
-  }, [data.rawDeployments, data.workforce, data.rawIncidents, selectedYear]);
-
   const kpiTrendData = useMemo(
     () => ({
       total: {
@@ -907,9 +840,9 @@ export default function Dashboard() {
         tone: "neutral",
       },
       deployed: {
-        label: yearlyComparison.deployment.label,
-        direction: yearlyComparison.deployment.direction,
-        tone: yearlyComparison.deployment.tone,
+        label: "Current deployed",
+        direction: "flat",
+        tone: "neutral",
       },
       available: {
         label: "Current available",
@@ -927,9 +860,9 @@ export default function Dashboard() {
             : "neutral",
       },
       activeIncidents: {
-        label: yearlyComparison.incident.label,
-        direction: yearlyComparison.incident.direction,
-        tone: yearlyComparison.incident.tone,
+        label: "Current active cases",
+        direction: "flat",
+        tone: currentKPIS.activeIncidents > 0 ? "bad" : "good",
       },
       expiringDocs: {
         label: `${currentKPIS.expiringDocs} due soon`,
@@ -937,7 +870,7 @@ export default function Dashboard() {
         tone: currentKPIS.expiringDocs > 0 ? "bad" : "good",
       },
     }),
-    [currentKPIS, utilizationRate, yearlyComparison]
+    [currentKPIS, utilizationRate]
   );
 
   const handleOpenDrilldown = useCallback(
@@ -1017,7 +950,7 @@ export default function Dashboard() {
     doc.setFontSize(12);
     doc.text("Executive Workforce Dashboard Report", 14, 26);
     doc.text(`Report Scope: ${selectedPeriodLabel}`, 14, 34);
-    doc.text(`Generated: ${lastUpdated}`, 14, 42);
+    doc.text(`Generated: ${lastUpdated || formatLastUpdated()}`, 14, 42);
 
     autoTable(doc, {
       startY: 52,
@@ -1034,24 +967,6 @@ export default function Dashboard() {
         ["Peak Deployment Month", peakDeploymentMonth],
         ["Highest Incident Month", highestIncidentMonth],
         ["Top Severity in Scope", topSeverity],
-        [
-          `Deployment Records ${yearlyComparison.previousYear}`,
-          yearlyComparison.deployment.previous,
-        ],
-        [
-          `Deployment Records ${yearlyComparison.selectedYear}`,
-          yearlyComparison.deployment.current,
-        ],
-        ["Deployment Change", formatDiff(yearlyComparison.deployment.diff)],
-        [
-          `Incident Records ${yearlyComparison.previousYear}`,
-          yearlyComparison.incident.previous,
-        ],
-        [
-          `Incident Records ${yearlyComparison.selectedYear}`,
-          yearlyComparison.incident.current,
-        ],
-        ["Incident Change", formatDiff(yearlyComparison.incident.diff)],
       ],
       theme: "grid",
       headStyles: { fillColor: [79, 70, 229] },
@@ -1060,12 +975,15 @@ export default function Dashboard() {
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 10,
       head: [["Priority", "Type", "Recommendation", "Basis"]],
-      body: executiveActions.map((action) => [
-        action.priority,
-        action.type,
-        action.recommendation,
-        action.basis || "-",
-      ]),
+      body:
+        executiveActions.length > 0
+          ? executiveActions.map((action) => [
+              action.priority,
+              action.type,
+              action.recommendation,
+              action.basis || "-",
+            ])
+          : [["-", "No Alert", "No priority action item detected.", "-"]],
       theme: "grid",
       headStyles: { fillColor: [22, 163, 74] },
       styles: { fontSize: 8 },
@@ -1104,7 +1022,6 @@ export default function Dashboard() {
     workforceTrend,
     incidentTrend,
     executiveActions,
-    yearlyComparison,
   ]);
 
   if (loading) {
@@ -1142,7 +1059,7 @@ export default function Dashboard() {
               </p>
 
               <p className="mt-3 text-xs text-white/70">
-                Last Updated: {lastUpdated}
+                Last Updated: {lastUpdated || "Not yet updated"}
               </p>
 
               <p className="mt-1 text-xs font-semibold text-white/70">
@@ -1188,7 +1105,7 @@ export default function Dashboard() {
                 type="button"
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/25 disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <FiRefreshCw className={refreshing ? "animate-spin" : ""} />
                 {refreshing ? "Refreshing..." : "Refresh"}
@@ -1198,7 +1115,7 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={handleExportPDF}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 hover:bg-indigo-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50"
                 >
                   <FiDownload />
                   Export PDF
@@ -1329,7 +1246,7 @@ function PredictiveInsightsPanel({
   const [forecastRange, setForecastRange] = useState("weekly");
   const [selectedCategory, setSelectedCategory] = useState("All Categories");
 
-  const CATEGORIES = [
+  const categories = [
     "All Categories",
     "I. ABSENCES AND TARDINESS",
     "II. DISORDERLY CONDUCT AND MISBEHAVIOR",
@@ -1341,7 +1258,10 @@ function PredictiveInsightsPanel({
     "VIII. HABITUAL VIOLATIONS",
   ];
 
-  const basePredictions = predictions[forecastRange] || [];
+  const basePredictions = Array.isArray(predictions?.[forecastRange])
+    ? predictions[forecastRange]
+    : [];
+
   const activePredictions = basePredictions.filter(
     (prediction) =>
       selectedCategory === "All Categories" ||
@@ -1373,7 +1293,7 @@ function PredictiveInsightsPanel({
             onChange={(event) => setSelectedCategory(event.target.value)}
             className="h-10 cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           >
-            {CATEGORIES.map((category) => (
+            {categories.map((category) => (
               <option key={category} value={category}>
                 {category}
               </option>
@@ -1416,7 +1336,7 @@ function PredictiveInsightsPanel({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {activePredictions.map((prediction) => {
+          {activePredictions.map((prediction, index) => {
             const isForecast = String(prediction.action || "").includes(
               "Forecast:"
             );
@@ -1428,14 +1348,14 @@ function PredictiveInsightsPanel({
 
             return (
               <div
-                key={prediction.id}
+                key={prediction.id || `${prediction.category}-${index}`}
                 className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
               >
                 <div>
                   <div className="mb-4 flex items-start justify-between gap-2">
                     <div className="flex flex-col">
                       <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
-                        {prediction.percentage}
+                        {prediction.percentage || "0%"}
                       </span>
 
                       <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
@@ -1444,16 +1364,16 @@ function PredictiveInsightsPanel({
                     </div>
 
                     <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                      {prediction.count} Cases
+                      {prediction.count || 0} Cases
                     </span>
                   </div>
 
                   <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
-                    {prediction.category}
+                    {prediction.category || "Uncategorized"}
                   </h4>
 
                   <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
-                    {prediction.title}
+                    {prediction.title || "Operational Notice"}
                   </h3>
                 </div>
 
@@ -1466,7 +1386,7 @@ function PredictiveInsightsPanel({
                         Forecast:{" "}
                       </span>
                     )}
-                    {actionText}
+                    {actionText || "No suggested action available."}
                   </p>
                 </div>
               </div>

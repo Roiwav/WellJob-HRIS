@@ -555,14 +555,12 @@ function getIncidentsLastNDays(incidents, days) {
 function generateCategoryForecast(incidents, range, totalEmployees) {
   const empCount = Math.max(totalEmployees, 1);
   
-  // Dynamic minimum count para lumabas ang card
   const minToShow = range === 'weekly' 
     ? Math.max(2, Math.ceil(0.001 * empCount)) 
     : range === 'monthly'
     ? Math.max(5, Math.ceil(0.003 * empCount))
     : Math.max(15, Math.ceil(0.01 * empCount)); 
 
-  // 8 Major Categories ayon sa Code of Conduct
   const counts = { c1:0, c2:0, c3:0, c4:0, c5:0, c6:0, c7:0, c8:0 };
 
   incidents.forEach((incident) => {
@@ -584,25 +582,22 @@ function generateCategoryForecast(incidents, range, totalEmployees) {
     if (count >= (zeroTolerance ? 1 : minToShow)) {
       const currentPercentage = ((count / empCount) * 100).toFixed(2);
       
-      // RUN-RATE PROJECTION MATH
       let projectedCount = 0;
       let projectionText = "";
 
       if (range === 'weekly') {
-        // Compute for next 30 days based on last 7 days velocity
         projectedCount = Math.ceil(count * (30 / 7));
         const projPerc = ((projectedCount / empCount) * 100).toFixed(2);
         projectionText = `Forecast: Expected to hit ~${projectedCount} cases (${projPerc}%) in the next 30 days if current weekly velocity continues. `;
       } else if (range === 'monthly') {
-        // Compute for next Quarter (90 days) based on last 30 days
         projectedCount = Math.ceil(count * 3);
         const projPerc = ((projectedCount / empCount) * 100).toFixed(2);
         projectionText = `Forecast: On track to reach ~${projectedCount} cases (${projPerc}%) by the end of the quarter. `;
       } else if (range === 'yearly') {
-        // Compute for Next Year (Applying a 15% compounding risk factor if uncorrected)
-        projectedCount = Math.ceil(count * 1.15);
+        // FLAT PROJECTION (Hindi na "OA"). Sasabihin lang na magtutuloy-tuloy ang problema next year.
+        projectedCount = count;
         const projPerc = ((projectedCount / empCount) * 100).toFixed(2);
-        projectionText = `Forecast: Projected to grow to ~${projectedCount} cases (${projPerc}%) next year due to uncorrected behavior trends. `;
+        projectionText = `Forecast: Expected to sustain ~${projectedCount} cases (${projPerc}%) annually if current systemic policies remain unchanged. `;
       }
 
       let baseAction = actionW;
@@ -615,7 +610,6 @@ function generateCategoryForecast(incidents, range, totalEmployees) {
         title, 
         count,
         percentage: `${currentPercentage}%`,
-        // Dito natin pinagsama ang Math Prediction at ang Next Step
         action: `${projectionText} ${baseAction}` 
       });
     }
@@ -624,17 +618,17 @@ function generateCategoryForecast(incidents, range, totalEmployees) {
   addPred("c1", "I. ABSENCES AND TARDINESS", counts.c1, "Manpower Shortage Forecast", 
     "Alert standby personnel immediately.", 
     "Review deployment schedules and shift viability.",
-    "Consider total rewards and leave policy adjustments.");
+    "Consider revisiting leave credits or attendance incentive programs.");
 
   addPred("c2", "II. DISORDERLY CONDUCT", counts.c2, "Workplace Harmony Risk", 
     "Intervention required to prevent site tension.", 
     "Initiate site-wide Code of Conduct re-orientation.",
-    "Major policy overhaul and site restructuring needed.");
+    "Persistent conduct issues may affect company culture. Review site engagement programs.");
 
   addPred("c3", "III. INSUBORDINATION", counts.c3, "Command Breakdown Alert", 
     "Stern warnings required to maintain authority.", 
     "Review supervisor effectiveness and site command chain.",
-    "Points to critical leadership gaps. Management review required.");
+    "Sustained insubordination suggests gaps in site leadership. Conduct supervisor training.");
 
   addPred("c4", "IV. NEGLECT OF DUTY", counts.c4, "Service Quality Degradation", 
     "Immediate supervisor coaching required.", 
@@ -644,7 +638,7 @@ function generateCategoryForecast(incidents, range, totalEmployees) {
   addPred("c5", "V. BETRAYAL OF TRUST", counts.c5, "Security & Integrity Breach", 
     "Secure premises and initiate immediate investigation.", 
     "Immediate replacement and legal clearance processing needed.", 
-    "Enforce stricter background checks and site audits.", true);
+    "Enforce stricter background checks and regular site audits.", true);
 
   addPred("c6", "VI. HEALTH & SAFETY", counts.c6, "Liability & Hazard Alert", 
     "Correct immediately to prevent accidents or client penalties.", 
@@ -659,7 +653,7 @@ function generateCategoryForecast(incidents, range, totalEmployees) {
   addPred("c8", "VIII. HABITUAL VIOLATIONS", counts.c8, "Policy Failure Forecast", 
     "Prepare disciplinary committee review.", 
     "Systematic review of employee disciplinary history required.",
-    "Overhaul disciplinary action and termination protocols.");
+    "Consistent repeat offenses indicate a need to review current disciplinary actions.");
 
   return predictions.sort((a, b) => b.count - a.count);
 }

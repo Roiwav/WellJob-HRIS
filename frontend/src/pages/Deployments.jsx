@@ -53,7 +53,6 @@ function normalizeDeployment(item) {
     item.employee_id ||
     item.empId ||
     item.employeeID ||
-    item.id ||
     "";
 
   const deploymentId = item.deploymentId || item.deployment_id || item.id || "";
@@ -96,7 +95,11 @@ function normalizeDeployment(item) {
       item.company ||
       "-",
     start,
-    status: item.status || item.deploymentStatus || item.deployment_status || "Active",
+    status:
+      item.status ||
+      item.deploymentStatus ||
+      item.deployment_status ||
+      "Active",
     employmentType: item.employmentType || item.employment_type || "Permanent",
     contractStart:
       item.contractStart ||
@@ -335,6 +338,8 @@ export default function Deployments() {
           </div>
         )}
 
+        <ClientDeploymentSummary deployments={deployments} />
+
         <div className="flex flex-col items-start gap-3 xl:flex-row xl:items-center">
           <div className="relative w-full max-w-xs">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
@@ -400,5 +405,126 @@ export default function Deployments() {
 
       <DeploymentToast show={showToast} message={toastMessage} />
     </>
+  );
+}
+
+function ClientDeploymentSummary({ deployments = [] }) {
+  const summary = useMemo(() => {
+    const companyMap = new Map();
+
+    deployments.forEach((deployment) => {
+      const company = deployment.company || "Unassigned Company";
+      const status = String(deployment.status || "Active").toLowerCase();
+
+      if (!companyMap.has(company)) {
+        companyMap.set(company, {
+          company,
+          total: 0,
+          active: 0,
+          completed: 0,
+          cancelled: 0,
+        });
+      }
+
+      const current = companyMap.get(company);
+      current.total += 1;
+
+      if (status === "completed") {
+        current.completed += 1;
+      } else if (status === "cancelled" || status === "canceled") {
+        current.cancelled += 1;
+      } else {
+        current.active += 1;
+      }
+    });
+
+    return Array.from(companyMap.values())
+      .sort((a, b) => b.total - a.total || a.company.localeCompare(b.company))
+      .slice(0, 24);
+  }, [deployments]);
+
+  const totalDeployments = deployments.length;
+  const totalCompanies = summary.length;
+  const activeDeployments = deployments.filter(
+    (deployment) =>
+      String(deployment.status || "Active").toLowerCase() === "active"
+  ).length;
+
+  if (deployments.length === 0) {
+    return (
+      <section className="rounded-3xl border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-gray-400">
+        No deployment summary available yet.
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <SummaryStatCard label="Total Deployments" value={totalDeployments} />
+        <SummaryStatCard label="Client Companies" value={totalCompanies} />
+        <SummaryStatCard label="Active Deployments" value={activeDeployments} />
+      </div>
+
+      <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+        <div className="mb-4 flex flex-col gap-1">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">
+            Client Deployment Summary
+          </h2>
+
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Shows deployment distribution per client company.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {summary.map((item) => (
+            <div
+              key={item.company}
+              className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-slate-950/40"
+            >
+              <p className="line-clamp-2 text-sm font-semibold text-gray-900 dark:text-white">
+                {item.company}
+              </p>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <SummaryMiniStat label="Total" value={item.total} />
+                <SummaryMiniStat label="Active" value={item.active} />
+                <SummaryMiniStat label="Completed" value={item.completed} />
+                <SummaryMiniStat label="Cancelled" value={item.cancelled} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SummaryStatCard({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+        {label}
+      </p>
+
+      <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function SummaryMiniStat({ label, value }) {
+  return (
+    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+      <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+        {label}
+      </p>
+
+      <p className="text-sm font-bold text-gray-900 dark:text-white">
+        {value}
+      </p>
+    </div>
   );
 }

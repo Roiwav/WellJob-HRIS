@@ -44,7 +44,6 @@ function StatusBadge({ status }) {
   );
 }
 
-// Tinatanggap natin ang isSuperAdmin prop dito
 export default function DeploymentTable({ deployments = [], openView, onUpdateRow, isSuperAdmin }) {
   const [editingId, setEditingId] = useState(null);
   const [tempDate, setTempDate] = useState("");
@@ -84,18 +83,20 @@ export default function DeploymentTable({ deployments = [], openView, onUpdateRo
         </span>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1000px] text-left">
-          <thead className="bg-gray-50 dark:bg-white/5">
-            <tr className="border-b border-gray-200 text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:border-white/10 dark:text-gray-400">
-              <th className="px-6 py-4">Employee ID</th>
-              <th className="px-6 py-4">Employee</th>
-              <th className="px-6 py-4">Company</th>
-              <th className="px-6 py-4">Location</th>
-              <th className="px-6 py-4">Start Date</th>
-              <th className="px-6 py-4">Contract End</th>
-              <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4 text-center">Actions</th>
+      {/* MODIFIED: Idinagdag ang max-height at overflow-y-auto para gumana ang sticky header */}
+      <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+        <table className="w-full min-w-[1000px] text-left border-separate border-spacing-0">
+          {/* MODIFIED: Ginawang sticky ang thead */}
+          <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-800">
+            <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Employee ID</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Employee</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Company</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Location</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Start Date</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Contract End</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Status</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10 text-center">Actions</th>
             </tr>
           </thead>
 
@@ -106,13 +107,13 @@ export default function DeploymentTable({ deployments = [], openView, onUpdateRo
                   key={deployment.id}
                   className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5"
                 >
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
                       {deployment.id || "-"}
                     </span>
                   </td>
 
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <p className="font-semibold text-gray-900 dark:text-white">
                       {deployment.employee || "-"}
                     </p>
@@ -171,7 +172,6 @@ export default function DeploymentTable({ deployments = [], openView, onUpdateRo
                         </>
                       ) : (
                         <>
-                          {/* Dito natin tinatago ang Edit button kung SUPER_ADMIN */}
                           {!isSuperAdmin && (
                             <button
                               type="button"
