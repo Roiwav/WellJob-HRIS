@@ -14,6 +14,7 @@ import ExecutiveActionItems from "../components/dashboard/insights/ExecutiveActi
 import WorkforceHealthBanner from "../components/dashboard/insights/WorkforceHealthBanner";
 import ExecutiveInsightTabs from "../components/dashboard/insights/ExecutiveInsightTabs";
 import DashboardDrilldownModal from "../components/dashboard/modals/DashboardDrilldownModal";
+import EditEmployeeModal from "../components/employees/EditEmployeeModal";
 
 import { buildExecutiveActionItems } from "../utils/dashboard/prescriptiveAnalytics";
 import { buildDashboardInsights } from "../utils/dashboard/dashboardInsights";
@@ -33,18 +34,8 @@ const INCIDENT_API_URL = `${API_BASE}/incidents`;
 const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
 
 const monthList = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ];
 
 function normalizeText(value) {
@@ -469,7 +460,9 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("");
   const [fetchError, setFetchError] = useState("");
+  
   const [activeDrilldown, setActiveDrilldown] = useState(null);
+  const [editingEmployee, setEditingEmployee] = useState(null);
 
   const [data, setData] = useState({
     kpis: {
@@ -830,6 +823,19 @@ export default function Dashboard() {
     [dashboardInsights, navigate]
   );
 
+  const handleRowClick = useCallback((row) => {
+    if (row.employeeId) {
+      const targetEmployee = data.rawEmployees.find(
+        (emp) => String(emp.id) === String(row.employeeId) || String(emp.employeeId) === String(row.employeeId)
+      );
+
+      if (targetEmployee) {
+        setEditingEmployee(targetEmployee);
+        setActiveDrilldown(null);
+      }
+    }
+  }, [data.rawEmployees]);
+
   const totalIncidentsForYear = useMemo(
     () => incidentTrend.reduce((sum, item) => sum + item.value, 0),
     [incidentTrend]
@@ -1119,7 +1125,20 @@ export default function Dashboard() {
       <DashboardDrilldownModal
         detail={activeDrilldown}
         onClose={() => setActiveDrilldown(null)}
+        onRowClick={handleRowClick}
       />
+
+      {editingEmployee && (
+        <EditEmployeeModal
+          employeeToEdit={editingEmployee}
+          employees={data.rawEmployees}
+          onClose={() => setEditingEmployee(null)}
+          onSaveSuccess={() => {
+            setEditingEmployee(null);
+            loadData();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1300,9 +1319,13 @@ function InsightCard({ title, value, tone = "indigo" }) {
   );
 }
 
-function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [] } }) {
-  const [forecastRange, setForecastRange] = useState("weekly");
-  const [selectedCategory, setSelectedCategory] = useState("All Categories");
+// ====================================================================
+// NEW COMPONENT: System Forecasting Panel (Portrait / Analytics UI)
+// ====================================================================
+
+function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], yearly: [] } }) {
+  const [forecastRange, setForecastRange] = useState('weekly');
+  const [selectedCategory, setSelectedCategory] = useState('All Categories');
 
   const CATEGORIES = [
     "All Categories",
@@ -1325,28 +1348,25 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [] } }) 
 
   return (
     <section className="rounded-3xl border border-indigo-200 bg-gradient-to-b from-indigo-50/40 to-white p-6 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/20 dark:to-slate-900">
-      <div className="mb-5 flex flex-col items-start justify-between gap-4 xl:flex-row xl:items-center">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md">
-            <FiTrendingUp size={20} />
+      
+      {/* Header and Controls */}
+      <div className="mb-6 flex flex-col items-start justify-between gap-5 xl:flex-row xl:items-center">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 dark:shadow-none">
+            <FiTrendingUp size={24} />
           </div>
 
           <div>
-            <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-              System Forecasting & Next Steps
-            </h2>
-
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Data-driven analysis based on total active workforce.
-            </p>
+            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">System Forecasting & Next Steps</h2>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Run-rate predictive analysis based on current workforce data.</p>
           </div>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <select
             value={selectedCategory}
-            onChange={(event) => setSelectedCategory(event.target.value)}
-            className="h-[34px] cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="h-10 cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           >
             {CATEGORIES.map((category) => (
               <option key={category} value={category}>
@@ -1355,16 +1375,16 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [] } }) 
             ))}
           </select>
 
-          <div className="flex shrink-0 rounded-xl bg-indigo-100/50 p-1 dark:bg-slate-800/80">
-            {["weekly", "monthly"].map((range) => (
+          <div className="flex shrink-0 rounded-xl bg-indigo-100/60 p-1 dark:bg-slate-800/80">
+            {['weekly', 'monthly', 'yearly'].map(range => (
               <button
                 key={range}
                 type="button"
                 onClick={() => setForecastRange(range)}
-                className={`rounded-lg px-4 py-1.5 text-xs font-bold transition-all ${
-                  forecastRange === range
-                    ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white"
-                    : "text-slate-600 dark:text-slate-400"
+                className={`rounded-lg px-5 py-2 text-xs font-bold transition-all ${
+                  forecastRange === range 
+                    ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white" 
+                    : "text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-white"
                 }`}
               >
                 {range.charAt(0).toUpperCase() + range.slice(1)}
@@ -1374,38 +1394,62 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [] } }) 
         </div>
       </div>
 
+      {/* Predictions Grid (Portrait Cards) */}
       {activePredictions.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/50 p-8 text-center dark:border-white/10 dark:bg-slate-950/30">
-          <p className="text-sm font-bold text-slate-600 dark:text-slate-400">
-            No operational trend detected for this category and threshold.
-          </p>
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/50 py-12 text-center dark:border-white/10 dark:bg-slate-950/30">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+             <FiBarChart2 className="text-slate-400" size={20} />
+          </div>
+          <p className="text-base font-bold text-slate-700 dark:text-slate-300">No operational trend detected.</p>
+          <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">The system has not reached the percentage threshold to trigger a forecast for this category and period.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {activePredictions.map((prediction) => (
-            <div
-              key={prediction.id}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-800/50"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  {prediction.category} ({prediction.count} cases)
-                </span>
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {activePredictions.map((pred) => {
+            
+            // Hinihiwalay ang string para maging highlighted yung "Forecast:" text
+            const isForecast = pred.action.includes("Forecast:");
+            const actionText = pred.action.replace("Forecast: ", "");
 
-                <span className="whitespace-nowrap rounded-full bg-indigo-50 px-2.5 py-1 text-[12px] font-extrabold uppercase tracking-wide text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-                  {prediction.percentage} of Workforce
-                </span>
+            return (
+            <div 
+              key={pred.id} 
+              className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
+            >
+              <div>
+                <div className="mb-4 flex items-start justify-between gap-2">
+                  <div className="flex flex-col">
+                    <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
+                      {pred.percentage}
+                    </span>
+                    <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                      Affected Workforce
+                    </span>
+                  </div>
+                  <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                    {pred.count} Cases
+                  </span>
+                </div>
+
+                <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
+                  {pred.category}
+                </h4>
+                
+                <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
+                  {pred.title}
+                </h3>
               </div>
 
-              <h3 className="mt-3 text-sm font-extrabold text-slate-900 dark:text-white">
-                {prediction.title}
-              </h3>
-
-              <p className="mt-1.5 text-xs leading-5 text-slate-600 dark:text-slate-300">
-                {prediction.action}
-              </p>
+              <div className="mt-5">
+                <div className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50"></div>
+                <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
+                  {isForecast && <span className="font-extrabold text-indigo-600 dark:text-indigo-400">Forecast: </span>}
+                  {actionText}
+                </p>
+              </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>
