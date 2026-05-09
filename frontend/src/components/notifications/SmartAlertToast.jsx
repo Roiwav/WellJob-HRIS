@@ -1,5 +1,25 @@
-import { FiAlertTriangle, FiBell, FiEye, FiX } from "react-icons/fi";
+import {
+  FiAlertTriangle,
+  FiBell,
+  FiClock,
+  FiEye,
+  FiInfo,
+  FiX,
+} from "react-icons/fi";
 import { getAlertPriorityClasses } from "../../utils/notifications/smartNotifications";
+
+function getAlertIcon(priority) {
+  if (priority === "High") return <FiAlertTriangle />;
+  if (priority === "Medium") return <FiClock />;
+  return <FiInfo />;
+}
+
+function getPriorityLabel(priority) {
+  if (priority === "High") return "Critical Alert";
+  if (priority === "Medium") return "Major Alert";
+  if (priority === "Low") return "Minor Alert";
+  return "Smart Alert";
+}
 
 export default function SmartAlertToast({ alert, onView, onDismiss }) {
   if (!alert) return null;
@@ -15,14 +35,14 @@ export default function SmartAlertToast({ alert, onView, onDismiss }) {
           <div
             className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg ${styles.icon}`}
           >
-            {alert.priority === "High" ? <FiAlertTriangle /> : <FiBell />}
+            {getAlertIcon(alert.priority)}
           </div>
 
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-wide opacity-80">
-                  Smart Alert
+                  {getPriorityLabel(alert.priority)}
                 </p>
 
                 <h3 className="mt-1 text-sm font-black">{alert.title}</h3>

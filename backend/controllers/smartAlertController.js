@@ -482,11 +482,19 @@ exports.getSmartAlerts = async (req, res) => {
     const stateMap = await getAlertStates({ userKey, role });
     const alertsWithState = applyAlertStates(alerts, stateMap);
 
-    const unreadAlerts = alertsWithState.filter((alert) => !alert.isRead);
-    const popupAlert =
-      unreadAlerts.find(
-        (alert) => alert.priority === ALERT_PRIORITY.HIGH && !alert.isDismissed
-      ) || null;
+  const unreadAlerts = alertsWithState.filter((alert) => !alert.isRead);
+
+  const popupAlert =
+    unreadAlerts
+      .filter((alert) => !alert.isDismissed)
+      .sort((a, b) => {
+        const timeA = Number(a.timestamp || 0);
+        const timeB = Number(b.timestamp || 0);
+
+        if (timeB !== timeA) return timeB - timeA;
+
+        return Number(b.priorityRank || 0) - Number(a.priorityRank || 0);
+      })[0] || null;
 
     res.json({
       alerts: alertsWithState,
