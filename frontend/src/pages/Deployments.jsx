@@ -1,7 +1,7 @@
 // Deployments.jsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FiCalendar, FiRefreshCw, FiSearch } from "react-icons/fi";
+import { FiCalendar, FiRefreshCw, FiSearch, FiBriefcase, FiUsers } from "react-icons/fi";
 import axios from "axios"; 
 import { useAuth } from "../context/useAuth"; 
 
@@ -247,6 +247,11 @@ export default function Deployments() {
           </div>
         )}
 
+        {/* ============================================================== */}
+        {/* NEW: CLIENT DEPLOYMENT SUMMARY GRID (24 COMPANIES)             */}
+        {/* ============================================================== */}
+        <ClientDeploymentSummary deployments={deployments} />
+
         <div className="flex flex-col items-start gap-3 xl:flex-row xl:items-center">
           <div className="relative w-full max-w-xs">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
@@ -310,5 +315,100 @@ export default function Deployments() {
 
       <DeploymentToast show={showToast} message={toastMessage} />
     </>
+  );
+}
+
+// ============================================================================
+// CLIENT DEPLOYMENT SUMMARY COMPONENT (Ang grid ng 24 Companies)
+// ============================================================================
+export function ClientDeploymentSummary({ deployments = [] }) {
+  // GINAWANG FALSE: Para naka-hide na agad ang summary by default
+  const [isVisible, setIsVisible] = useState(false);
+
+  const companyStats = useMemo(() => {
+    const COMPANIES = [
+      "SM Supermalls", "Robinsons Retail Holdings", "Ayala Land Inc.",
+      "Jollibee Foods Corporation", "San Miguel Corporation", "PLDT Inc.",
+      "Globe Telecom", "BDO Unibank", "Metrobank", "Puregold Price Club",
+      "Wilcon Depot", "DMCI Holdings", "Megaworld Corporation",
+      "Unilab Inc.", "Nestlé Philippines", "Coca-Cola Philippines",
+      "Pepsi-Cola Products Philippines", "Toyota Philippines", "Honda Philippines",
+      "Accenture Philippines", "IBM Philippines", "Teleperformance Philippines",
+      "Concentrix Philippines", "Sitel Philippines",
+    ];
+
+    const stats = {};
+    COMPANIES.forEach((company) => {
+      stats[company] = 0; 
+    });
+
+    deployments.forEach((dep) => {
+      const status = String(dep?.status || "").trim().toLowerCase();
+      const isActive = status === "active" || status === "deployed" || status === "active deployed";
+
+      if (isActive && dep.company && stats[dep.company] !== undefined) {
+        stats[dep.company] += 1;
+      }
+    });
+
+    return Object.entries(stats)
+      .map(([company, count]) => ({ company, count }))
+      .sort((a, b) => b.count - a.count); 
+  }, [deployments]);
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900">
+      
+      {/* HEADER SECTION */}
+      <div className={`flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center ${isVisible ? "mb-6" : ""}`}>
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
+            <FiUsers size={24} />
+          </div>
+          <div>
+            <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">Active Client Deployments</h2>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Live headcount distribution across 24 partner companies.
+            </p>
+          </div>
+        </div>
+
+        {/* HIDE / SHOW BUTTON */}
+        <button
+          onClick={() => setIsVisible(!isVisible)}
+          className="shrink-0 rounded-xl bg-slate-100 px-5 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+        >
+          {isVisible ? "Hide Summary" : "Show Summary"}
+        </button>
+      </div>
+
+      {/* GRID SECTION */}
+      {isVisible && (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+          {companyStats.map((item) => (
+            <div 
+              key={item.company} 
+              className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700/60 dark:bg-slate-800/50"
+            >
+              <div className="mb-3">
+                <span className={`text-3xl font-black tracking-tight ${item.count > 0 ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}>
+                  {item.count}
+                </span>
+                <span className="ml-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                  Staff
+                </span>
+              </div>
+
+              {/* Company Name Section (No Icon) */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-700/50">
+                <h3 className="line-clamp-2 text-xs font-bold leading-snug text-slate-700 dark:text-slate-300">
+                  {item.company}
+                </h3>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

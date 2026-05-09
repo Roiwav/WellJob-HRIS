@@ -28,14 +28,24 @@ import IncidentTrendChart from "../components/dashboard/charts/IncidentTrendChar
 import SeverityPieChart from "../components/dashboard/charts/SeverityPieChart";
 import CaseAgingChart from "../components/dashboard/charts/CaseAgingChart";
 
+
 const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
-const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
 
 const monthList = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun", 
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 function normalizeText(value) {
@@ -50,9 +60,8 @@ function normalizeStatus(status) {
   if (value === "for review") return "For Review";
   if (value === "closed") return "Closed";
   if (value === "investigating") return "Investigating";
-  if (value === "open") return "Open";
 
-  return status || "Open";
+  return "Open";
 }
 
 function isArchivedEmployee(employee) {
@@ -124,45 +133,6 @@ function normalizeBackendIncident(incident) {
   };
 }
 
-function normalizeBackendDeployment(deployment) {
-  const date =
-    deployment.deploymentDate ||
-    deployment.deployment_date ||
-    deployment.startDate ||
-    deployment.start_date ||
-    deployment.contractStart ||
-    deployment.contract_start ||
-    deployment.createdAt ||
-    deployment.created_at ||
-    deployment.date ||
-    "";
-
-  return {
-    ...deployment,
-    id: deployment.id,
-    employeeId:
-      deployment.employeeId ||
-      deployment.employee_id ||
-      deployment.empId ||
-      deployment.employeeID ||
-      "",
-    employee:
-      deployment.employee ||
-      deployment.employeeName ||
-      deployment.employee_name ||
-      "Unknown Employee",
-    company:
-      deployment.company ||
-      deployment.clientCompany ||
-      deployment.client_company ||
-      "Unassigned",
-    status: deployment.status || deployment.deployment_status || "Active",
-    date,
-    deploymentDate: date,
-    createdAt: deployment.createdAt || deployment.created_at || date,
-  };
-}
-
 async function requestJson(url) {
   const response = await fetch(url);
   const data = await response.json().catch(() => null);
@@ -178,20 +148,11 @@ async function requestJson(url) {
   return data;
 }
 
-async function safeRequestJson(url, fallback = []) {
-  try {
-    return await requestJson(url);
-  } catch (error) {
-    console.warn(`Optional dashboard request failed: ${url}`, error.message);
-    return fallback;
-  }
-}
-
 function normalizeDateValue(value) {
   if (!value) return "";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  if (Number.isNaN(date.getTime())) return String(value);
 
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -220,78 +181,6 @@ function getDeploymentTrendDate(employee) {
     employee?.date ||
     ""
   );
-}
-
-function getDeploymentRecordDate(record) {
-  return (
-    record?.deploymentDate ||
-    record?.deployment_date ||
-    record?.startDate ||
-    record?.start_date ||
-    record?.contractStart ||
-    record?.contract_start ||
-    record?.createdAt ||
-    record?.created_at ||
-    record?.date ||
-    ""
-  );
-}
-
-function countRecordsByYear(records = [], getDate, year) {
-  return records.filter((record) => {
-    const dateValue = normalizeDateValue(getDate(record));
-    return dateValue && dateValue.slice(0, 4) === String(year);
-  }).length;
-}
-
-function buildYearComparison({ current, previous, goodWhenUp = true }) {
-  const currentValue = Number(current) || 0;
-  const previousValue = Number(previous) || 0;
-  const diff = currentValue - previousValue;
-
-  let percent = 0;
-
-  if (previousValue > 0) {
-    percent = Math.round((Math.abs(diff) / previousValue) * 100);
-  }
-
-  const isUp = diff > 0;
-  const isDown = diff < 0;
-
-  let label = "No change vs last year";
-
-  if (previousValue === 0 && currentValue > 0) {
-    label = "New records this year";
-  } else if (isUp) {
-    label = `↑ ${percent}% vs last year`;
-  } else if (isDown) {
-    label = `↓ ${percent}% vs last year`;
-  }
-
-  let tone = "neutral";
-
-  if (isUp) {
-    tone = goodWhenUp ? "good" : "bad";
-  } else if (isDown) {
-    tone = goodWhenUp ? "bad" : "good";
-  }
-
-  return {
-    current: currentValue,
-    previous: previousValue,
-    diff,
-    percent,
-    label,
-    direction: isUp ? "up" : isDown ? "down" : "flat",
-    tone,
-  };
-}
-
-function formatDiff(value) {
-  const number = Number(value) || 0;
-
-  if (number > 0) return `+${number}`;
-  return String(number);
 }
 
 function isInSelectedDashboardRange(value, selectedYear, selectedMonth) {
@@ -460,7 +349,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("");
   const [fetchError, setFetchError] = useState("");
-  
+
   const [activeDrilldown, setActiveDrilldown] = useState(null);
   const [editingEmployee, setEditingEmployee] = useState(null);
 
@@ -476,17 +365,15 @@ export default function Dashboard() {
     incidents: [],
     rawEmployees: [],
     rawIncidents: [],
-    rawDeployments: [],
   });
 
   const loadData = useCallback(async () => {
     try {
       setFetchError("");
 
-      const [employeeData, incidentData, deploymentData] = await Promise.all([
+      const [employeeData, incidentData] = await Promise.all([
         requestJson(EMPLOYEE_API_URL),
         requestJson(INCIDENT_API_URL),
-        safeRequestJson(DEPLOYMENT_API_URL, []),
       ]);
 
       const employeesRaw = Array.isArray(employeeData)
@@ -497,24 +384,12 @@ export default function Dashboard() {
         ? incidentData.map(normalizeBackendIncident)
         : [];
 
-      const deploymentsRaw = Array.isArray(deploymentData)
-        ? deploymentData.map(normalizeBackendDeployment)
-        : [];
-
       const activeEmployees = employeesRaw.filter((emp) => !emp.archived);
       const deployedEmployees = activeEmployees.filter(isEmployeeDeployed);
 
-      const workforceSource =
-        deploymentsRaw.length > 0
-          ? deploymentsRaw
-          : deployedEmployees.map((employee) => ({
-              ...employee,
-              date: getDeploymentTrendDate(employee),
-            }));
-
-      const workforce = workforceSource
-        .map((record) => ({
-          date: normalizeDateValue(getDeploymentRecordDate(record)),
+      const workforce = deployedEmployees
+        .map((employee) => ({
+          date: normalizeDateValue(getDeploymentTrendDate(employee)),
           employees: 1,
         }))
         .filter((item) => item.date);
@@ -530,7 +405,10 @@ export default function Dashboard() {
         kpis: {
           total: activeEmployees.length,
           deployed: deployedEmployees.length,
-          available: Math.max(activeEmployees.length - deployedEmployees.length, 0),
+          available: Math.max(
+            activeEmployees.length - deployedEmployees.length,
+            0
+          ),
           activeIncidents: incidentsRaw.filter((incident) =>
             isActiveIncident(incident.status)
           ).length,
@@ -540,12 +418,10 @@ export default function Dashboard() {
         incidents,
         rawEmployees: activeEmployees,
         rawIncidents: incidentsRaw,
-        rawDeployments: deploymentsRaw,
       });
 
       localStorage.setItem("employees", JSON.stringify(activeEmployees));
       localStorage.setItem("incidents", JSON.stringify(incidentsRaw));
-      localStorage.setItem("deployments", JSON.stringify(deploymentsRaw));
       window.dispatchEvent(new Event("dataUpdated"));
 
       setLastUpdated(formatLastUpdated());
@@ -586,13 +462,8 @@ export default function Dashboard() {
       if (item?.date) years.add(item.date.slice(0, 4));
     });
 
-    data.rawDeployments.forEach((item) => {
-      const date = normalizeDateValue(getDeploymentRecordDate(item));
-      if (date) years.add(date.slice(0, 4));
-    });
-
     return [...years].sort((a, b) => Number(b) - Number(a));
-  }, [data.workforce, data.incidents, data.rawDeployments, currentYear]);
+  }, [data.workforce, data.incidents, currentYear]);
 
   const availableMonths = useMemo(() => {
     return monthList.map((month, index) => {
@@ -716,53 +587,6 @@ export default function Dashboard() {
     utilizationRate,
   ]);
 
-  const yearlyComparison = useMemo(() => {
-    const currentSelectedYear = Number(selectedYear);
-    const previousYear = currentSelectedYear - 1;
-
-    const deploymentSource =
-      data.rawDeployments.length > 0 ? data.rawDeployments : data.workforce;
-
-    const currentDeploymentRecords = countRecordsByYear(
-      deploymentSource,
-      getDeploymentRecordDate,
-      currentSelectedYear
-    );
-
-    const previousDeploymentRecords = countRecordsByYear(
-      deploymentSource,
-      getDeploymentRecordDate,
-      previousYear
-    );
-
-    const currentIncidentRecords = countRecordsByYear(
-      data.rawIncidents,
-      getRecordDate,
-      currentSelectedYear
-    );
-
-    const previousIncidentRecords = countRecordsByYear(
-      data.rawIncidents,
-      getRecordDate,
-      previousYear
-    );
-
-    return {
-      selectedYear: currentSelectedYear,
-      previousYear,
-      deployment: buildYearComparison({
-        current: currentDeploymentRecords,
-        previous: previousDeploymentRecords,
-        goodWhenUp: true,
-      }),
-      incident: buildYearComparison({
-        current: currentIncidentRecords,
-        previous: previousIncidentRecords,
-        goodWhenUp: false,
-      }),
-    };
-  }, [data.rawDeployments, data.workforce, data.rawIncidents, selectedYear]);
-
   const kpiTrendData = useMemo(
     () => ({
       total: {
@@ -771,9 +595,9 @@ export default function Dashboard() {
         tone: "neutral",
       },
       deployed: {
-        label: yearlyComparison.deployment.label,
-        direction: yearlyComparison.deployment.direction,
-        tone: yearlyComparison.deployment.tone,
+        label: "Current deployed",
+        direction: "flat",
+        tone: "neutral",
       },
       available: {
         label: "Current available",
@@ -791,9 +615,9 @@ export default function Dashboard() {
             : "neutral",
       },
       activeIncidents: {
-        label: yearlyComparison.incident.label,
-        direction: yearlyComparison.incident.direction,
-        tone: yearlyComparison.incident.tone,
+        label: "Current active cases",
+        direction: "flat",
+        tone: currentKPIS.activeIncidents > 0 ? "bad" : "good",
       },
       expiringDocs: {
         label: `${currentKPIS.expiringDocs} due soon`,
@@ -801,7 +625,7 @@ export default function Dashboard() {
         tone: currentKPIS.expiringDocs > 0 ? "bad" : "good",
       },
     }),
-    [currentKPIS, utilizationRate, yearlyComparison]
+    [currentKPIS, utilizationRate]
   );
 
   const handleOpenDrilldown = useCallback(
@@ -823,18 +647,23 @@ export default function Dashboard() {
     [dashboardInsights, navigate]
   );
 
-  const handleRowClick = useCallback((row) => {
-    if (row.employeeId) {
-      const targetEmployee = data.rawEmployees.find(
-        (emp) => String(emp.id) === String(row.employeeId) || String(emp.employeeId) === String(row.employeeId)
-      );
+  const handleRowClick = useCallback(
+    (row) => {
+      if (row.employeeId) {
+        const targetEmployee = data.rawEmployees.find(
+          (emp) =>
+            String(emp.id) === String(row.employeeId) ||
+            String(emp.employeeId) === String(row.employeeId)
+        );
 
-      if (targetEmployee) {
-        setEditingEmployee(targetEmployee);
-        setActiveDrilldown(null);
+        if (targetEmployee) {
+          setEditingEmployee(targetEmployee);
+          setActiveDrilldown(null);
+        }
       }
-    }
-  }, [data.rawEmployees]);
+    },
+    [data.rawEmployees]
+  );
 
   const totalIncidentsForYear = useMemo(
     () => incidentTrend.reduce((sum, item) => sum + item.value, 0),
@@ -893,24 +722,6 @@ export default function Dashboard() {
         ["Peak Deployment Month", peakDeploymentMonth],
         ["Highest Incident Month", highestIncidentMonth],
         ["Top Severity in Scope", topSeverity],
-        [
-          `Deployment Records ${yearlyComparison.previousYear}`,
-          yearlyComparison.deployment.previous,
-        ],
-        [
-          `Deployment Records ${yearlyComparison.selectedYear}`,
-          yearlyComparison.deployment.current,
-        ],
-        ["Deployment Change", formatDiff(yearlyComparison.deployment.diff)],
-        [
-          `Incident Records ${yearlyComparison.previousYear}`,
-          yearlyComparison.incident.previous,
-        ],
-        [
-          `Incident Records ${yearlyComparison.selectedYear}`,
-          yearlyComparison.incident.current,
-        ],
-        ["Incident Change", formatDiff(yearlyComparison.incident.diff)],
       ],
       theme: "grid",
       headStyles: { fillColor: [79, 70, 229] },
@@ -963,7 +774,6 @@ export default function Dashboard() {
     workforceTrend,
     incidentTrend,
     executiveActions,
-    yearlyComparison,
   ]);
 
   if (loading) {
@@ -976,6 +786,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      
+
       {fetchError && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
           {fetchError}
@@ -1075,8 +887,6 @@ export default function Dashboard() {
         onCardClick={handleOpenDrilldown}
       />
 
-      <YearlyComparisonPanel comparison={yearlyComparison} />
-
       <WorkforceHealthBanner health={dashboardInsights.health} />
 
       <ExecutiveActionItems actions={executiveActions} />
@@ -1143,154 +953,6 @@ export default function Dashboard() {
   );
 }
 
-function YearlyComparisonPanel({ comparison }) {
-  if (!comparison) return null;
-
-  return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-            Yearly Performance Comparison
-          </h2>
-
-          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Compares selected year records against the previous year using
-            deployment and incident history.
-          </p>
-        </div>
-
-        <span className="w-fit rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-extrabold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-          {comparison.previousYear} vs {comparison.selectedYear}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <YearlyComparisonCard
-          title="Deployment Growth"
-          description="Tracks deployment records created per year."
-          previousYear={comparison.previousYear}
-          selectedYear={comparison.selectedYear}
-          data={comparison.deployment}
-          positiveIcon={<FiTrendingUp />}
-          goodLabel="Deployment increased compared to the previous year."
-          badLabel="Deployment decreased compared to the previous year."
-          neutralLabel="Deployment remained stable compared to the previous year."
-        />
-
-        <YearlyComparisonCard
-          title="Incident Reduction"
-          description="Tracks incident records created per year."
-          previousYear={comparison.previousYear}
-          selectedYear={comparison.selectedYear}
-          data={comparison.incident}
-          positiveIcon={<FiTrendingDown />}
-          goodLabel="Incident records decreased compared to the previous year."
-          badLabel="Incident records increased compared to the previous year."
-          neutralLabel="Incident level remained stable compared to the previous year."
-        />
-      </div>
-    </section>
-  );
-}
-
-function YearlyComparisonCard({
-  title,
-  description,
-  previousYear,
-  selectedYear,
-  data,
-  positiveIcon,
-  goodLabel,
-  badLabel,
-  neutralLabel,
-}) {
-  const toneClasses = {
-    good: {
-      card: "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
-      icon: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
-      text: "text-emerald-700 dark:text-emerald-300",
-      badge:
-        "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
-    },
-    bad: {
-      card: "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10",
-      icon: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
-      text: "text-red-700 dark:text-red-300",
-      badge: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
-    },
-    neutral: {
-      card: "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40",
-      icon: "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
-      text: "text-slate-700 dark:text-slate-300",
-      badge: "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
-    },
-  };
-
-  const styles = toneClasses[data?.tone] || toneClasses.neutral;
-
-  const interpretation =
-    data?.tone === "good"
-      ? goodLabel
-      : data?.tone === "bad"
-      ? badLabel
-      : neutralLabel;
-
-  return (
-    <article className={`rounded-2xl border p-5 ${styles.card}`}>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg ${styles.icon}`}
-          >
-            {data?.tone === "good" ? positiveIcon : <FiTrendingUp />}
-          </div>
-
-          <div>
-            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-              {title}
-            </h3>
-
-            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              {description}
-            </p>
-          </div>
-        </div>
-
-        <span
-          className={`w-fit rounded-full px-3 py-1 text-xs font-extrabold ${styles.badge}`}
-        >
-          {data?.label || "No comparison"}
-        </span>
-      </div>
-
-      <div className="mt-5 grid grid-cols-3 gap-3">
-        <MiniYearMetric label={previousYear} value={data?.previous || 0} />
-        <MiniYearMetric label={selectedYear} value={data?.current || 0} />
-        <MiniYearMetric label="Change" value={formatDiff(data?.diff || 0)} />
-      </div>
-
-      <p className={`mt-4 text-sm font-bold ${styles.text}`}>
-        {interpretation}
-      </p>
-    </article>
-  );
-}
-
-function MiniYearMetric({ label, value }) {
-  return (
-    <div className="rounded-xl bg-white/70 px-3 py-3 text-center dark:bg-slate-950/30">
-      <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-1 text-lg font-black text-slate-900 dark:text-white">
-        {value}
-      </p>
-    </div>
-  );
-}
-
 function InsightCard({ title, value, tone = "indigo" }) {
   const tones = {
     indigo:
@@ -1320,12 +982,14 @@ function InsightCard({ title, value, tone = "indigo" }) {
 }
 
 // ====================================================================
-// NEW COMPONENT: System Forecasting Panel (Portrait / Analytics UI)
+// COMPONENT: System Forecasting Panel (Portrait / Analytics UI)
 // ====================================================================
 
-function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], yearly: [] } }) {
-  const [forecastRange, setForecastRange] = useState('weekly');
-  const [selectedCategory, setSelectedCategory] = useState('All Categories');
+function PredictiveInsightsPanel({
+  predictions = { weekly: [], monthly: [], yearly: [] },
+}) {
+  const [forecastRange, setForecastRange] = useState("weekly");
+  const [selectedCategory, setSelectedCategory] = useState("All Categories");
 
   const CATEGORIES = [
     "All Categories",
@@ -1341,24 +1005,25 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
 
   const basePredictions = predictions[forecastRange] || [];
   const activePredictions = basePredictions.filter(
-    (prediction) =>
-      selectedCategory === "All Categories" ||
-      prediction.category === selectedCategory
+    (p) =>
+      selectedCategory === "All Categories" || p.category === selectedCategory
   );
 
   return (
     <section className="rounded-3xl border border-indigo-200 bg-gradient-to-b from-indigo-50/40 to-white p-6 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/20 dark:to-slate-900">
-      
       {/* Header and Controls */}
       <div className="mb-6 flex flex-col items-start justify-between gap-5 xl:flex-row xl:items-center">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 dark:shadow-none">
             <FiTrendingUp size={24} />
           </div>
-
           <div>
-            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">System Forecasting & Next Steps</h2>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Run-rate predictive analysis based on current workforce data.</p>
+            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
+              System Forecasting & Next Steps
+            </h2>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Run-rate predictive analysis based on current workforce data.
+            </p>
           </div>
         </div>
 
@@ -1368,22 +1033,21 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="h-10 cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           >
-            {CATEGORIES.map((category) => (
-              <option key={category} value={category}>
-                {category}
+            {CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
               </option>
             ))}
           </select>
 
           <div className="flex shrink-0 rounded-xl bg-indigo-100/60 p-1 dark:bg-slate-800/80">
-            {['weekly', 'monthly', 'yearly'].map(range => (
+            {["weekly", "monthly", "yearly"].map((range) => (
               <button
                 key={range}
-                type="button"
                 onClick={() => setForecastRange(range)}
                 className={`rounded-lg px-5 py-2 text-xs font-bold transition-all ${
-                  forecastRange === range 
-                    ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white" 
+                  forecastRange === range
+                    ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white"
                     : "text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-white"
                 }`}
               >
@@ -1398,56 +1062,63 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
       {activePredictions.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/50 py-12 text-center dark:border-white/10 dark:bg-slate-950/30">
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-             <FiBarChart2 className="text-slate-400" size={20} />
+            <FiBarChart2 className="text-slate-400" size={20} />
           </div>
-          <p className="text-base font-bold text-slate-700 dark:text-slate-300">No operational trend detected.</p>
-          <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">The system has not reached the percentage threshold to trigger a forecast for this category and period.</p>
+          <p className="text-base font-bold text-slate-700 dark:text-slate-300">
+            No operational trend detected.
+          </p>
+          <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
+            The system has not reached the percentage threshold to trigger a
+            forecast for this category and period.
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {activePredictions.map((pred) => {
-            
-            // Hinihiwalay ang string para maging highlighted yung "Forecast:" text
             const isForecast = pred.action.includes("Forecast:");
             const actionText = pred.action.replace("Forecast: ", "");
 
             return (
-            <div 
-              key={pred.id} 
-              className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
-            >
-              <div>
-                <div className="mb-4 flex items-start justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
-                      {pred.percentage}
-                    </span>
-                    <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                      Affected Workforce
+              <div
+                key={pred.id}
+                className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
+              >
+                <div>
+                  <div className="mb-4 flex items-start justify-between gap-2">
+                    <div className="flex flex-col">
+                      <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
+                        {pred.percentage}
+                      </span>
+                      <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        Affected Workforce
+                      </span>
+                    </div>
+                    <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                      {pred.count} Cases
                     </span>
                   </div>
-                  <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                    {pred.count} Cases
-                  </span>
+
+                  <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
+                    {pred.category}
+                  </h4>
+
+                  <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
+                    {pred.title}
+                  </h3>
                 </div>
 
-                <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
-                  {pred.category}
-                </h4>
-                
-                <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
-                  {pred.title}
-                </h3>
+                <div className="mt-5">
+                  <div className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50"></div>
+                  <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
+                    {isForecast && (
+                      <span className="font-extrabold text-indigo-600 dark:text-indigo-400">
+                        Forecast:{" "}
+                      </span>
+                    )}
+                    {actionText}
+                  </p>
+                </div>
               </div>
-
-              <div className="mt-5">
-                <div className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50"></div>
-                <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
-                  {isForecast && <span className="font-extrabold text-indigo-600 dark:text-indigo-400">Forecast: </span>}
-                  {actionText}
-                </p>
-              </div>
-            </div>
             );
           })}
         </div>
