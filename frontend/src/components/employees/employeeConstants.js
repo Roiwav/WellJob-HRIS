@@ -27,11 +27,35 @@ export function normalizeName(value) {
   return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-export function toProperName(value) {
-  return String(value || "")
+// UPDATED: Smart Name Capitalization for Suffixes and Roman Numerals
+export function toProperName(name) {
+  if (!name) return "";
+
+  // Listahan ng mga suffix na may special rules
+  const romanNumerals = ["ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
+  const standardSuffixes = ["jr", "jr.", "sr", "sr."];
+
+  return String(name)
     .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(/\s+/g, " ") // Tanggalin ang sobrang spaces
+    .split(" ")
+    .map((word) => {
+      const lowerWord = word.toLowerCase();
+
+      // 1. Kung Roman Numeral, gawing ALL CAPS (ex. III, IV)
+      if (romanNumerals.includes(lowerWord)) {
+        return word.toUpperCase();
+      }
+
+      // 2. Kung Jr. o Sr., gawing Title Case (ex. Jr., Sr.)
+      if (standardSuffixes.includes(lowerWord)) {
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      }
+
+      // 3. Normal na pangalan (Title Case)
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
 }
 
 export function createDefaultDocuments(existingDocs = []) {

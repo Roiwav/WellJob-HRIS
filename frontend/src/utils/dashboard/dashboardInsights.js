@@ -536,7 +536,7 @@ function buildWorkforceHealth({
   };
 }
 
-// ================= FORECASTING ENGINE (PERCENTAGE BASED) =================
+// ================= TUNAY NA PREDICTIVE ENGINE (RUN-RATE MODEL) =================
 
 function getIncidentsLastNDays(incidents, days) {
   const today = new Date();
@@ -553,13 +553,14 @@ function getIncidentsLastNDays(incidents, days) {
 }
 
 function generateCategoryForecast(incidents, range, totalEmployees) {
-  // Gamitin ang max(1) para maiwasan ang division by zero errors kung walang empleyado
   const empCount = Math.max(totalEmployees, 1);
   
-  // Dynamic minimum count para lumabas ang card (Weekly: 0.1% | Monthly: 0.3%)
+  // Dynamic minimum count para lumabas ang card
   const minToShow = range === 'weekly' 
     ? Math.max(2, Math.ceil(0.001 * empCount)) 
-    : Math.max(5, Math.ceil(0.003 * empCount));
+    : range === 'monthly'
+    ? Math.max(5, Math.ceil(0.003 * empCount))
+    : Math.max(15, Math.ceil(0.01 * empCount)); 
 
   // 8 Major Categories ayon sa Code of Conduct
   const counts = { c1:0, c2:0, c3:0, c4:0, c5:0, c6:0, c7:0, c8:0 };
@@ -567,50 +568,98 @@ function generateCategoryForecast(incidents, range, totalEmployees) {
   incidents.forEach((incident) => {
     const v = (incident.violation || incident.violationType || "").toLowerCase();
     
-    // I. ABSENCES AND TARDINESS
     if (v.includes("awol") || v.includes("absence") || v.includes("tardiness") || v.includes("undertime") || v.includes("leave") || v.includes("abandonment")) counts.c1++;
-    // II. DISORDERLY CONDUCT AND MISBEHAVIOR
     else if (v.includes("fight") || v.includes("assault") || v.includes("threat") || v.includes("misbehavior") || v.includes("quarrel") || v.includes("discourteous") || v.includes("scandal") || v.includes("gambling")) counts.c2++;
-    // III. INSUBORDINATION / DISOBEDIENCE
     else if (v.includes("insubordination") || v.includes("disobey") || v.includes("refusal") || v.includes("defiance") || v.includes("disrespect")) counts.c3++;
-    // IV. NEGLECT OF DUTY
     else if (v.includes("neglect") || v.includes("sleeping") || v.includes("loitering") || v.includes("careless") || v.includes("abandoning post") || v.includes("non-work")) counts.c4++;
-    // V. BETRAYAL OF TRUST / DISHONESTY (Zero Tolerance)
     else if (v.includes("theft") || v.includes("steal") || v.includes("fraud") || v.includes("falsification") || v.includes("integrity") || v.includes("dishonesty") || v.includes("property damage") || v.includes("sabotage")) counts.c5++;
-    // VI. HEALTH, SAFETY, SECURITY, AND SANITATION
     else if (v.includes("safety") || v.includes("ppe") || v.includes("hazard") || v.includes("smoking") || v.includes("sanitation") || v.includes("id") || v.includes("uniform")) counts.c6++;
-    // VII. SEXUAL HARASSMENT (Zero Tolerance)
     else if (v.includes("harassment") || v.includes("sexual") || v.includes("lewd") || v.includes("indecent")) counts.c7++;
-    // VIII. HABITUAL VIOLATIONS
     else if (v.includes("habitual") || v.includes("recurring") || v.includes("repeated")) counts.c8++;
   });
 
   const predictions = [];
   
-  const addPred = (id, category, count, title, actionW, actionM, zeroTolerance = false) => {
+  const addPred = (id, category, count, title, actionW, actionM, actionY, zeroTolerance = false) => {
     if (count >= (zeroTolerance ? 1 : minToShow)) {
-      // Kinukuha natin ang eksaktong percentage (halimbawa: 0.24%)
-      const percentage = ((count / empCount) * 100).toFixed(2);
+      const currentPercentage = ((count / empCount) * 100).toFixed(2);
       
+      // RUN-RATE PROJECTION MATH
+      let projectedCount = 0;
+      let projectionText = "";
+
+      if (range === 'weekly') {
+        // Compute for next 30 days based on last 7 days velocity
+        projectedCount = Math.ceil(count * (30 / 7));
+        const projPerc = ((projectedCount / empCount) * 100).toFixed(2);
+        projectionText = `Forecast: Expected to hit ~${projectedCount} cases (${projPerc}%) in the next 30 days if current weekly velocity continues. `;
+      } else if (range === 'monthly') {
+        // Compute for next Quarter (90 days) based on last 30 days
+        projectedCount = Math.ceil(count * 3);
+        const projPerc = ((projectedCount / empCount) * 100).toFixed(2);
+        projectionText = `Forecast: On track to reach ~${projectedCount} cases (${projPerc}%) by the end of the quarter. `;
+      } else if (range === 'yearly') {
+        // Compute for Next Year (Applying a 15% compounding risk factor if uncorrected)
+        projectedCount = Math.ceil(count * 1.15);
+        const projPerc = ((projectedCount / empCount) * 100).toFixed(2);
+        projectionText = `Forecast: Projected to grow to ~${projectedCount} cases (${projPerc}%) next year due to uncorrected behavior trends. `;
+      }
+
+      let baseAction = actionW;
+      if (range === 'monthly') baseAction = actionM;
+      if (range === 'yearly') baseAction = actionY;
+
       predictions.push({
         id, 
         category, 
         title, 
         count,
-        percentage: `${percentage}%`,
-        action: range === 'weekly' ? actionW : actionM
+        percentage: `${currentPercentage}%`,
+        // Dito natin pinagsama ang Math Prediction at ang Next Step
+        action: `${projectionText} ${baseAction}` 
       });
     }
   };
 
-  addPred("c1", "I. ABSENCES AND TARDINESS", counts.c1, "Manpower Shortage Forecast", "Spike in absences detected this week. Alert standby personnel immediately.", "Consistent attendance issues this month. Review deployment schedules and shift viability.");
-  addPred("c2", "II. DISORDERLY CONDUCT AND MISBEHAVIOR", counts.c2, "Workplace Harmony Risk", "Misbehavior reported recently. Intervention required to prevent site tension.", "Misconduct trend detected. Initiate site-wide Code of Conduct re-orientation.");
-  addPred("c3", "III. INSUBORDINATION / DISOBEDIENCE", counts.c3, "Command Breakdown Alert", "Refusal to follow orders noted. Stern warnings required to maintain authority.", "Pattern of defiance forming. Review supervisor effectiveness and site command chain.");
-  addPred("c4", "IV. NEGLECT OF DUTY", counts.c4, "Service Quality Degradation", "Duty neglect or sleeping on post detected. Immediate coaching required.", "Habitual neglect suggests low engagement. Re-assess workload or site placement.");
-  addPred("c5", "V. BETRAYAL OF TRUST / DISHONESTY", counts.c5, "Security & Integrity Breach", "Dishonesty/Theft detected. Secure premises and initiate immediate investigation.", "Zero tolerance breach. Immediate replacement and legal clearance processing needed.", true);
-  addPred("c6", "VI. HEALTH, SAFETY, SECURITY, AND SANITATION", counts.c6, "Liability & Hazard Alert", "Safety violation reported. Correct immediately to prevent accidents or penalties.", "Consistent safety non-compliance. Schedule mandatory safety refresher for the team.");
-  addPred("c7", "VII. SEXUAL HARASSMENT", counts.c7, "Legal & Compliance Risk", "Harassment complaint detected. Enforce preventive suspension immediately.", "Harassment case recorded. Review site security and legal compliance protocols.", true);
-  addPred("c8", "VIII. HABITUAL VIOLATIONS", counts.c8, "Policy Failure Forecast", "Employee reaching habitual status. Prepare disciplinary committee review.", "Pattern of recidivism detected. Systematic review of disciplinary history required.");
+  addPred("c1", "I. ABSENCES AND TARDINESS", counts.c1, "Manpower Shortage Forecast", 
+    "Alert standby personnel immediately.", 
+    "Review deployment schedules and shift viability.",
+    "Consider total rewards and leave policy adjustments.");
+
+  addPred("c2", "II. DISORDERLY CONDUCT", counts.c2, "Workplace Harmony Risk", 
+    "Intervention required to prevent site tension.", 
+    "Initiate site-wide Code of Conduct re-orientation.",
+    "Major policy overhaul and site restructuring needed.");
+
+  addPred("c3", "III. INSUBORDINATION", counts.c3, "Command Breakdown Alert", 
+    "Stern warnings required to maintain authority.", 
+    "Review supervisor effectiveness and site command chain.",
+    "Points to critical leadership gaps. Management review required.");
+
+  addPred("c4", "IV. NEGLECT OF DUTY", counts.c4, "Service Quality Degradation", 
+    "Immediate supervisor coaching required.", 
+    "Re-assess workload or site placement for habitual cases.",
+    "Review hiring standards and long-term engagement programs.");
+
+  addPred("c5", "V. BETRAYAL OF TRUST", counts.c5, "Security & Integrity Breach", 
+    "Secure premises and initiate immediate investigation.", 
+    "Immediate replacement and legal clearance processing needed.", 
+    "Enforce stricter background checks and site audits.", true);
+
+  addPred("c6", "VI. HEALTH & SAFETY", counts.c6, "Liability & Hazard Alert", 
+    "Correct immediately to prevent accidents or client penalties.", 
+    "Schedule mandatory safety refresher training for the team.",
+    "Implement strict zero-tolerance safety campaigns.");
+
+  addPred("c7", "VII. SEXUAL HARASSMENT", counts.c7, "Legal & Compliance Risk", 
+    "Enforce preventive suspension immediately.", 
+    "Review site security and legal compliance protocols.",
+    "Implement company-wide SAFE spaces and awareness program.", true);
+
+  addPred("c8", "VIII. HABITUAL VIOLATIONS", counts.c8, "Policy Failure Forecast", 
+    "Prepare disciplinary committee review.", 
+    "Systematic review of employee disciplinary history required.",
+    "Overhaul disciplinary action and termination protocols.");
 
   return predictions.sort((a, b) => b.count - a.count);
 }
@@ -731,10 +780,12 @@ export function buildDashboardInsights({
   const totalEmployees = employees.length;
   const incidentsLast7Days = getIncidentsLastNDays(incidents, 7);
   const incidentsLast30Days = getIncidentsLastNDays(incidents, 30);
+  const incidentsLast365Days = getIncidentsLastNDays(incidents, 365);
 
   const predictions = {
     weekly: generateCategoryForecast(incidentsLast7Days, 'weekly', totalEmployees),
     monthly: generateCategoryForecast(incidentsLast30Days, 'monthly', totalEmployees),
+    yearly: generateCategoryForecast(incidentsLast365Days, 'yearly', totalEmployees),
     totalEmployees: totalEmployees,
   };
 
