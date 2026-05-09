@@ -409,7 +409,9 @@ export default function Deployments() {
 }
 
 function ClientDeploymentSummary({ deployments = [] }) {
-  const summary = useMemo(() => {
+  const [showAllCompanies, setShowAllCompanies] = useState(false);
+
+  const summaryData = useMemo(() => {
     const companyMap = new Map();
 
     deployments.forEach((deployment) => {
@@ -420,7 +422,6 @@ function ClientDeploymentSummary({ deployments = [] }) {
         companyMap.set(company, {
           company,
           total: 0,
-          active: 0,
           completed: 0,
           cancelled: 0,
         });
@@ -431,69 +432,155 @@ function ClientDeploymentSummary({ deployments = [] }) {
 
       if (status === "completed") {
         current.completed += 1;
-      } else if (status === "cancelled" || status === "canceled") {
+      }
+
+      if (status === "cancelled" || status === "canceled") {
         current.cancelled += 1;
-      } else {
-        current.active += 1;
       }
     });
 
-    return Array.from(companyMap.values())
-      .sort((a, b) => b.total - a.total || a.company.localeCompare(b.company))
-      .slice(0, 24);
+    const companies = Array.from(companyMap.values()).sort(
+      (a, b) => b.total - a.total || a.company.localeCompare(b.company)
+    );
+
+    const totalDeployments = deployments.length;
+    const totalCompanies = companies.length;
+    const completedDeployments = companies.reduce(
+      (sum, company) => sum + company.completed,
+      0
+    );
+    const cancelledDeployments = companies.reduce(
+      (sum, company) => sum + company.cancelled,
+      0
+    );
+
+    const topCompany = companies[0] || null;
+
+    return {
+      companies,
+      totalDeployments,
+      totalCompanies,
+      completedDeployments,
+      cancelledDeployments,
+      topCompany,
+    };
   }, [deployments]);
 
-  const totalDeployments = deployments.length;
-  const totalCompanies = summary.length;
-  const activeDeployments = deployments.filter(
-    (deployment) =>
-      String(deployment.status || "Active").toLowerCase() === "active"
-  ).length;
+  const visibleCompanies = showAllCompanies
+    ? summaryData.companies
+    : summaryData.companies.slice(0, 6);
 
   if (deployments.length === 0) {
     return (
-      <section className="rounded-3xl border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-gray-400">
-        No deployment summary available yet.
+      <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="text-center">
+          <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
+            No deployment summary available
+          </h2>
+
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Client deployment distribution will appear once records are
+            available.
+          </p>
+        </div>
       </section>
     );
   }
 
   return (
-    <section className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <SummaryStatCard label="Total Deployments" value={totalDeployments} />
-        <SummaryStatCard label="Client Companies" value={totalCompanies} />
-        <SummaryStatCard label="Active Deployments" value={activeDeployments} />
-      </div>
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4 dark:border-white/10 dark:bg-slate-950/40">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+              Client Deployment Summary
+            </h2>
 
-      <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
-        <div className="mb-4 flex flex-col gap-1">
-          <h2 className="text-base font-bold text-gray-900 dark:text-white">
-            Client Deployment Summary
-          </h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              Compact overview of assigned employees per client company.
+            </p>
+          </div>
 
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Shows deployment distribution per client company.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {summary.map((item) => (
-            <div
-              key={item.company}
-              className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-slate-950/40"
-            >
-              <p className="line-clamp-2 text-sm font-semibold text-gray-900 dark:text-white">
-                {item.company}
+          {summaryData.topCompany && (
+            <div className="rounded-xl border border-indigo-100 bg-white px-4 py-2 dark:border-indigo-500/20 dark:bg-slate-900">
+              <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+                Highest Deployment
               </p>
 
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <SummaryMiniStat label="Total" value={item.total} />
-                <SummaryMiniStat label="Active" value={item.active} />
-                <SummaryMiniStat label="Completed" value={item.completed} />
-                <SummaryMiniStat label="Cancelled" value={item.cancelled} />
-              </div>
+              <p className="mt-0.5 max-w-xs truncate text-xs font-extrabold text-slate-900 dark:text-white">
+                {summaryData.topCompany.company}
+              </p>
+
+              <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-300">
+                {summaryData.topCompany.total} employee(s)
+              </p>
             </div>
+          )}
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <SummaryStatCard
+            label="Total"
+            value={summaryData.totalDeployments}
+            helper="Assigned employees"
+          />
+
+          <SummaryStatCard
+            label="Companies"
+            value={summaryData.totalCompanies}
+            helper="Client companies"
+          />
+
+          <SummaryStatCard
+            label="Done"
+            value={summaryData.completedDeployments}
+            helper="Completed"
+            tone="blue"
+          />
+
+          <SummaryStatCard
+            label="Cancelled"
+            value={summaryData.cancelledDeployments}
+            helper="Stopped"
+            tone="rose"
+          />
+        </div>
+      </div>
+
+      <div className="p-5">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+              Distribution by Client
+            </h3>
+
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Showing {visibleCompanies.length} of{" "}
+              {summaryData.companies.length} companies.
+            </p>
+          </div>
+
+          {summaryData.companies.length > 6 && (
+            <button
+              type="button"
+              onClick={() => setShowAllCompanies((prev) => !prev)}
+              className="w-fit rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-indigo-500 dark:hover:text-indigo-300"
+            >
+              {showAllCompanies
+                ? "Show less"
+                : `Show all ${summaryData.companies.length}`}
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+          {visibleCompanies.map((item, index) => (
+            <ClientCompanyRow
+              key={item.company}
+              item={item}
+              rank={index + 1}
+              totalDeployments={summaryData.totalDeployments}
+            />
           ))}
         </div>
       </div>
@@ -501,30 +588,113 @@ function ClientDeploymentSummary({ deployments = [] }) {
   );
 }
 
-function SummaryStatCard({ label, value }) {
+function SummaryStatCard({ label, value, helper, tone = "slate" }) {
+  const toneStyles = {
+    slate:
+      "border-slate-200 bg-white text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white",
+    blue: "border-blue-100 bg-blue-50 text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300",
+    rose: "border-rose-100 bg-rose-50 text-rose-800 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300",
+  };
+
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
-      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+    <div
+      className={`rounded-xl border px-4 py-3 ${
+        toneStyles[tone] || toneStyles.slate
+      }`}
+    >
+      <p className="text-[10px] font-black uppercase tracking-wide opacity-60">
         {label}
       </p>
 
-      <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
-        {value}
-      </p>
+      <p className="mt-1 text-xl font-black leading-none">{value}</p>
+
+      <p className="mt-1 text-[11px] font-semibold opacity-60">{helper}</p>
     </div>
   );
 }
 
-function SummaryMiniStat({ label, value }) {
-  return (
-    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
-      <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
-        {label}
-      </p>
+function ClientCompanyRow({ item, rank, totalDeployments }) {
+  const percentage =
+    totalDeployments > 0
+      ? Math.round((Number(item.total || 0) / totalDeployments) * 100)
+      : 0;
 
-      <p className="text-sm font-bold text-gray-900 dark:text-white">
-        {value}
-      </p>
-    </div>
+  const hasCompleted = Number(item.completed || 0) > 0;
+  const hasCancelled = Number(item.cancelled || 0) > 0;
+
+  return (
+    <article className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 transition hover:border-indigo-300 hover:bg-white hover:shadow-sm dark:border-white/10 dark:bg-slate-950/40 dark:hover:border-indigo-500/50 dark:hover:bg-slate-950">
+      <div className="flex items-center gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-[11px] font-black text-slate-500 shadow-sm dark:bg-slate-900 dark:text-slate-400">
+          #{rank}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h4 className="truncate text-sm font-extrabold text-slate-900 dark:text-white">
+                {item.company}
+              </h4>
+
+              <p className="mt-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                {percentage}% of total deployments
+              </p>
+            </div>
+
+            <div className="shrink-0 text-right">
+              <p className="text-lg font-black leading-none text-slate-900 dark:text-white">
+                {item.total}
+              </p>
+
+              <p className="mt-0.5 text-[10px] font-black uppercase tracking-wide text-slate-400">
+                Total
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+              <div
+                className="h-full rounded-full bg-indigo-600 transition-all"
+                style={{ width: `${Math.min(percentage, 100)}%` }}
+              />
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1">
+              <StatusPill
+                label="Done"
+                value={item.completed}
+                tone={hasCompleted ? "blue" : "muted"}
+              />
+
+              <StatusPill
+                label="Cancel"
+                value={item.cancelled}
+                tone={hasCancelled ? "rose" : "muted"}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function StatusPill({ label, value, tone = "muted" }) {
+  const toneStyles = {
+    blue: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300",
+    rose: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300",
+    muted:
+      "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black ${
+        toneStyles[tone] || toneStyles.muted
+      }`}
+    >
+      {label}: {value}
+    </span>
   );
 }
