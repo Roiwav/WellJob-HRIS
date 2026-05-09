@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FiCalendar, FiRefreshCw, FiSearch } from "react-icons/fi";
-import axios from "axios"; 
-import { useAuth } from "../context/useAuth"; 
+import axios from "axios";
+import { useAuth } from "../context/useAuth";
 
 import DeploymentTable from "../components/deployments/table/DeploymentTable";
 import DeploymentModal from "../components/deployments/modals/DeploymentModal";
@@ -17,6 +17,20 @@ import {
 const API_BASE = "http://localhost:5000/api";
 const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
 const EMPLOYEES_API_URL = `${API_BASE}/employees`;
+const DATA_EVENT_SOURCE = "deployments-page";
+
+function emitDataUpdated(action = "DEPLOYMENTS_UPDATED") {
+  window.dispatchEvent(
+    new CustomEvent("dataUpdated", {
+      detail: {
+        source: DATA_EVENT_SOURCE,
+        domain: "deployments",
+        action,
+        at: Date.now(),
+      },
+    })
+  );
+}
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -34,23 +48,63 @@ async function requestJson(url, options = {}) {
 }
 
 function normalizeDeployment(item) {
+  const employeeId =
+    item.employeeId ||
+    item.employee_id ||
+    item.empId ||
+    item.employeeID ||
+    item.id ||
+    "";
+
+  const deploymentId = item.deploymentId || item.deployment_id || item.id || "";
+
+  const start =
+    item.start ||
+    item.deploymentDate ||
+    item.deployment_date ||
+    item.contractStart ||
+    item.contract_start ||
+    item.startDate ||
+    item.start_date ||
+    "-";
+
+  const contractEnd =
+    item.contractEnd ||
+    item.contract_end ||
+    item.endDate ||
+    item.end_date ||
+    item.deploymentEnd ||
+    item.deployment_end ||
+    "-";
+
   return {
-    id: item.id || item.employeeId || item.employee_id,
-    employeeId: item.employeeId || item.id || item.employee_id,
+    ...item,
+    id: employeeId || deploymentId,
+    deploymentId,
+    employeeId,
     employee:
       item.employee ||
       item.employeeName ||
       item.employee_name ||
       item.name ||
       "Unknown Employee",
-    company: item.company || "-",
-    location: item.location || "-",
-    start: item.start || item.contractStart || item.contract_start || "-",
-    status: item.status || "Active",
-    employmentType:
-      item.employmentType || item.employment_type || "Permanent",
-    contractStart: item.contractStart || item.contract_start || item.start || "-",
-    contractEnd: item.contractEnd || item.contract_end || "-",
+    company: item.company || item.clientCompany || item.client_company || "-",
+    location:
+      item.location ||
+      item.deploymentLocation ||
+      item.deployment_location ||
+      item.company ||
+      "-",
+    start,
+    status: item.status || item.deploymentStatus || item.deployment_status || "Active",
+    employmentType: item.employmentType || item.employment_type || "Permanent",
+    contractStart:
+      item.contractStart ||
+      item.contract_start ||
+      item.deploymentDate ||
+      item.deployment_date ||
+      start,
+    contractEnd,
     createdAt: item.createdAt || item.created_at || null,
     updatedAt: item.updatedAt || item.updated_at || null,
   };
@@ -58,9 +112,7 @@ function normalizeDeployment(item) {
 
 export default function Deployments() {
   const { user } = useAuth();
-  // Kinuha ang current user info
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
-  // Check kung Super Admin
 
   const [selectedDeployment, setSelectedDeployment] = useState(null);
   const [modalMode, setModalMode] = useState("view");
@@ -100,7 +152,6 @@ export default function Deployments() {
         : [];
 
       setDeployments(normalized);
-
     } catch (error) {
       console.error("Fetch deployments error:", error);
       setFetchError(error.message || "Unable to load deployments.");
@@ -115,6 +166,25 @@ export default function Deployments() {
     fetchDeployments();
   }, [fetchDeployments]);
 
+  useEffect(() => {
+    const handleDataUpdated = (event) => {
+      if (event?.detail?.source === DATA_EVENT_SOURCE) return;
+      fetchDeployments();
+    };
+
+    const handleWindowFocus = () => {
+      fetchDeployments();
+    };
+
+    window.addEventListener("dataUpdated", handleDataUpdated);
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      window.removeEventListener("dataUpdated", handleDataUpdated);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [fetchDeployments]);
+
   const openView = (deployment) => {
     setModalMode("view");
     setSelectedDeployment(deployment);
@@ -123,13 +193,16 @@ export default function Deployments() {
   const updateDeployment = async (updatedDeployment) => {
     try {
       const targetStatus = updatedDeployment.status;
+
       if (!["Completed", "Cancelled"].includes(targetStatus)) {
         showSuccessToast("No backend update needed.");
         return;
       }
 
       await requestJson(
-        `${DEPLOYMENT_API_URL}/${updatedDeployment.employeeId || updatedDeployment.id}/status`,
+        `${DEPLOYMENT_API_URL}/${
+          updatedDeployment.employeeId || updatedDeployment.id
+        }/status`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -138,7 +211,9 @@ export default function Deployments() {
           }),
         }
       );
+
       await fetchDeployments();
+      emitDataUpdated(`DEPLOYMENT_${targetStatus.toUpperCase()}`);
 
       showSuccessToast(
         targetStatus === "Cancelled"
@@ -153,19 +228,26 @@ export default function Deployments() {
 
   const handleInlineUpdateRow = async (updatedDeployment) => {
     try {
-      await axios.put(`${EMPLOYEES_API_URL}/${updatedDeployment.employeeId || updatedDeployment.id}/contract-end`, {
-        contractEnd: updatedDeployment.contractEnd
-      });
-      setDeployments((prev) =>
-        prev.map((dep) =>
-          dep.id === updatedDeployment.id ? updatedDeployment : dep
-        )
+      await axios.put(
+        `${EMPLOYEES_API_URL}/${
+          updatedDeployment.employeeId || updatedDeployment.id
+        }/contract-end`,
+        {
+          contractEnd: updatedDeployment.contractEnd,
+        }
       );
-      showSuccessToast("Contract end date updated successfully!");
 
+      await fetchDeployments();
+      emitDataUpdated("CONTRACT_END_UPDATED");
+
+      showSuccessToast("Contract end date updated successfully!");
     } catch (error) {
       console.error("Error updating contract end date:", error);
-      setFetchError("Failed to update contract end date. Please check your backend.");
+      setFetchError(
+        error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          "Failed to update contract end date. Please check your backend."
+      );
     }
   };
 
@@ -174,31 +256,36 @@ export default function Deployments() {
     await fetchDeployments();
   };
 
-  // UPDATED SEARCH LOGIC (WITH STRING NORMALIZATION & MULTI-TERM SEARCH)
   const filteredDeployments = useMemo(() => {
-    // 1. Linisin ang search bar input (tanggalin ang tuldok, special chars, at gawing lowercase)
-    const cleanSearch = search.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
-    
-    // 2. I-split sa mga salita
+    const cleanSearch = search
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .trim();
+
     const searchTerms = cleanSearch ? cleanSearch.split(/\s+/) : [];
+    const rawSearch = search.toLowerCase().trim();
 
     return deployments.filter((deployment) => {
-      // 3. Linisin ang employee name mula sa database bago i-check
-      const cleanEmployeeName = String(deployment.employee || "").toLowerCase().replace(/[^a-z0-9\s]/g, "");
-      
-      // 4. I-check kung ang BAWAT salitang tinype ay nasa malinis na pangalan ng employee
-      const matchName = searchTerms.every(term => cleanEmployeeName.includes(term));
+      const cleanEmployeeName = String(deployment.employee || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, "");
 
-      // 5. Fallback check para sa ID, Company, Location, Status, at Employment Type
-      const rawSearch = search.toLowerCase().trim();
-      const matchSearch = matchName ||
+      const matchName =
+        searchTerms.length === 0 ||
+        searchTerms.every((term) => cleanEmployeeName.includes(term));
+
+      const matchSearch =
+        !rawSearch ||
+        matchName ||
         String(deployment.id || "").toLowerCase().includes(rawSearch) ||
+        String(deployment.employeeId || "").toLowerCase().includes(rawSearch) ||
         String(deployment.company || "").toLowerCase().includes(rawSearch) ||
         String(deployment.location || "").toLowerCase().includes(rawSearch) ||
         String(deployment.status || "").toLowerCase().includes(rawSearch) ||
-        String(deployment.employmentType || "").toLowerCase().includes(rawSearch);
+        String(deployment.employmentType || "")
+          .toLowerCase()
+          .includes(rawSearch);
 
-      // Date filtering logic (walang binago para hindi masira ang Calendar filtering)
       if (!deployment.start || deployment.start === "-") {
         return matchSearch && !selectedMonth && !selectedYear;
       }
@@ -226,7 +313,8 @@ export default function Deployments() {
             </h1>
 
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Monitor employee assignments, client locations, and contract duration.
+              Monitor employee assignments, client locations, and contract
+              duration.
             </p>
           </div>
 
@@ -250,6 +338,7 @@ export default function Deployments() {
         <div className="flex flex-col items-start gap-3 xl:flex-row xl:items-center">
           <div className="relative w-full max-w-xs">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+
             <input
               type="text"
               placeholder="Search ID, employee, company, location..."
@@ -261,6 +350,7 @@ export default function Deployments() {
 
           <div className="relative">
             <FiCalendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+
             <select
               value={selectedMonth}
               onChange={(event) => setSelectedMonth(event.target.value)}
@@ -292,11 +382,11 @@ export default function Deployments() {
             Loading deployment records...
           </div>
         ) : (
-          <DeploymentTable 
-            deployments={filteredDeployments} 
-            openView={openView} 
-            onUpdateRow={handleInlineUpdateRow} 
-            isSuperAdmin={isSuperAdmin} 
+          <DeploymentTable
+            deployments={filteredDeployments}
+            openView={openView}
+            onUpdateRow={handleInlineUpdateRow}
+            isSuperAdmin={isSuperAdmin}
           />
         )}
 

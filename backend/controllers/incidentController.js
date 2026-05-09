@@ -16,6 +16,10 @@ function normalizeSeverity(value) {
   return value || "Minor";
 }
 
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function buildEvidenceFromReq(req) {
   if (!req.files || !Array.isArray(req.files)) return [];
 
@@ -35,6 +39,34 @@ function normalizeEmployeeLookupId(value) {
   }
 
   return raw.replace(/^0+/, "") || raw;
+}
+
+function isActiveDeploymentRow(deployment) {
+  const status = normalizeText(
+    deployment.status ||
+      deployment.deployment_status ||
+      deployment.deploymentStatus
+  );
+
+  return ["active", "deployed", "active deployed", "ongoing"].includes(status);
+}
+
+async function getActiveDeploymentForEmployee(employeeId) {
+  const normalizedEmployeeId = String(employeeId || "").trim();
+
+  if (!normalizedEmployeeId) return null;
+
+  const [rows] = await db.promise().query(
+    `
+    SELECT *
+    FROM deployments
+    WHERE CAST(employee_id AS CHAR) = ?
+    ORDER BY created_at DESC, id DESC
+    `,
+    [normalizedEmployeeId]
+  );
+
+  return rows.find(isActiveDeploymentRow) || null;
 }
 
 function serializeEvidenceItem(item) {
@@ -281,7 +313,7 @@ exports.createIncident = async (req, res) => {
       userId,
       username,
       role,
-    } = req.body;
+    } = req.body || {};
 
     const finalEmployeeId = employeeId || employee_id;
 
@@ -300,10 +332,23 @@ exports.createIncident = async (req, res) => {
 
     const employeeRecord = employeeRows[0];
 
+    const activeDeployment = await getActiveDeploymentForEmployee(
+      finalEmployeeId
+    );
+
+    if (!activeDeployment) {
+      return res.status(400).json({
+        error:
+          "Incident reports can only be created for employees with an active deployment record.",
+      });
+    }
+
     const finalEmployeeName =
       employeeName || employee || employeeRecord.name || null;
 
-    const finalCompany = company || employeeRecord.company || null;
+    const finalCompany =
+      company || activeDeployment.company || employeeRecord.company || null;
+
     const finalViolation = violationType || violation;
 
     if (!finalViolation) {
@@ -418,7 +463,7 @@ exports.updateIncident = async (req, res) => {
       userId,
       username,
       role,
-    } = req.body;
+    } = req.body || {};
 
     const finalEmployeeId = employeeId || employee_id;
 
@@ -437,10 +482,23 @@ exports.updateIncident = async (req, res) => {
 
     const employeeRecord = employeeRows[0];
 
+    const activeDeployment = await getActiveDeploymentForEmployee(
+      finalEmployeeId
+    );
+
+    if (!activeDeployment) {
+      return res.status(400).json({
+        error:
+          "Incident reports can only be assigned to employees with an active deployment record.",
+      });
+    }
+
     const finalEmployeeName =
       employeeName || employee || employeeRecord.name || null;
 
-    const finalCompany = company || employeeRecord.company || null;
+    const finalCompany =
+      company || activeDeployment.company || employeeRecord.company || null;
+
     const finalViolation = violationType || violation;
     const finalDate = normalizeDate(incidentDate || date);
 
@@ -468,7 +526,8 @@ exports.updateIncident = async (req, res) => {
         reported_by = ?,
         action_taken = ?,
         recommendation = ?,
-        resolution_notes = ?
+        resolution_notes = ?,
+        updated_at = NOW()
       WHERE id = ?
       `,
       [
@@ -525,7 +584,8 @@ exports.updateIncident = async (req, res) => {
 exports.updateIncidentStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, resolutionNotes, actionTaken, recommendation } = req.body;
+    const { status, resolutionNotes, actionTaken, recommendation } =
+      req.body || {};
 
     await db.promise().query(
       `
@@ -534,7 +594,8 @@ exports.updateIncidentStatus = async (req, res) => {
         status = ?,
         resolution_notes = COALESCE(?, resolution_notes),
         action_taken = COALESCE(?, action_taken),
-        recommendation = COALESCE(?, recommendation)
+        recommendation = COALESCE(?, recommendation),
+        updated_at = NOW()
       WHERE id = ?
       `,
       [

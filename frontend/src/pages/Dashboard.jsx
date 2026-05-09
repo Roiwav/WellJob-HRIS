@@ -6,7 +6,6 @@ import {
   FiBarChart2,
   FiDownload,
   FiRefreshCw,
-  FiTrendingDown,
   FiTrendingUp,
 } from "react-icons/fi";
 
@@ -32,11 +31,35 @@ const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
 const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
+const DATA_EVENT_SOURCE = "dashboard-page";
 
 const monthList = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun", 
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
+
+function emitDataUpdated(action = "DASHBOARD_UPDATED") {
+  window.dispatchEvent(
+    new CustomEvent("dataUpdated", {
+      detail: {
+        source: DATA_EVENT_SOURCE,
+        domain: "dashboard",
+        action,
+        at: Date.now(),
+      },
+    })
+  );
+}
 
 function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
@@ -341,6 +364,47 @@ function aggregateByMonth(dataset = [], key, year, isCurrentYear) {
     .filter((item) => !isCurrentYear || item.index <= currentMonthIndex);
 }
 
+function buildMultiYearMonthlyTrend({
+  source = [],
+  valueKey,
+  years = [],
+  selectedYear,
+  currentYear,
+  currentMonth,
+}) {
+  const selectedIsCurrentYear = String(selectedYear) === String(currentYear);
+
+  const visibleMonthLimit = selectedIsCurrentYear
+    ? Math.max(1, Number(currentMonth) || 1)
+    : 12;
+
+  return monthList.slice(0, visibleMonthLimit).map((month, index) => {
+    const monthNumber = String(index + 1).padStart(2, "0");
+
+    const row = {
+      label: month,
+    };
+
+    years.forEach((year) => {
+      row[String(year)] = source.reduce((sum, item) => {
+        const itemDate = normalizeDateValue(item?.date);
+
+        if (
+          itemDate &&
+          itemDate.slice(0, 4) === String(year) &&
+          itemDate.slice(5, 7) === monthNumber
+        ) {
+          return sum + (Number(item?.[valueKey]) || 0);
+        }
+
+        return sum;
+      }, 0);
+    });
+
+    return row;
+  });
+}
+
 function formatLastUpdated(date = new Date()) {
   return date.toLocaleString("en-PH", {
     year: "numeric",
@@ -460,7 +524,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("");
   const [fetchError, setFetchError] = useState("");
-  
+
   const [activeDrilldown, setActiveDrilldown] = useState(null);
   const [editingEmployee, setEditingEmployee] = useState(null);
 
@@ -479,91 +543,132 @@ export default function Dashboard() {
     rawDeployments: [],
   });
 
-  const loadData = useCallback(async () => {
-    try {
-      setFetchError("");
+  const loadData = useCallback(
+    async ({ silent = false, showError = true } = {}) => {
+      try {
+        if (!silent) {
+          setLoading(true);
+        }
 
-      const [employeeData, incidentData, deploymentData] = await Promise.all([
-        requestJson(EMPLOYEE_API_URL),
-        requestJson(INCIDENT_API_URL),
-        safeRequestJson(DEPLOYMENT_API_URL, []),
-      ]);
+        setFetchError("");
 
-      const employeesRaw = Array.isArray(employeeData)
-        ? employeeData.map(normalizeBackendEmployee)
-        : [];
+        const [employeeData, incidentData, deploymentData] = await Promise.all([
+          requestJson(EMPLOYEE_API_URL),
+          requestJson(INCIDENT_API_URL),
+          safeRequestJson(DEPLOYMENT_API_URL, []),
+        ]);
 
-      const incidentsRaw = Array.isArray(incidentData)
-        ? incidentData.map(normalizeBackendIncident)
-        : [];
+        const employeesRaw = Array.isArray(employeeData)
+          ? employeeData.map(normalizeBackendEmployee)
+          : [];
 
-      const deploymentsRaw = Array.isArray(deploymentData)
-        ? deploymentData.map(normalizeBackendDeployment)
-        : [];
+        const incidentsRaw = Array.isArray(incidentData)
+          ? incidentData.map(normalizeBackendIncident)
+          : [];
 
-      const activeEmployees = employeesRaw.filter((emp) => !emp.archived);
-      const deployedEmployees = activeEmployees.filter(isEmployeeDeployed);
+        const deploymentsRaw = Array.isArray(deploymentData)
+          ? deploymentData.map(normalizeBackendDeployment)
+          : [];
 
-      const workforceSource =
-        deploymentsRaw.length > 0
-          ? deploymentsRaw
-          : deployedEmployees.map((employee) => ({
-              ...employee,
-              date: getDeploymentTrendDate(employee),
-            }));
+        const activeEmployees = employeesRaw.filter((emp) => !emp.archived);
+        const deployedEmployees = activeEmployees.filter(isEmployeeDeployed);
 
-      const workforce = workforceSource
-        .map((record) => ({
-          date: normalizeDateValue(getDeploymentRecordDate(record)),
-          employees: 1,
-        }))
-        .filter((item) => item.date);
+        const workforceSource =
+          deploymentsRaw.length > 0
+            ? deploymentsRaw
+            : deployedEmployees.map((employee) => ({
+                ...employee,
+                date: getDeploymentTrendDate(employee),
+              }));
 
-      const incidents = incidentsRaw
-        .map((incident) => ({
-          date: normalizeDateValue(getRecordDate(incident)),
-          incidents: 1,
-        }))
-        .filter((item) => item.date);
+        const workforce = workforceSource
+          .map((record) => ({
+            date: normalizeDateValue(getDeploymentRecordDate(record)),
+            employees: 1,
+          }))
+          .filter((item) => item.date);
 
-      setData({
-        kpis: {
-          total: activeEmployees.length,
-          deployed: deployedEmployees.length,
-          available: Math.max(activeEmployees.length - deployedEmployees.length, 0),
-          activeIncidents: incidentsRaw.filter((incident) =>
-            isActiveIncident(incident.status)
-          ).length,
-          expiringDocs: getExpiringDocumentsCount(activeEmployees),
-        },
-        workforce,
-        incidents,
-        rawEmployees: activeEmployees,
-        rawIncidents: incidentsRaw,
-        rawDeployments: deploymentsRaw,
-      });
+        const incidents = incidentsRaw
+          .map((incident) => ({
+            date: normalizeDateValue(getRecordDate(incident)),
+            incidents: 1,
+          }))
+          .filter((item) => item.date);
 
-      localStorage.setItem("employees", JSON.stringify(activeEmployees));
-      localStorage.setItem("incidents", JSON.stringify(incidentsRaw));
-      localStorage.setItem("deployments", JSON.stringify(deploymentsRaw));
-      window.dispatchEvent(new Event("dataUpdated"));
+        setData({
+          kpis: {
+            total: activeEmployees.length,
+            deployed: deployedEmployees.length,
+            available: Math.max(
+              activeEmployees.length - deployedEmployees.length,
+              0
+            ),
+            activeIncidents: incidentsRaw.filter((incident) =>
+              isActiveIncident(incident.status)
+            ).length,
+            expiringDocs: getExpiringDocumentsCount(activeEmployees),
+          },
+          workforce,
+          incidents,
+          rawEmployees: activeEmployees,
+          rawIncidents: incidentsRaw,
+          rawDeployments: deploymentsRaw,
+        });
 
-      setLastUpdated(formatLastUpdated());
-    } catch (error) {
-      console.error("Dashboard backend fetch error:", error);
-      setFetchError(error.message || "Unable to load dashboard data.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+        setLastUpdated(formatLastUpdated());
+      } catch (error) {
+        console.error("Dashboard backend fetch error:", error);
+
+        if (showError) {
+          setFetchError(error.message || "Unable to load dashboard data.");
+        }
+      } finally {
+        if (!silent) {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    let refreshTimer = null;
+
+    const refreshSilently = () => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+
+      refreshTimer = setTimeout(() => {
+        loadData({ silent: true, showError: false });
+      }, 150);
+    };
+
+    const handleDataUpdated = (event) => {
+      if (event?.detail?.source === DATA_EVENT_SOURCE) return;
+      refreshSilently();
+    };
+
+    window.addEventListener("dataUpdated", handleDataUpdated);
+    window.addEventListener("focus", refreshSilently);
+
+    return () => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+
+      window.removeEventListener("dataUpdated", handleDataUpdated);
+      window.removeEventListener("focus", refreshSilently);
+    };
+  }, [loadData]);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData({ silent: true });
     setRefreshing(false);
   }, [loadData]);
 
@@ -650,6 +755,37 @@ export default function Dashboard() {
       ),
     [data.incidents, selectedYear, isCurrentYear]
   );
+
+  const comparisonYears = useMemo(() => {
+    const selected = Number(selectedYear);
+    const availableYearSet = new Set(availableYears.map(Number));
+
+    return [selected - 1, selected].filter(
+      (year) => year >= 2024 && availableYearSet.has(year)
+    );
+  }, [selectedYear, availableYears]);
+
+  const deploymentComparisonTrend = useMemo(() => {
+    return buildMultiYearMonthlyTrend({
+      source: data.workforce,
+      valueKey: "employees",
+      years: comparisonYears,
+      selectedYear,
+      currentYear,
+      currentMonth,
+    });
+  }, [data.workforce, comparisonYears, selectedYear, currentYear, currentMonth]);
+
+  const incidentComparisonTrend = useMemo(() => {
+    return buildMultiYearMonthlyTrend({
+      source: data.incidents,
+      valueKey: "incidents",
+      years: comparisonYears,
+      selectedYear,
+      currentYear,
+      currentMonth,
+    });
+  }, [data.incidents, comparisonYears, selectedYear, currentYear, currentMonth]);
 
   const reportScope = useMemo(() => {
     const scopedIncidents = data.rawIncidents.filter((incident) =>
@@ -823,18 +959,23 @@ export default function Dashboard() {
     [dashboardInsights, navigate]
   );
 
-  const handleRowClick = useCallback((row) => {
-    if (row.employeeId) {
+  const handleRowClick = useCallback(
+    (row) => {
+      if (!row.employeeId) return;
+
       const targetEmployee = data.rawEmployees.find(
-        (emp) => String(emp.id) === String(row.employeeId) || String(emp.employeeId) === String(row.employeeId)
+        (emp) =>
+          String(emp.id) === String(row.employeeId) ||
+          String(emp.employeeId) === String(row.employeeId)
       );
 
       if (targetEmployee) {
         setEditingEmployee(targetEmployee);
         setActiveDrilldown(null);
       }
-    }
-  }, [data.rawEmployees]);
+    },
+    [data.rawEmployees]
+  );
 
   const totalIncidentsForYear = useMemo(
     () => incidentTrend.reduce((sum, item) => sum + item.value, 0),
@@ -1075,8 +1216,6 @@ export default function Dashboard() {
         onCardClick={handleOpenDrilldown}
       />
 
-      <YearlyComparisonPanel comparison={yearlyComparison} />
-
       <WorkforceHealthBanner health={dashboardInsights.health} />
 
       <ExecutiveActionItems actions={executiveActions} />
@@ -1114,11 +1253,23 @@ export default function Dashboard() {
         />
       </section>
 
-      <DeploymentTrendChart data={workforceTrend} />
+      <DeploymentTrendChart
+        data={workforceTrend}
+        comparisonData={deploymentComparisonTrend}
+        years={comparisonYears}
+        selectedYear={selectedYear}
+      />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <IncidentTrendChart data={incidentTrend} />
+        <IncidentTrendChart
+          data={incidentTrend}
+          comparisonData={incidentComparisonTrend}
+          years={comparisonYears}
+          selectedYear={selectedYear}
+        />
+
         <SeverityPieChart data={filteredSeverity} />
+
         <CaseAgingChart data={filteredAging} />
       </div>
 
@@ -1133,160 +1284,13 @@ export default function Dashboard() {
           employeeToEdit={editingEmployee}
           employees={data.rawEmployees}
           onClose={() => setEditingEmployee(null)}
-          onSaveSuccess={() => {
+          onSaveSuccess={async () => {
             setEditingEmployee(null);
-            loadData();
+            await loadData({ silent: true, showError: false });
+            emitDataUpdated("DASHBOARD_EMPLOYEE_EDIT");
           }}
         />
       )}
-    </div>
-  );
-}
-
-function YearlyComparisonPanel({ comparison }) {
-  if (!comparison) return null;
-
-  return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-            Yearly Performance Comparison
-          </h2>
-
-          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Compares selected year records against the previous year using
-            deployment and incident history.
-          </p>
-        </div>
-
-        <span className="w-fit rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-extrabold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-          {comparison.previousYear} vs {comparison.selectedYear}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <YearlyComparisonCard
-          title="Deployment Growth"
-          description="Tracks deployment records created per year."
-          previousYear={comparison.previousYear}
-          selectedYear={comparison.selectedYear}
-          data={comparison.deployment}
-          positiveIcon={<FiTrendingUp />}
-          goodLabel="Deployment increased compared to the previous year."
-          badLabel="Deployment decreased compared to the previous year."
-          neutralLabel="Deployment remained stable compared to the previous year."
-        />
-
-        <YearlyComparisonCard
-          title="Incident Reduction"
-          description="Tracks incident records created per year."
-          previousYear={comparison.previousYear}
-          selectedYear={comparison.selectedYear}
-          data={comparison.incident}
-          positiveIcon={<FiTrendingDown />}
-          goodLabel="Incident records decreased compared to the previous year."
-          badLabel="Incident records increased compared to the previous year."
-          neutralLabel="Incident level remained stable compared to the previous year."
-        />
-      </div>
-    </section>
-  );
-}
-
-function YearlyComparisonCard({
-  title,
-  description,
-  previousYear,
-  selectedYear,
-  data,
-  positiveIcon,
-  goodLabel,
-  badLabel,
-  neutralLabel,
-}) {
-  const toneClasses = {
-    good: {
-      card: "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
-      icon: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
-      text: "text-emerald-700 dark:text-emerald-300",
-      badge:
-        "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
-    },
-    bad: {
-      card: "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10",
-      icon: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
-      text: "text-red-700 dark:text-red-300",
-      badge: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
-    },
-    neutral: {
-      card: "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40",
-      icon: "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
-      text: "text-slate-700 dark:text-slate-300",
-      badge: "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
-    },
-  };
-
-  const styles = toneClasses[data?.tone] || toneClasses.neutral;
-
-  const interpretation =
-    data?.tone === "good"
-      ? goodLabel
-      : data?.tone === "bad"
-      ? badLabel
-      : neutralLabel;
-
-  return (
-    <article className={`rounded-2xl border p-5 ${styles.card}`}>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg ${styles.icon}`}
-          >
-            {data?.tone === "good" ? positiveIcon : <FiTrendingUp />}
-          </div>
-
-          <div>
-            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-              {title}
-            </h3>
-
-            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              {description}
-            </p>
-          </div>
-        </div>
-
-        <span
-          className={`w-fit rounded-full px-3 py-1 text-xs font-extrabold ${styles.badge}`}
-        >
-          {data?.label || "No comparison"}
-        </span>
-      </div>
-
-      <div className="mt-5 grid grid-cols-3 gap-3">
-        <MiniYearMetric label={previousYear} value={data?.previous || 0} />
-        <MiniYearMetric label={selectedYear} value={data?.current || 0} />
-        <MiniYearMetric label="Change" value={formatDiff(data?.diff || 0)} />
-      </div>
-
-      <p className={`mt-4 text-sm font-bold ${styles.text}`}>
-        {interpretation}
-      </p>
-    </article>
-  );
-}
-
-function MiniYearMetric({ label, value }) {
-  return (
-    <div className="rounded-xl bg-white/70 px-3 py-3 text-center dark:bg-slate-950/30">
-      <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-1 text-lg font-black text-slate-900 dark:text-white">
-        {value}
-      </p>
     </div>
   );
 }
@@ -1319,13 +1323,11 @@ function InsightCard({ title, value, tone = "indigo" }) {
   );
 }
 
-// ====================================================================
-// NEW COMPONENT: System Forecasting Panel (Portrait / Analytics UI)
-// ====================================================================
-
-function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], yearly: [] } }) {
-  const [forecastRange, setForecastRange] = useState('weekly');
-  const [selectedCategory, setSelectedCategory] = useState('All Categories');
+function PredictiveInsightsPanel({
+  predictions = { weekly: [], monthly: [], yearly: [] },
+}) {
+  const [forecastRange, setForecastRange] = useState("weekly");
+  const [selectedCategory, setSelectedCategory] = useState("All Categories");
 
   const CATEGORIES = [
     "All Categories",
@@ -1348,8 +1350,6 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
 
   return (
     <section className="rounded-3xl border border-indigo-200 bg-gradient-to-b from-indigo-50/40 to-white p-6 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/20 dark:to-slate-900">
-      
-      {/* Header and Controls */}
       <div className="mb-6 flex flex-col items-start justify-between gap-5 xl:flex-row xl:items-center">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 dark:shadow-none">
@@ -1357,15 +1357,20 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
           </div>
 
           <div>
-            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">System Forecasting & Next Steps</h2>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Run-rate predictive analysis based on current workforce data.</p>
+            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
+              System Forecasting & Next Steps
+            </h2>
+
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Run-rate predictive analysis based on current workforce data.
+            </p>
           </div>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <select
             value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
+            onChange={(event) => setSelectedCategory(event.target.value)}
             className="h-10 cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           >
             {CATEGORIES.map((category) => (
@@ -1376,14 +1381,14 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
           </select>
 
           <div className="flex shrink-0 rounded-xl bg-indigo-100/60 p-1 dark:bg-slate-800/80">
-            {['weekly', 'monthly', 'yearly'].map(range => (
+            {["weekly", "monthly", "yearly"].map((range) => (
               <button
                 key={range}
                 type="button"
                 onClick={() => setForecastRange(range)}
                 className={`rounded-lg px-5 py-2 text-xs font-bold transition-all ${
-                  forecastRange === range 
-                    ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white" 
+                  forecastRange === range
+                    ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white"
                     : "text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-white"
                 }`}
               >
@@ -1394,60 +1399,77 @@ function PredictiveInsightsPanel({ predictions = { weekly: [], monthly: [], year
         </div>
       </div>
 
-      {/* Predictions Grid (Portrait Cards) */}
       {activePredictions.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/50 py-12 text-center dark:border-white/10 dark:bg-slate-950/30">
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-             <FiBarChart2 className="text-slate-400" size={20} />
+            <FiBarChart2 className="text-slate-400" size={20} />
           </div>
-          <p className="text-base font-bold text-slate-700 dark:text-slate-300">No operational trend detected.</p>
-          <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">The system has not reached the percentage threshold to trigger a forecast for this category and period.</p>
+
+          <p className="text-base font-bold text-slate-700 dark:text-slate-300">
+            No operational trend detected.
+          </p>
+
+          <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
+            The system has not reached the percentage threshold to trigger a
+            forecast for this category and period.
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {activePredictions.map((pred) => {
-            
-            // Hinihiwalay ang string para maging highlighted yung "Forecast:" text
-            const isForecast = pred.action.includes("Forecast:");
-            const actionText = pred.action.replace("Forecast: ", "");
+          {activePredictions.map((prediction) => {
+            const isForecast = String(prediction.action || "").includes(
+              "Forecast:"
+            );
+
+            const actionText = String(prediction.action || "").replace(
+              "Forecast: ",
+              ""
+            );
 
             return (
-            <div 
-              key={pred.id} 
-              className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
-            >
-              <div>
-                <div className="mb-4 flex items-start justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
-                      {pred.percentage}
-                    </span>
-                    <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                      Affected Workforce
+              <div
+                key={prediction.id}
+                className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
+              >
+                <div>
+                  <div className="mb-4 flex items-start justify-between gap-2">
+                    <div className="flex flex-col">
+                      <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
+                        {prediction.percentage}
+                      </span>
+
+                      <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        Affected Workforce
+                      </span>
+                    </div>
+
+                    <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                      {prediction.count} Cases
                     </span>
                   </div>
-                  <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                    {pred.count} Cases
-                  </span>
+
+                  <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
+                    {prediction.category}
+                  </h4>
+
+                  <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
+                    {prediction.title}
+                  </h3>
                 </div>
 
-                <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
-                  {pred.category}
-                </h4>
-                
-                <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
-                  {pred.title}
-                </h3>
-              </div>
+                <div className="mt-5">
+                  <div className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50" />
 
-              <div className="mt-5">
-                <div className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50"></div>
-                <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
-                  {isForecast && <span className="font-extrabold text-indigo-600 dark:text-indigo-400">Forecast: </span>}
-                  {actionText}
-                </p>
+                  <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
+                    {isForecast && (
+                      <span className="font-extrabold text-indigo-600 dark:text-indigo-400">
+                        Forecast:{" "}
+                      </span>
+                    )}
+                    {actionText}
+                  </p>
+                </div>
               </div>
-            </div>
             );
           })}
         </div>

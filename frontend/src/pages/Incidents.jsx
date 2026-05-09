@@ -23,7 +23,22 @@ import {
 const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
+const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
 const AUDIT_API_URL = `${API_BASE}/audit-logs`;
+const DATA_EVENT_SOURCE = "incidents-page";
+
+function emitDataUpdated(action = "INCIDENTS_UPDATED") {
+  window.dispatchEvent(
+    new CustomEvent("dataUpdated", {
+      detail: {
+        source: DATA_EVENT_SOURCE,
+        domain: "incidents",
+        action,
+        at: Date.now(),
+      },
+    })
+  );
+}
 
 function formatIncidentCode(id) {
   if (!id) return "-";
@@ -36,6 +51,18 @@ function formatIncidentCode(id) {
   if (Number.isNaN(numeric)) return value;
 
   return `INC-${String(numeric).padStart(4, "0")}`;
+}
+
+function normalizeId(value) {
+  return String(value || "").trim();
+}
+
+function normalizeName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ");
 }
 
 function normalizeBackendIncident(incident) {
@@ -130,6 +157,93 @@ function normalizeBackendIncident(incident) {
   };
 }
 
+function normalizeBackendDeployment(deployment) {
+  return {
+    ...deployment,
+
+    deploymentId:
+      deployment.id || deployment.deploymentId || deployment.deployment_id,
+
+    employeeId:
+      deployment.employeeId ||
+      deployment.employee_id ||
+      deployment.empId ||
+      deployment.employeeID ||
+      "",
+
+    employee:
+      deployment.employee ||
+      deployment.employeeName ||
+      deployment.employee_name ||
+      deployment.name ||
+      "Unknown Employee",
+
+    employeeName:
+      deployment.employeeName ||
+      deployment.employee ||
+      deployment.employee_name ||
+      deployment.name ||
+      "Unknown Employee",
+
+    company:
+      deployment.company ||
+      deployment.clientCompany ||
+      deployment.client_company ||
+      "-",
+
+    location:
+      deployment.location ||
+      deployment.deploymentLocation ||
+      deployment.deployment_location ||
+      "-",
+
+    status:
+      deployment.status ||
+      deployment.deploymentStatus ||
+      deployment.deployment_status ||
+      "Active",
+
+    deploymentStatus:
+      deployment.deploymentStatus ||
+      deployment.deployment_status ||
+      deployment.status ||
+      "Active",
+
+    start:
+      deployment.start ||
+      deployment.deploymentDate ||
+      deployment.deployment_date ||
+      deployment.contractStart ||
+      deployment.contract_start ||
+      deployment.startDate ||
+      deployment.start_date ||
+      "-",
+
+    end:
+      deployment.end ||
+      deployment.endDate ||
+      deployment.end_date ||
+      deployment.deploymentEnd ||
+      deployment.deployment_end ||
+      deployment.contractEnd ||
+      deployment.contract_end ||
+      null,
+  };
+}
+
+function isActiveDeploymentRecord(deployment) {
+  const status = String(
+    deployment?.status ||
+      deployment?.deploymentStatus ||
+      deployment?.deployment_status ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  return ["active", "deployed", "active deployed", "ongoing"].includes(status);
+}
+
 function buildIncidentList(rawIncidents = []) {
   const normalized = rawIncidents.map(normalizeBackendIncident);
 
@@ -171,6 +285,7 @@ export default function Incidents() {
 
   const [employees, setEmployees] = useState([]);
   const [incidents, setIncidents] = useState([]);
+  const [deploymentRecords, setDeploymentRecords] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [openAddModal, setOpenAddModal] = useState(false);
@@ -181,7 +296,9 @@ export default function Incidents() {
   const [reviewIncident, setReviewIncident] = useState(null);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [caseTab, setCaseTab] = useState(
+    isSuperAdmin ? "FOR_REVIEW" : "ACTIVE"
+  );
   const [severityFilter, setSeverityFilter] = useState("ALL");
   const [notice, setNotice] = useState(null);
 
@@ -189,28 +306,122 @@ export default function Incidents() {
     setNotice({ type, title, message });
   }, []);
 
+  const activeDeployments = useMemo(() => {
+    return deploymentRecords.filter(isActiveDeploymentRecord);
+  }, [deploymentRecords]);
+
   const activeEmployees = useMemo(() => {
+    const activeDeploymentEmployeeIds = new Set(
+      activeDeployments
+        .map((deployment) => normalizeId(deployment.employeeId))
+        .filter(Boolean)
+    );
+
+    const activeDeploymentEmployeeNames = new Set(
+      activeDeployments
+        .map((deployment) =>
+          normalizeName(deployment.employee || deployment.employeeName)
+        )
+        .filter(Boolean)
+    );
+
     return employees.filter((emp) => {
-      const status = String(emp.status || "").trim().toLowerCase();
+      const employeeId = normalizeId(
+        emp.id || emp.employeeId || emp.employee_id
+      );
+      const employeeName = normalizeName(
+        emp.name || emp.full_name || emp.fullName
+      );
       const isArchived = emp.archived === true || Number(emp.archived) === 1;
 
+      if (isArchived) return false;
+
       return (
-        !isArchived &&
-        (status === "deployed" || status === "active deployed")
+        (!!employeeId && activeDeploymentEmployeeIds.has(employeeId)) ||
+        (!!employeeName && activeDeploymentEmployeeNames.has(employeeName))
       );
     });
-  }, [employees]);
+  }, [employees, activeDeployments]);
 
   const deployments = useMemo(() => {
-    return activeEmployees.map((emp) => ({
-      id: emp.id,
-      employeeId: emp.id,
-      employee: emp.name,
-      company: emp.company || "-",
-      status: "Active",
-      deploymentStatus: "Active",
-    }));
-  }, [activeEmployees]);
+    return activeDeployments.map((deployment) => {
+      const deploymentEmployeeId = normalizeId(deployment.employeeId);
+      const deploymentEmployeeName = normalizeName(
+        deployment.employee || deployment.employeeName
+      );
+
+      const employeeRecord = employees.find((emp) => {
+        const employeeId = normalizeId(
+          emp.id || emp.employeeId || emp.employee_id
+        );
+        const employeeName = normalizeName(
+          emp.name || emp.full_name || emp.fullName
+        );
+
+        return (
+          (!!deploymentEmployeeId && employeeId === deploymentEmployeeId) ||
+          (!!deploymentEmployeeName && employeeName === deploymentEmployeeName)
+        );
+      });
+
+      const employeeName =
+        employeeRecord?.name ||
+        employeeRecord?.full_name ||
+        employeeRecord?.fullName ||
+        deployment.employee ||
+        deployment.employeeName ||
+        "Unknown Employee";
+
+      return {
+        ...deployment,
+        id: deployment.deploymentId || deployment.id || deploymentEmployeeId,
+        employeeId:
+          deploymentEmployeeId ||
+          normalizeId(employeeRecord?.id || employeeRecord?.employeeId),
+        employee: employeeName,
+        employeeName,
+        company:
+          deployment.company ||
+          deployment.clientCompany ||
+          deployment.client_company ||
+          employeeRecord?.company ||
+          "-",
+        status: deployment.status || "Active",
+        deploymentStatus:
+          deployment.deploymentStatus || deployment.status || "Active",
+      };
+    });
+  }, [activeDeployments, employees]);
+
+  const incidentCaseCounts = useMemo(() => {
+    return incidents.reduce(
+      (counts, incident) => {
+        const status = normalizeStatus(incident.status);
+
+        counts.ALL += 1;
+
+        if (["Open", "Investigating"].includes(status)) {
+          counts.ACTIVE += 1;
+        }
+
+        if (status === "For Review") {
+          counts.FOR_REVIEW += 1;
+        }
+
+        if (status === "Closed") {
+          counts.CLOSED += 1;
+        }
+
+        return counts;
+      },
+      {
+        ALL: 0,
+        ACTIVE: 0,
+        FOR_REVIEW: 0,
+        CLOSED: 0,
+      }
+    );
+  }, [incidents]);
 
   const createOperationalLog = useCallback(
     async (action, description) => {
@@ -235,36 +446,83 @@ export default function Incidents() {
     [user, actorFullName]
   );
 
-  const fetchPageData = useCallback(async () => {
-    try {
-      setIsLoading(true);
+  const fetchPageData = useCallback(
+    async ({ silent = false, showError = true } = {}) => {
+      try {
+        if (!silent) {
+          setIsLoading(true);
+        }
 
-      const [employeeData, incidentData] = await Promise.all([
-        requestJson(EMPLOYEE_API_URL),
-        requestJson(INCIDENT_API_URL),
-      ]);
+        const [employeeData, incidentData, deploymentData] = await Promise.all([
+          requestJson(EMPLOYEE_API_URL),
+          requestJson(INCIDENT_API_URL),
+          requestJson(DEPLOYMENT_API_URL),
+        ]);
 
-      const backendIncidents = buildIncidentList(
-        Array.isArray(incidentData) ? incidentData : []
-      );
+        const backendIncidents = buildIncidentList(
+          Array.isArray(incidentData) ? incidentData : []
+        );
 
-      setEmployees(Array.isArray(employeeData) ? employeeData : []);
-      setIncidents(backendIncidents);
-    } catch (error) {
-      console.error("Fetch incident page data error:", error);
+        const backendDeployments = Array.isArray(deploymentData)
+          ? deploymentData.map(normalizeBackendDeployment)
+          : [];
 
-      showNotice(
-        "error",
-        "Backend Fetch Failed",
-        error.message || "Unable to load employee and incident records."
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [showNotice]);
+        setEmployees(Array.isArray(employeeData) ? employeeData : []);
+        setIncidents(backendIncidents);
+        setDeploymentRecords(backendDeployments);
+      } catch (error) {
+        console.error("Fetch incident page data error:", error);
+
+        if (showError) {
+          showNotice(
+            "error",
+            "Backend Fetch Failed",
+            error.message ||
+              "Unable to load employee, deployment, and incident records."
+          );
+        }
+      } finally {
+        if (!silent) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [showNotice]
+  );
 
   useEffect(() => {
     fetchPageData();
+  }, [fetchPageData]);
+
+  useEffect(() => {
+    let refreshTimer = null;
+
+    const refreshSilently = () => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+
+      refreshTimer = setTimeout(() => {
+        fetchPageData({ silent: true, showError: false });
+      }, 150);
+    };
+
+    const handleDataUpdated = (event) => {
+      if (event?.detail?.source === DATA_EVENT_SOURCE) return;
+      refreshSilently();
+    };
+
+    window.addEventListener("dataUpdated", handleDataUpdated);
+    window.addEventListener("focus", refreshSilently);
+
+    return () => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+
+      window.removeEventListener("dataUpdated", handleDataUpdated);
+      window.removeEventListener("focus", refreshSilently);
+    };
   }, [fetchPageData]);
 
   useEffect(() => {
@@ -357,6 +615,9 @@ export default function Incidents() {
         updateIncidentState(updatedIncident);
 
         await createOperationalLog(auditAction, auditDescription);
+        await fetchPageData({ silent: true, showError: false });
+
+        emitDataUpdated(auditAction);
 
         showNotice("success", successTitle, successMessage);
 
@@ -376,6 +637,7 @@ export default function Incidents() {
     [
       actorFullName,
       createOperationalLog,
+      fetchPageData,
       showNotice,
       updateIncidentState,
       user?.id,
@@ -388,12 +650,30 @@ export default function Incidents() {
   const handleAddIncident = async (newIncident) => {
     if (isSuperAdmin) return false;
 
+    const activeDeploymentForEmployee = deployments.find((deployment) => {
+      const deploymentEmployeeId = normalizeId(deployment.employeeId);
+      const incidentEmployeeId = normalizeId(newIncident.employeeId);
+
+      return deploymentEmployeeId && deploymentEmployeeId === incidentEmployeeId;
+    });
+
+    if (!activeDeploymentForEmployee) {
+      showNotice(
+        "error",
+        "Employee Not Deployed",
+        "Incident reports can only be created for employees with an active deployment record."
+      );
+      return false;
+    }
+
     const totalEmployeeCases = incidents.filter(
       (inc) => String(inc.employeeId) === String(newIncident.employeeId)
     ).length;
 
     const escalatedIncident = {
       ...newIncident,
+      company:
+        activeDeploymentForEmployee.company || newIncident.company || "",
       severity:
         totalEmployeeCases >= 4 && newIncident.severity !== "Critical"
           ? "Critical"
@@ -443,20 +723,22 @@ export default function Incidents() {
         }),
       });
 
-      await fetchPageData();
-
       await createOperationalLog(
         "CREATE_INCIDENT",
         `${actorFullName} created an incident report for employee ${normalizedIncident.employee}.`
       );
 
       setOpenAddModal(false);
+      setCaseTab("ACTIVE");
+
+      await fetchPageData({ silent: true, showError: false });
+      emitDataUpdated("CREATE_INCIDENT");
 
       showNotice(
         "success",
         "Incident Report Saved",
         `Incident ${formatIncidentCode(
-          response?.id
+          response?.id || response?.incidentId
         )} has been saved to the system.`
       );
 
@@ -634,6 +916,7 @@ export default function Incidents() {
 
     if (success) {
       setReviewIncident(null);
+      setCaseTab("CLOSED");
     }
   };
 
@@ -686,6 +969,7 @@ export default function Incidents() {
 
     if (success) {
       setReviewIncident(null);
+      setCaseTab("ACTIVE");
     }
   };
 
@@ -699,6 +983,14 @@ export default function Incidents() {
     const searchTerms = cleanSearch ? cleanSearch.split(/\s+/) : [];
 
     return incidents.filter((incident) => {
+      const status = normalizeStatus(incident.status);
+
+      const matchesCaseTab =
+        caseTab === "ALL" ||
+        (caseTab === "ACTIVE" && ["Open", "Investigating"].includes(status)) ||
+        (caseTab === "FOR_REVIEW" && status === "For Review") ||
+        (caseTab === "CLOSED" && status === "Closed");
+
       const cleanEmployeeName = String(
         incident.employee || incident.employeeName || ""
       )
@@ -726,15 +1018,12 @@ export default function Incidents() {
       const matchSearch =
         !rawSearch || matchName || fallbackString.includes(rawSearch);
 
-      const matchesStatus =
-        statusFilter === "ALL" || incident.status === statusFilter;
-
       const matchesSeverity =
         severityFilter === "ALL" || incident.severity === severityFilter;
 
-      return matchSearch && matchesStatus && matchesSeverity;
+      return matchesCaseTab && matchSearch && matchesSeverity;
     });
-  }, [incidents, search, statusFilter, severityFilter]);
+  }, [incidents, search, caseTab, severityFilter]);
 
   return (
     <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
@@ -770,8 +1059,9 @@ export default function Incidents() {
           incidents={filteredIncidents}
           search={search}
           onSearchChange={setSearch}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
+          caseTab={caseTab}
+          onCaseTabChange={setCaseTab}
+          caseCounts={incidentCaseCounts}
           severityFilter={severityFilter}
           onSeverityFilterChange={setSeverityFilter}
           isSuperAdmin={isSuperAdmin}
