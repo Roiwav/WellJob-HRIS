@@ -536,7 +536,7 @@ function buildWorkforceHealth({
   };
 }
 
-// ================= ADAPTIVE FORECASTING ENGINE (8 CATEGORIES) =================
+// ================= FORECASTING ENGINE (PERCENTAGE BASED) =================
 
 function getIncidentsLastNDays(incidents, days) {
   const today = new Date();
@@ -552,33 +552,16 @@ function getIncidentsLastNDays(incidents, days) {
   });
 }
 
-// Adaptive Risk Logic: Base sa porsyento ng populasyon ng kumpanya (Adaptive sa 1,700+ employees)
-function getDynamicRisk(count, range, totalEmployees) {
-  const empCount = Math.max(totalEmployees, 100); 
-
-  if (range === 'weekly') {
-    const crit = Math.max(10, Math.ceil(0.01 * empCount));   // 1.0% Threshold
-    const high = Math.max(5, Math.ceil(0.005 * empCount));  // 0.5% Threshold
-    if (count >= crit) return { priority: "Critical", tone: "red" };
-    if (count >= high) return { priority: "High", tone: "amber" };
-    return { priority: "Medium", tone: "blue" };
-  } else {
-    const crit = Math.max(25, Math.ceil(0.03 * empCount));  // 3.0% Threshold
-    const high = Math.max(12, Math.ceil(0.015 * empCount)); // 1.5% Threshold
-    if (count >= crit) return { priority: "Critical", tone: "red" };
-    if (count >= high) return { priority: "High", tone: "amber" };
-    return { priority: "Medium", tone: "blue" };
-  }
-}
-
 function generateCategoryForecast(incidents, range, totalEmployees) {
-  const empCount = Math.max(totalEmployees, 100);
-  // Minimum count para lumabas ang card (Weekly: 0.1% | Monthly: 0.3%)
+  // Gamitin ang max(1) para maiwasan ang division by zero errors kung walang empleyado
+  const empCount = Math.max(totalEmployees, 1);
+  
+  // Dynamic minimum count para lumabas ang card (Weekly: 0.1% | Monthly: 0.3%)
   const minToShow = range === 'weekly' 
     ? Math.max(2, Math.ceil(0.001 * empCount)) 
     : Math.max(5, Math.ceil(0.003 * empCount));
 
-  // 8 Major Categories ayon sa inyong Code of Conduct
+  // 8 Major Categories ayon sa Code of Conduct
   const counts = { c1:0, c2:0, c3:0, c4:0, c5:0, c6:0, c7:0, c8:0 };
 
   incidents.forEach((incident) => {
@@ -603,17 +586,19 @@ function generateCategoryForecast(incidents, range, totalEmployees) {
   });
 
   const predictions = [];
+  
   const addPred = (id, category, count, title, actionW, actionM, zeroTolerance = false) => {
     if (count >= (zeroTolerance ? 1 : minToShow)) {
-      const risk = getDynamicRisk(count, range, totalEmployees);
+      // Kinukuha natin ang eksaktong percentage (halimbawa: 0.24%)
+      const percentage = ((count / empCount) * 100).toFixed(2);
+      
       predictions.push({
         id, 
         category, 
         title, 
         count,
-        action: range === 'weekly' ? actionW : actionM,
-        priority: zeroTolerance ? "Critical" : risk.priority,
-        tone: zeroTolerance ? "red" : risk.tone
+        percentage: `${percentage}%`,
+        action: range === 'weekly' ? actionW : actionM
       });
     }
   };
@@ -743,7 +728,6 @@ export function buildDashboardInsights({
     utilizationRate,
   });
 
-  // I-pass natin ang kabuuang bilang ng mga empleyado at BUONG raw incidents list
   const totalEmployees = employees.length;
   const incidentsLast7Days = getIncidentsLastNDays(incidents, 7);
   const incidentsLast30Days = getIncidentsLastNDays(incidents, 30);
