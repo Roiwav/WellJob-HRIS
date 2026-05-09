@@ -5,6 +5,18 @@ import {
   requestSmartAlertJson,
 } from "../utils/notifications/smartNotifications";
 
+function getDisplayName(user) {
+  return (
+    user?.name ||
+    user?.fullName ||
+    user?.fullname ||
+    user?.full_name ||
+    user?.displayName ||
+    user?.username ||
+    "Unknown User"
+  );
+}
+
 export default function useSmartNotifications(user, options = {}) {
   const role = user?.role || "USER";
   const userKey = useMemo(() => getUserKey(user), [user]);
@@ -54,12 +66,17 @@ export default function useSmartNotifications(user, options = {}) {
         const query = new URLSearchParams({
           userKey,
           role,
+          userId: String(user?.id || user?.userId || ""),
+          username: String(user?.username || ""),
+          userName: getDisplayName(user),
         }).toString();
 
         const data = await requestSmartAlertJson(`/smart-alerts?${query}`);
 
         setAlerts(Array.isArray(data.alerts) ? data.alerts : []);
-        setLatestAlerts(Array.isArray(data.latestAlerts) ? data.latestAlerts : []);
+        setLatestAlerts(
+          Array.isArray(data.latestAlerts) ? data.latestAlerts : []
+        );
         setPopupAlert(data.popupAlert || null);
         setSummary(
           data.summary || {
@@ -83,7 +100,7 @@ export default function useSmartNotifications(user, options = {}) {
         setIsFetching(false);
       }
     },
-    [canView, role, userKey]
+    [canView, role, user, userKey]
   );
 
   const markAlertAsRead = useCallback(
@@ -142,6 +159,7 @@ export default function useSmartNotifications(user, options = {}) {
 
     const handleDataUpdated = () => fetchAlerts({ silent: true });
     const handleWindowFocus = () => fetchAlerts({ silent: true });
+
     const intervalId = window.setInterval(
       () => fetchAlerts({ silent: true }),
       pollInterval

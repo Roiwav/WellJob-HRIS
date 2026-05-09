@@ -1,9 +1,9 @@
 import {
   FiAlertTriangle,
-  FiBell,
   FiClock,
   FiEye,
   FiInfo,
+  FiUser,
   FiX,
 } from "react-icons/fi";
 import { getAlertPriorityClasses } from "../../utils/notifications/smartNotifications";
@@ -25,6 +25,11 @@ export default function SmartAlertToast({ alert, onView, onDismiss }) {
   if (!alert) return null;
 
   const styles = getAlertPriorityClasses(alert.priority);
+  const reporter =
+    alert.reportedByName ||
+    alert.reporterName ||
+    alert.reportedBy ||
+    "Unknown Reporter";
 
   return (
     <div className="fixed bottom-5 right-5 z-[1200] w-[calc(100vw-2rem)] max-w-md">
@@ -61,6 +66,12 @@ export default function SmartAlertToast({ alert, onView, onDismiss }) {
             <p className="mt-2 text-sm leading-6 opacity-90">
               {alert.message}
             </p>
+
+            <div className="mt-3 flex items-center gap-2 rounded-2xl bg-white/60 p-3 text-xs font-black leading-5 dark:bg-slate-950/30">
+              <FiUser className="shrink-0" />
+              <span className="opacity-70">Reported by:</span>
+              <span className="truncate">{reporter}</span>
+            </div>
 
             <div className="mt-3 rounded-2xl bg-white/60 p-3 text-xs font-semibold leading-5 dark:bg-slate-950/30">
               {alert.recommendedAction}

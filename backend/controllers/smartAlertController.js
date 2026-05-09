@@ -33,24 +33,58 @@ function normalizeSeverity(severity) {
   return severity || "Minor";
 }
 
+function normalizeIdentity(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function isArchivedEmployee(employee) {
   return employee?.archived === true || Number(employee?.archived) === 1;
 }
 
 function getUserKey(req) {
+  const query = req?.query || {};
+  const body = req?.body || {};
+
   return (
-    req.query.userKey ||
-    req.body.userKey ||
-    req.query.username ||
-    req.body.username ||
-    req.query.userId ||
-    req.body.userId ||
+    query.userKey ||
+    body.userKey ||
+    query.username ||
+    body.username ||
+    query.userId ||
+    body.userId ||
     "UNKNOWN_USER"
   );
 }
 
 function getRole(req) {
-  return req.query.role || req.body.role || "USER";
+  const query = req?.query || {};
+  const body = req?.body || {};
+
+  return query.role || body.role || "USER";
+}
+
+function getCurrentUserAliases(req) {
+  const query = req?.query || {};
+  const body = req?.body || {};
+
+  return new Set(
+    [
+      query.userKey,
+      body.userKey,
+      query.userId,
+      body.userId,
+      query.username,
+      body.username,
+      query.userName,
+      body.userName,
+      query.fullName,
+      body.fullName,
+      query.name,
+      body.name,
+    ]
+      .map(normalizeIdentity)
+      .filter(Boolean)
+  );
 }
 
 function cleanAlertKey(value) {
@@ -62,6 +96,85 @@ function cleanAlertKey(value) {
 function toTimestamp(value) {
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? 0 : time;
+}
+
+async function tableExists(tableName) {
+  const [rows] = await db.promise().query("SHOW TABLES LIKE ?", [tableName]);
+  return rows.length > 0;
+}
+
+function addAlias(map, key, displayName) {
+  const normalizedKey = normalizeIdentity(key);
+  const normalizedName = String(displayName || "").trim();
+
+  if (normalizedKey && normalizedName) {
+    map.set(normalizedKey, normalizedName);
+  }
+}
+
+async function getReporterNameMap() {
+  const userTable = (await tableExists("users"))
+    ? "users"
+    : (await tableExists("user_accounts"))
+    ? "user_accounts"
+    : null;
+
+  const map = new Map();
+
+  if (!userTable) return map;
+
+  const [rows] = await db.promise().query(`SELECT * FROM ${userTable}`);
+
+  rows.forEach((user) => {
+    const displayName =
+      user.name ||
+      user.full_name ||
+      user.fullName ||
+      user.fullname ||
+      user.display_name ||
+      user.username ||
+      "Unknown User";
+
+    addAlias(map, user.id, displayName);
+    addAlias(map, user.user_id, displayName);
+    addAlias(map, user.userId, displayName);
+    addAlias(map, user.employee_id, displayName);
+    addAlias(map, user.employeeId, displayName);
+    addAlias(map, user.username, displayName);
+    addAlias(map, user.email, displayName);
+    addAlias(map, user.name, displayName);
+    addAlias(map, user.full_name, displayName);
+    addAlias(map, user.fullName, displayName);
+    addAlias(map, user.fullname, displayName);
+    addAlias(map, user.display_name, displayName);
+  });
+
+  return map;
+}
+
+function resolveReporterName(reporterRaw, reporterNameMap) {
+  const raw = String(reporterRaw || "").trim();
+
+  if (!raw) return "Unknown Reporter";
+
+  return reporterNameMap.get(normalizeIdentity(raw)) || raw;
+}
+
+function isOwnReportedIncident(incident, currentUserAliases) {
+  if (!currentUserAliases || currentUserAliases.size === 0) return false;
+
+  const possibleReporterValues = [
+    incident.reportedBy,
+    incident.reportedByName,
+    incident.reporterName,
+    incident.reported_by,
+    incident.createdBy,
+    incident.created_by,
+  ];
+
+  return possibleReporterValues.some((value) =>
+    currentUserAliases.has(normalizeIdentity(value))
+  );
 }
 
 function getIncidentTimeByRole(incident, role) {
@@ -101,7 +214,7 @@ function normalizeEmployee(employee) {
   };
 }
 
-function normalizeIncident(incident) {
+function normalizeIncident(incident, reporterNameMap = new Map()) {
   const employeeName =
     incident.employee_name ||
     incident.employeeNameFromEmployee ||
@@ -109,6 +222,15 @@ function normalizeIncident(incident) {
 
   const violation =
     incident.violation_type || incident.violation || "No violation specified";
+
+  const reportedByRaw =
+    incident.reported_by ||
+    incident.reportedBy ||
+    incident.created_by ||
+    incident.createdBy ||
+    "Unknown Reporter";
+
+  const reportedByName = resolveReporterName(reportedByRaw, reporterNameMap);
 
   return {
     ...incident,
@@ -121,7 +243,9 @@ function normalizeIncident(incident) {
     violationType: violation,
     severity: normalizeSeverity(incident.severity),
     status: normalizeStatus(incident.status),
-    reportedBy: incident.reported_by || "Unknown",
+    reportedBy: reportedByRaw,
+    reportedByName,
+    reporterName: reportedByName,
     date: incident.incident_date || incident.created_at,
     createdAt: incident.created_at,
     updatedAt: incident.updated_at || incident.created_at,
@@ -232,6 +356,12 @@ function buildIncidentAlert(incident, role) {
   const status = normalizeStatus(incident.status);
   const severity = normalizeSeverity(incident.severity);
 
+  const reporterName =
+    incident.reportedByName ||
+    incident.reporterName ||
+    incident.reportedBy ||
+    "Unknown Reporter";
+
   const alertKey = cleanAlertKey(
     `INCIDENT:${incident.id}:${status}:${severity}:${timestamp}`
   );
@@ -251,6 +381,9 @@ function buildIncidentAlert(incident, role) {
     violation: incident.violationType || "-",
     severity,
     status,
+    reportedBy: reporterName,
+    reportedByName: reporterName,
+    reporterName,
     date: getIncidentDateByRole(incident, role),
     timestamp,
     route: "/incidents",
@@ -293,6 +426,12 @@ function buildEmployeePatternAlerts(activeEmployees, visibleIncidents, role) {
         ? ALERT_PRIORITY.HIGH
         : ALERT_PRIORITY.MEDIUM;
 
+    const reporterName =
+      latestIncident?.reportedByName ||
+      latestIncident?.reporterName ||
+      latestIncident?.reportedBy ||
+      "System Generated";
+
     alerts.push({
       alertKey: cleanAlertKey(
         `EMPLOYEE_PATTERN:${employee.id}:${activeCases.length}:${criticalCount}:${latestTime}`
@@ -311,6 +450,9 @@ function buildEmployeePatternAlerts(activeEmployees, visibleIncidents, role) {
       violation: "Repeated incident pattern",
       severity: criticalCount > 0 ? "Critical" : "Major",
       status: "Active Pattern",
+      reportedBy: reporterName,
+      reportedByName: reporterName,
+      reporterName,
       date: latestIncident?.updatedAt || latestIncident?.createdAt,
       timestamp: latestTime,
       route: "/incidents",
@@ -325,6 +467,8 @@ function buildEmployeePatternAlerts(activeEmployees, visibleIncidents, role) {
 }
 
 async function fetchBaseData() {
+  const reporterNameMap = await getReporterNameMap();
+
   const [employees] = await db.promise().query(`
     SELECT id, name, company, status, archived
     FROM employees
@@ -343,11 +487,13 @@ async function fetchBaseData() {
 
   return {
     employees: employees.map(normalizeEmployee),
-    incidents: incidents.map(normalizeIncident),
+    incidents: incidents.map((incident) =>
+      normalizeIncident(incident, reporterNameMap)
+    ),
   };
 }
 
-function buildSmartAlerts({ employees, incidents, role }) {
+function buildSmartAlerts({ employees, incidents, role, currentUserAliases }) {
   const activeEmployees = employees.filter((employee) => !employee.archived);
 
   const visibleIncidents = incidents.filter((incident) => {
@@ -355,7 +501,11 @@ function buildSmartAlerts({ employees, incidents, role }) {
       isSameEmployee(employee, incident)
     );
 
-    return employeeIsActive && isAlertVisibleForRole(incident, role);
+    return (
+      employeeIsActive &&
+      isAlertVisibleForRole(incident, role) &&
+      !isOwnReportedIncident(incident, currentUserAliases)
+    );
   });
 
   const incidentAlerts = visibleIncidents.map((incident) =>
@@ -412,8 +562,7 @@ function buildSummary(alerts) {
       .length,
     medium: alerts.filter((alert) => alert.priority === ALERT_PRIORITY.MEDIUM)
       .length,
-    low: alerts.filter((alert) => alert.priority === ALERT_PRIORITY.LOW)
-      .length,
+    low: alerts.filter((alert) => alert.priority === ALERT_PRIORITY.LOW).length,
   };
 }
 
@@ -459,6 +608,7 @@ exports.getSmartAlerts = async (req, res) => {
   try {
     const userKey = getUserKey(req);
     const role = getRole(req);
+    const currentUserAliases = getCurrentUserAliases(req);
 
     if (!["HR_MANAGER", "HR_STAFF", "SUPER_ADMIN"].includes(role)) {
       return res.json({
@@ -477,24 +627,30 @@ exports.getSmartAlerts = async (req, res) => {
     }
 
     const { employees, incidents } = await fetchBaseData();
-    const alerts = buildSmartAlerts({ employees, incidents, role });
+
+    const alerts = buildSmartAlerts({
+      employees,
+      incidents,
+      role,
+      currentUserAliases,
+    });
 
     const stateMap = await getAlertStates({ userKey, role });
     const alertsWithState = applyAlertStates(alerts, stateMap);
 
-  const unreadAlerts = alertsWithState.filter((alert) => !alert.isRead);
+    const unreadAlerts = alertsWithState.filter((alert) => !alert.isRead);
 
-  const popupAlert =
-    unreadAlerts
-      .filter((alert) => !alert.isDismissed)
-      .sort((a, b) => {
-        const timeA = Number(a.timestamp || 0);
-        const timeB = Number(b.timestamp || 0);
+    const popupAlert =
+      unreadAlerts
+        .filter((alert) => !alert.isDismissed)
+        .sort((a, b) => {
+          const timeA = Number(a.timestamp || 0);
+          const timeB = Number(b.timestamp || 0);
 
-        if (timeB !== timeA) return timeB - timeA;
+          if (timeB !== timeA) return timeB - timeA;
 
-        return Number(b.priorityRank || 0) - Number(a.priorityRank || 0);
-      })[0] || null;
+          return Number(b.priorityRank || 0) - Number(a.priorityRank || 0);
+        })[0] || null;
 
     res.json({
       alerts: alertsWithState,
@@ -513,7 +669,7 @@ exports.markSmartAlertRead = async (req, res) => {
   try {
     const userKey = getUserKey(req);
     const role = getRole(req);
-    const alertKey = req.body.alertKey;
+    const alertKey = req?.body?.alertKey;
 
     if (!alertKey) {
       return res.status(400).json({ error: "Alert key is required." });
@@ -538,7 +694,7 @@ exports.dismissSmartAlert = async (req, res) => {
   try {
     const userKey = getUserKey(req);
     const role = getRole(req);
-    const alertKey = req.body.alertKey;
+    const alertKey = req?.body?.alertKey;
 
     if (!alertKey) {
       return res.status(400).json({ error: "Alert key is required." });
@@ -563,7 +719,7 @@ exports.markAllSmartAlertsRead = async (req, res) => {
   try {
     const userKey = getUserKey(req);
     const role = getRole(req);
-    const alertKeys = Array.isArray(req.body.alertKeys)
+    const alertKeys = Array.isArray(req?.body?.alertKeys)
       ? req.body.alertKeys
       : [];
 
