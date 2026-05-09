@@ -84,16 +84,18 @@ export default function EmployeeTable({
         </span>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left">
-          <thead className="bg-gray-50 dark:bg-white/5">
-            <tr className="border-b border-gray-200 text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:border-white/10 dark:text-gray-400">
-              <th className="px-6 py-4">Employee ID</th>
-              <th className="px-6 py-4">Full Name</th>
-              <th className="px-6 py-4">Company</th>
-              <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4">Compliance</th>
-              <th className="px-6 py-4 text-center">Actions</th>
+      {/* MODIFIED: Added max-height and overflow-y-auto for the sticky header to work */}
+      <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+        <table className="w-full min-w-[900px] text-left border-separate border-spacing-0">
+          {/* MODIFIED: Added sticky top-0 and z-index to the table head */}
+          <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-800">
+            <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Employee ID</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Full Name</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Company</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Status</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Compliance</th>
+              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10 text-center">Actions</th>
             </tr>
           </thead>
 
@@ -117,13 +119,13 @@ export default function EmployeeTable({
                     key={emp.uid || emp.id}
                     className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5"
                   >
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
                         {emp.id || "-"}
                       </span>
                     </td>
 
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <p className="font-semibold text-gray-900 dark:text-white">
                         {emp.name || "-"}
                       </p>
