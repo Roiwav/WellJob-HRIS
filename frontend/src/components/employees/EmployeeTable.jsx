@@ -16,45 +16,132 @@ const REQUIRED_DOCUMENTS = [
 
 const EXPIRABLE_DOCUMENTS = ["Barangay Clearance", "NBI/Police Clearance"];
 
+const VALID_COMPLIANCE_STATUSES = [
+  "Valid",
+  "Expiring Soon",
+  "Expired",
+  "Incomplete",
+  "No Data",
+  "No Compliance",
+  "Complete",
+];
+
+function normalizeDate(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date;
+}
+
+function hasDocumentFile(doc) {
+  return Boolean(
+    doc?.file ||
+      doc?.filePath ||
+      doc?.file_path ||
+      doc?.url ||
+      doc?.fileUrl ||
+      doc?.file_url
+  );
+}
+
+function getDocumentExpiration(doc) {
+  return (
+    doc?.expirationDate ||
+    doc?.expiration_date ||
+    doc?.expiryDate ||
+    doc?.expiry_date ||
+    doc?.expiresAt ||
+    doc?.expires_at ||
+    ""
+  );
+}
+
 function getSafeComplianceStatus(documents = []) {
   if (!Array.isArray(documents) || documents.length === 0) {
-    return "No Compliance";
+    return "No Data";
   }
 
-  const checkedDocs = documents.filter((doc) => {
-    if (typeof doc === "string") return true;
-    return doc?.name;
-  });
+  let hasMissing = false;
+  let hasExpired = false;
+  let hasExpiringSoon = false;
 
-  if (checkedDocs.length === 0) {
-    return "No Compliance";
-  }
-
-  const completedCount = REQUIRED_DOCUMENTS.filter((requiredName) => {
+  REQUIRED_DOCUMENTS.forEach((requiredName) => {
     const doc = documents.find((item) =>
-      typeof item === "string" ? item === requiredName : item?.name === requiredName
+      typeof item === "string"
+        ? item === requiredName
+        : item?.name === requiredName
     );
 
-    if (!doc) return false;
+    if (!doc) {
+      hasMissing = true;
+      return;
+    }
 
     if (typeof doc === "string") {
-      return !EXPIRABLE_DOCUMENTS.includes(requiredName);
+      if (EXPIRABLE_DOCUMENTS.includes(requiredName)) {
+        hasMissing = true;
+      }
+      return;
     }
 
-    if (!doc.file) return false;
-
-    if (EXPIRABLE_DOCUMENTS.includes(requiredName) && !doc.expirationDate) {
-      return false;
+    if (!hasDocumentFile(doc)) {
+      hasMissing = true;
+      return;
     }
 
-    return true;
-  }).length;
+    if (!EXPIRABLE_DOCUMENTS.includes(requiredName)) {
+      return;
+    }
 
-  if (completedCount === REQUIRED_DOCUMENTS.length) {
-    return "Complete";
+    const expirationValue = getDocumentExpiration(doc);
+
+    if (!expirationValue) {
+      hasMissing = true;
+      return;
+    }
+
+    const expirationDate = normalizeDate(expirationValue);
+
+    if (!expirationDate) {
+      hasMissing = true;
+      return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expirationDate.setHours(0, 0, 0, 0);
+
+    const daysBeforeExpiration = Math.ceil(
+      (expirationDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (daysBeforeExpiration < 0) {
+      hasExpired = true;
+      return;
+    }
+
+    if (daysBeforeExpiration <= 30) {
+      hasExpiringSoon = true;
+    }
+  });
+
+  if (hasExpired) return "Expired";
+  if (hasExpiringSoon) return "Expiring Soon";
+  if (hasMissing) return "Incomplete";
+
+  return "Valid";
+}
+
+function normalizeComplianceStatus(status, documents) {
+  if (VALID_COMPLIANCE_STATUSES.includes(status)) {
+    if (status === "Complete") return "Valid";
+    if (status === "No Compliance") return "No Data";
+    return status;
   }
 
-  return "Incomplete";
+  return getSafeComplianceStatus(documents);
 }
 
 export default function EmployeeTable({
@@ -84,48 +171,56 @@ export default function EmployeeTable({
         </span>
       </div>
 
-      {/* MODIFIED: Added max-height and overflow-y-auto for the sticky header to work */}
-      <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-        <table className="w-full min-w-[900px] text-left border-separate border-spacing-0">
-          {/* MODIFIED: Added sticky top-0 and z-index to the table head */}
+      <div className="max-h-[600px] overflow-x-auto overflow-y-auto">
+        <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left">
           <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-800">
             <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Employee ID</th>
-              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Full Name</th>
-              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Company</th>
-              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Status</th>
-              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10">Compliance</th>
-              <th className="px-6 py-4 border-b border-gray-200 dark:border-white/10 text-center">Actions</th>
+              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                Employee ID
+              </th>
+              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                Full Name
+              </th>
+              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                Company
+              </th>
+              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                Status
+              </th>
+              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                Compliance
+              </th>
+              <th className="border-b border-gray-200 px-6 py-4 text-center dark:border-white/10">
+                Actions
+              </th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-gray-100 dark:divide-white/5">
             {employees.length > 0 ? (
               employees.map((emp) => {
-                const compliance =
+                const rawCompliance =
                   typeof getComplianceStatus === "function"
                     ? getComplianceStatus(emp.documents)
                     : getSafeComplianceStatus(emp.documents);
 
-                const safeCompliance =
-                  compliance === "Complete" ||
-                  compliance === "Incomplete" ||
-                  compliance === "No Compliance"
-                    ? compliance
-                    : getSafeComplianceStatus(emp.documents);
+                const safeCompliance = normalizeComplianceStatus(
+                  rawCompliance,
+                  emp.documents
+                );
 
                 return (
                   <tr
                     key={emp.uid || emp.id}
                     className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="whitespace-nowrap px-6 py-4">
                       <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
                         {emp.id || "-"}
                       </span>
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="whitespace-nowrap px-6 py-4">
                       <p className="font-semibold text-gray-900 dark:text-white">
                         {emp.name || "-"}
                       </p>

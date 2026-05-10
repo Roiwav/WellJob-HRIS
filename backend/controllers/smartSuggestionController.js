@@ -26,7 +26,9 @@ function normalizeLabel(value, fallback = "-") {
 
 function normalizeCompany(value) {
   const company = normalizeLabel(value, "Unassigned");
-  return company === "null" || company === "undefined" ? "Unassigned" : company;
+  return company === "null" || company === "undefined"
+    ? "Unassigned"
+    : company;
 }
 
 function normalizeStatus(status) {
@@ -50,18 +52,6 @@ function normalizeSeverity(severity) {
   if (value === "minor") return "Minor";
 
   return severity || "Minor";
-}
-
-function getUserKey(req) {
-  return (
-    req.query.userKey ||
-    req.body.userKey ||
-    req.query.username ||
-    req.body.username ||
-    req.query.userId ||
-    req.body.userId ||
-    "UNKNOWN_USER"
-  );
 }
 
 function getRole(req) {
@@ -194,6 +184,7 @@ function normalizeIncident(incident) {
 
 async function fetchEmployees() {
   const [rows] = await db.promise().query("SELECT * FROM employees");
+
   return rows.map(normalizeEmployee).filter((employee) => !employee.archived);
 }
 
@@ -242,7 +233,11 @@ async function fetchEmployeeDocuments() {
 function groupBy(items, getKey) {
   return items.reduce((map, item) => {
     const key = getKey(item);
-    if (!map.has(key)) map.set(key, []);
+
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+
     map.get(key).push(item);
     return map;
   }, new Map());
@@ -269,8 +264,8 @@ function createSuggestion({
 
   return {
     suggestionKey: cleanKey(
-      `${sourceType}:${finalCompany}:${title}:${finalTimestamp}:${metrics
-        .map((m) => `${m.label}-${m.value}`)
+      `${sourceType}:${finalCompany}:${title}:${metrics
+        .map((metric) => `${metric.label}-${metric.value}`)
         .join(":")}`
     ),
     category,
@@ -317,9 +312,9 @@ function buildAbsenteeismSuggestions(incidents) {
         company,
         issue: `${companyIncidents.length} active absence or attendance-related record(s) detected.`,
         recommendation:
-          "Review attendance pattern, assign reserve manpower if needed, and consider additional hiring or reliever allocation when staffing continuity is affected.",
+          "Review attendance pattern and consider reserve or floating manpower if deployment continuity is affected.",
         reason:
-          "The system detected repeated absence or attendance-related incidents from the same client company, which may affect deployment continuity.",
+          "Repeated attendance-related records were detected from the same client company.",
         metrics: [
           { label: "Attendance Cases", value: companyIncidents.length },
           { label: "Critical", value: criticalCount },
@@ -361,11 +356,11 @@ function buildRepeatedViolationSuggestions(incidents) {
             : PRIORITY.MEDIUM,
         title: "Repeated Violation Pattern",
         company,
-        issue: `${violationIncidents.length} similar violation record(s): ${sample.violation}`,
+        issue: `${violationIncidents.length} similar violation record(s) detected: ${sample.violation}`,
         recommendation:
-          "Conduct policy re-orientation, supervisor coaching, and closer monitoring to prevent repeated violations.",
+          "Review the recurring violation pattern and consider policy re-orientation or closer monitoring.",
         reason:
-          "The system detected recurring incidents with the same violation type within the same client company.",
+          "Similar active violation records were detected within the same client company.",
         metrics: [
           { label: "Similar Cases", value: violationIncidents.length },
           { label: "Critical", value: criticalCount },
@@ -406,9 +401,9 @@ function buildCompanyIncidentLoadSuggestions(incidents) {
         company,
         issue: `${companyIncidents.length} active incident record(s) detected for this company.`,
         recommendation:
-          "Review company-level work conditions, coordinate with the site supervisor, and prepare a preventive action plan.",
+          "Review company-level work conditions and coordinate with the site supervisor for preventive monitoring.",
         reason:
-          "The system detected a high concentration of active incident records in one client company.",
+          "A high concentration of active incident records was detected in one client company.",
         metrics: [
           { label: "Active Cases", value: companyIncidents.length },
           { label: "Major", value: majorCount },
@@ -441,25 +436,26 @@ function buildComplianceSuggestions(documents) {
     if (company === "Unassigned") continue;
     if (docs.length < 5) continue;
 
-    const missing = docs.filter((doc) => !doc.filePath).length;
-    const expired = docs.filter((doc) =>
-      isComplianceDocumentExpired(doc.expirationDate)
+    const missing = docs.filter((document) => !document.filePath).length;
+    const expired = docs.filter((document) =>
+      isComplianceDocumentExpired(document.expirationDate)
     ).length;
-    const expiring = docs.filter((doc) =>
-      isComplianceDocumentExpiring(doc.expirationDate)
+    const expiring = docs.filter((document) =>
+      isComplianceDocumentExpiring(document.expirationDate)
     ).length;
 
     suggestions.push(
       createSuggestion({
         category: CATEGORY.COMPLIANCE,
-        priority: expired > 0 || docs.length >= 10 ? PRIORITY.MEDIUM : PRIORITY.LOW,
+        priority:
+          expired > 0 || docs.length >= 10 ? PRIORITY.MEDIUM : PRIORITY.LOW,
         title: "Compliance Follow-up Needed",
         company,
         issue: `${docs.length} compliance document concern(s) detected.`,
         recommendation:
           "Follow up missing, expired, or soon-to-expire documents to maintain employee work eligibility.",
         reason:
-          "The system detected compliance records that may require HR follow-up based on document availability and expiration dates.",
+          "Compliance records were flagged based on document availability and expiration dates.",
         metrics: [
           { label: "Document Issues", value: docs.length },
           { label: "Missing", value: missing },
@@ -478,6 +474,7 @@ function buildComplianceSuggestions(documents) {
 function buildDeploymentPoolSuggestions(employees, incidents) {
   const floatingEmployees = employees.filter((employee) => {
     const status = normalizeText(employee.status);
+
     return (
       status.includes("floating") ||
       status.includes("standby") ||
@@ -500,11 +497,11 @@ function buildDeploymentPoolSuggestions(employees, incidents) {
       priority: PRIORITY.MEDIUM,
       title: "Reserve Workforce Allocation Suggested",
       company: "Workforce Pool",
-      issue: `${floatingEmployees.length} floating/available employee(s) and ${absenceCount} attendance-related incident(s) detected.`,
+      issue: `${floatingEmployees.length} floating or available employee(s) and ${absenceCount} attendance-related incident(s) detected.`,
       recommendation:
-        "Review available workforce pool and consider assigning relievers before requesting new hiring.",
+        "Review the available workforce pool and consider reliever assignment before requesting new hiring.",
       reason:
-        "The system detected available workers while attendance-related cases may affect deployment continuity.",
+        "Available workers were detected while attendance-related cases may affect deployment continuity.",
       metrics: [
         { label: "Available Pool", value: floatingEmployees.length },
         { label: "Attendance Cases", value: absenceCount },
@@ -544,132 +541,34 @@ function buildSmartSuggestions({ employees, incidents, documents }) {
   });
 }
 
-async function getSuggestionStates({ userKey, role }) {
-  const [rows] = await db.promise().query(
-    `
-    SELECT *
-    FROM smart_suggestion_states
-    WHERE user_key = ? AND role = ?
-    `,
-    [userKey, role]
-  );
-
-  return new Map(rows.map((row) => [row.suggestion_key, row]));
-}
-
-function applySuggestionStates(suggestions, stateMap) {
-  return suggestions.map((suggestion) => {
-    const state = stateMap.get(suggestion.suggestionKey);
-
-    return {
-      ...suggestion,
-      isReviewed: Number(state?.is_reviewed || 0) === 1,
-      isDismissed: Number(state?.is_dismissed || 0) === 1,
-      actionType: state?.action_type || null,
-      actionNotes: state?.action_notes || null,
-      dismissReason: state?.dismiss_reason || null,
-      reviewedAt: state?.reviewed_at || null,
-      dismissedAt: state?.dismissed_at || null,
-    };
-  });
-}
-
 function buildSummary(suggestions) {
-  const active = suggestions.filter(
-    (suggestion) => !suggestion.isDismissed && !suggestion.isReviewed
-  );
-
-  const reviewed = suggestions.filter(
-    (suggestion) => !suggestion.isDismissed && suggestion.isReviewed
-  );
-
-  const dismissed = suggestions.filter((suggestion) => suggestion.isDismissed);
-
   return {
     total: suggestions.length,
-    active: active.length,
-    reviewed: reviewed.length,
-    dismissed: dismissed.length,
-    high: active.filter((suggestion) => suggestion.priority === PRIORITY.HIGH)
+    active: suggestions.length,
+    high: suggestions.filter((suggestion) => suggestion.priority === PRIORITY.HIGH)
       .length,
-    medium: active.filter(
+    medium: suggestions.filter(
       (suggestion) => suggestion.priority === PRIORITY.MEDIUM
     ).length,
-    low: active.filter((suggestion) => suggestion.priority === PRIORITY.LOW)
+    low: suggestions.filter((suggestion) => suggestion.priority === PRIORITY.LOW)
       .length,
-    workforce: active.filter(
+    workforce: suggestions.filter(
       (suggestion) => suggestion.category === CATEGORY.WORKFORCE
     ).length,
-    incident: active.filter(
+    incident: suggestions.filter(
       (suggestion) => suggestion.category === CATEGORY.INCIDENT
     ).length,
-    compliance: active.filter(
+    compliance: suggestions.filter(
       (suggestion) => suggestion.category === CATEGORY.COMPLIANCE
+    ).length,
+    deployment: suggestions.filter(
+      (suggestion) => suggestion.category === CATEGORY.DEPLOYMENT
     ).length,
   };
 }
 
-async function upsertSuggestionState({
-  userKey,
-  role,
-  suggestionKey,
-  isReviewed,
-  isDismissed,
-  actionType = null,
-  actionNotes = null,
-  dismissReason = null,
-}) {
-  await db.promise().query(
-    `
-    INSERT INTO smart_suggestion_states
-      (
-        user_key,
-        role,
-        suggestion_key,
-        is_reviewed,
-        is_dismissed,
-        action_type,
-        action_notes,
-        dismiss_reason,
-        reviewed_at,
-        dismissed_at
-      )
-    VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, IF(? = 1, NOW(), NULL), IF(? = 1, NOW(), NULL))
-    ON DUPLICATE KEY UPDATE
-      is_reviewed = VALUES(is_reviewed),
-      is_dismissed = VALUES(is_dismissed),
-      action_type = VALUES(action_type),
-      action_notes = VALUES(action_notes),
-      dismiss_reason = VALUES(dismiss_reason),
-      reviewed_at = CASE
-        WHEN VALUES(is_reviewed) = 1 THEN NOW()
-        ELSE reviewed_at
-      END,
-      dismissed_at = CASE
-        WHEN VALUES(is_dismissed) = 1 THEN NOW()
-        ELSE NULL
-      END,
-      updated_at = NOW()
-    `,
-    [
-      userKey,
-      role,
-      suggestionKey,
-      isReviewed ? 1 : 0,
-      isDismissed ? 1 : 0,
-      actionType,
-      actionNotes,
-      dismissReason,
-      isReviewed ? 1 : 0,
-      isDismissed ? 1 : 0,
-    ]
-  );
-}
-
 exports.getSmartSuggestions = async (req, res) => {
   try {
-    const userKey = getUserKey(req);
     const role = getRole(req);
 
     if (!ALLOWED_ROLES.includes(role)) {
@@ -679,13 +578,13 @@ exports.getSmartSuggestions = async (req, res) => {
         summary: {
           total: 0,
           active: 0,
-          reviewed: 0,
           high: 0,
           medium: 0,
           low: 0,
           workforce: 0,
           incident: 0,
           compliance: 0,
+          deployment: 0,
         },
       });
     }
@@ -702,127 +601,13 @@ exports.getSmartSuggestions = async (req, res) => {
       documents,
     });
 
-    const stateMap = await getSuggestionStates({ userKey, role });
-    const suggestionsWithState = applySuggestionStates(suggestions, stateMap);
-
     res.json({
-      suggestions: suggestionsWithState,
-      latestSuggestions: suggestionsWithState
-        .filter((suggestion) => !suggestion.isDismissed)
-        .slice(0, 5),
-      summary: buildSummary(suggestionsWithState),
+      suggestions,
+      latestSuggestions: suggestions.slice(0, 5),
+      summary: buildSummary(suggestions),
     });
   } catch (err) {
     console.error("GET SMART SUGGESTIONS ERROR:", err);
     res.status(500).json({ error: "Failed to fetch smart suggestions." });
-  }
-};
-
-exports.takeSmartSuggestionAction = async (req, res) => {
-  try {
-    const userKey = getUserKey(req);
-    const role = getRole(req);
-    const { suggestionKey, actionType, actionNotes } = req.body;
-
-    if (!ALLOWED_ROLES.includes(role)) {
-      return res.status(403).json({ error: "You are not allowed to take action on suggestions." });
-    }
-
-    if (!suggestionKey) {
-      return res.status(400).json({ error: "Suggestion key is required." });
-    }
-
-    if (!String(actionType || "").trim()) {
-      return res.status(400).json({ error: "Action type is required." });
-    }
-
-    if (!String(actionNotes || "").trim()) {
-      return res.status(400).json({ error: "Action notes are required." });
-    }
-
-    await upsertSuggestionState({
-      userKey,
-      role,
-      suggestionKey,
-      isReviewed: true,
-      isDismissed: false,
-      actionType: String(actionType).trim(),
-      actionNotes: String(actionNotes).trim(),
-      dismissReason: null,
-    });
-
-    res.json({
-      success: true,
-      message: "Preventive action saved successfully.",
-    });
-  } catch (err) {
-    console.error("TAKE SMART SUGGESTION ACTION ERROR:", err);
-    res.status(500).json({ error: "Failed to save suggestion action." });
-  }
-};
-
-exports.markSmartSuggestionReviewed = async (req, res) => {
-  try {
-    const userKey = getUserKey(req);
-    const role = getRole(req);
-    const { suggestionKey, actionType, actionNotes } = req.body;
-
-    if (!suggestionKey) {
-      return res.status(400).json({ error: "Suggestion key is required." });
-    }
-
-    await upsertSuggestionState({
-      userKey,
-      role,
-      suggestionKey,
-      isReviewed: true,
-      isDismissed: false,
-      actionType: actionType || "HR Acknowledged",
-      actionNotes:
-        actionNotes ||
-        "HR acknowledged the smart suggestion for monitoring.",
-      dismissReason: null,
-    });
-
-    res.json({ success: true, message: "Suggestion marked as reviewed." });
-  } catch (err) {
-    console.error("MARK SMART SUGGESTION REVIEWED ERROR:", err);
-    res.status(500).json({ error: "Failed to mark suggestion as reviewed." });
-  }
-};
-
-exports.dismissSmartSuggestion = async (req, res) => {
-  try {
-    const userKey = getUserKey(req);
-    const role = getRole(req);
-    const { suggestionKey, dismissReason } = req.body;
-
-    if (!ALLOWED_ROLES.includes(role)) {
-      return res.status(403).json({ error: "You are not allowed to dismiss suggestions." });
-    }
-
-    if (!suggestionKey) {
-      return res.status(400).json({ error: "Suggestion key is required." });
-    }
-
-    if (!String(dismissReason || "").trim()) {
-      return res.status(400).json({ error: "Dismiss reason is required." });
-    }
-
-    await upsertSuggestionState({
-      userKey,
-      role,
-      suggestionKey,
-      isReviewed: false,
-      isDismissed: true,
-      actionType: null,
-      actionNotes: null,
-      dismissReason: String(dismissReason).trim(),
-    });
-
-    res.json({ success: true, message: "Suggestion dismissed." });
-  } catch (err) {
-    console.error("DISMISS SMART SUGGESTION ERROR:", err);
-    res.status(500).json({ error: "Failed to dismiss suggestion." });
   }
 };

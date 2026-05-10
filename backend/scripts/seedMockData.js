@@ -2,42 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const db = require("../config/db");
 
-const EMPLOYEE_COUNT = 1000;
-const FLOATING_COUNT = 200;
-const DEPLOYED_COUNT = EMPLOYEE_COUNT - FLOATING_COUNT;
+const connection = db.promise();
 
-const CLEAR_EXISTING_DATA = true;
-const CLEAR_AUDIT_LOGS = true;
-const CLEAR_SMART_STATES = true;
-
-const START_DATE = "2024-01-01";
-const END_DATE = new Date().toISOString().slice(0, 10);
-
-const YEAR_2024 = "2024";
-const YEAR_2025 = "2025";
-const YEAR_2026 = "2026";
-
-const DEPLOYMENT_HISTORY = {
-  2024: 650,
-  2025: 720,
-  2026: 800,
-};
-
-const REQUIRED_DOCUMENTS = [
-  "Resume",
-  "NSO/PSA",
-  "SSS (ID or E1 form)",
-  "Pag-IBIG (ID or MDRF Form)",
-  "PhilHealth (ID or MDF Form)",
-  "Diploma",
-  "Cedula",
-  "Barangay Clearance",
-  "NBI/Police Clearance",
-];
-
-const EXPIRABLE_DOCUMENTS = ["Barangay Clearance", "NBI/Police Clearance"];
-
-const COMPANIES = [
+const COMPANY_OPTIONS = [
   "SM Supermalls",
   "Robinsons Retail Holdings",
   "Ayala Land Inc.",
@@ -64,96 +31,22 @@ const COMPANIES = [
   "Sitel Philippines",
 ];
 
-const DEMO_EMPLOYEES = [
+const DOCUMENTS = [
   {
-    index: 1,
-    name: "Carlo R. Gonzales",
-    company: "SM Supermalls",
-    status: "Deployed",
+    name: "Resume",
+    expirable: false,
   },
   {
-    index: 2,
-    name: "Princess M. Reyes",
-    company: "Globe Telecom",
-    status: "Deployed",
+    name: "Barangay Clearance",
+    expirable: true,
   },
   {
-    index: 3,
-    name: "Christian C. Dela Cruz",
-    company: null,
-    status: "Floating / Standby",
+    name: "NBI/Police Clearance",
+    expirable: true,
   },
   {
-    index: 203,
-    name: "Rica E. Morales",
-    company: "Jollibee Foods Corporation",
-    status: "Deployed",
-  },
-  {
-    index: 204,
-    name: "Marvin D. Bautista",
-    company: "Accenture Philippines",
-    status: "Deployed",
-  },
-];
-
-const EXPIRING_DOCUMENT_CASES = [
-  {
-    employeeIndex: 1,
-    documentName: "NBI/Police Clearance",
-    daysBeforeExpiry: 15,
-  },
-  {
-    employeeIndex: 2,
-    documentName: "Barangay Clearance",
-    daysBeforeExpiry: 25,
-  },
-];
-
-const HISTORICAL_2024_INCIDENT_CASES = [
-  ["Unexcused Tardiness", "Minor", "Verbal Warning"],
-  ["Reporting for Work Not in Prescribed Uniform", "Minor", "Written Warning"],
-  ["Absence Without Official Leave (Single Absence)", "Minor", "Written Warning"],
-  ["Unexcused Tardiness", "Minor", "Verbal Warning"],
-  ["Violation of Safety Rules and Regulations", "Major", "Safety Re-orientation"],
-  ["Reporting for Work Not in Prescribed Uniform", "Minor", "Written Warning"],
-  ["Absence Without Official Leave (Single Absence)", "Minor", "Verbal Counseling"],
-  ["Willful Failure to Carry Out Job Instructions", "Major", "Supervisor Coaching"],
-  ["Unexcused Tardiness", "Minor", "Verbal Warning"],
-  ["Reporting for Work Not in Prescribed Uniform", "Minor", "Written Warning"],
-  ["Absence Without Official Leave (Single Absence)", "Minor", "Written Warning"],
-  ["Violation of Safety Rules and Regulations", "Major", "Safety Coaching"],
-];
-
-const HISTORICAL_2025_INCIDENT_CASES = [
-  ["Unexcused Tardiness", "Minor", "Verbal Warning"],
-  ["Reporting for Work Not in Prescribed Uniform", "Minor", "Written Warning"],
-  ["Absence Without Official Leave (Single Absence)", "Minor", "Written Warning"],
-  ["Violation of Safety Rules and Regulations", "Major", "Safety Re-orientation"],
-  ["Unexcused Tardiness", "Minor", "Verbal Warning"],
-  ["Reporting for Work Not in Prescribed Uniform", "Minor", "Written Warning"],
-  ["Willful Failure to Carry Out Job Instructions", "Major", "Supervisor Coaching"],
-  ["Absence Without Official Leave (Single Absence)", "Minor", "Verbal Counseling"],
-];
-
-const CURRENT_2026_INCIDENT_CASES = [
-  {
-    employeeIndex: 203,
-    violation: "Unexcused Tardiness",
-    severity: "Minor",
-    status: "Open",
-    actionTaken: "Verbal Counseling",
-    recommendation: "Monitor attendance record",
-    reporter: "HR Staff Demo",
-  },
-  {
-    employeeIndex: 204,
-    violation: "Willful Failure to Carry Out Job Instructions",
-    severity: "Major",
-    status: "Investigating",
-    actionTaken: "For HR investigation",
-    recommendation: "Review employee explanation and supervisor report",
-    reporter: "HR Staff Demo",
+    name: "Medical Certificate",
+    expirable: false,
   },
 ];
 
@@ -162,52 +55,32 @@ const FIRST_NAMES = [
   "Maria",
   "Jose",
   "Ana",
-  "Mark",
-  "Angelica",
-  "John",
-  "Christian",
-  "Jessa",
-  "Rica",
-  "Carlo",
-  "Jerome",
-  "Marvin",
-  "Princess",
-  "Grace",
-  "Joshua",
-  "Arnel",
-  "Jayson",
-  "Rodel",
-  "Christine",
-  "Michelle",
   "Ramon",
   "Glenda",
-  "Kimberly",
-  "Dennis",
-  "Ronald",
-  "Catherine",
-  "Alvin",
-  "Marlon",
-  "Shiela",
-  "Nikko",
-  "Ryan",
-  "Jomar",
-  "Paolo",
-  "Mikaela",
+  "Mark",
+  "Angelica",
+  "Carlo",
   "Jasmine",
-  "Rachelle",
+  "Daniel",
+  "Michelle",
+  "Paolo",
+  "Kristine",
+  "Jerome",
+  "Nicole",
+  "Ryan",
   "Erika",
+  "Joshua",
+  "Camille",
+  "John",
+  "Yuri",
+  "Jamil",
+  "Shirleen",
+  "Nookie",
+  "Lara",
   "Bianca",
+  "Patrick",
   "Louie",
-  "Lester",
-  "Allan",
-  "Karen",
-  "Elaine",
-  "Francis",
-  "Joanne",
-  "Hazel",
-  "April",
-  "Renz",
-  "Marco",
+  "Kathleen",
 ];
 
 const MIDDLE_INITIALS = [
@@ -219,12 +92,10 @@ const MIDDLE_INITIALS = [
   "F.",
   "G.",
   "H.",
-  "J.",
   "M.",
   "R.",
   "S.",
   "T.",
-  "V.",
 ];
 
 const LAST_NAMES = [
@@ -233,190 +104,94 @@ const LAST_NAMES = [
   "Reyes",
   "Garcia",
   "Mendoza",
-  "Ramos",
   "Torres",
+  "Ramos",
+  "Aquino",
   "Flores",
   "Gonzales",
-  "Bautista",
-  "Villanueva",
-  "Castillo",
-  "Aquino",
   "Cruz",
-  "Morales",
-  "Navarro",
-  "Domingo",
+  "Bautista",
   "Rivera",
-  "Mercado",
-  "Salazar",
-  "Soriano",
-  "Valdez",
-  "Pascual",
-  "Manalo",
-  "Cabrera",
-  "Rosales",
-  "Tolentino",
-  "Santiago",
-  "Aguilar",
-  "Francisco",
-  "Del Rosario",
-  "De Leon",
-  "Luna",
+  "Castillo",
   "Marquez",
-  "Padilla",
-  "Velasco",
-  "Ocampo",
-  "Sarmiento",
-  "Lim",
-  "Tan",
+  "Valdez",
+  "Navarro",
+  "Salazar",
+  "Domingo",
+  "Villanueva",
+  "Dalman",
+  "Posas",
+  "Cangas",
+  "Bascos",
 ];
 
-const usedNames = new Set(DEMO_EMPLOYEES.map((employee) => employee.name));
+const VIOLATIONS = {
+  ABSENCE: "Absence without notice",
+  TARDINESS: "Tardiness",
+  NEGLECT: "Neglect of Duty",
+  MISCONDUCT: "Misconduct",
+  NO_ID: "No ID",
+  UNIFORM: "Improper Uniform",
+};
 
-function randomItem(items) {
-  return items[Math.floor(Math.random() * items.length)];
-}
-
-function randomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function pad(number) {
-  return String(number).padStart(2, "0");
-}
-
-function randomTime() {
-  return `${pad(randomInt(8, 17))}:${pad(randomInt(0, 59))}:${pad(
-    randomInt(0, 59)
-  )}`;
-}
-
-function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function toDate(dateString) {
-  return new Date(`${dateString}T00:00:00`);
+function pad(number, size = 3) {
+  return String(number).padStart(size, "0");
 }
 
 function formatDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function addDays(dateString, days) {
-  const date = toDate(dateString);
-  date.setDate(date.getDate() + days);
-  return formatDate(date);
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
 }
 
-function randomDateBetween(startDateString, endDateString) {
-  const start = toDate(startDateString).getTime();
-  const end = toDate(endDateString).getTime();
-
-  if (start > end) return endDateString;
-
-  const randomTimeValue = randomInt(start, end);
-  return formatDate(new Date(randomTimeValue));
+function randomItem(list) {
+  return list[Math.floor(Math.random() * list.length)];
 }
 
-function randomDateForYear(year) {
-  const start = `${year}-01-01`;
-  const end = year === YEAR_2026 ? END_DATE : `${year}-12-31`;
-  return randomDateBetween(start, end);
+function randomDateInYear(year) {
+  const month = Math.floor(Math.random() * 12);
+  const day = Math.floor(Math.random() * 24) + 1;
+  return formatDate(new Date(year, month, day));
 }
 
-function makeFullName() {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const name = `${randomItem(FIRST_NAMES)} ${randomItem(
-      MIDDLE_INITIALS
-    )} ${randomItem(LAST_NAMES)}`;
+function makeName(index) {
+  const zeroBasedIndex = index - 1;
 
-    if (!usedNames.has(name)) {
-      usedNames.add(name);
-      return name;
-    }
+  const first =
+    FIRST_NAMES[zeroBasedIndex % FIRST_NAMES.length];
+
+  const middle =
+    MIDDLE_INITIALS[
+      Math.floor(zeroBasedIndex / FIRST_NAMES.length) %
+        MIDDLE_INITIALS.length
+    ];
+
+  const last =
+    LAST_NAMES[
+      Math.floor(
+        zeroBasedIndex / (FIRST_NAMES.length * MIDDLE_INITIALS.length)
+      ) % LAST_NAMES.length
+    ];
+
+  return `${first} ${middle} ${last}`;
+}
+
+function getDocumentsDirectory() {
+  return path.join(__dirname, "..", "documents", "employees");
+}
+
+function ensureDemoFiles() {
+  const documentsDir = getDocumentsDirectory();
+
+  if (!fs.existsSync(documentsDir)) {
+    fs.mkdirSync(documentsDir, { recursive: true });
   }
 
-  const fallback = `${randomItem(FIRST_NAMES)} ${randomItem(
-    MIDDLE_INITIALS
-  )} ${randomItem(LAST_NAMES)} ${randomInt(1000, 9999)}`;
-
-  usedNames.add(fallback);
-  return fallback;
-}
-
-function getDemoProfile(index) {
-  return DEMO_EMPLOYEES.find((employee) => employee.index === index) || null;
-}
-
-function getEmployeeStatus(index, profile) {
-  if (profile?.status) return profile.status;
-
-  if (index === 3 || (index >= 4 && index <= 202)) {
-    return "Floating / Standby";
-  }
-
-  return "Deployed";
-}
-
-function getEmployeeCompany(index, status, profile) {
-  if (status !== "Deployed") return null;
-
-  return profile?.company || COMPANIES[index % COMPANIES.length];
-}
-
-function getEmployeeCreatedAt(index) {
-  if (index <= 720) return randomDateForYear(YEAR_2024);
-  if (index <= 920) return randomDateForYear(YEAR_2025);
-  return randomDateForYear(YEAR_2026);
-}
-
-function getCurrentContractStart(status) {
-  if (status !== "Deployed") return null;
-  return randomDateForYear(YEAR_2026);
-}
-
-function getHistoricalDeploymentStart(year) {
-  return randomDateForYear(String(year));
-}
-
-function getHistoricalDeploymentEnd(startDate) {
-  const endCandidate = addDays(startDate, randomInt(90, 240));
-  const yearEnd = `${startDate.slice(0, 4)}-12-31`;
-
-  return toDate(endCandidate) > toDate(yearEnd) ? yearEnd : endCandidate;
-}
-
-function getExpiringDocumentCase(employee, docName) {
-  return EXPIRING_DOCUMENT_CASES.find(
-    (item) =>
-      Number(item.employeeIndex) === Number(employee.index) &&
-      item.documentName === docName
-  );
-}
-
-function getDocumentExpirationDate(employee, docName) {
-  if (!EXPIRABLE_DOCUMENTS.includes(docName)) return null;
-
-  const today = getTodayDate();
-  const expiringCase = getExpiringDocumentCase(employee, docName);
-
-  if (expiringCase) {
-    return addDays(today, expiringCase.daysBeforeExpiry);
-  }
-
-  return addDays(today, randomInt(365, 730));
-}
-
-function createMockPdfFile() {
-  const mockDir = path.join(__dirname, "..", "documents", "mock");
-  const mockPdf = path.join(mockDir, "mock-document.pdf");
-
-  if (!fs.existsSync(mockDir)) {
-    fs.mkdirSync(mockDir, { recursive: true });
-  }
-
-  if (!fs.existsSync(mockPdf)) {
-    const minimalPdf = `%PDF-1.4
+  const pdfContent = `%PDF-1.4
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
 endobj
@@ -424,546 +199,517 @@ endobj
 << /Type /Pages /Kids [3 0 R] /Count 1 >>
 endobj
 3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents 4 0 R >>
 endobj
 4 0 obj
-<< /Length 55 >>
+<< /Length 65 >>
 stream
 BT
 /F1 12 Tf
-30 100 Td
-(Mock compliance document) Tj
+40 120 Td
+(Mock compliance document for Welljob demo.) Tj
 ET
 endstream
 endobj
 xref
 0 5
 0000000000 65535 f 
-0000000010 00000 n 
-0000000060 00000 n 
-0000000117 00000 n 
-0000000209 00000 n 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000210 00000 n 
 trailer
 << /Root 1 0 R /Size 5 >>
 startxref
-315
+325
 %%EOF`;
 
-    fs.writeFileSync(mockPdf, minimalPdf);
-  }
+  const files = {
+    valid: "mock-valid-compliance.pdf",
+    expiring: "mock-expiring-compliance.pdf",
+    expired: "mock-expired-compliance.pdf",
+    permanent: "mock-permanent-compliance.pdf",
+  };
 
-  return "documents/mock/mock-document.pdf";
+  Object.values(files).forEach((fileName) => {
+    const filePath = path.join(documentsDir, fileName);
+
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, pdfContent, "utf8");
+    }
+  });
+
+  return {
+    valid: `documents/employees/${files.valid}`,
+    expiring: `documents/employees/${files.expiring}`,
+    expired: `documents/employees/${files.expired}`,
+    permanent: `documents/employees/${files.permanent}`,
+  };
 }
 
-async function safeQuery(connection, sql) {
-  try {
-    await connection.query(sql);
-  } catch (error) {
-    console.warn(`Skipped query: ${sql}`);
-    console.warn(error.message);
-  }
-}
-
-async function tableExists(connection, tableName) {
+async function tableExists(tableName) {
   const [rows] = await connection.query("SHOW TABLES LIKE ?", [tableName]);
   return rows.length > 0;
 }
 
-async function getTableColumns(connection, tableName) {
-  const [columns] = await connection.query(`SHOW COLUMNS FROM \`${tableName}\``);
-  return new Set(columns.map((column) => column.Field));
-}
+async function clearTableIfExists(tableName) {
+  const exists = await tableExists(tableName);
 
-function addField(fields, values, columns, possibleNames, value) {
-  const selectedColumn = possibleNames.find((column) => columns.has(column));
-
-  if (!selectedColumn) return;
-
-  fields.push(selectedColumn);
-  values.push(value);
-}
-
-async function insertRow(connection, tableName, columns, specs) {
-  const fields = [];
-  const values = [];
-
-  specs.forEach((spec) => {
-    addField(fields, values, columns, spec.names, spec.value);
-  });
-
-  if (fields.length === 0) {
-    throw new Error(`No matching columns found for table ${tableName}.`);
+  if (!exists) {
+    console.log(`Skipped missing table: ${tableName}`);
+    return;
   }
 
-  const escapedFields = fields.map((field) => `\`${field}\``).join(", ");
-  const placeholders = fields.map(() => "?").join(", ");
+  await connection.query(`DELETE FROM \`${tableName}\``);
 
-  const [result] = await connection.query(
-    `INSERT INTO \`${tableName}\` (${escapedFields}) VALUES (${placeholders})`,
-    values
-  );
-
-  return result;
-}
-
-async function tryInsertRow(connection, tableName, columns, specs) {
   try {
-    await insertRow(connection, tableName, columns, specs);
-    return true;
-  } catch (error) {
-    console.warn(`Skipped insert into ${tableName}: ${error.message}`);
-    return false;
+    await connection.query(`ALTER TABLE \`${tableName}\` AUTO_INCREMENT = 1`);
+  } catch {
+    // Some tables may not have AUTO_INCREMENT. Safe to ignore.
   }
+
+  console.log(`Cleared table: ${tableName}`);
 }
 
-async function clearExistingData(connection) {
-  console.log("Clearing backend records...");
+async function clearMockData() {
+  console.log("Clearing old demo data...");
 
   await connection.query("SET FOREIGN_KEY_CHECKS = 0");
 
-  await safeQuery(connection, "DELETE FROM incident_evidence");
-  await safeQuery(connection, "DELETE FROM incidents");
-  await safeQuery(connection, "DELETE FROM employee_documents");
-  await safeQuery(connection, "DELETE FROM deployments");
-  await safeQuery(connection, "DELETE FROM contracts");
-  await safeQuery(connection, "DELETE FROM employees");
+  const tablesToClear = [
+    "smart_suggestion_states",
+    "smart_alert_states",
+    "notifications",
+    "audit_logs",
+    "kpi_decision_history",
+    "incident_evidence",
+    "incidents",
+    "deployments",
+    "employee_documents",
+    "employees",
+  ];
 
-  if (CLEAR_SMART_STATES) {
-    await safeQuery(connection, "DELETE FROM smart_alert_states");
-    await safeQuery(connection, "DELETE FROM smart_suggestion_states");
-  }
-
-  if (CLEAR_AUDIT_LOGS) {
-    await safeQuery(connection, "DELETE FROM audit_logs");
-  }
-
-  await safeQuery(connection, "ALTER TABLE incident_evidence AUTO_INCREMENT = 1");
-  await safeQuery(connection, "ALTER TABLE incidents AUTO_INCREMENT = 1");
-  await safeQuery(connection, "ALTER TABLE employee_documents AUTO_INCREMENT = 1");
-  await safeQuery(connection, "ALTER TABLE deployments AUTO_INCREMENT = 1");
-  await safeQuery(connection, "ALTER TABLE contracts AUTO_INCREMENT = 1");
-  await safeQuery(connection, "ALTER TABLE employees AUTO_INCREMENT = 1");
-  await safeQuery(connection, "ALTER TABLE smart_alert_states AUTO_INCREMENT = 1");
-  await safeQuery(
-    connection,
-    "ALTER TABLE smart_suggestion_states AUTO_INCREMENT = 1"
-  );
-
-  if (CLEAR_AUDIT_LOGS) {
-    await safeQuery(connection, "ALTER TABLE audit_logs AUTO_INCREMENT = 1");
+  for (const table of tablesToClear) {
+    await clearTableIfExists(table);
   }
 
   await connection.query("SET FOREIGN_KEY_CHECKS = 1");
-
-  console.log("Backend records cleared.");
 }
 
-async function insertEmployee(connection, employeeColumns, index) {
-  const profile = getDemoProfile(index);
-  const createdAt = getEmployeeCreatedAt(index);
-  const status = getEmployeeStatus(index, profile);
-  const name = profile?.name || makeFullName();
-  const company = getEmployeeCompany(index, status, profile);
-  const contractStart = getCurrentContractStart(status);
+function buildEmployees() {
+  const employees = [];
 
-  const result = await insertRow(connection, "employees", employeeColumns, [
-    { names: ["name", "full_name", "fullName"], value: name },
-    { names: ["company"], value: company },
-    { names: ["status"], value: status },
-    { names: ["contractStart", "contract_start"], value: contractStart },
-    { names: ["contractEnd", "contract_end"], value: null },
-    { names: ["archived"], value: 0 },
-    { names: ["created_at", "createdAt"], value: `${createdAt} ${randomTime()}` },
-    { names: ["updated_at", "updatedAt"], value: `${createdAt} ${randomTime()}` },
-  ]);
-
-  return {
-    id: result.insertId,
-    name,
-    company,
-    status,
-    createdAt,
-    contractStart,
-    index,
-  };
-}
-
-async function insertDocuments(connection, documentColumns, employee, mockFilePath) {
-  let expiringDocuments = 0;
-
-  for (const docName of REQUIRED_DOCUMENTS) {
-    const expirationDate = getDocumentExpirationDate(employee, docName);
-    const isExpiringSoon = Boolean(getExpiringDocumentCase(employee, docName));
-
-    if (isExpiringSoon) expiringDocuments += 1;
-
-    await insertRow(connection, "employee_documents", documentColumns, [
-      { names: ["employee_id", "employeeId"], value: employee.id },
-      { names: ["name", "document_name", "documentName"], value: docName },
-      { names: ["expiration_date", "expirationDate"], value: expirationDate },
-      { names: ["file_path", "filePath"], value: mockFilePath },
-      { names: ["status"], value: "Submitted" },
-      { names: ["created_at", "createdAt"], value: `${employee.createdAt} ${randomTime()}` },
-      { names: ["updated_at", "updatedAt"], value: `${employee.createdAt} ${randomTime()}` },
-    ]);
+  // 2025: 400 deployed employees
+  for (let i = 1; i <= 400; i++) {
+    employees.push({
+      name: makeName(i),
+      company: COMPANY_OPTIONS[(i - 1) % COMPANY_OPTIONS.length],
+      status: "Deployed",
+      contractStart: randomDateInYear(2025),
+      cohort: "2025",
+      demoTag: "VALID",
+    });
   }
 
-  return expiringDocuments;
+  // 2026: 600 employees, 590 deployed + 10 floating
+  for (let i = 401; i <= 1000; i++) {
+    const yearIndex = i - 400;
+    const isFloating = yearIndex > 590;
+
+    employees.push({
+      name:
+        yearIndex === 1
+          ? "Ramon M. Marquez"
+          : makeName(i),
+      company:
+        yearIndex === 1
+          ? "DMCI Holdings"
+          : isFloating
+          ? null
+          : COMPANY_OPTIONS[(i - 1) % COMPANY_OPTIONS.length],
+      status: isFloating ? "Floating / Standby" : "Deployed",
+      contractStart: randomDateInYear(2026),
+      cohort: "2026",
+      demoTag: "VALID",
+    });
+  }
+
+  // 2026 compliance demo cases
+// These are deployed employees from 2026.
+
+// 20 incomplete compliance records
+for (let index = 410; index < 430; index++) {
+  employees[index].demoTag = "INCOMPLETE";
 }
 
-async function insertDeploymentRow(
-  connection,
-  deploymentColumns,
-  employee,
-  { deploymentDate, endDate = null, status = "Active", position = "Service Personnel" }
-) {
-  if (!deploymentColumns) return 0;
+// 2 no data compliance records
+employees[430].demoTag = "NO_DATA";
+employees[431].demoTag = "NO_DATA";
 
-  const inserted = await tryInsertRow(connection, "deployments", deploymentColumns, [
-    { names: ["employee_id", "employeeId"], value: employee.id },
-    { names: ["employee_name", "employeeName", "employee"], value: employee.name },
-    { names: ["company", "client_company", "clientCompany"], value: employee.company },
-    { names: ["location", "deployment_location", "deploymentLocation"], value: employee.company },
-    { names: ["deployment_date", "deploymentDate", "start_date", "startDate"], value: deploymentDate },
-    { names: ["end_date", "endDate", "deployment_end", "deploymentEnd"], value: endDate },
-    { names: ["status", "deployment_status", "deploymentStatus"], value: status },
-    { names: ["position", "job_position", "jobPosition"], value: position },
-    { names: ["created_at", "createdAt"], value: `${deploymentDate} ${randomTime()}` },
-    { names: ["updated_at", "updatedAt"], value: `${endDate || deploymentDate} ${randomTime()}` },
+// 3 expiring soon compliance records
+employees[432].demoTag = "EXPIRING_SOON";
+employees[433].demoTag = "EXPIRING_SOON";
+employees[434].demoTag = "EXPIRING_SOON";
+
+// 1 expired compliance record
+employees[435].demoTag = "EXPIRED";
+  return employees;
+}
+
+async function insertEmployees(employees) {
+  const values = employees.map((employee) => [
+    employee.name,
+    employee.company,
+    employee.status,
+    employee.contractStart,
   ]);
 
-  return inserted ? 1 : 0;
+  const [result] = await connection.query(
+    `
+    INSERT INTO employees
+      (name, company, status, contractStart)
+    VALUES ?
+    `,
+    [values]
+  );
+
+  return employees.map((employee, index) => ({
+    ...employee,
+    id: result.insertId + index,
+  }));
 }
 
-async function insertContractRow(
-  connection,
-  contractColumns,
-  employee,
-  { contractStart, contractEnd = null, status = "Active", position = "Service Personnel" }
-) {
-  if (!contractColumns) return 0;
+function buildDocumentRows(employees, filePaths) {
+  const today = new Date();
 
-  const inserted = await tryInsertRow(connection, "contracts", contractColumns, [
-    { names: ["employee_id", "employeeId"], value: employee.id },
-    { names: ["employee_name", "employeeName", "employee"], value: employee.name },
-    { names: ["company", "client_company", "clientCompany"], value: employee.company },
-    { names: ["contract_start", "contractStart", "start_date", "startDate"], value: contractStart },
-    { names: ["contract_end", "contractEnd", "end_date", "endDate"], value: contractEnd },
-    { names: ["status", "contract_status", "contractStatus"], value: status },
-    { names: ["position", "job_position", "jobPosition"], value: position },
-    { names: ["created_at", "createdAt"], value: `${contractStart} ${randomTime()}` },
-    { names: ["updated_at", "updatedAt"], value: `${contractEnd || contractStart} ${randomTime()}` },
-  ]);
+  const validExpiry = formatDate(addDays(today, 365));
+  const expiringSoon = formatDate(addDays(today, 15));
+  const expired = formatDate(addDays(today, -20));
 
-  return inserted ? 1 : 0;
-}
+  const rows = [];
 
-async function insertDeploymentAndContract(
-  connection,
-  employee,
-  contractColumns,
-  deploymentColumns,
-  config
-) {
-  const contractsCreated = await insertContractRow(connection, contractColumns, employee, {
-    contractStart: config.deploymentDate,
-    contractEnd: config.endDate,
-    status: config.status,
-  });
-
-  const deploymentsCreated = await insertDeploymentRow(connection, deploymentColumns, employee, {
-    deploymentDate: config.deploymentDate,
-    endDate: config.endDate,
-    status: config.status,
-  });
-
-  return {
-    contractsCreated,
-    deploymentsCreated,
-  };
-}
-
-async function insertIncidentRecord(connection, incidentColumns, employee, config) {
-  const incidentDate = config.incidentDate;
-  const status = config.status || "Closed";
-  const severity = config.severity || "Minor";
-  const violation = config.violation || "Unexcused Tardiness";
-  const actionTaken = config.actionTaken || "Verbal Warning";
-  const recommendation = config.recommendation || "Monitor employee record";
-  const reporter = config.reporter || "HR Manager Demo";
-
-  await insertRow(connection, "incidents", incidentColumns, [
-    { names: ["employee_id", "employeeId"], value: employee.id },
-    { names: ["employee_name", "employeeName", "employee"], value: employee.name },
-    { names: ["company"], value: employee.company || "Unassigned" },
-    { names: ["violation_type", "violationType", "violation"], value: violation },
-    { names: ["severity"], value: severity },
-    { names: ["status"], value: status },
-    { names: ["incident_date", "incidentDate", "date"], value: incidentDate },
-    { names: ["location"], value: employee.company || "Client Site" },
-    {
-      names: ["description"],
-      value: `Demo analytics incident: ${violation}. This record supports 2024-2026 trend comparison.`,
-    },
-    { names: ["reported_by", "reportedBy"], value: reporter },
-    { names: ["action_taken", "actionTaken", "sanction"], value: actionTaken },
-    { names: ["recommendation"], value: recommendation },
-    {
-      names: ["resolution_notes", "resolutionNotes"],
-      value:
-        status === "Closed"
-          ? `Closed historical demo case. Action taken: ${actionTaken}.`
-          : `Current demo case for smart alert and KPI monitoring. Suggested action: ${recommendation}.`,
-    },
-    { names: ["created_at", "createdAt"], value: `${incidentDate} ${randomTime()}` },
-    { names: ["updated_at", "updatedAt"], value: `${incidentDate} ${randomTime()}` },
-  ]);
-
-  return 1;
-}
-
-async function seedMockData() {
-  const connection = db.promise();
-  const mockFilePath = createMockPdfFile();
-
-  try {
-    console.log("Starting Welljob clean historical demo seed...");
-    console.log("Expected output:");
-    console.log("Employees: 1000");
-    console.log("Current deployed employees: 800");
-    console.log("Current floating employees: 200");
-    console.log("Deployment records: 2024 = 650, 2025 = 720, 2026 = 800");
-    console.log("Incident records: 2024 = 12, 2025 = 8, 2026 = 2");
-    console.log("Expiring compliance documents: 2");
-
-    if (CLEAR_EXISTING_DATA) {
-      await clearExistingData(connection);
+  for (const employee of employees) {
+    if (employee.demoTag === "NO_DATA") {
+      continue;
     }
 
-    const employeeColumns = await getTableColumns(connection, "employees");
-    const documentColumns = await getTableColumns(connection, "employee_documents");
-    const incidentColumns = await getTableColumns(connection, "incidents");
+    for (const doc of DOCUMENTS) {
+      let filePath = doc.expirable ? filePaths.valid : filePaths.permanent;
+      let expirationDate = doc.expirable ? validExpiry : null;
 
-    const hasContractsTable = await tableExists(connection, "contracts");
-    const hasDeploymentsTable = await tableExists(connection, "deployments");
-
-    const contractColumns = hasContractsTable
-      ? await getTableColumns(connection, "contracts")
-      : null;
-
-    const deploymentColumns = hasDeploymentsTable
-      ? await getTableColumns(connection, "deployments")
-      : null;
-
-    const employees = [];
-    const employeesByIndex = new Map();
-
-    let createdEmployees = 0;
-    let createdDocuments = 0;
-    let createdExpiringDocuments = 0;
-
-    for (let i = 1; i <= EMPLOYEE_COUNT; i += 1) {
-      const employee = await insertEmployee(connection, employeeColumns, i);
-
-      employees.push(employee);
-      employeesByIndex.set(i, employee);
-
-      const expiringDocsForEmployee = await insertDocuments(
-        connection,
-        documentColumns,
-        employee,
-        mockFilePath
-      );
-
-      createdEmployees += 1;
-      createdDocuments += REQUIRED_DOCUMENTS.length;
-      createdExpiringDocuments += expiringDocsForEmployee;
-
-      if (i % 100 === 0) {
-        console.log(`Seeded ${i}/${EMPLOYEE_COUNT} employees...`);
+      if (employee.demoTag === "INCOMPLETE") {
+        if (doc.name === "NBI/Police Clearance" || doc.name === "Medical Certificate") {
+          filePath = null;
+        }
       }
+
+      if (employee.demoTag === "EXPIRING_SOON" && doc.name === "Barangay Clearance") {
+        filePath = filePaths.expiring;
+        expirationDate = expiringSoon;
+      }
+
+      if (employee.demoTag === "EXPIRED" && doc.name === "Barangay Clearance") {
+        filePath = filePaths.expired;
+        expirationDate = expired;
+      }
+
+      rows.push([
+        employee.id,
+        doc.name,
+        expirationDate,
+        filePath,
+      ]);
     }
+  }
 
-    const deployedEmployees = employees.filter(
-      (employee) => employee.status === "Deployed"
+  return rows;
+}
+
+async function insertDocuments(documentRows) {
+  if (!documentRows.length) return;
+
+  await connection.query(
+    `
+    INSERT INTO employee_documents
+      (employee_id, name, expiration_date, file_path)
+    VALUES ?
+    `,
+    [documentRows]
+  );
+}
+
+function getEmployeesByCohort(employees, cohort) {
+  return employees.filter((employee) => employee.cohort === cohort);
+}
+
+function getDeployedEmployeesByCohort(employees, cohort) {
+  return employees.filter(
+    (employee) => employee.cohort === cohort && employee.status === "Deployed"
+  );
+}
+
+function makeIncidentRow({
+  employee,
+  violation,
+  severity,
+  status,
+  incidentDate,
+  location,
+  description,
+  reportedBy = "HR Demo Seeder",
+  actionTaken = null,
+  recommendation = null,
+  resolutionNotes = null,
+}) {
+  if (!employee) {
+    throw new Error("Incident seed error: employee is required.");
+  }
+
+  if (employee.status !== "Deployed") {
+    throw new Error(
+      `Incident seed error: Floating employee cannot have incident. Employee: ${employee.name}`
     );
+  }
 
-    let createdContracts = 0;
-    let createdDeployments = 0;
+  return [
+    employee.id,
+    employee.name,
+    employee.company,
+    violation,
+    severity,
+    status,
+    incidentDate,
+    location,
+    description,
+    reportedBy,
+    actionTaken,
+    recommendation,
+    resolutionNotes,
+  ];
+}
 
-    const historical2024Employees = deployedEmployees.slice(
-      0,
-      DEPLOYMENT_HISTORY[2024]
-    );
+function buildIncidents(employees) {
+  const incidents = [];
 
-    const historical2025Employees = deployedEmployees.slice(
-      0,
-      DEPLOYMENT_HISTORY[2025]
-    );
+  const employees2025 = getDeployedEmployeesByCohort(employees, "2025");
+  const employees2026 = getDeployedEmployeesByCohort(employees, "2026");
 
-    const current2026Employees = deployedEmployees.slice(
-      0,
-      DEPLOYMENT_HISTORY[2026]
-    );
+  // 2025: 20 closed cases
+  for (let i = 0; i < 20; i++) {
+    const employee = employees2025[i * 7];
 
-    for (const employee of historical2024Employees) {
-      const deploymentDate = getHistoricalDeploymentStart(2024);
-      const endDate = getHistoricalDeploymentEnd(deploymentDate);
-
-      const result = await insertDeploymentAndContract(
-        connection,
+    incidents.push(
+      makeIncidentRow({
         employee,
-        contractColumns,
-        deploymentColumns,
-        {
-          deploymentDate,
-          endDate,
-          status: "Completed",
-        }
-      );
-
-      createdContracts += result.contractsCreated;
-      createdDeployments += result.deploymentsCreated;
-    }
-
-    for (const employee of historical2025Employees) {
-      const deploymentDate = getHistoricalDeploymentStart(2025);
-      const endDate = getHistoricalDeploymentEnd(deploymentDate);
-
-      const result = await insertDeploymentAndContract(
-        connection,
-        employee,
-        contractColumns,
-        deploymentColumns,
-        {
-          deploymentDate,
-          endDate,
-          status: "Completed",
-        }
-      );
-
-      createdContracts += result.contractsCreated;
-      createdDeployments += result.deploymentsCreated;
-    }
-
-    for (const employee of current2026Employees) {
-      const deploymentDate = employee.contractStart || randomDateForYear(YEAR_2026);
-
-      const result = await insertDeploymentAndContract(
-        connection,
-        employee,
-        contractColumns,
-        deploymentColumns,
-        {
-          deploymentDate,
-          endDate: null,
-          status: "Active",
-        }
-      );
-
-      createdContracts += result.contractsCreated;
-      createdDeployments += result.deploymentsCreated;
-    }
-
-    for (let i = 0; i < HISTORICAL_2024_INCIDENT_CASES.length; i += 1) {
-      const [violation, severity, actionTaken] = HISTORICAL_2024_INCIDENT_CASES[i];
-      const employee = employeesByIndex.get(301 + i);
-
-      if (!employee) continue;
-
-      await insertIncidentRecord(connection, incidentColumns, employee, {
-        incidentDate: randomDateForYear(YEAR_2024),
+        violation: randomItem([
+          VIOLATIONS.TARDINESS,
+          VIOLATIONS.NO_ID,
+          VIOLATIONS.UNIFORM,
+          VIOLATIONS.NEGLECT,
+        ]),
+        severity: randomItem(["Minor", "Minor", "Major"]),
         status: "Closed",
-        severity,
-        violation,
-        actionTaken,
-        recommendation: "Historical closed case",
-        reporter: "HR Manager Demo",
-      });
-    }
+        incidentDate: randomDateInYear(2025),
+        location: employee.company,
+        description:
+          "Closed 2025 demo case used for historical incident trend and case resolution display.",
+        actionTaken: "Case reviewed and documented.",
+        recommendation: "Monitor employee record.",
+        resolutionNotes: "Resolved and closed for demo data.",
+      })
+    );
+  }
 
-    for (let i = 0; i < HISTORICAL_2025_INCIDENT_CASES.length; i += 1) {
-      const [violation, severity, actionTaken] = HISTORICAL_2025_INCIDENT_CASES[i];
-      const employee = employeesByIndex.get(401 + i);
+  // 2026: one employee with repeated active pattern
+  const repeatedEmployee = employees2026.find(
+    (employee) => employee.name === "Ramon M. Marquez"
+  );
 
-      if (!employee) continue;
+  const repeatedDates = [
+    "2026-01-12",
+    "2026-02-04",
+    "2026-03-08",
+    "2026-04-11",
+    "2026-05-02",
+  ];
 
-      await insertIncidentRecord(connection, incidentColumns, employee, {
-        incidentDate: randomDateForYear(YEAR_2025),
+  repeatedDates.forEach((date, index) => {
+    incidents.push(
+      makeIncidentRow({
+        employee: repeatedEmployee,
+        violation: VIOLATIONS.ABSENCE,
+        severity: index >= 3 ? "Major" : "Minor",
+        status: index % 2 === 0 ? "Open" : "Investigating",
+        incidentDate: date,
+        location: repeatedEmployee.company,
+        description:
+          "Repeated attendance-related case for demo. This pattern should trigger KPI risk and Smart Suggestions.",
+        actionTaken: "For HR review",
+        recommendation:
+          "Review attendance pattern and consider reserve manpower if needed.",
+        resolutionNotes: null,
+      })
+    );
+  });
+
+  // 2026: 2 closed random cases
+  for (let i = 0; i < 2; i++) {
+    const employee = employees2026[50 + i * 25];
+
+    incidents.push(
+      makeIncidentRow({
+        employee,
+        violation: randomItem([VIOLATIONS.NO_ID, VIOLATIONS.TARDINESS]),
+        severity: "Minor",
         status: "Closed",
+        incidentDate: randomDateInYear(2026),
+        location: employee.company,
+        description:
+          "Closed 2026 demo case used for current year incident history.",
+        actionTaken: "Warning issued and documented.",
+        recommendation: "Retain and monitor employee.",
+        resolutionNotes: "Resolved and closed.",
+      })
+    );
+  }
+
+  return incidents;
+}
+
+async function insertIncidents(incidentRows) {
+  if (!incidentRows.length) return;
+
+  await connection.query(
+    `
+    INSERT INTO incidents
+      (
+        employee_id,
+        employee_name,
+        company,
+        violation_type,
         severity,
-        violation,
-        actionTaken,
-        recommendation: "Historical closed case",
-        reporter: "HR Manager Demo",
-      });
-    }
+        status,
+        incident_date,
+        location,
+        description,
+        reported_by,
+        action_taken,
+        recommendation,
+        resolution_notes
+      )
+    VALUES ?
+    `,
+    [incidentRows]
+  );
+}
 
-    for (const currentCase of CURRENT_2026_INCIDENT_CASES) {
-      const employee = employeesByIndex.get(currentCase.employeeIndex);
+async function printSummary() {
+  const [[employeeCount]] = await connection.query(`
+    SELECT COUNT(*) AS total FROM employees
+  `);
 
-      if (!employee) continue;
+  const [[employees2025]] = await connection.query(`
+    SELECT COUNT(*) AS total
+    FROM employees
+    WHERE YEAR(contractStart) = 2025
+  `);
 
-      await insertIncidentRecord(connection, incidentColumns, employee, {
-        incidentDate: randomDateForYear(YEAR_2026),
-        status: currentCase.status,
-        severity: currentCase.severity,
-        violation: currentCase.violation,
-        actionTaken: currentCase.actionTaken,
-        recommendation: currentCase.recommendation,
-        reporter: currentCase.reporter,
-      });
-    }
+  const [[employees2026]] = await connection.query(`
+    SELECT COUNT(*) AS total
+    FROM employees
+    WHERE YEAR(contractStart) = 2026
+  `);
 
-    const createdIncidents =
-      HISTORICAL_2024_INCIDENT_CASES.length +
-      HISTORICAL_2025_INCIDENT_CASES.length +
-      CURRENT_2026_INCIDENT_CASES.length;
+  const [[floating2026]] = await connection.query(`
+    SELECT COUNT(*) AS total
+    FROM employees
+    WHERE YEAR(contractStart) = 2026
+      AND status = 'Floating / Standby'
+  `);
 
-    const stats = {
-      Employees: createdEmployees,
-      Deployed: deployedEmployees.length,
-      "Floating / Standby": employees.filter(
-        (employee) => employee.status === "Floating / Standby"
-      ).length,
-      Documents: createdDocuments,
-      "Expiring Documents": createdExpiringDocuments,
-      "Valid Documents": createdDocuments - createdExpiringDocuments,
-      Contracts: createdContracts,
-      Deployments: createdDeployments,
-      "2024 Deployment Records": DEPLOYMENT_HISTORY[2024],
-      "2025 Deployment Records": DEPLOYMENT_HISTORY[2025],
-      "2026 Active Deployment Records": DEPLOYMENT_HISTORY[2026],
-      "2024 Closed Incidents": HISTORICAL_2024_INCIDENT_CASES.length,
-      "2025 Closed Incidents": HISTORICAL_2025_INCIDENT_CASES.length,
-      "2026 Active Incidents": CURRENT_2026_INCIDENT_CASES.length,
-      "Total Incidents": createdIncidents,
-    };
+  const [[deployed2026]] = await connection.query(`
+    SELECT COUNT(*) AS total
+    FROM employees
+    WHERE YEAR(contractStart) = 2026
+      AND status = 'Deployed'
+  `);
 
-    console.log("Seed completed!");
-    console.log("Stats:", stats);
-    console.log("Audit logs cleared:", CLEAR_AUDIT_LOGS ? "Yes" : "No");
-    console.log("Smart alert/suggestion states cleared:", CLEAR_SMART_STATES ? "Yes" : "No");
+  const [[closed2025]] = await connection.query(`
+    SELECT COUNT(*) AS total
+    FROM incidents
+    WHERE YEAR(incident_date) = 2025
+      AND status = 'Closed'
+  `);
 
-    console.log("\nDemo employees to search:");
-    console.log("- Carlo R. Gonzales      -> Deployed / NBI Clearance expiring soon");
-    console.log("- Princess M. Reyes      -> Deployed / Barangay Clearance expiring soon");
-    console.log("- Christian C. Dela Cruz -> Floating / Standby");
-    console.log("- Rica E. Morales        -> Current year minor incident demo");
-    console.log("- Marvin D. Bautista     -> Current year major incident demo");
+  const [[active2026]] = await connection.query(`
+    SELECT COUNT(*) AS total
+    FROM incidents
+    WHERE YEAR(incident_date) = 2026
+      AND status IN ('Open', 'Investigating', 'For Review')
+  `);
 
-    process.exit(0);
+  const [[closed2026]] = await connection.query(`
+    SELECT COUNT(*) AS total
+    FROM incidents
+    WHERE YEAR(incident_date) = 2026
+      AND status = 'Closed'
+  `);
+
+  const [[documentRows]] = await connection.query(`
+    SELECT COUNT(*) AS total
+    FROM employee_documents
+  `);
+
+  console.log("\nSeed completed successfully.");
+  console.log("--------------------------------");
+  console.log(`Employees total: ${employeeCount.total}`);
+  console.log(`2025 employees: ${employees2025.total}`);
+  console.log(`2026 employees: ${employees2026.total}`);
+  console.log(`2026 deployed: ${deployed2026.total}`);
+  console.log(`2026 floating: ${floating2026.total}`);
+  console.log(`2025 closed incidents: ${closed2025.total}`);
+  console.log(`2026 active incidents: ${active2026.total}`);
+  console.log(`2026 closed incidents: ${closed2026.total}`);
+  console.log(`Employee document rows: ${documentRows.total}`);
+  console.log("--------------------------------");
+  console.log("Demo pattern employee: Ramon M. Marquez");
+  console.log("Repeated pattern: 5 active absence-related incidents");
+  console.log("2026 compliance demo cases:");
+  console.log("- 20 incomplete compliance");
+  console.log("- 2 no data compliance");
+  console.log("- 3 expiring soon");
+  console.log("- 1 expired");
+}
+
+async function main() {
+  try {
+    console.log("Starting Welljob 1000 employee demo seed...");
+
+    await clearMockData();
+
+    const filePaths = ensureDemoFiles();
+
+    const employees = buildEmployees();
+    const insertedEmployees = await insertEmployees(employees);
+
+    const documentRows = buildDocumentRows(insertedEmployees, filePaths);
+    await insertDocuments(documentRows);
+
+    const incidentRows = buildIncidents(insertedEmployees);
+    await insertIncidents(incidentRows);
+
+    await printSummary();
+
+    console.log("\nRun finished. You may now refresh the frontend.");
   } catch (error) {
-    console.error("SEED MOCK DATA ERROR:", error);
-
-    try {
-      await connection.query("SET FOREIGN_KEY_CHECKS = 1");
-    } catch (restoreError) {
-      console.error("Failed to restore foreign key checks:", restoreError.message);
+    console.error("\nSEED MOCK DATA ERROR:");
+    console.error(error);
+    process.exitCode = 1;
+  } finally {
+    if (typeof db.end === "function") {
+      db.end();
     }
-
-    process.exit(1);
   }
 }
 
-seedMockData();
+main();

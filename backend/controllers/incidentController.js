@@ -5,19 +5,42 @@ const API_BASE = "http://localhost:5000";
 
 function normalizeDate(value) {
   if (!value) return null;
-  return String(value).slice(0, 10);
+
+  const dateString = String(value).trim();
+  if (!dateString) return null;
+
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return dateString.slice(0, 10);
 }
 
 function normalizeStatus(value) {
-  return value || "Open";
+  const status = String(value || "").trim();
+
+  if (!status) return "Open";
+  if (status === "for_review") return "For Review";
+  if (status === "for review") return "For Review";
+  if (status === "resolved") return "Closed";
+
+  return status;
 }
 
 function normalizeSeverity(value) {
-  return value || "Minor";
+  const severity = String(value || "").trim();
+
+  if (!severity) return "Minor";
+
+  return severity;
 }
 
 function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function isDeployedEmployee(employee) {
+  const status = normalizeText(employee?.status);
+  return status === "deployed";
 }
 
 function buildEvidenceFromReq(req) {
@@ -25,7 +48,7 @@ function buildEvidenceFromReq(req) {
 
   return req.files.map((file) => ({
     fileName: file.originalname,
-    filePath: file.path.replace(/\\/g, "/"),
+    filePath: String(file.path || "").replace(/\\/g, "/"),
   }));
 }
 
@@ -51,10 +74,19 @@ function isActiveDeploymentRow(deployment) {
   return ["active", "deployed", "active deployed", "ongoing"].includes(status);
 }
 
+async function tableExists(tableName) {
+  const [rows] = await db.promise().query("SHOW TABLES LIKE ?", [tableName]);
+  return rows.length > 0;
+}
+
 async function getActiveDeploymentForEmployee(employeeId) {
   const normalizedEmployeeId = String(employeeId || "").trim();
 
   if (!normalizedEmployeeId) return null;
+
+  const hasDeploymentsTable = await tableExists("deployments");
+
+  if (!hasDeploymentsTable) return null;
 
   const [rows] = await db.promise().query(
     `
@@ -133,6 +165,61 @@ function serializeIncident(incident, evidence = []) {
   };
 }
 
+async function getIncidentWithEvidence(id) {
+  const [rows] = await db.promise().query(
+    `
+    SELECT 
+      i.*,
+      e.name AS employeeNameFromEmployee,
+      e.company AS employeeCompany,
+      e.status AS employeeStatus
+    FROM incidents i
+    LEFT JOIN employees e ON e.id = i.employee_id
+    WHERE i.id = ?
+    LIMIT 1
+    `,
+    [id]
+  );
+
+  if (rows.length === 0) return null;
+
+  const [evidence] = await db.promise().query(
+    `
+    SELECT *
+    FROM incident_evidence
+    WHERE incident_id = ?
+    ORDER BY created_at DESC, id DESC
+    `,
+    [id]
+  );
+
+  return serializeIncident(rows[0], evidence);
+}
+
+function getActor(req) {
+  const body = req.body || {};
+
+  return {
+    userId: body.userId || body.user_id || null,
+    username: body.username || null,
+    fullName:
+      body.fullName ||
+      body.full_name ||
+      body.name ||
+      body.username ||
+      "Unknown User",
+    role: body.role || null,
+  };
+}
+
+async function safeLogAudit(payload) {
+  try {
+    await logAudit(payload);
+  } catch (error) {
+    console.error("AUDIT LOG ERROR:", error);
+  }
+}
+
 // GET ALL INCIDENTS
 exports.getIncidents = async (req, res) => {
   try {
@@ -182,7 +269,9 @@ exports.getIncidents = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error("GET INCIDENTS ERROR:", err);
-    res.status(500).json({ error: "Failed to fetch incidents" });
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Failed to fetch incidents",
+    });
   }
 };
 
@@ -251,7 +340,7 @@ exports.getIncidentsByEmployee = async (req, res) => {
 
     const result = incidents.map((incident) => {
       const incidentEvidence = evidence.filter(
-        (item) => item.incident_id === incident.id
+        (item) => Number(item.incident_id) === Number(incident.id)
       );
 
       return serializeIncident(incident, incidentEvidence);
@@ -260,7 +349,10 @@ exports.getIncidentsByEmployee = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error("GET INCIDENTS BY EMPLOYEE ERROR:", err);
-    res.status(500).json({ error: "Failed to fetch employee incidents" });
+    res.status(500).json({
+      error:
+        err.sqlMessage || err.message || "Failed to fetch employee incidents",
+    });
   }
 };
 
@@ -269,41 +361,18 @@ exports.getIncidentById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const [rows] = await db.promise().query(
-      `
-      SELECT 
-        i.*,
-        e.name AS employeeNameFromEmployee,
-        e.company AS employeeCompany,
-        e.status AS employeeStatus
-      FROM incidents i
-      LEFT JOIN employees e ON e.id = i.employee_id
-      WHERE i.id = ?
-      LIMIT 1
-      `,
-      [id]
-    );
+    const incident = await getIncidentWithEvidence(id);
 
-    if (rows.length === 0) {
+    if (!incident) {
       return res.status(404).json({ error: "Incident not found" });
     }
 
-    const incident = rows[0];
-
-    const [evidence] = await db.promise().query(
-      `
-      SELECT *
-      FROM incident_evidence
-      WHERE incident_id = ?
-      ORDER BY created_at DESC, id DESC
-      `,
-      [id]
-    );
-
-    res.json(serializeIncident(incident, evidence));
+    res.json(incident);
   } catch (err) {
     console.error("GET INCIDENT ERROR:", err);
-    res.status(500).json({ error: "Failed to fetch incident" });
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Failed to fetch incident",
+    });
   }
 };
 
@@ -328,15 +397,13 @@ exports.createIncident = async (req, res) => {
       actionTaken,
       recommendation,
       resolutionNotes,
-      userId,
-      username,
-      role,
     } = req.body || {};
 
+    const actor = getActor(req);
     const finalEmployeeId = employeeId || employee_id;
 
     if (!finalEmployeeId) {
-      return res.status(400).json({ error: "Employee is required" });
+      return res.status(400).json({ error: "Employee is required." });
     }
 
     const [employeeRows] = await db.promise().query(
@@ -345,43 +412,43 @@ exports.createIncident = async (req, res) => {
     );
 
     if (employeeRows.length === 0) {
-      return res.status(404).json({ error: "Selected employee not found" });
+      return res.status(404).json({ error: "Selected employee not found." });
     }
 
     const employeeRecord = employeeRows[0];
+
+    if (!isDeployedEmployee(employeeRecord)) {
+      return res.status(400).json({
+        error:
+          "Incident cannot be created for floating or standby employees. Please select a deployed employee.",
+      });
+    }
 
     const activeDeployment = await getActiveDeploymentForEmployee(
       finalEmployeeId
     );
 
-    if (!activeDeployment) {
-      return res.status(400).json({
-        error:
-          "Incident reports can only be created for employees with an active deployment record.",
-      });
-    }
-
     const finalEmployeeName =
       employeeName || employee || employeeRecord.name || null;
 
     const finalCompany =
-      company || activeDeployment.company || employeeRecord.company || null;
+      company ||
+      activeDeployment?.company ||
+      employeeRecord.company ||
+      activeDeployment?.client_company ||
+      null;
 
     const finalViolation = violationType || violation;
 
     if (!finalViolation) {
-      return res.status(400).json({ error: "Violation type is required" });
+      return res.status(400).json({ error: "Violation type is required." });
     }
 
     const finalDate = normalizeDate(incidentDate || date);
 
     if (!finalDate) {
-      return res.status(400).json({ error: "Incident date is required" });
+      return res.status(400).json({ error: "Incident date is required." });
     }
-
-    const finalActionTaken = actionTaken || null;
-    const finalRecommendation = recommendation || null;
-    const finalResolutionNotes = resolutionNotes || null;
 
     const [result] = await db.promise().query(
       `
@@ -414,9 +481,9 @@ exports.createIncident = async (req, res) => {
         location || null,
         description || null,
         reportedBy || null,
-        finalActionTaken,
-        finalRecommendation,
-        finalResolutionNotes,
+        actionTaken || null,
+        recommendation || null,
+        resolutionNotes || null,
       ]
     );
 
@@ -434,24 +501,31 @@ exports.createIncident = async (req, res) => {
       );
     }
 
-    await logAudit({
-      userId,
-      username,
-      role,
+    await safeLogAudit({
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
       category: AUDIT_CATEGORY.OPERATIONAL,
       action: "ADD_INCIDENT",
-      description: `Created incident record for ${finalEmployeeName}.`,
+      description: `${actor.fullName} created incident record for ${finalEmployeeName}.`,
     });
+
+    const createdIncident = await getIncidentWithEvidence(incidentId);
 
     res.status(201).json({
       success: true,
       message: "Incident created successfully",
       id: incidentId,
       incidentId,
+      incident: createdIncident,
     });
   } catch (err) {
     console.error("CREATE INCIDENT ERROR:", err);
-    res.status(500).json({ error: "Failed to create incident" });
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Failed to create incident",
+    });
   }
 };
 
@@ -478,15 +552,13 @@ exports.updateIncident = async (req, res) => {
       actionTaken,
       recommendation,
       resolutionNotes,
-      userId,
-      username,
-      role,
     } = req.body || {};
 
+    const actor = getActor(req);
     const finalEmployeeId = employeeId || employee_id;
 
     if (!finalEmployeeId) {
-      return res.status(400).json({ error: "Employee is required" });
+      return res.status(400).json({ error: "Employee is required." });
     }
 
     const [employeeRows] = await db.promise().query(
@@ -495,37 +567,41 @@ exports.updateIncident = async (req, res) => {
     );
 
     if (employeeRows.length === 0) {
-      return res.status(404).json({ error: "Selected employee not found" });
+      return res.status(404).json({ error: "Selected employee not found." });
     }
 
     const employeeRecord = employeeRows[0];
+
+    if (!isDeployedEmployee(employeeRecord)) {
+      return res.status(400).json({
+        error:
+          "Incident cannot be assigned to floating or standby employees. Please select a deployed employee.",
+      });
+    }
 
     const activeDeployment = await getActiveDeploymentForEmployee(
       finalEmployeeId
     );
 
-    if (!activeDeployment) {
-      return res.status(400).json({
-        error:
-          "Incident reports can only be assigned to employees with an active deployment record.",
-      });
-    }
-
     const finalEmployeeName =
       employeeName || employee || employeeRecord.name || null;
 
     const finalCompany =
-      company || activeDeployment.company || employeeRecord.company || null;
+      company ||
+      activeDeployment?.company ||
+      employeeRecord.company ||
+      activeDeployment?.client_company ||
+      null;
 
     const finalViolation = violationType || violation;
     const finalDate = normalizeDate(incidentDate || date);
 
     if (!finalViolation) {
-      return res.status(400).json({ error: "Violation type is required" });
+      return res.status(400).json({ error: "Violation type is required." });
     }
 
     if (!finalDate) {
-      return res.status(400).json({ error: "Incident date is required" });
+      return res.status(400).json({ error: "Incident date is required." });
     }
 
     await db.promise().query(
@@ -579,22 +655,29 @@ exports.updateIncident = async (req, res) => {
       );
     }
 
-    await logAudit({
-      userId,
-      username,
-      role,
+    await safeLogAudit({
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
       category: AUDIT_CATEGORY.OPERATIONAL,
       action: "UPDATE_INCIDENT",
-      description: `Updated incident record for ${finalEmployeeName}.`,
+      description: `${actor.fullName} updated incident record for ${finalEmployeeName}.`,
     });
+
+    const updatedIncident = await getIncidentWithEvidence(id);
 
     res.json({
       success: true,
       message: "Incident updated successfully",
+      incident: updatedIncident,
     });
   } catch (err) {
     console.error("UPDATE INCIDENT ERROR:", err);
-    res.status(500).json({ error: "Failed to update incident" });
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Failed to update incident",
+    });
   }
 };
 
@@ -631,7 +714,10 @@ exports.updateIncidentStatus = async (req, res) => {
     });
   } catch (err) {
     console.error("UPDATE INCIDENT STATUS ERROR:", err);
-    res.status(500).json({ error: "Failed to update incident status" });
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Failed to update incident status",
+    });
   }
 };
 
@@ -652,6 +738,9 @@ exports.deleteIncident = async (req, res) => {
     });
   } catch (err) {
     console.error("DELETE INCIDENT ERROR:", err);
-    res.status(500).json({ error: "Failed to delete incident" });
+
+    res.status(500).json({
+      error: err.sqlMessage || err.message || "Failed to delete incident",
+    });
   }
 };
