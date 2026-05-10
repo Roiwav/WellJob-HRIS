@@ -1135,8 +1135,10 @@ export default function Dashboard() {
 
       <WorkforceHealthBanner health={dashboardInsights.health} />
 
-      <ExecutiveActionItems actions={executiveActions} />
-
+<ExecutiveActionItems
+  actions={executiveActions}
+  onOpenDrilldown={handleOpenDrilldown}
+/>
       <ExecutiveInsightTabs
         insights={dashboardInsights}
         onOpenDrilldown={handleOpenDrilldown}

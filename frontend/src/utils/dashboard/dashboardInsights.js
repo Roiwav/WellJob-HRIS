@@ -199,9 +199,9 @@ function buildComplianceBreakdown(expiringRows = []) {
       document,
       count,
       recommendation:
-        count >= 10
-          ? "Schedule batch renewal follow-up."
-          : "Send renewal reminder.",
+  count >= 10
+    ? "Prioritize batch renewal follow-up."
+    : "Follow up updated document submission."
     }))
     .sort((a, b) => b.count - a.count);
 }

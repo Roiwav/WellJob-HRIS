@@ -48,12 +48,9 @@ export default function ExecutiveInsightTabs({ insights, onOpenDrilldown }) {
       );
     }
 
-    return (
-      <CompliancePanel
-        complianceBreakdown={insights.complianceBreakdown}
-        onOpen={() => onOpenDrilldown?.("complianceBreakdown")}
-      />
-    );
+return (
+  <CompliancePanel complianceBreakdown={insights.complianceBreakdown} />
+);
   }, [activeTab, insights, onOpenDrilldown]);
 
   if (!insights) return null;
@@ -197,7 +194,7 @@ function CaseAgingPanel({ caseAging, onOpen }) {
   );
 }
 
-function CompliancePanel({ complianceBreakdown = [], onOpen }) {
+function CompliancePanel({ complianceBreakdown = [] }) {
   const topDocs = complianceBreakdown.slice(0, 4);
 
   if (topDocs.length === 0) {
@@ -231,8 +228,6 @@ function CompliancePanel({ complianceBreakdown = [], onOpen }) {
           </div>
         ))}
       </div>
-
-      <ViewButton onClick={onOpen}>View Compliance Breakdown</ViewButton>
     </div>
   );
 }
