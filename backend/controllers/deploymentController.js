@@ -27,6 +27,8 @@ const COMPANY_LOCATIONS = {
   "Sitel Philippines": "Makati City",
 };
 
+const CANCELLED_REASONS = new Set(["Resigned", "AWOL", "Terminated"]);
+
 function normalizeDate(value) {
   if (!value) return "-";
 
@@ -36,8 +38,39 @@ function normalizeDate(value) {
   return date.toISOString().slice(0, 10);
 }
 
+function normalizeNullableDate(value) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return String(value).slice(0, 10);
+}
+
+function getDeploymentStatus(employee) {
+  const reason = employee.contractEndReason || employee.contract_end_reason;
+  const contractEnd = employee.contractEnd || employee.contract_end;
+
+  if (!reason && !contractEnd) return "Active";
+
+  if (CANCELLED_REASONS.has(reason)) return "Cancelled";
+
+  return "Completed";
+}
+
+function getEmployeeStatusFromDeploymentStatus(status) {
+  if (status === "Cancelled") return "Inactive";
+  return "Floating / Standby";
+}
+
 function mapEmployeeToDeployment(employee) {
   const company = employee.company || "-";
+  const endReason =
+    employee.contractEndReason || employee.contract_end_reason || "";
+  const endRemarks =
+    employee.contractEndRemarks || employee.contract_end_remarks || "";
+  const contractEndedAt =
+    employee.contractEndedAt || employee.contract_ended_at || null;
 
   return {
     id: employee.id,
@@ -48,13 +81,17 @@ function mapEmployeeToDeployment(employee) {
     start: normalizeDate(
       employee.contractStart || employee.contract_start || employee.created_at
     ),
-    status: "Active",
+    status: getDeploymentStatus(employee),
+    employeeStatus: employee.status || "",
     employmentType:
       employee.employmentType || employee.employment_type || "Permanent",
     contractStart: normalizeDate(
       employee.contractStart || employee.contract_start
     ),
     contractEnd: normalizeDate(employee.contractEnd || employee.contract_end),
+    endReason,
+    endRemarks,
+    contractEndedAt,
     createdAt: employee.created_at,
     updatedAt: employee.updated_at,
   };
@@ -70,12 +107,20 @@ exports.getDeployments = async (req, res) => {
         status,
         contractStart,
         contractEnd,
+        contractEndReason,
+        contractEndRemarks,
+        contractEndedAt,
         created_at,
+        updated_at,
         archived
       FROM employees
       WHERE 
         archived = 0
-        AND LOWER(TRIM(status)) IN ('deployed', 'active deployed')
+        AND (
+          LOWER(TRIM(status)) IN ('deployed', 'active deployed')
+          OR contractEnd IS NOT NULL
+          OR contractEndReason IS NOT NULL
+        )
       ORDER BY created_at DESC
     `);
 
@@ -86,8 +131,7 @@ exports.getDeployments = async (req, res) => {
     console.error("GET DEPLOYMENTS ERROR:", err);
 
     res.status(500).json({
-      error:
-        err.sqlMessage || err.message || "Failed to fetch deployments",
+      error: err.sqlMessage || err.message || "Failed to fetch deployments",
     });
   }
 };
@@ -116,15 +160,23 @@ exports.updateDeploymentStatus = async (req, res) => {
       return res.status(404).json({ error: "Employee not found." });
     }
 
+    const employeeStatus = getEmployeeStatusFromDeploymentStatus(status);
+    const endReason =
+      status === "Cancelled"
+        ? "End of Assignment / Pulled Out by Client"
+        : "Completed Contract";
+
     await db.promise().query(
       `
       UPDATE employees
       SET 
         status = ?,
-        company = NULL
+        contractEnd = COALESCE(contractEnd, CURDATE()),
+        contractEndReason = ?,
+        contractEndedAt = NOW()
       WHERE id = ?
       `,
-      ["Floating / Standby", employeeId]
+      [employeeStatus, endReason, employeeId]
     );
 
     res.json({
@@ -135,14 +187,14 @@ exports.updateDeploymentStatus = async (req, res) => {
           : "Deployment marked as completed successfully.",
       employeeId,
       deploymentStatus: status,
-      employeeStatus: "Floating / Standby",
+      employeeStatus,
+      endReason,
     });
   } catch (err) {
     console.error("UPDATE DEPLOYMENT STATUS ERROR:", err);
 
     res.status(500).json({
-      error:
-        err.sqlMessage || err.message || "Failed to update deployment status",
+      error: err.sqlMessage || err.message || "Failed to update deployment status",
     });
   }
 };

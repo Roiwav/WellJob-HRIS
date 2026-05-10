@@ -236,7 +236,7 @@ export default function Employees() {
     if (hasExpiringSoon) return "Expiring Soon";
     if (hasMissing) return "Incomplete";
 
-    return "Valid";
+    return "Complete";
   }, []);
 
   const generateId = () => {
@@ -393,7 +393,7 @@ export default function Employees() {
       if (compliance === "Expired") return 1;
       if (compliance === "Expiring Soon") return 2;
       if (compliance === "Incomplete") return 3;
-      if (compliance === "Valid") return 4;
+      if (compliance === "Complete") return 4;
 
       return 5;
     };
@@ -540,7 +540,7 @@ export default function Employees() {
           className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-gray-900 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
         >
           <option value="All">All Compliance</option>
-          <option value="Valid">Valid</option>
+          <option value="Complete">Complete</option>
           <option value="Expiring Soon">Expiring Soon</option>
           <option value="Expired">Expired</option>
           <option value="Incomplete">Incomplete</option>

@@ -291,18 +291,95 @@ exports.updateEmployee = async (req, res) => {
 };
 
 // BAGONG FUNCTION PARA SA INLINE EDITING NG CONTRACT END
+const CONTRACT_END_REASON_RULES = {
+  "Completed Contract": {
+    employeeStatus: "Floating / Standby",
+    deploymentStatus: "Completed",
+  },
+  "End of Assignment / Pulled Out by Client": {
+    employeeStatus: "Floating / Standby",
+    deploymentStatus: "Completed",
+  },
+  "Transferred / Reassigned": {
+    employeeStatus: "Floating / Standby",
+    deploymentStatus: "Completed",
+  },
+  Resigned: {
+    employeeStatus: "Inactive",
+    deploymentStatus: "Cancelled",
+  },
+  AWOL: {
+    employeeStatus: "Inactive",
+    deploymentStatus: "Cancelled",
+  },
+  Terminated: {
+    employeeStatus: "Inactive",
+    deploymentStatus: "Cancelled",
+  },
+};
+
+// BAGONG FUNCTION PARA SA CONTRACT END WITH REASON
 exports.updateContractEnd = async (req, res) => {
   try {
     const { id } = req.params;
-    const { contractEnd } = req.body;
+    const { contractEnd, endReason, endRemarks } = req.body || {};
     const actor = getActor(req);
 
     const finalContractEnd = toNullableDate(contractEnd);
-    const employeeName = await getEmployeeNameById(id);
+    const finalReason = toNullable(endReason);
+    const finalRemarks = toNullable(endRemarks);
+
+    if (!finalContractEnd) {
+      return res.status(400).json({
+        error: "Contract end date is required.",
+      });
+    }
+
+    if (!finalReason) {
+      return res.status(400).json({
+        error: "Contract end reason is required.",
+      });
+    }
+
+    const reasonRule = CONTRACT_END_REASON_RULES[finalReason];
+
+    if (!reasonRule) {
+      return res.status(400).json({
+        error: "Invalid contract end reason.",
+      });
+    }
+
+    const [employeeRows] = await db.promise().query(
+      `SELECT * FROM employees WHERE id = ? LIMIT 1`,
+      [id]
+    );
+
+    if (employeeRows.length === 0) {
+      return res.status(404).json({
+        error: "Employee not found.",
+      });
+    }
+
+    const employeeName = employeeRows[0]?.name || "Unknown Employee";
 
     await db.promise().query(
-      `UPDATE employees SET contractEnd = ? WHERE id = ?`,
-      [finalContractEnd, id]
+      `
+      UPDATE employees
+      SET
+        contractEnd = ?,
+        contractEndReason = ?,
+        contractEndRemarks = ?,
+        contractEndedAt = NOW(),
+        status = ?
+      WHERE id = ?
+      `,
+      [
+        finalContractEnd,
+        finalReason,
+        finalRemarks,
+        reasonRule.employeeStatus,
+        id,
+      ]
     );
 
     await logAudit({
@@ -311,18 +388,27 @@ exports.updateContractEnd = async (req, res) => {
       fullName: actor.fullName,
       role: actor.role,
       category: AUDIT_CATEGORY.OPERATIONAL,
-      action: "UPDATE_CONTRACT_END",
-      description: `${actor.fullName} updated contract end date for ${employeeName}.`,
+      action: "END_DEPLOYMENT_CONTRACT",
+      description: `${actor.fullName} ended deployment contract for ${employeeName}. Reason: ${finalReason}.`,
     });
 
     res.json({
       success: true,
-      message: "Contract end date updated successfully.",
+      message: "Deployment contract ended successfully.",
+      employeeId: id,
+      employeeName,
+      contractEnd: finalContractEnd,
+      endReason: finalReason,
+      endRemarks: finalRemarks,
+      deploymentStatus: reasonRule.deploymentStatus,
+      employeeStatus: reasonRule.employeeStatus,
     });
   } catch (err) {
     console.error("UPDATE CONTRACT END ERROR:", err);
+
     res.status(500).json({
-      error: err.sqlMessage || err.message || "Failed to update contract end date",
+      error:
+        err.sqlMessage || err.message || "Failed to update contract end date.",
     });
   }
 };

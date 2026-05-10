@@ -83,6 +83,7 @@ export default function AddEmployeeModal({
 
   const [filteredCompanies, setFilteredCompanies] = useState(COMPANY_OPTIONS);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [dragTargetDoc, setDragTargetDoc] = useState("");
 
   const selectedDocuments = useMemo(() => {
     return formData.documents
@@ -269,6 +270,42 @@ export default function AddEmployeeModal({
     }));
     setSaveError("");
   };
+
+  const handleFileDrop = (event, docName) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  setDragTargetDoc("");
+
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+
+  handleFileInput(docName, file);
+};
+
+const handleDragEnter = (event, docName) => {
+  event.preventDefault();
+  event.stopPropagation();
+  setDragTargetDoc(docName);
+};
+
+const handleDragOver = (event, docName) => {
+  event.preventDefault();
+  event.stopPropagation();
+  setDragTargetDoc(docName);
+};
+
+const handleDragLeave = (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const currentTarget = event.currentTarget;
+  const relatedTarget = event.relatedTarget;
+
+  if (!relatedTarget || !currentTarget.contains(relatedTarget)) {
+    setDragTargetDoc("");
+  }
+};
 
   const validateForm = () => {
     const nextErrors = {
@@ -833,33 +870,51 @@ export default function AddEmployeeModal({
                                         <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">
                                           Proof Upload
                                         </label>
-                                        <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-4 text-sm font-semibold text-gray-500 transition hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300 dark:hover:bg-indigo-500/10">
-                                          <div className="flex items-center gap-2">
-                                            <FiUploadCloud />
-                                            <span>
-                                              {doc.file
-                                                ? "Change proof file"
-                                                : "Upload proof file"}
-                                            </span>
-                                          </div>
+
+                                        <label
+                                          onDragEnter={(event) => handleDragEnter(event, doc.name)}
+                                          onDragOver={(event) => handleDragOver(event, doc.name)}
+                                          onDragLeave={handleDragLeave}
+                                          onDrop={(event) => handleFileDrop(event, doc.name)}
+                                          className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-5 text-center text-sm font-semibold transition ${
+                                            dragTargetDoc === doc.name
+                                              ? "border-indigo-500 bg-indigo-50 text-indigo-700 ring-4 ring-indigo-500/10 dark:border-indigo-400 dark:bg-indigo-500/10 dark:text-indigo-300"
+                                              : "border-gray-300 bg-white text-gray-500 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300 dark:hover:bg-indigo-500/10"
+                                          }`}
+                                        >
+                                          <FiUploadCloud
+                                            className={`mb-2 text-2xl ${
+                                              dragTargetDoc === doc.name
+                                                ? "text-indigo-600 dark:text-indigo-300"
+                                                : "text-gray-400"
+                                            }`}
+                                          />
+
+                                          <span className="text-sm font-extrabold">
+                                            {doc.file ? "Drop or click to change proof file" : "Drag and drop proof file here"}
+                                          </span>
+
+                                          <span className="mt-1 text-xs font-medium text-gray-400">
+                                            or click to browse from your device
+                                          </span>
+
                                           <input
                                             type="file"
                                             accept="image/png, image/jpeg, application/pdf"
                                             className="hidden"
-                                            onChange={(event) =>
-                                              handleFileInput(
-                                                doc.name,
-                                                event.target.files?.[0]
-                                              )
-                                            }
+                                            onChange={(event) => {
+                                              handleFileInput(doc.name, event.target.files?.[0]);
+                                              event.target.value = "";
+                                            }}
                                           />
                                         </label>
+
                                         <p className="mt-1 text-xs text-gray-400">
                                           PNG, JPEG, or PDF only. Max file size: 5MB.
                                         </p>
-                                        <ErrorText>
-                                          {errors.documents[`${doc.name}_file`]}
-                                        </ErrorText>
+
+                                        <ErrorText>{errors.documents[`${doc.name}_file`]}</ErrorText>
+
                                         {doc.file && (
                                           <div className="mt-2 flex min-w-0 items-start gap-1.5 rounded-xl bg-green-500/10 px-3 py-2 text-xs font-bold text-green-600 dark:text-green-400">
                                             <FiCheck className="mt-0.5 shrink-0" />

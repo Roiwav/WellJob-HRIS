@@ -37,16 +37,36 @@ const DOCUMENTS = [
     expirable: false,
   },
   {
+    name: "NSO/PSA",
+    expirable: false,
+  },
+  {
+    name: "SSS (ID or E1 form)",
+    expirable: false,
+  },
+  {
+    name: "Pag-IBIG (ID or MDRF Form)",
+    expirable: false,
+  },
+  {
+    name: "PhilHealth (ID or MDF Form)",
+    expirable: false,
+  },
+  {
+    name: "Diploma",
+    expirable: false,
+  },
+  {
+    name: "Cedula",
+    expirable: false,
+  },
+  {
     name: "Barangay Clearance",
     expirable: true,
   },
   {
     name: "NBI/Police Clearance",
     expirable: true,
-  },
-  {
-    name: "Medical Certificate",
-    expirable: false,
   },
 ];
 
@@ -337,22 +357,22 @@ function buildEmployees() {
   // 2026 compliance demo cases
 // These are deployed employees from 2026.
 
-// 20 incomplete compliance records
-for (let index = 410; index < 430; index++) {
+// 10 incomplete compliance records
+for (let index = 410; index < 420; index++) {
   employees[index].demoTag = "INCOMPLETE";
 }
 
 // 2 no data compliance records
-employees[430].demoTag = "NO_DATA";
-employees[431].demoTag = "NO_DATA";
+employees[420].demoTag = "NO_DATA";
+employees[421].demoTag = "NO_DATA";
 
 // 3 expiring soon compliance records
-employees[432].demoTag = "EXPIRING_SOON";
-employees[433].demoTag = "EXPIRING_SOON";
-employees[434].demoTag = "EXPIRING_SOON";
+employees[422].demoTag = "EXPIRING_SOON";
+employees[423].demoTag = "EXPIRING_SOON";
+employees[424].demoTag = "EXPIRING_SOON";
 
 // 1 expired compliance record
-employees[435].demoTag = "EXPIRED";
+employees[425].demoTag = "EXPIRED";
   return employees;
 }
 
@@ -675,7 +695,7 @@ async function printSummary() {
   console.log("Demo pattern employee: Ramon M. Marquez");
   console.log("Repeated pattern: 5 active absence-related incidents");
   console.log("2026 compliance demo cases:");
-  console.log("- 20 incomplete compliance");
+  console.log("- 10 incomplete compliance");
   console.log("- 2 no data compliance");
   console.log("- 3 expiring soon");
   console.log("- 1 expired");

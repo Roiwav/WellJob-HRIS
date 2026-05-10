@@ -230,29 +230,35 @@ export default function Deployments() {
   };
 
   const handleInlineUpdateRow = async (updatedDeployment) => {
-    try {
-      await axios.put(
-        `${EMPLOYEES_API_URL}/${
-          updatedDeployment.employeeId || updatedDeployment.id
-        }/contract-end`,
-        {
-          contractEnd: updatedDeployment.contractEnd,
-        }
-      );
+  try {
+    await axios.put(
+      `${EMPLOYEES_API_URL}/${
+        updatedDeployment.employeeId || updatedDeployment.id
+      }/contract-end`,
+      {
+        contractEnd: updatedDeployment.contractEnd,
+        endReason: updatedDeployment.endReason,
+        endRemarks: updatedDeployment.endRemarks,
+        userId: user?.userId || user?.id || null,
+        username: user?.username || null,
+        fullName: user?.full_name || user?.fullName || user?.username || null,
+        role: user?.role || null,
+      }
+    );
 
-      await fetchDeployments();
-      emitDataUpdated("CONTRACT_END_UPDATED");
+    await fetchDeployments();
+    emitDataUpdated("DEPLOYMENT_CONTRACT_ENDED");
 
-      showSuccessToast("Contract end date updated successfully!");
-    } catch (error) {
-      console.error("Error updating contract end date:", error);
-      setFetchError(
-        error?.response?.data?.error ||
-          error?.response?.data?.message ||
-          "Failed to update contract end date. Please check your backend."
-      );
-    }
-  };
+    showSuccessToast("Deployment contract ended successfully!");
+  } catch (error) {
+    console.error("Error ending deployment contract:", error);
+    setFetchError(
+      error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        "Failed to end deployment contract. Please check your backend."
+    );
+  }
+};
 
   const handleRefresh = async () => {
     setIsRefreshing(true);

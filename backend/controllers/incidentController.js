@@ -20,18 +20,18 @@ function normalizeStatus(value) {
 
   if (!status) return "Open";
   if (status === "for_review") return "For Review";
-  if (status === "for review") return "For Review";
-  if (status === "resolved") return "Closed";
+  if (status.toLowerCase() === "for review") return "For Review";
+  if (status.toLowerCase() === "resolved") return "Closed";
+  if (status.toLowerCase() === "closed") return "Closed";
+  if (status.toLowerCase() === "investigating") return "Investigating";
+  if (status.toLowerCase() === "open") return "Open";
 
   return status;
 }
 
 function normalizeSeverity(value) {
   const severity = String(value || "").trim();
-
-  if (!severity) return "Minor";
-
-  return severity;
+  return severity || "Minor";
 }
 
 function normalizeText(value) {
@@ -85,7 +85,6 @@ async function getActiveDeploymentForEmployee(employeeId) {
   if (!normalizedEmployeeId) return null;
 
   const hasDeploymentsTable = await tableExists("deployments");
-
   if (!hasDeploymentsTable) return null;
 
   const [rows] = await db.promise().query(
@@ -161,6 +160,21 @@ function serializeIncident(incident, evidence = []) {
     updatedAt: incident.updated_at,
     updated_at: incident.updated_at,
 
+    lastActionById: incident.last_action_by_id || null,
+    last_action_by_id: incident.last_action_by_id || null,
+
+    lastActionByUsername: incident.last_action_by_username || null,
+    last_action_by_username: incident.last_action_by_username || null,
+
+    lastActionByName: incident.last_action_by_name || null,
+    last_action_by_name: incident.last_action_by_name || null,
+
+    lastActionType: incident.last_action_type || null,
+    last_action_type: incident.last_action_type || null,
+
+    lastActionAt: incident.last_action_at || null,
+    last_action_at: incident.last_action_at || null,
+
     evidence: evidence.map(serializeEvidenceItem),
   };
 }
@@ -210,6 +224,16 @@ function getActor(req) {
       "Unknown User",
     role: body.role || null,
   };
+}
+
+function getActionTypeFromStatus(status) {
+  const normalizedStatus = normalizeStatus(status);
+
+  if (normalizedStatus === "Investigating") return "START_INVESTIGATION";
+  if (normalizedStatus === "For Review") return "SUBMIT_INVESTIGATION";
+  if (normalizedStatus === "Closed") return "CLOSE_INCIDENT";
+
+  return "UPDATE_INCIDENT";
 }
 
 async function safeLogAudit(payload) {
@@ -269,6 +293,7 @@ exports.getIncidents = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error("GET INCIDENTS ERROR:", err);
+
     res.status(500).json({
       error: err.sqlMessage || err.message || "Failed to fetch incidents",
     });
@@ -349,6 +374,7 @@ exports.getIncidentsByEmployee = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error("GET INCIDENTS BY EMPLOYEE ERROR:", err);
+
     res.status(500).json({
       error:
         err.sqlMessage || err.message || "Failed to fetch employee incidents",
@@ -370,6 +396,7 @@ exports.getIncidentById = async (req, res) => {
     res.json(incident);
   } catch (err) {
     console.error("GET INCIDENT ERROR:", err);
+
     res.status(500).json({
       error: err.sqlMessage || err.message || "Failed to fetch incident",
     });
@@ -450,6 +477,8 @@ exports.createIncident = async (req, res) => {
       return res.status(400).json({ error: "Incident date is required." });
     }
 
+    const normalizedStatus = normalizeStatus(status);
+
     const [result] = await db.promise().query(
       `
       INSERT INTO incidents
@@ -466,9 +495,14 @@ exports.createIncident = async (req, res) => {
         reported_by,
         action_taken,
         recommendation,
-        resolution_notes
+        resolution_notes,
+        last_action_by_id,
+        last_action_by_username,
+        last_action_by_name,
+        last_action_type,
+        last_action_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       `,
       [
         finalEmployeeId,
@@ -476,14 +510,18 @@ exports.createIncident = async (req, res) => {
         finalCompany,
         finalViolation,
         normalizeSeverity(severity),
-        normalizeStatus(status),
+        normalizedStatus,
         finalDate,
         location || null,
         description || null,
-        reportedBy || null,
+        reportedBy || actor.fullName || null,
         actionTaken || null,
         recommendation || null,
         resolutionNotes || null,
+        actor.userId,
+        actor.username,
+        actor.fullName,
+        "CREATE_INCIDENT",
       ]
     );
 
@@ -604,6 +642,9 @@ exports.updateIncident = async (req, res) => {
       return res.status(400).json({ error: "Incident date is required." });
     }
 
+    const normalizedStatus = normalizeStatus(status);
+    const actionType = getActionTypeFromStatus(normalizedStatus);
+
     await db.promise().query(
       `
       UPDATE incidents
@@ -621,6 +662,11 @@ exports.updateIncident = async (req, res) => {
         action_taken = ?,
         recommendation = ?,
         resolution_notes = ?,
+        last_action_by_id = ?,
+        last_action_by_username = ?,
+        last_action_by_name = ?,
+        last_action_type = ?,
+        last_action_at = NOW(),
         updated_at = NOW()
       WHERE id = ?
       `,
@@ -630,7 +676,7 @@ exports.updateIncident = async (req, res) => {
         finalCompany,
         finalViolation,
         normalizeSeverity(severity),
-        normalizeStatus(status),
+        normalizedStatus,
         finalDate,
         location || null,
         description || null,
@@ -638,6 +684,10 @@ exports.updateIncident = async (req, res) => {
         actionTaken || null,
         recommendation || null,
         resolutionNotes || null,
+        actor.userId,
+        actor.username,
+        actor.fullName,
+        actionType,
         id,
       ]
     );
@@ -661,7 +711,7 @@ exports.updateIncident = async (req, res) => {
       fullName: actor.fullName,
       role: actor.role,
       category: AUDIT_CATEGORY.OPERATIONAL,
-      action: "UPDATE_INCIDENT",
+      action: actionType,
       description: `${actor.fullName} updated incident record for ${finalEmployeeName}.`,
     });
 
@@ -685,8 +735,13 @@ exports.updateIncident = async (req, res) => {
 exports.updateIncidentStatus = async (req, res) => {
   try {
     const { id } = req.params;
+
     const { status, resolutionNotes, actionTaken, recommendation } =
       req.body || {};
+
+    const actor = getActor(req);
+    const normalizedStatus = normalizeStatus(status);
+    const actionType = getActionTypeFromStatus(normalizedStatus);
 
     await db.promise().query(
       `
@@ -696,21 +751,43 @@ exports.updateIncidentStatus = async (req, res) => {
         resolution_notes = COALESCE(?, resolution_notes),
         action_taken = COALESCE(?, action_taken),
         recommendation = COALESCE(?, recommendation),
+        last_action_by_id = ?,
+        last_action_by_username = ?,
+        last_action_by_name = ?,
+        last_action_type = ?,
+        last_action_at = NOW(),
         updated_at = NOW()
       WHERE id = ?
       `,
       [
-        normalizeStatus(status),
+        normalizedStatus,
         resolutionNotes || null,
         actionTaken || null,
         recommendation || null,
+        actor.userId,
+        actor.username,
+        actor.fullName,
+        actionType,
         id,
       ]
     );
 
+    await safeLogAudit({
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
+      category: AUDIT_CATEGORY.OPERATIONAL,
+      action: actionType,
+      description: `${actor.fullName} updated incident #${id} to ${normalizedStatus}.`,
+    });
+
+    const updatedIncident = await getIncidentWithEvidence(id);
+
     res.json({
       success: true,
       message: "Incident status updated successfully",
+      incident: updatedIncident,
     });
   } catch (err) {
     console.error("UPDATE INCIDENT STATUS ERROR:", err);

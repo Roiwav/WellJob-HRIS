@@ -163,16 +163,29 @@ function resolveReporterName(reporterRaw, reporterNameMap) {
 function isOwnReportedIncident(incident, currentUserAliases) {
   if (!currentUserAliases || currentUserAliases.size === 0) return false;
 
-  const possibleReporterValues = [
+  const possibleOwnerValues = [
     incident.reportedBy,
     incident.reportedByName,
     incident.reporterName,
     incident.reported_by,
+
     incident.createdBy,
     incident.created_by,
+
+    incident.lastActionById,
+    incident.lastActionByUsername,
+    incident.lastActionByName,
+    incident.last_action_by_id,
+    incident.last_action_by_username,
+    incident.last_action_by_name,
+
+    incident.investigation_started_by_id,
+    incident.investigation_started_by_name,
+    incident.resolution_submitted_by_id,
+    incident.resolution_submitted_by_name,
   ];
 
-  return possibleReporterValues.some((value) =>
+  return possibleOwnerValues.some((value) =>
     currentUserAliases.has(normalizeIdentity(value))
   );
 }
