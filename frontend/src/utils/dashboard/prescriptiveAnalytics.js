@@ -59,47 +59,11 @@ function getTopViolation(incidents = []) {
   };
 }
 
-function getStableCompanySite({ employees = [], incidents = [] }) {
-  const deployedMap = {};
-  const incidentMap = {};
-
-  employees.forEach((employee) => {
-    const company = employee.company || "Unassigned";
-    const status = normalizeText(employee.status);
-
-    if (status === "deployed" || status === "active deployed") {
-      deployedMap[company] = (deployedMap[company] || 0) + 1;
-    }
-  });
-
-  incidents.forEach((incident) => {
-    const company = getIncidentCompany(incident);
-    incidentMap[company] = (incidentMap[company] || 0) + 1;
-  });
-
-  const stableSites = Object.entries(deployedMap)
-    .map(([company, deployedCount]) => ({
-      company,
-      deployedCount,
-      incidentCount: incidentMap[company] || 0,
-    }))
-    .filter(
-      (site) =>
-        site.company !== "Unassigned" &&
-        site.deployedCount >= 5 &&
-        site.incidentCount <= 1
-    )
-    .sort((a, b) => b.deployedCount - a.deployedCount);
-
-  return stableSites[0] || null;
-}
-
 function sortActions(actions) {
   const priorityOrder = {
     High: 1,
     Medium: 2,
     Low: 3,
-    Good: 4,
   };
 
   return [...actions].sort((a, b) => {
@@ -107,9 +71,6 @@ function sortActions(actions) {
     const priorityB = priorityOrder[b.priority] || 99;
 
     if (priorityA !== priorityB) return priorityA - priorityB;
-
-    if (a.mode === "positive" && b.mode !== "positive") return 1;
-    if (a.mode !== "positive" && b.mode === "positive") return -1;
 
     return 0;
   });
@@ -124,24 +85,24 @@ export function buildExecutiveActionItems({
   const actions = [];
 
   const totalEmployees = Number(kpis.total) || employees.length || 0;
-  const deployedEmployees = Number(kpis.deployed) || 0;
+  const expiringDocs = Number(kpis.expiringDocs) || 0;
+
+  // Management Prescriptive Insights should focus only on current unresolved cases.
+  // Closed incidents remain in history/KPI records, but are excluded from this action queue.
   const activeIncidents = incidents.filter((incident) =>
     isActiveIncident(incident.status)
   );
 
-  const criticalIncidents = incidents.filter(
+  const criticalIncidents = activeIncidents.filter(
     (incident) => incident.severity === "Critical"
   );
 
-  const majorIncidents = incidents.filter(
+  const majorIncidents = activeIncidents.filter(
     (incident) => incident.severity === "Major"
   );
 
-  const expiringDocs = Number(kpis.expiringDocs) || 0;
-
-  const topCompany = getTopCompanyByIncidents(incidents);
-  const topViolation = getTopViolation(incidents);
-  const stableSite = getStableCompanySite({ employees, incidents });
+  const topCompany = getTopCompanyByIncidents(activeIncidents);
+  const topViolation = getTopViolation(activeIncidents);
 
   const activeIncidentRate =
     totalEmployees > 0
@@ -153,20 +114,16 @@ export function buildExecutiveActionItems({
       ? Math.round((criticalIncidents.length / totalEmployees) * 100)
       : 0;
 
-  // =========================
-  // CORRECTIVE / PREVENTIVE ACTIONS
-  // =========================
-
   if (criticalIncidents.length > 0) {
     actions.push({
       id: "critical-incident-review",
       type: "Incident",
       priority: "High",
       mode: "corrective",
-      title: "Critical incident cases detected",
+      title: "Critical active cases detected",
       recommendation:
-        "Prioritize management review for critical cases and monitor disciplinary action progress until closure.",
-      basis: `${criticalIncidents.length} critical incident case(s) detected. Critical incident rate is ${criticalIncidentRate}%.`,
+        "Prioritize management review for active critical cases and monitor disciplinary action progress until closure.",
+      basis: `${criticalIncidents.length} active critical case(s) detected. Active critical incident rate is ${criticalIncidentRate}%.`,
     });
   }
 
@@ -200,10 +157,10 @@ export function buildExecutiveActionItems({
       type: "Trend",
       priority: "Medium",
       mode: "preventive",
-      title: `Recurring violation trend: ${topViolation.violation}`,
+      title: `Recurring active violation trend: ${topViolation.violation}`,
       recommendation:
-        "Review the related policy and conduct a focused orientation or memo campaign for this recurring violation.",
-      basis: `${topViolation.count} record(s) are related to ${topViolation.violation}.`,
+        "Review the related policy and conduct a focused orientation or memo campaign for this recurring active violation.",
+      basis: `${topViolation.count} active case(s) are related to ${topViolation.violation}.`,
     });
   }
 
@@ -213,10 +170,10 @@ export function buildExecutiveActionItems({
       type: "Deployment",
       priority: "Medium",
       mode: "corrective",
-      title: `High incident concentration at ${topCompany.company}`,
+      title: `High active incident concentration at ${topCompany.company}`,
       recommendation:
         "Coordinate with the client site, conduct a site visit, and evaluate supervision, work conditions, or deployment assignments.",
-      basis: `${topCompany.count} incident record(s) are linked to ${topCompany.company}.`,
+      basis: `${topCompany.count} active incident case(s) are linked to ${topCompany.company}.`,
     });
   }
 
@@ -226,10 +183,10 @@ export function buildExecutiveActionItems({
       type: "Policy",
       priority: "Medium",
       mode: "preventive",
-      title: "Major incident volume suggests training need",
+      title: "Major active case volume suggests training need",
       recommendation:
         "Allocate HR training resources for policy reinforcement, work ethics, attendance discipline, and quality-of-work refresher sessions.",
-      basis: `${majorIncidents.length} major incident case(s) detected.`,
+      basis: `${majorIncidents.length} active major case(s) detected.`,
     });
   }
 
@@ -267,98 +224,6 @@ export function buildExecutiveActionItems({
       recommendation:
         "Send reminders to employees with upcoming document expiration dates.",
       basis: `${expiringDocs} compliance document(s) require renewal monitoring.`,
-    });
-  }
-
-  // =========================
-  // POSITIVE / REINFORCEMENT ACTIONS
-  // =========================
-
-  if (
-    totalEmployees > 0 &&
-    utilizationRate >= 85 &&
-    activeIncidentRate <= 5
-  ) {
-    actions.push({
-      id: "strong-utilization-low-risk",
-      type: "Reinforcement",
-      priority: "Good",
-      mode: "positive",
-      title: "Strong deployment utilization with controlled incident risk",
-      recommendation:
-        "Maintain the current deployment strategy and prepare a backup manpower pool to sustain client coverage.",
-      basis: `${utilizationRate}% utilization rate with only ${activeIncidentRate}% active incident rate.`,
-    });
-  }
-
-  if (totalEmployees > 0 && criticalIncidents.length === 0) {
-    actions.push({
-      id: "zero-critical-incidents",
-      type: "Reinforcement",
-      priority: "Good",
-      mode: "positive",
-      title: "No critical incident pattern detected",
-      recommendation:
-        "Continue current HR monitoring practices and recognize teams maintaining discipline and compliance.",
-      basis: "There are no critical incident records in the current dataset.",
-    });
-  }
-
-  if (totalEmployees > 0 && expiringDocs === 0) {
-    actions.push({
-      id: "strong-compliance-standing",
-      type: "Compliance",
-      priority: "Good",
-      mode: "positive",
-      title: "Good compliance standing detected",
-      recommendation:
-        "Maintain the current document monitoring process and use it as the standard for future onboarding and renewal checks.",
-      basis: "No compliance documents are expiring within the monitored period.",
-    });
-  }
-
-  if (stableSite) {
-    actions.push({
-      id: "stable-client-site",
-      type: "Deployment",
-      priority: "Good",
-      mode: "positive",
-      title: `Stable client site performance at ${stableSite.company}`,
-      recommendation:
-        "Document the effective practices used at this client site and consider applying them to other deployment locations.",
-      basis: `${stableSite.deployedCount} deployed employee(s) with only ${stableSite.incidentCount} incident record(s).`,
-    });
-  }
-
-  if (
-    totalEmployees > 0 &&
-    deployedEmployees > 0 &&
-    activeIncidentRate <= 3 &&
-    criticalIncidents.length === 0
-  ) {
-    actions.push({
-      id: "stable-workforce-monitoring",
-      type: "Good",
-      priority: "Good",
-      mode: "positive",
-      title: "Workforce monitoring is stable",
-      recommendation:
-        "Continue regular KPI review and maintain the current HR monitoring cadence for the next reporting cycle.",
-      basis: `Active incident rate is ${activeIncidentRate}% with no critical incident pattern detected.`,
-    });
-  }
-
-  if (actions.length === 0 && totalEmployees > 0) {
-    actions.push({
-      id: "normal-range",
-      type: "Good",
-      priority: "Good",
-      mode: "positive",
-      title: "Workforce status is within normal range",
-      recommendation:
-        "Continue regular HR monitoring and maintain current deployment, compliance, and incident review practices.",
-      basis:
-        "No critical incident surge, major compliance risk, or low utilization signal detected.",
     });
   }
 

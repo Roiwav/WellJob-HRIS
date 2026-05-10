@@ -67,9 +67,7 @@ export default function ExecutiveInsightTabs({ insights, onOpenDrilldown }) {
           </h2>
 
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Drillable summaries for client-site risk, case aging, and compliance
-            focus. Positive reinforcement is shown in Management Prescriptive
-            Insights.
+            Drillable summaries for client-site risk, case aging, and compliance focus.
           </p>
         </div>
 

@@ -1,6 +1,5 @@
 import {
   FiAlertTriangle,
-  FiAward,
   FiCheckCircle,
   FiClipboard,
   FiDatabase,
@@ -45,7 +44,7 @@ function getIcon(type) {
     Deployment: <FiMapPin />,
     Trend: <FiTrendingUp />,
     Policy: <FiClipboard />,
-    Reinforcement: <FiAward />,
+    Reinforcement: <FiCheckCircle />,
     Good: <FiCheckCircle />,
   };
 
@@ -53,7 +52,6 @@ function getIcon(type) {
 }
 
 function getModeLabel(mode) {
-  if (mode === "positive") return "Reinforcement";
   if (mode === "preventive") return "Preventive";
   return "Corrective";
 }
@@ -98,30 +96,6 @@ function EmptyPriorityState() {
           <p className="mt-1 text-xs leading-5 text-emerald-700/80 dark:text-emerald-300/80">
             No corrective or preventive management action is required based on
             the current workforce data.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyPositiveState() {
-  return (
-    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-          <FiAward />
-        </div>
-
-        <div>
-          <p className="text-sm font-extrabold text-slate-800 dark:text-white">
-            No reinforcement pattern detected yet
-          </p>
-
-          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Positive recommendations will appear when the system detects strong
-            utilization, low incident risk, stable client sites, or good
-            compliance standing.
           </p>
         </div>
       </div>
@@ -176,11 +150,11 @@ function ActionRow({ action }) {
 }
 
 export default function ExecutiveActionItems({ actions = [] }) {
+  // Positive/reinforcement items are intentionally hidden from the UI for now.
+  // The generated data is not deleted; only corrective/preventive insights are displayed.
   const correctiveActions = actions.filter((item) => item.mode !== "positive");
-  const positiveActions = actions.filter((item) => item.mode === "positive");
 
   const priorityActions = correctiveActions.slice(0, 4);
-  const reinforcementActions = positiveActions.slice(0, 2);
 
   const highCount = correctiveActions.filter(
     (item) => item.priority === "High"
@@ -203,8 +177,8 @@ export default function ExecutiveActionItems({ actions = [] }) {
           </div>
 
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Recommended corrective, preventive, and positive reinforcement
-            actions based on workforce data.
+            Recommended corrective and preventive actions based on workforce
+            data.
           </p>
         </div>
 
@@ -214,11 +188,7 @@ export default function ExecutiveActionItems({ actions = [] }) {
           </span>
 
           <span className="rounded-full bg-slate-100 px-3 py-1 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            {correctiveActions.length} corrective
-          </span>
-
-          <span className="rounded-full bg-emerald-100 px-3 py-1 font-bold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-            {positiveActions.length} positive
+            {priorityActions.length} Action items
           </span>
         </div>
       </div>
@@ -228,52 +198,28 @@ export default function ExecutiveActionItems({ actions = [] }) {
           <EmptyDataState />
         </div>
       ) : (
-        <div className="grid gap-4 p-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
-          <div>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                  Priority Action Queue
-                </h3>
-
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Top actions requiring HR or management attention.
-                </p>
-              </div>
-            </div>
-
-            {priorityActions.length === 0 ? (
-              <EmptyPriorityState />
-            ) : (
-              <div className="grid gap-3 lg:grid-cols-2">
-                {priorityActions.map((action) => (
-                  <ActionRow key={action.id} action={action} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <aside>
-            <div className="mb-3">
+        <div className="p-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
               <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                Positive Reinforcement
+                Priority Action Queue
               </h3>
 
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Practices worth maintaining or replicating.
+                Top actions requiring HR or management attention.
               </p>
             </div>
+          </div>
 
-            {reinforcementActions.length === 0 ? (
-              <EmptyPositiveState />
-            ) : (
-              <div className="grid gap-3">
-                {reinforcementActions.map((action) => (
-                  <ActionRow key={action.id} action={action} />
-                ))}
-              </div>
-            )}
-          </aside>
+          {priorityActions.length === 0 ? (
+            <EmptyPriorityState />
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {priorityActions.map((action) => (
+                <ActionRow key={action.id} action={action} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>

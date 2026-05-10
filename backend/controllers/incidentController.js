@@ -147,17 +147,35 @@ exports.getIncidents = async (req, res) => {
       ORDER BY i.created_at DESC, i.id DESC
     `);
 
-    const [evidence] = await db.promise().query(`
+    if (incidents.length === 0) {
+      return res.json([]);
+    }
+
+    const incidentIds = incidents.map((incident) => incident.id);
+
+    const [evidence] = await db.promise().query(
+      `
       SELECT * 
       FROM incident_evidence
+      WHERE incident_id IN (?)
       ORDER BY created_at DESC, id DESC
-    `);
+      `,
+      [incidentIds]
+    );
+
+    const evidenceMap = evidence.reduce((map, item) => {
+      const key = String(item.incident_id);
+
+      if (!map[key]) {
+        map[key] = [];
+      }
+
+      map[key].push(item);
+      return map;
+    }, {});
 
     const result = incidents.map((incident) => {
-      const incidentEvidence = evidence.filter(
-        (item) => item.incident_id === incident.id
-      );
-
+      const incidentEvidence = evidenceMap[String(incident.id)] || [];
       return serializeIncident(incident, incidentEvidence);
     });
 

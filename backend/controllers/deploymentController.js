@@ -63,7 +63,15 @@ function mapEmployeeToDeployment(employee) {
 exports.getDeployments = async (req, res) => {
   try {
     const [rows] = await db.promise().query(`
-      SELECT *
+      SELECT
+        id,
+        name,
+        company,
+        status,
+        contractStart,
+        contractEnd,
+        created_at,
+        archived
       FROM employees
       WHERE 
         archived = 0
@@ -78,7 +86,8 @@ exports.getDeployments = async (req, res) => {
     console.error("GET DEPLOYMENTS ERROR:", err);
 
     res.status(500).json({
-      error: err.sqlMessage || err.message || "Failed to fetch deployments",
+      error:
+        err.sqlMessage || err.message || "Failed to fetch deployments",
     });
   }
 };
