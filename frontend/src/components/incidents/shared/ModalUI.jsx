@@ -125,50 +125,189 @@ export function AlertBox({ type = "warning", title, message }) {
 }
 
 export function CaseTimeline({ incident }) {
+  const status = String(incident?.status || "Open").trim();
+
+  const timelineEvents = Array.isArray(incident?.timelineEvents)
+    ? incident.timelineEvents
+    : Array.isArray(incident?.timeline_events)
+    ? incident.timeline_events
+    : Array.isArray(incident?.timeline)
+    ? incident.timeline
+    : [];
+
+  const getEventAction = (event) =>
+    String(event?.actionType || event?.action_type || event?.status || "")
+      .trim()
+      .toUpperCase();
+
+  const getEventDate = (event) =>
+    event?.createdAt ||
+    event?.created_at ||
+    event?.date ||
+    event?.reportedAt ||
+    null;
+
+  const getEventCreatedBy = (event) =>
+    event?.createdByName ||
+    event?.created_by_name ||
+    event?.createdBy ||
+    event?.created_by ||
+    "System";
+
+  const getEventDescription = (event) => {
+    if (event?.description) return event.description;
+
+    const action = getEventAction(event);
+    const createdBy = getEventCreatedBy(event);
+
+    if (action === "CREATE_INCIDENT") return `Reported by ${createdBy}.`;
+    if (action === "START_INVESTIGATION")
+      return `${createdBy} started the investigation.`;
+    if (action === "SUBMIT_RESOLUTION" || action === "SUBMIT_INVESTIGATION")
+      return `${createdBy} submitted proof for Super Admin review.`;
+    if (action === "RETURN_INCIDENT")
+      return `${createdBy} returned the case for correction.`;
+    if (action === "CLOSE_INCIDENT")
+      return `${createdBy} approved and closed the case.`;
+
+    return `Updated by ${createdBy}.`;
+  };
+
+  const getEventTitle = (event) => {
+    if (event?.title) return event.title;
+
+    const action = getEventAction(event);
+
+    if (action === "CREATE_INCIDENT") return "Reported";
+    if (action === "START_INVESTIGATION") return "Investigation Started";
+    if (action === "SUBMIT_RESOLUTION") return "Proof Submitted";
+    if (action === "SUBMIT_INVESTIGATION") return "Proof Submitted";
+    if (action === "RETURN_INCIDENT") return "Returned by Super Admin";
+    if (action === "CLOSE_INCIDENT") return "Approved and Closed";
+
+    return "Timeline Event";
+  };
+
+  const getEventState = (event) => {
+    const action = getEventAction(event);
+
+    if (action === "RETURN_INCIDENT") return "rejected";
+    if (action === "CLOSE_INCIDENT") return "closed";
+
+    const title = String(event?.title || "").toLowerCase();
+
+    if (title.includes("return") || title.includes("reject")) return "rejected";
+    if (title.includes("closed") || title.includes("approved")) return "closed";
+
+    return "done";
+  };
+
+  const databaseSteps = timelineEvents
+    .filter((event) => event && (event.title || getEventAction(event)))
+    .map((event, index) => ({
+      id:
+        event.id ||
+        `${getEventAction(event) || "timeline"}-${getEventDate(event) || index}`,
+      title: getEventTitle(event),
+      description: getEventDescription(event),
+      createdAt: getEventDate(event),
+      state: getEventState(event),
+    }));
+
+  const hasDatabaseTimeline = databaseSteps.length > 0;
+
+  const investigation = incident?.investigation || null;
+  const resolution = incident?.resolution || null;
+  const review = incident?.review || null;
+
+  const reportedBy =
+    incident?.reportedByName ||
+    incident?.reported_by_name ||
+    incident?.reportedBy ||
+    incident?.reported_by ||
+    "Unknown Reporter";
+
+  const investigationStartedAt =
+    investigation?.startedAt ||
+    incident?.investigationStartedAt ||
+    incident?.investigation_started_at ||
+    null;
+
+  const investigationStartedBy =
+    investigation?.startedByName ||
+    incident?.investigationStartedByName ||
+    incident?.investigation_started_by_name ||
+    "-";
+
+  const resolutionSubmittedAt =
+    resolution?.submittedAt ||
+    incident?.resolutionSubmittedAt ||
+    incident?.resolution_submitted_at ||
+    null;
+
+  const resolutionSubmittedBy =
+    resolution?.submittedByName ||
+    incident?.resolutionSubmittedByName ||
+    incident?.resolution_submitted_by_name ||
+    "-";
+
+  const reviewedAt =
+    review?.reviewedAt || incident?.reviewedAt || incident?.reviewed_at || null;
+
+  const reviewedBy =
+    review?.reviewedByName ||
+    incident?.reviewedByName ||
+    incident?.reviewed_by_name ||
+    "-";
+
+  const reviewDecision =
+    review?.decision ||
+    incident?.reviewDecision ||
+    incident?.review_decision ||
+    (status === "Closed" ? "Approved" : "");
+
+  const isReturned =
+    String(reviewDecision).toLowerCase() === "returned" ||
+    String(reviewDecision).toLowerCase() === "rejected";
+
   const fallbackSteps = [
     {
       id: "reported",
       title: "Reported",
-      description: incident.reportedBy
-        ? `Reported by ${incident.reportedBy}`
-        : "Incident report created",
-      createdAt: incident.reportedAt || incident.date,
-      status: "Open",
+      description: `Reported by ${reportedBy}`,
+      createdAt: incident?.reportedAt || incident?.date || incident?.createdAt,
+      state: "done",
     },
     {
       id: "investigation",
       title: "Investigation Started",
-      description: incident.investigation
-        ? `By ${incident.investigation.startedByName}`
+      description: investigationStartedAt
+        ? `Started by ${investigationStartedBy}`
         : "Waiting for HR action",
-      createdAt: incident.investigation?.startedAt,
-      status: "Investigating",
+      createdAt: investigationStartedAt,
+      state: investigationStartedAt ? "done" : "pending",
     },
     {
       id: "proof",
       title: "Proof Submitted",
-      description: incident.resolution
-        ? `By ${incident.resolution.submittedByName}`
+      description: resolutionSubmittedAt
+        ? `Submitted by ${resolutionSubmittedBy}`
         : "Waiting for resolution proof",
-      createdAt: incident.resolution?.submittedAt,
-      status: "For Review",
+      createdAt: resolutionSubmittedAt,
+      state: resolutionSubmittedAt ? "done" : "pending",
     },
     {
       id: "review",
-      title: incident.review?.decision === "Rejected" ? "Returned" : "Closed",
-      description: incident.review
-        ? `${incident.review.decision} by ${incident.review.reviewedByName}`
+      title: isReturned ? "Returned by Super Admin" : "Approved and Closed",
+      description: reviewedAt
+        ? `${reviewDecision || "Reviewed"} by ${reviewedBy}`
         : "Waiting for Super Admin review",
-      createdAt: incident.review?.reviewedAt,
-      status:
-        incident.review?.decision === "Rejected" ? "Investigating" : "Closed",
+      createdAt: reviewedAt,
+      state: isReturned ? "rejected" : status === "Closed" ? "closed" : "pending",
     },
   ];
 
-  const timelineItems =
-    Array.isArray(incident.timeline) && incident.timeline.length > 0
-      ? incident.timeline
-      : fallbackSteps;
+  const steps = hasDatabaseTimeline ? databaseSteps : fallbackSteps;
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950">
@@ -177,38 +316,41 @@ export function CaseTimeline({ incident }) {
       </p>
 
       <div className="space-y-5">
-        {timelineItems.map((item, index) => {
-          const isRejected =
-            item.status === "Rejected" ||
-            item.status === "Returned" ||
-            item.title?.toLowerCase().includes("returned");
+        {steps.map((item, index) => {
+          const iconStyle =
+            item.state === "rejected"
+              ? "border-red-300 bg-red-100 text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300"
+              : item.state === "done" || item.state === "closed"
+              ? "border-green-300 bg-green-100 text-green-700 dark:border-green-500/40 dark:bg-green-500/15 dark:text-green-300"
+              : "border-slate-300 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400";
 
           return (
-            <div
-              key={item.id || `${item.title}-${index}`}
-              className="relative flex gap-3"
-            >
-              {index !== timelineItems.length - 1 && (
+            <div key={item.id} className="relative flex gap-3">
+              {index !== steps.length - 1 && (
                 <span className="absolute left-[15px] top-8 h-full w-px bg-gray-200 dark:bg-white/10" />
               )}
 
               <div
-                className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${
-                  isRejected
-                    ? "border-red-300 bg-red-100 text-red-700"
-                    : "border-green-300 bg-green-100 text-green-700"
-                }`}
+                className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${iconStyle}`}
               >
-                {isRejected ? <FiXCircle /> : <FiCheckCircle />}
+                {item.state === "rejected" ? (
+                  <FiXCircle />
+                ) : item.state === "done" || item.state === "closed" ? (
+                  <FiCheckCircle />
+                ) : (
+                  <FiClock />
+                )}
               </div>
 
               <div>
                 <p className="text-sm font-bold text-gray-900 dark:text-white">
                   {item.title}
                 </p>
+
                 <p className="mt-0.5 text-xs text-gray-500">
-                  {item.description}
+                  {item.description || "-"}
                 </p>
+
                 <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
                   <FiClock />
                   {formatDateTime(item.createdAt)}

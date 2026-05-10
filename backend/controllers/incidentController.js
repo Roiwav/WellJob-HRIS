@@ -1,7 +1,14 @@
 const db = require("../config/db");
 const { logAudit, AUDIT_CATEGORY } = require("../utils/auditLogger");
 
-const API_BASE = "http://localhost:5000";
+const API_BASE = process.env.API_BASE_URL || "http://localhost:5000";
+
+function toNullable(value) {
+  if (value === undefined || value === null) return null;
+
+  const trimmed = String(value).trim();
+  return trimmed === "" ? null : trimmed;
+}
 
 function normalizeDate(value) {
   if (!value) return null;
@@ -17,14 +24,15 @@ function normalizeDate(value) {
 
 function normalizeStatus(value) {
   const status = String(value || "").trim();
+  const normalized = status.toLowerCase();
 
   if (!status) return "Open";
-  if (status === "for_review") return "For Review";
-  if (status.toLowerCase() === "for review") return "For Review";
-  if (status.toLowerCase() === "resolved") return "Closed";
-  if (status.toLowerCase() === "closed") return "Closed";
-  if (status.toLowerCase() === "investigating") return "Investigating";
-  if (status.toLowerCase() === "open") return "Open";
+  if (normalized === "for_review") return "For Review";
+  if (normalized === "for review") return "For Review";
+  if (normalized === "resolved") return "Closed";
+  if (normalized === "closed") return "Closed";
+  if (normalized === "investigating") return "Investigating";
+  if (normalized === "open") return "Open";
 
   return status;
 }
@@ -79,6 +87,27 @@ async function tableExists(tableName) {
   return rows.length > 0;
 }
 
+async function ensureIncidentTimelineTable() {
+  await db.promise().query(`
+    CREATE TABLE IF NOT EXISTS incident_timeline (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      incident_id INT NOT NULL,
+      action_type VARCHAR(80) NOT NULL,
+      title VARCHAR(150) NOT NULL,
+      description TEXT NULL,
+      created_by_id VARCHAR(50) NULL,
+      created_by_username VARCHAR(100) NULL,
+      created_by_name VARCHAR(150) NULL,
+      created_by_role VARCHAR(80) NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_incident_timeline_incident_id (incident_id),
+      CONSTRAINT fk_incident_timeline_incident
+        FOREIGN KEY (incident_id) REFERENCES incidents(id)
+        ON DELETE CASCADE
+    )
+  `);
+}
+
 async function getActiveDeploymentForEmployee(employeeId) {
   const normalizedEmployeeId = String(employeeId || "").trim();
 
@@ -109,13 +138,201 @@ function serializeEvidenceItem(item) {
   };
 }
 
-function serializeIncident(incident, evidence = []) {
+function serializeTimelineItem(item) {
+  return {
+    id: item.id,
+    incidentId: item.incident_id,
+    incident_id: item.incident_id,
+
+    actionType: item.action_type,
+    action_type: item.action_type,
+
+    title: item.title,
+    description: item.description || "",
+
+    createdById: item.created_by_id || null,
+    created_by_id: item.created_by_id || null,
+
+    createdByUsername: item.created_by_username || null,
+    created_by_username: item.created_by_username || null,
+
+    createdByName: item.created_by_name || "System",
+    created_by_name: item.created_by_name || "System",
+
+    createdByRole: item.created_by_role || null,
+    created_by_role: item.created_by_role || null,
+
+    createdAt: item.created_at,
+    created_at: item.created_at,
+  };
+}
+
+async function getTimelineByIncidentId(incidentId) {
+  await ensureIncidentTimelineTable();
+
+  const [rows] = await db.promise().query(
+    `
+    SELECT *
+    FROM incident_timeline
+    WHERE incident_id = ?
+    ORDER BY created_at ASC, id ASC
+    `,
+    [incidentId]
+  );
+
+  return rows.map(serializeTimelineItem);
+}
+
+async function getTimelineByIncidentIds(incidentIds = []) {
+  await ensureIncidentTimelineTable();
+
+  if (!incidentIds.length) return new Map();
+
+  const [rows] = await db.promise().query(
+    `
+    SELECT *
+    FROM incident_timeline
+    WHERE incident_id IN (?)
+    ORDER BY created_at ASC, id ASC
+    `,
+    [incidentIds]
+  );
+
+  return rows.reduce((map, row) => {
+    const key = String(row.incident_id);
+
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+
+    map.get(key).push(serializeTimelineItem(row));
+    return map;
+  }, new Map());
+}
+
+async function addTimelineEvent({
+  incidentId,
+  actionType,
+  title,
+  description,
+  actor,
+}) {
+  await ensureIncidentTimelineTable();
+
+  await db.promise().query(
+    `
+    INSERT INTO incident_timeline
+    (
+      incident_id,
+      action_type,
+      title,
+      description,
+      created_by_id,
+      created_by_username,
+      created_by_name,
+      created_by_role
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      incidentId,
+      actionType,
+      title,
+      description || null,
+      actor?.userId || null,
+      actor?.username || null,
+      actor?.fullName || "System",
+      actor?.role || null,
+    ]
+  );
+}
+
+function getTimelineTitle(actionType, existingIncident) {
+  const wasReturned =
+    String(existingIncident?.review_decision || "").toLowerCase() ===
+      "returned" ||
+    String(existingIncident?.review_decision || "").toLowerCase() ===
+      "rejected";
+
+  switch (actionType) {
+    case "CREATE_INCIDENT":
+      return "Reported";
+    case "START_INVESTIGATION":
+      return "Investigation Started";
+    case "SUBMIT_RESOLUTION":
+    case "SUBMIT_INVESTIGATION":
+      return wasReturned ? "Proof Resubmitted" : "Proof Submitted";
+    case "RETURN_INCIDENT":
+      return "Returned by Super Admin";
+    case "CLOSE_INCIDENT":
+      return "Approved and Closed";
+    default:
+      return "Incident Updated";
+  }
+}
+
+function getTimelineDescription(actionType, actor, details = {}) {
+  const actorName = actor?.fullName || "System";
+
+  switch (actionType) {
+    case "CREATE_INCIDENT":
+      return `Reported by ${actorName}.`;
+    case "START_INVESTIGATION":
+      return `${actorName} started the investigation.`;
+    case "SUBMIT_RESOLUTION":
+    case "SUBMIT_INVESTIGATION":
+      return `${actorName} submitted proof for Super Admin review.`;
+    case "RETURN_INCIDENT":
+      return details?.comments
+        ? `${actorName} returned the case for correction: ${details.comments}`
+        : `${actorName} returned the case for correction.`;
+    case "CLOSE_INCIDENT":
+      return `${actorName} approved and closed the case.`;
+    default:
+      return `${actorName} updated the incident record.`;
+  }
+}
+
+function serializeIncident(incident, evidence = [], timelineEvents = []) {
   const employeeName =
     incident.employee_name ||
     incident.employeeNameFromEmployee ||
     "Unknown Employee";
 
   const actionTaken = incident.action_taken || "";
+
+  const investigation = incident.investigation_started_at
+    ? {
+        startedAt: incident.investigation_started_at,
+        startedById: incident.investigation_started_by_id,
+        startedByUsername: incident.investigation_started_by_username,
+        startedByName: incident.investigation_started_by_name,
+      }
+    : null;
+
+  const resolution = incident.resolution_submitted_at
+    ? {
+        submittedAt: incident.resolution_submitted_at,
+        submittedById: incident.resolution_submitted_by_id,
+        submittedByUsername: incident.resolution_submitted_by_username,
+        submittedByName: incident.resolution_submitted_by_name,
+        actionTaken: incident.action_taken || "",
+        remarks: incident.resolution_notes || "",
+        proofFiles: [],
+      }
+    : null;
+
+  const review =
+    incident.reviewed_at || incident.review_decision
+      ? {
+          reviewedAt: incident.reviewed_at,
+          reviewedById: incident.reviewed_by_id,
+          reviewedByUsername: incident.reviewed_by_username,
+          reviewedByName: incident.reviewed_by_name,
+          decision: incident.review_decision,
+          comments: incident.review_comments,
+        }
+      : null;
 
   return {
     id: incident.id,
@@ -139,11 +356,13 @@ function serializeIncident(incident, evidence = []) {
     date: incident.incident_date,
     incidentDate: incident.incident_date,
     incident_date: incident.incident_date,
-    reportedAt: incident.incident_date,
+    reportedAt: incident.created_at || incident.incident_date,
 
     location: incident.location || "",
     description: incident.description || "",
+
     reportedBy: incident.reported_by || "",
+    reportedByName: incident.reported_by || "",
     reported_by: incident.reported_by || "",
 
     actionTaken,
@@ -154,6 +373,30 @@ function serializeIncident(incident, evidence = []) {
 
     resolutionNotes: incident.resolution_notes || "",
     resolution_notes: incident.resolution_notes || "",
+
+    investigation,
+    resolution,
+    review,
+
+    investigationStartedAt: incident.investigation_started_at || null,
+    investigation_started_at: incident.investigation_started_at || null,
+    investigationStartedByName: incident.investigation_started_by_name || null,
+    investigation_started_by_name:
+      incident.investigation_started_by_name || null,
+
+    resolutionSubmittedAt: incident.resolution_submitted_at || null,
+    resolution_submitted_at: incident.resolution_submitted_at || null,
+    resolutionSubmittedByName: incident.resolution_submitted_by_name || null,
+    resolution_submitted_by_name: incident.resolution_submitted_by_name || null,
+
+    reviewedAt: incident.reviewed_at || null,
+    reviewed_at: incident.reviewed_at || null,
+    reviewedByName: incident.reviewed_by_name || null,
+    reviewed_by_name: incident.reviewed_by_name || null,
+    reviewDecision: incident.review_decision || null,
+    review_decision: incident.review_decision || null,
+    reviewComments: incident.review_comments || null,
+    review_comments: incident.review_comments || null,
 
     createdAt: incident.created_at,
     created_at: incident.created_at,
@@ -176,6 +419,10 @@ function serializeIncident(incident, evidence = []) {
     last_action_at: incident.last_action_at || null,
 
     evidence: evidence.map(serializeEvidenceItem),
+
+    timelineEvents,
+    timeline_events: timelineEvents,
+    timeline: timelineEvents,
   };
 }
 
@@ -207,23 +454,125 @@ async function getIncidentWithEvidence(id) {
     [id]
   );
 
-  return serializeIncident(rows[0], evidence);
+  const timelineEvents = await getTimelineByIncidentId(id);
+
+  return serializeIncident(rows[0], evidence, timelineEvents);
 }
 
-function getActor(req) {
+async function resolveActorFullName({ userId, username, fullName }) {
+  const cleanUserId = toNullable(userId);
+  const cleanUsername = toNullable(username);
+  const cleanFullName = toNullable(fullName);
+
+  if (
+    cleanFullName &&
+    cleanFullName !== cleanUsername &&
+    cleanFullName !== "Unknown User"
+  ) {
+    return cleanFullName;
+  }
+
+  const hasUsersTable = await tableExists("users");
+
+  if (!hasUsersTable) {
+    return cleanFullName || cleanUsername || "Unknown User";
+  }
+
+  const [users] = await db.promise().query(`SELECT * FROM users`);
+
+  const matchedUser = users.find((user) => {
+    const possibleIds = [
+      user.id,
+      user.user_id,
+      user.userId,
+      user.employee_id,
+      user.employeeId,
+    ].map((item) => String(item || "").trim());
+
+    const possibleUsernames = [
+      user.username,
+      user.email,
+      user.name,
+      user.full_name,
+      user.fullName,
+      user.fullname,
+      user.display_name,
+    ].map((item) => String(item || "").trim().toLowerCase());
+
+    return (
+      (!!cleanUserId && possibleIds.includes(String(cleanUserId))) ||
+      (!!cleanUsername &&
+        possibleUsernames.includes(String(cleanUsername).toLowerCase()))
+    );
+  });
+
+  if (!matchedUser) {
+    return cleanFullName || cleanUsername || "Unknown User";
+  }
+
+  return (
+    toNullable(matchedUser.full_name) ||
+    toNullable(matchedUser.fullName) ||
+    toNullable(matchedUser.fullname) ||
+    toNullable(matchedUser.name) ||
+    toNullable(matchedUser.display_name) ||
+    cleanFullName ||
+    cleanUsername ||
+    "Unknown User"
+  );
+}
+
+async function getActor(req) {
   const body = req.body || {};
 
+  const userId = body.userId || body.user_id || null;
+  const username = body.username || null;
+  const fullName =
+    body.fullName ||
+    body.full_name ||
+    body.name ||
+    body.displayName ||
+    body.display_name ||
+    body.username ||
+    "Unknown User";
+
   return {
-    userId: body.userId || body.user_id || null,
-    username: body.username || null,
-    fullName:
-      body.fullName ||
-      body.full_name ||
-      body.name ||
-      body.username ||
-      "Unknown User",
+    userId,
+    username,
+    fullName: await resolveActorFullName({
+      userId,
+      username,
+      fullName,
+    }),
     role: body.role || null,
   };
+}
+
+function looksLikeUsername(value) {
+  const cleanValue = String(value || "").trim().toLowerCase();
+
+  return (
+    /^(hm|hr|it)\d+$/i.test(cleanValue) ||
+    cleanValue === "admin" ||
+    cleanValue === "superadmin"
+  );
+}
+
+function getSafePersonName(inputName, actor) {
+  const value = toNullable(inputName);
+  const username = toNullable(actor?.username);
+  const fullName = toNullable(actor?.fullName);
+
+  if (!value) return fullName || username || "Unknown User";
+
+  const sameAsUsername =
+    username && value.toLowerCase() === username.toLowerCase();
+
+  if (sameAsUsername || looksLikeUsername(value)) {
+    return fullName || value;
+  }
+
+  return value;
 }
 
 function getActionTypeFromStatus(status) {
@@ -247,6 +596,8 @@ async function safeLogAudit(payload) {
 // GET ALL INCIDENTS
 exports.getIncidents = async (req, res) => {
   try {
+    await ensureIncidentTimelineTable();
+
     const [incidents] = await db.promise().query(`
       SELECT 
         i.*,
@@ -285,9 +636,13 @@ exports.getIncidents = async (req, res) => {
       return map;
     }, {});
 
+    const timelineMap = await getTimelineByIncidentIds(incidentIds);
+
     const result = incidents.map((incident) => {
       const incidentEvidence = evidenceMap[String(incident.id)] || [];
-      return serializeIncident(incident, incidentEvidence);
+      const timelineEvents = timelineMap.get(String(incident.id)) || [];
+
+      return serializeIncident(incident, incidentEvidence, timelineEvents);
     });
 
     res.json(result);
@@ -303,6 +658,8 @@ exports.getIncidents = async (req, res) => {
 // GET INCIDENTS BY EMPLOYEE
 exports.getIncidentsByEmployee = async (req, res) => {
   try {
+    await ensureIncidentTimelineTable();
+
     const { employeeId } = req.params;
     const { name } = req.query;
 
@@ -363,12 +720,18 @@ exports.getIncidentsByEmployee = async (req, res) => {
       [incidentIds]
     );
 
+    const timelineMap = await getTimelineByIncidentIds(incidentIds);
+
     const result = incidents.map((incident) => {
       const incidentEvidence = evidence.filter(
         (item) => Number(item.incident_id) === Number(incident.id)
       );
 
-      return serializeIncident(incident, incidentEvidence);
+      return serializeIncident(
+        incident,
+        incidentEvidence,
+        timelineMap.get(String(incident.id)) || []
+      );
     });
 
     res.json(result);
@@ -406,6 +769,8 @@ exports.getIncidentById = async (req, res) => {
 // CREATE INCIDENT
 exports.createIncident = async (req, res) => {
   try {
+    await ensureIncidentTimelineTable();
+
     const {
       employeeId,
       employee_id,
@@ -426,7 +791,7 @@ exports.createIncident = async (req, res) => {
       resolutionNotes,
     } = req.body || {};
 
-    const actor = getActor(req);
+    const actor = await getActor(req);
     const finalEmployeeId = employeeId || employee_id;
 
     if (!finalEmployeeId) {
@@ -478,6 +843,7 @@ exports.createIncident = async (req, res) => {
     }
 
     const normalizedStatus = normalizeStatus(status);
+    const finalReportedBy = getSafePersonName(reportedBy, actor);
 
     const [result] = await db.promise().query(
       `
@@ -514,7 +880,7 @@ exports.createIncident = async (req, res) => {
         finalDate,
         location || null,
         description || null,
-        reportedBy || actor.fullName || null,
+        finalReportedBy,
         actionTaken || null,
         recommendation || null,
         resolutionNotes || null,
@@ -538,6 +904,14 @@ exports.createIncident = async (req, res) => {
         [incidentId, file.fileName, file.filePath]
       );
     }
+
+    await addTimelineEvent({
+      incidentId,
+      actionType: "CREATE_INCIDENT",
+      title: "Reported",
+      description: `Reported by ${finalReportedBy}.`,
+      actor,
+    });
 
     await safeLogAudit({
       userId: actor.userId,
@@ -567,9 +941,51 @@ exports.createIncident = async (req, res) => {
   }
 };
 
+function normalizeIdentity(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function buildActorAliases(actor) {
+  return new Set(
+    [
+      actor?.userId,
+      actor?.username,
+      actor?.fullName,
+    ]
+      .map(normalizeIdentity)
+      .filter(Boolean)
+  );
+}
+
+function hasActorMatch(actor, values = []) {
+  const aliases = buildActorAliases(actor);
+
+  return values.some((value) => aliases.has(normalizeIdentity(value)));
+}
+
+function getAssignedInvestigatorValues(incident) {
+  return [
+    incident.investigation_started_by_id,
+    incident.investigation_started_by_username,
+    incident.investigation_started_by_name,
+
+    incident.last_action_type === "START_INVESTIGATION"
+      ? incident.last_action_by_id
+      : null,
+    incident.last_action_type === "START_INVESTIGATION"
+      ? incident.last_action_by_username
+      : null,
+    incident.last_action_type === "START_INVESTIGATION"
+      ? incident.last_action_by_name
+      : null,
+  ].filter(Boolean);
+}
+
 // UPDATE INCIDENT
 exports.updateIncident = async (req, res) => {
   try {
+    await ensureIncidentTimelineTable();
+
     const { id } = req.params;
 
     const {
@@ -590,9 +1006,10 @@ exports.updateIncident = async (req, res) => {
       actionTaken,
       recommendation,
       resolutionNotes,
+      workflowAction,
     } = req.body || {};
 
-    const actor = getActor(req);
+    const actor = await getActor(req);
     const finalEmployeeId = employeeId || employee_id;
 
     if (!finalEmployeeId) {
@@ -643,7 +1060,9 @@ exports.updateIncident = async (req, res) => {
     }
 
     const normalizedStatus = normalizeStatus(status);
-    const actionType = getActionTypeFromStatus(normalizedStatus);
+    const actionType =
+      workflowAction || getActionTypeFromStatus(normalizedStatus);
+    const finalReportedBy = getSafePersonName(reportedBy, actor);
 
     await db.promise().query(
       `
@@ -680,7 +1099,7 @@ exports.updateIncident = async (req, res) => {
         finalDate,
         location || null,
         description || null,
-        reportedBy || null,
+        finalReportedBy,
         actionTaken || null,
         recommendation || null,
         resolutionNotes || null,
@@ -734,43 +1153,202 @@ exports.updateIncident = async (req, res) => {
 // UPDATE STATUS ONLY
 exports.updateIncidentStatus = async (req, res) => {
   try {
+    await ensureIncidentTimelineTable();
+
     const { id } = req.params;
 
-    const { status, resolutionNotes, actionTaken, recommendation } =
-      req.body || {};
+    const {
+      status,
+      workflowAction,
+      resolutionNotes,
+      actionTaken,
+      recommendation,
+    } = req.body || {};
 
-    const actor = getActor(req);
+    const actor = await getActor(req);
     const normalizedStatus = normalizeStatus(status);
-    const actionType = getActionTypeFromStatus(normalizedStatus);
+    const actionType =
+      workflowAction || getActionTypeFromStatus(normalizedStatus);
+
+    const [existingRows] = await db.promise().query(
+      `SELECT * FROM incidents WHERE id = ? LIMIT 1`,
+      [id]
+    );
+
+    if (existingRows.length === 0) {
+      return res.status(404).json({
+        error: "Incident not found.",
+      });
+    }
+
+    const existingIncident = existingRows[0];
+
+    const investigatorValues = getAssignedInvestigatorValues(existingIncident);
+
+if (actionType === "START_INVESTIGATION") {
+  const alreadyStarted =
+    existingIncident.investigation_started_at ||
+    normalizeStatus(existingIncident.status) !== "Open";
+
+  if (alreadyStarted) {
+    return res.status(409).json({
+      error: "This case is already under investigation.",
+    });
+  }
+}
+
+if (
+  actionType === "SUBMIT_RESOLUTION" ||
+  actionType === "SUBMIT_INVESTIGATION"
+) {
+  if (investigatorValues.length === 0) {
+    return res.status(409).json({
+      error:
+        "This case has no assigned investigator yet. Start investigation before submitting proof.",
+    });
+  }
+
+  if (!hasActorMatch(actor, investigatorValues)) {
+    return res.status(403).json({
+      error:
+        "Only the HR user who started this investigation can submit or resubmit proof.",
+    });
+  }
+}
+
+    const updateFields = [
+      "status = ?",
+      "resolution_notes = COALESCE(?, resolution_notes)",
+      "action_taken = COALESCE(?, action_taken)",
+      "recommendation = COALESCE(?, recommendation)",
+      "last_action_by_id = ?",
+      "last_action_by_username = ?",
+      "last_action_by_name = ?",
+      "last_action_type = ?",
+      "last_action_at = NOW()",
+      "updated_at = NOW()",
+    ];
+
+    const params = [
+      normalizedStatus,
+      resolutionNotes || null,
+      actionTaken || null,
+      recommendation || null,
+      actor.userId,
+      actor.username,
+      actor.fullName,
+      actionType,
+    ];
+
+    if (actionType === "START_INVESTIGATION") {
+      updateFields.push(
+        "investigation_started_by_id = ?",
+        "investigation_started_by_username = ?",
+        "investigation_started_by_name = ?",
+        "investigation_started_at = NOW()"
+      );
+
+      params.push(actor.userId, actor.username, actor.fullName);
+    }
+
+    if (
+      actionType === "SUBMIT_RESOLUTION" ||
+      actionType === "SUBMIT_INVESTIGATION"
+    ) {
+      const shouldBackfillInvestigation =
+        !existingIncident.investigation_started_at &&
+        existingIncident.last_action_type === "START_INVESTIGATION";
+
+      if (shouldBackfillInvestigation) {
+        updateFields.push(
+          "investigation_started_by_id = ?",
+          "investigation_started_by_username = ?",
+          "investigation_started_by_name = ?",
+          "investigation_started_at = COALESCE(?, updated_at, created_at, NOW())"
+        );
+
+        params.push(
+          existingIncident.last_action_by_id || actor.userId,
+          existingIncident.last_action_by_username || actor.username,
+          existingIncident.last_action_by_name || actor.fullName,
+          existingIncident.last_action_at || null
+        );
+      }
+
+      updateFields.push(
+        "resolution_submitted_by_id = ?",
+        "resolution_submitted_by_username = ?",
+        "resolution_submitted_by_name = ?",
+        "resolution_submitted_at = NOW()",
+        "reviewed_by_id = NULL",
+        "reviewed_by_username = NULL",
+        "reviewed_by_name = NULL",
+        "reviewed_at = NULL",
+        "review_decision = NULL",
+        "review_comments = NULL"
+      );
+
+      params.push(actor.userId, actor.username, actor.fullName);
+    }
+
+    if (actionType === "CLOSE_INCIDENT") {
+      updateFields.push(
+        "reviewed_by_id = ?",
+        "reviewed_by_username = ?",
+        "reviewed_by_name = ?",
+        "reviewed_at = NOW()",
+        "review_decision = ?",
+        "review_comments = ?"
+      );
+
+      params.push(
+        actor.userId,
+        actor.username,
+        actor.fullName,
+        "Approved",
+        resolutionNotes || "Proof reviewed and approved."
+      );
+    }
+
+    if (actionType === "RETURN_INCIDENT") {
+      updateFields.push(
+        "reviewed_by_id = ?",
+        "reviewed_by_username = ?",
+        "reviewed_by_name = ?",
+        "reviewed_at = NOW()",
+        "review_decision = ?",
+        "review_comments = ?"
+      );
+
+      params.push(
+        actor.userId,
+        actor.username,
+        actor.fullName,
+        "Returned",
+        resolutionNotes || "Case returned for correction."
+      );
+    }
+
+    params.push(id);
 
     await db.promise().query(
       `
       UPDATE incidents
-      SET
-        status = ?,
-        resolution_notes = COALESCE(?, resolution_notes),
-        action_taken = COALESCE(?, action_taken),
-        recommendation = COALESCE(?, recommendation),
-        last_action_by_id = ?,
-        last_action_by_username = ?,
-        last_action_by_name = ?,
-        last_action_type = ?,
-        last_action_at = NOW(),
-        updated_at = NOW()
+      SET ${updateFields.join(", ")}
       WHERE id = ?
       `,
-      [
-        normalizedStatus,
-        resolutionNotes || null,
-        actionTaken || null,
-        recommendation || null,
-        actor.userId,
-        actor.username,
-        actor.fullName,
-        actionType,
-        id,
-      ]
+      params
     );
+
+    await addTimelineEvent({
+      incidentId: id,
+      actionType,
+      title: getTimelineTitle(actionType, existingIncident),
+      description: getTimelineDescription(actionType, actor, {
+        comments: resolutionNotes,
+      }),
+      actor,
+    });
 
     await safeLogAudit({
       userId: actor.userId,

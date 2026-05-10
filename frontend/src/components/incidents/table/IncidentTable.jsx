@@ -76,6 +76,7 @@ export default function IncidentTable({
   severityFilter = "ALL",
   onSeverityFilterChange,
   isSuperAdmin = false,
+  currentUser,
   formatIncidentCode,
   onView,
   onStartReview,
@@ -369,10 +370,12 @@ export default function IncidentTable({
                             <ActionButtons
                               incident={group.latest}
                               isSuperAdmin={isSuperAdmin}
+                              currentUser={currentUser}
                               onView={onView}
                               onStartReview={onStartReview}
                               onResolve={onResolve}
                               onReview={onReview}
+                              
                             />
                           </div>
                         </td>
@@ -427,10 +430,12 @@ export default function IncidentTable({
                                 <ActionButtons
                                   incident={historyItem}
                                   isSuperAdmin={isSuperAdmin}
+                                  currentUser={currentUser}
                                   onView={onView}
                                   onStartReview={onStartReview}
                                   onResolve={onResolve}
                                   onReview={onReview}
+                            
                                 />
                               </div>
                             </td>

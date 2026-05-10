@@ -151,8 +151,10 @@ export default function ViewIncidentModal({
 
           <InfoCard title="Report Information">
             <Detail label="Incident ID" value={incidentCode} />
-            <Detail label="Reported By" value={incident.reportedBy || "-"} />
             <Detail
+              label="Reported By"
+              value={incident.reportedByName || incident.reportedBy || "-"}
+            />            <Detail
               label="Reported Date"
               value={formatDateTime(incident.reportedAt || incident.date)}
             />
@@ -167,6 +169,39 @@ export default function ViewIncidentModal({
             />
             <Detail label="Overdue" value={incident.isOverdue ? "Yes" : "No"} />
           </InfoCard>
+
+          <InfoCard title="Investigation Information">
+  <Detail
+    label="Started By"
+    value={
+      incident.investigation?.startedByName ||
+      incident.investigationStartedByName ||
+      "-"
+    }
+  />
+  <Detail
+    label="Date Started"
+    value={formatDateTime(
+      incident.investigation?.startedAt ||
+        incident.investigationStartedAt
+    )}
+  />
+  <Detail
+    label="Proof Submitted By"
+    value={
+      incident.resolution?.submittedByName ||
+      incident.resolutionSubmittedByName ||
+      "-"
+    }
+  />
+  <Detail
+    label="Proof Submitted Date"
+    value={formatDateTime(
+      incident.resolution?.submittedAt ||
+        incident.resolutionSubmittedAt
+    )}
+  />
+</InfoCard>
 
           <InfoCard title="Employee and Violation">
             <Detail label="Employee" value={incident.employee || "-"} />

@@ -17,7 +17,6 @@ import {
   getUserIdentity,
   normalizeStatus,
   normalizeIncidentWithRules,
-  createTimelineItem,
 } from "../utils/incidents/incidentHelpers";
 
 const API_BASE = "http://localhost:5000/api";
@@ -65,8 +64,132 @@ function normalizeName(value) {
     .replace(/\s+/g, " ");
 }
 
-function normalizeBackendIncident(incident) {
+function normalizeTimelineEvent(event = {}) {
+  const createdAt =
+    event.createdAt ||
+    event.created_at ||
+    event.date ||
+    new Date().toISOString();
+
+  return {
+    id: event.id || `${event.actionType || event.action_type || "event"}-${createdAt}`,
+
+    incidentId: event.incidentId || event.incident_id || "",
+    incident_id: event.incident_id || event.incidentId || "",
+
+    actionType: event.actionType || event.action_type || "",
+    action_type: event.action_type || event.actionType || "",
+
+    title: event.title || "Timeline Event",
+    description: event.description || "",
+
+    createdById: event.createdById || event.created_by_id || "",
+    created_by_id: event.created_by_id || event.createdById || "",
+
+    createdByUsername:
+      event.createdByUsername || event.created_by_username || "",
+    created_by_username:
+      event.created_by_username || event.createdByUsername || "",
+
+    createdByName: event.createdByName || event.created_by_name || "System",
+    created_by_name: event.created_by_name || event.createdByName || "System",
+
+    createdByRole: event.createdByRole || event.created_by_role || "",
+    created_by_role: event.created_by_role || event.createdByRole || "",
+
+    createdAt,
+    created_at: createdAt,
+  };
+}
+
+function normalizeBackendIncident(incident = {}) {
   const incidentId = incident.id;
+
+  const reportedBy =
+    incident.reportedByName ||
+    incident.reported_by_name ||
+    incident.reportedBy ||
+    incident.reported_by ||
+    "Unknown";
+
+  const investigationStartedAt =
+    incident.investigationStartedAt ||
+    incident.investigation_started_at ||
+    null;
+
+  const resolutionSubmittedAt =
+    incident.resolutionSubmittedAt ||
+    incident.resolution_submitted_at ||
+    null;
+
+  const reviewedAt = incident.reviewedAt || incident.reviewed_at || null;
+
+  const timelineEvents = Array.isArray(incident.timelineEvents)
+    ? incident.timelineEvents.map(normalizeTimelineEvent)
+    : Array.isArray(incident.timeline_events)
+    ? incident.timeline_events.map(normalizeTimelineEvent)
+    : Array.isArray(incident.timeline)
+    ? incident.timeline.map(normalizeTimelineEvent)
+    : [];
+
+  const investigation = investigationStartedAt
+    ? {
+        startedAt: investigationStartedAt,
+        startedById:
+          incident.investigationStartedById ||
+          incident.investigation_started_by_id ||
+          "",
+        startedByName:
+          incident.investigationStartedByName ||
+          incident.investigation_started_by_name ||
+          "",
+        startedByUsername:
+          incident.investigationStartedByUsername ||
+          incident.investigation_started_by_username ||
+          "",
+      }
+    : null;
+
+  const resolution = resolutionSubmittedAt
+    ? {
+        submittedAt: resolutionSubmittedAt,
+        submittedById:
+          incident.resolutionSubmittedById ||
+          incident.resolution_submitted_by_id ||
+          "",
+        submittedByName:
+          incident.resolutionSubmittedByName ||
+          incident.resolution_submitted_by_name ||
+          "",
+        submittedByUsername:
+          incident.resolutionSubmittedByUsername ||
+          incident.resolution_submitted_by_username ||
+          "",
+        actionTaken:
+          incident.actionTaken ||
+          incident.action_taken ||
+          incident.sanction ||
+          "",
+        remarks: incident.resolutionNotes || incident.resolution_notes || "",
+        proofFiles: Array.isArray(incident.proofFiles)
+          ? incident.proofFiles
+          : [],
+      }
+    : null;
+
+  const review =
+    reviewedAt || incident.reviewDecision || incident.review_decision
+      ? {
+          reviewedAt,
+          reviewedById: incident.reviewedById || incident.reviewed_by_id || "",
+          reviewedByName:
+            incident.reviewedByName || incident.reviewed_by_name || "",
+          reviewedByUsername:
+            incident.reviewedByUsername || incident.reviewed_by_username || "",
+          decision: incident.reviewDecision || incident.review_decision || "",
+          comments: incident.reviewComments || incident.review_comments || "",
+        }
+      : null;
 
   return {
     ...incident,
@@ -133,7 +256,32 @@ function normalizeBackendIncident(incident) {
       incident.date ||
       new Date().toISOString(),
 
-    reportedBy: incident.reportedBy || incident.reported_by || "Unknown",
+    reportedBy,
+    reportedByName: reportedBy,
+
+    investigation,
+    resolution,
+    review,
+
+    investigationStartedAt,
+    investigation_started_at: investigationStartedAt,
+    investigationStartedByName: investigation?.startedByName || "",
+    investigation_started_by_name: investigation?.startedByName || "",
+
+    resolutionSubmittedAt,
+    resolution_submitted_at: resolutionSubmittedAt,
+    resolutionSubmittedByName: resolution?.submittedByName || "",
+    resolution_submitted_by_name: resolution?.submittedByName || "",
+
+    reviewedAt,
+    reviewed_at: reviewedAt,
+    reviewedByName: review?.reviewedByName || "",
+    reviewed_by_name: review?.reviewedByName || "",
+
+    reviewDecision: review?.decision || "",
+    review_decision: review?.decision || "",
+    reviewComments: review?.comments || "",
+    review_comments: review?.comments || "",
 
     location: incident.location || "",
     description: incident.description || "",
@@ -146,18 +294,19 @@ function normalizeBackendIncident(incident) {
 
     recommendation: incident.recommendation || "",
 
-    resolutionNotes:
-      incident.resolutionNotes || incident.resolution_notes || "",
+    resolutionNotes: incident.resolutionNotes || incident.resolution_notes || "",
 
     smartAlerts: Array.isArray(incident.smartAlerts)
       ? incident.smartAlerts
       : [],
 
-    timeline: Array.isArray(incident.timeline) ? incident.timeline : [],
+    timelineEvents,
+    timeline_events: timelineEvents,
+    timeline: timelineEvents,
   };
 }
 
-function normalizeBackendDeployment(deployment) {
+function normalizeBackendDeployment(deployment = {}) {
   return {
     ...deployment,
 
@@ -273,10 +422,13 @@ export default function Incidents() {
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
   const actorFullName =
-    currentUser?.name ||
-    user?.fullName ||
     user?.full_name ||
+    user?.fullName ||
+    user?.fullname ||
+    user?.display_name ||
+    user?.displayName ||
     user?.name ||
+    currentUser?.name ||
     user?.username ||
     "Unknown User";
 
@@ -600,19 +752,30 @@ export default function Incidents() {
       }
 
       try {
-        await requestJson(`${INCIDENT_API_URL}/${incident.id}/status`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...payload,
-            userId: user?.userId || user?.id,
-            username: user?.username,
-            fullName: actorFullName,
-            role: user?.role,
-          }),
-        });
+        const response = await requestJson(
+          `${INCIDENT_API_URL}/${incident.id}/status`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...payload,
+              workflowAction: payload.workflowAction,
+              userId: user?.userId || user?.id,
+              username: user?.username,
+              fullName: actorFullName,
+              role: user?.role,
+            }),
+          }
+        );
 
-        updateIncidentState(updatedIncident);
+        const backendUpdatedIncident = response?.incident
+          ? normalizeIncidentWithRules(
+              normalizeBackendIncident(response.incident),
+              incidents
+            )
+          : updatedIncident;
+
+        updateIncidentState(backendUpdatedIncident);
 
         await createOperationalLog(auditAction, auditDescription);
         await fetchPageData({ silent: true, showError: false });
@@ -638,6 +801,7 @@ export default function Incidents() {
       actorFullName,
       createOperationalLog,
       fetchPageData,
+      incidents,
       showNotice,
       updateIncidentState,
       user?.id,
@@ -672,8 +836,7 @@ export default function Incidents() {
 
     const escalatedIncident = {
       ...newIncident,
-      company:
-        activeDeploymentForEmployee.company || newIncident.company || "",
+      company: activeDeploymentForEmployee.company || newIncident.company || "",
       severity:
         totalEmployeeCases >= 4 && newIncident.severity !== "Critical"
           ? "Critical"
@@ -759,13 +922,6 @@ export default function Incidents() {
   const handleConfirmStartInvestigation = async (incident) => {
     if (isSuperAdmin) return;
 
-    const timelineItem = createTimelineItem({
-      title: "Investigation Started",
-      description: `${actorFullName} started the investigation.`,
-      createdBy: actorFullName,
-      status: "Investigating",
-    });
-
     const updatedIncident = normalizeIncidentWithRules(
       {
         ...incident,
@@ -777,7 +933,6 @@ export default function Incidents() {
           startedByUsername: currentUser.username,
           startedByRole: currentUser.role,
         },
-        timeline: [...(incident.timeline || []), timelineItem],
       },
       incidents
     );
@@ -787,6 +942,7 @@ export default function Incidents() {
       updatedIncident,
       payload: {
         status: "Investigating",
+        workflowAction: "START_INVESTIGATION",
         resolutionNotes: "Investigation started.",
       },
       auditAction: "START_INVESTIGATION",
@@ -808,13 +964,6 @@ export default function Incidents() {
   const handleSubmitResolution = async (incident, resolutionData) => {
     if (isSuperAdmin) return;
 
-    const timelineItem = createTimelineItem({
-      title: "Resolution Proof Submitted",
-      description: `${actorFullName} submitted proof for Super Admin review.`,
-      createdBy: actorFullName,
-      status: "For Review",
-    });
-
     const updatedIncident = normalizeIncidentWithRules(
       {
         ...incident,
@@ -831,7 +980,6 @@ export default function Incidents() {
         },
         actionTaken: resolutionData.actionTaken,
         resolutionNotes: resolutionData.remarks,
-        timeline: [...(incident.timeline || []), timelineItem],
       },
       incidents
     );
@@ -841,6 +989,7 @@ export default function Incidents() {
       updatedIncident,
       payload: {
         status: "For Review",
+        workflowAction: "SUBMIT_RESOLUTION",
         actionTaken: resolutionData.actionTaken,
         resolutionNotes: resolutionData.remarks,
         recommendation: incident.recommendation || "",
@@ -863,13 +1012,6 @@ export default function Incidents() {
   const handleApproveCase = async (incident) => {
     if (!isSuperAdmin) return;
 
-    const timelineItem = createTimelineItem({
-      title: "Case Approved and Closed",
-      description: `${actorFullName} approved and closed the case.`,
-      createdBy: actorFullName,
-      status: "Closed",
-    });
-
     const updatedIncident = normalizeIncidentWithRules(
       {
         ...incident,
@@ -883,7 +1025,6 @@ export default function Incidents() {
           decision: "Approved",
           comments: "Proof reviewed and approved.",
         },
-        timeline: [...(incident.timeline || []), timelineItem],
       },
       incidents
     );
@@ -893,6 +1034,7 @@ export default function Incidents() {
       updatedIncident,
       payload: {
         status: "Closed",
+        workflowAction: "CLOSE_INCIDENT",
         resolutionNotes:
           incident.resolutionNotes ||
           incident.resolution?.remarks ||
@@ -923,13 +1065,6 @@ export default function Incidents() {
   const handleRejectCase = async (incident, comments) => {
     if (!isSuperAdmin) return;
 
-    const timelineItem = createTimelineItem({
-      title: "Case Returned",
-      description: comments,
-      createdBy: actorFullName,
-      status: "Investigating",
-    });
-
     const updatedIncident = normalizeIncidentWithRules(
       {
         ...incident,
@@ -943,7 +1078,6 @@ export default function Incidents() {
           decision: "Rejected",
           comments,
         },
-        timeline: [...(incident.timeline || []), timelineItem],
       },
       incidents
     );
@@ -953,6 +1087,7 @@ export default function Incidents() {
       updatedIncident,
       payload: {
         status: "Investigating",
+        workflowAction: "RETURN_INCIDENT",
         resolutionNotes: comments,
         actionTaken: incident.actionTaken || incident.sanction || "",
         recommendation: incident.recommendation || "",
@@ -1065,6 +1200,7 @@ export default function Incidents() {
           severityFilter={severityFilter}
           onSeverityFilterChange={setSeverityFilter}
           isSuperAdmin={isSuperAdmin}
+          currentUser={currentUser}
           formatIncidentCode={formatIncidentCode}
           onView={setSelectedIncident}
           onStartReview={setStartReviewIncident}

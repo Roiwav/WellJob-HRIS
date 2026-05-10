@@ -7,14 +7,19 @@ import {
 
 function getDisplayName(user) {
   return (
-    user?.name ||
+    user?.full_name ||
     user?.fullName ||
     user?.fullname ||
-    user?.full_name ||
+    user?.display_name ||
     user?.displayName ||
+    user?.name ||
     user?.username ||
     "Unknown User"
   );
+}
+
+function getUserId(user) {
+  return user?.userId || user?.user_id || user?.id || "";
 }
 
 export default function useSmartNotifications(user, options = {}) {
@@ -63,12 +68,18 @@ export default function useSmartNotifications(user, options = {}) {
         setIsFetching(true);
         setError("");
 
+        const displayName = getDisplayName(user);
+
         const query = new URLSearchParams({
           userKey,
           role,
-          userId: String(user?.id || user?.userId || ""),
+          userId: String(getUserId(user)),
+          id: String(getUserId(user)),
           username: String(user?.username || ""),
-          userName: getDisplayName(user),
+          userName: displayName,
+          fullName: displayName,
+          full_name: displayName,
+          name: displayName,
         }).toString();
 
         const data = await requestSmartAlertJson(`/smart-alerts?${query}`);

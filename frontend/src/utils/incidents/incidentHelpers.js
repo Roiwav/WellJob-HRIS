@@ -6,9 +6,17 @@ export function safeParse() {
 
 export function getUserIdentity(user) {
   return {
-    id: user?.userId || user?.id || user?.employeeId || "N/A",
+    id: user?.userId || user?.user_id || user?.id || user?.employeeId || "N/A",
     username: user?.username || "Unknown",
-    name: user?.name || user?.fullName || user?.username || "Unknown",
+    name:
+      user?.full_name ||
+      user?.fullName ||
+      user?.fullname ||
+      user?.display_name ||
+      user?.displayName ||
+      user?.name ||
+      user?.username ||
+      "Unknown",
     role: user?.role || "Unknown",
   };
 }
@@ -47,6 +55,14 @@ export function normalizeStatus(status) {
 }
 
 export function normalizeIncidentWithRules(incident, allIncidents = []) {
+  const timelineEvents = Array.isArray(incident.timelineEvents)
+    ? incident.timelineEvents
+    : Array.isArray(incident.timeline_events)
+    ? incident.timeline_events
+    : Array.isArray(incident.timeline)
+    ? incident.timeline
+    : [];
+
   return enrichIncidentIntelligence(
     {
       ...incident,
@@ -54,7 +70,10 @@ export function normalizeIncidentWithRules(incident, allIncidents = []) {
       investigation: incident.investigation || null,
       resolution: incident.resolution || null,
       review: incident.review || null,
-      timeline: Array.isArray(incident.timeline) ? incident.timeline : [],
+
+      timelineEvents,
+      timeline_events: timelineEvents,
+      timeline: timelineEvents,
     },
     allIncidents
   );
