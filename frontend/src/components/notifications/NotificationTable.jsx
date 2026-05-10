@@ -361,7 +361,7 @@ export default function NotificationTable({
               <th className="px-6 py-4">Employee</th>
               <th className="px-6 py-4">Priority</th>
               <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4">Smart Reason</th>
+              <th className="px-6 py-4">Alert Basis</th>
               <th className="px-6 py-4">Date</th>
               <th className="px-6 py-4 text-right">Action</th>
             </tr>

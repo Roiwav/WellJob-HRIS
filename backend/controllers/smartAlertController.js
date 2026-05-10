@@ -650,40 +650,37 @@ function getIncidentRecommendedAction(incident, role) {
 
 function buildIncidentReason(incident, role, priority) {
   const status = normalizeStatus(incident.status);
-
-  const reporter =
-    incident.reportedByName || incident.reporterName || "Unknown Reporter";
-
-  const investigationBy =
-    incident.investigationStartedByName ||
-    incident.investigation_started_by_name ||
-    "-";
-
-  const submittedBy =
-    incident.resolutionSubmittedByName ||
-    incident.resolution_submitted_by_name ||
-    "-";
-
-  const reviewedBy =
-    incident.reviewedByName || incident.reviewed_by_name || "Super Admin";
+  const severity = normalizeSeverity(incident.severity);
 
   if (isReturnedCase(incident)) {
-    return `Returned by ${reviewedBy}. Assigned investigator/proof submitter must revise and resubmit.`;
+    return "Generated because Super Admin returned this case for correction.";
   }
 
   if (status === "Closed") {
-    return `Approved by ${reviewedBy}. Notifying reporter ${reporter} and investigator ${investigationBy || submittedBy}.`;
+    return "Generated because Super Admin approved and closed this case.";
   }
 
-  if (role === "SUPER_ADMIN") {
-    return `Resolution proof was submitted by ${submittedBy}. Reported by ${reporter}.`;
+  if (role === "SUPER_ADMIN" && status === "For Review") {
+    return "Generated because proof was submitted and the case is waiting for Super Admin review.";
   }
 
-  if (priority === ALERT_PRIORITY.HIGH) {
-    return "Critical severity or priority case detected by the system.";
+  if (severity === "Critical" && status === "Open") {
+    return "Generated because this incident is marked Critical and still Open.";
   }
 
-  return "Incident status and severity require monitoring based on role rules.";
+  if (severity === "Critical" && status === "Investigating") {
+    return "Generated because this Critical incident is currently under investigation.";
+  }
+
+  if (status === "Open") {
+    return "Generated because this incident is still Open and needs HR monitoring.";
+  }
+
+  if (status === "Investigating") {
+    return "Generated because this case is currently under investigation.";
+  }
+
+  return "Generated based on the current incident status and recorded case data.";
 }
 
 function buildIncidentAlert(incident, role) {
