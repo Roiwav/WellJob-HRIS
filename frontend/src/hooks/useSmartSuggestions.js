@@ -5,6 +5,18 @@ import {
   requestSmartSuggestionJson,
 } from "../utils/suggestions/smartSuggestions";
 
+const EMPTY_SUMMARY = {
+  total: 0,
+  active: 0,
+  reviewed: 0,
+  high: 0,
+  medium: 0,
+  low: 0,
+  workforce: 0,
+  incident: 0,
+  compliance: 0,
+};
+
 export default function useSmartSuggestions(user, options = {}) {
   const role = user?.role || "USER";
   const userKey = useMemo(() => getSmartSuggestionUserKey(user), [user]);
@@ -13,17 +25,7 @@ export default function useSmartSuggestions(user, options = {}) {
 
   const [suggestions, setSuggestions] = useState([]);
   const [latestSuggestions, setLatestSuggestions] = useState([]);
-  const [summary, setSummary] = useState({
-    total: 0,
-    active: 0,
-    reviewed: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-    workforce: 0,
-    incident: 0,
-    compliance: 0,
-  });
+  const [summary, setSummary] = useState(EMPTY_SUMMARY);
   const [isLoading, setIsLoading] = useState(canView);
   const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState("");
@@ -33,17 +35,7 @@ export default function useSmartSuggestions(user, options = {}) {
       if (!canView) {
         setSuggestions([]);
         setLatestSuggestions([]);
-        setSummary({
-          total: 0,
-          active: 0,
-          reviewed: 0,
-          high: 0,
-          medium: 0,
-          low: 0,
-          workforce: 0,
-          incident: 0,
-          compliance: 0,
-        });
+        setSummary(EMPTY_SUMMARY);
         setIsLoading(false);
         setIsFetching(false);
         return;
@@ -67,19 +59,7 @@ export default function useSmartSuggestions(user, options = {}) {
         setLatestSuggestions(
           Array.isArray(data.latestSuggestions) ? data.latestSuggestions : []
         );
-        setSummary(
-          data.summary || {
-            total: 0,
-            active: 0,
-            reviewed: 0,
-            high: 0,
-            medium: 0,
-            low: 0,
-            workforce: 0,
-            incident: 0,
-            compliance: 0,
-          }
-        );
+        setSummary(data.summary || EMPTY_SUMMARY);
       } catch (err) {
         console.error("Smart suggestion fetch error:", err);
         setError(err.message || "Unable to load smart suggestions.");
@@ -93,16 +73,18 @@ export default function useSmartSuggestions(user, options = {}) {
     [canView, role, userKey]
   );
 
-  const markSuggestionReviewed = useCallback(
-    async (suggestionKey) => {
+  const takeSuggestionAction = useCallback(
+    async (suggestionKey, payload = {}) => {
       if (!suggestionKey || !canView) return;
 
-      await requestSmartSuggestionJson("/smart-suggestions/review", {
+      await requestSmartSuggestionJson("/smart-suggestions/action", {
         method: "POST",
         body: JSON.stringify({
           userKey,
           role,
           suggestionKey,
+          actionType: payload.actionType,
+          actionNotes: payload.actionNotes,
         }),
       });
 
@@ -111,8 +93,20 @@ export default function useSmartSuggestions(user, options = {}) {
     [canView, fetchSuggestions, role, userKey]
   );
 
+  const markSuggestionReviewed = useCallback(
+    async (suggestionKey, payload = {}) => {
+      await takeSuggestionAction(suggestionKey, {
+        actionType: payload.actionType || "HR Acknowledged",
+        actionNotes:
+          payload.actionNotes ||
+          "HR acknowledged the smart suggestion for monitoring.",
+      });
+    },
+    [takeSuggestionAction]
+  );
+
   const dismissSuggestion = useCallback(
-    async (suggestionKey) => {
+    async (suggestionKey, dismissReason = "") => {
       if (!suggestionKey || !canView) return;
 
       await requestSmartSuggestionJson("/smart-suggestions/dismiss", {
@@ -121,6 +115,7 @@ export default function useSmartSuggestions(user, options = {}) {
           userKey,
           role,
           suggestionKey,
+          dismissReason,
         }),
       });
 
@@ -159,6 +154,7 @@ export default function useSmartSuggestions(user, options = {}) {
     isFetching,
     error,
     refresh: fetchSuggestions,
+    takeSuggestionAction,
     markSuggestionReviewed,
     dismissSuggestion,
   };

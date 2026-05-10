@@ -565,6 +565,9 @@ function applySuggestionStates(suggestions, stateMap) {
       ...suggestion,
       isReviewed: Number(state?.is_reviewed || 0) === 1,
       isDismissed: Number(state?.is_dismissed || 0) === 1,
+      actionType: state?.action_type || null,
+      actionNotes: state?.action_notes || null,
+      dismissReason: state?.dismiss_reason || null,
       reviewedAt: state?.reviewed_at || null,
       dismissedAt: state?.dismissed_at || null,
     };
@@ -572,12 +575,21 @@ function applySuggestionStates(suggestions, stateMap) {
 }
 
 function buildSummary(suggestions) {
-  const active = suggestions.filter((suggestion) => !suggestion.isDismissed);
+  const active = suggestions.filter(
+    (suggestion) => !suggestion.isDismissed && !suggestion.isReviewed
+  );
+
+  const reviewed = suggestions.filter(
+    (suggestion) => !suggestion.isDismissed && suggestion.isReviewed
+  );
+
+  const dismissed = suggestions.filter((suggestion) => suggestion.isDismissed);
 
   return {
     total: suggestions.length,
     active: active.length,
-    reviewed: active.filter((suggestion) => suggestion.isReviewed).length,
+    reviewed: reviewed.length,
+    dismissed: dismissed.length,
     high: active.filter((suggestion) => suggestion.priority === PRIORITY.HIGH)
       .length,
     medium: active.filter(
@@ -603,23 +615,40 @@ async function upsertSuggestionState({
   suggestionKey,
   isReviewed,
   isDismissed,
+  actionType = null,
+  actionNotes = null,
+  dismissReason = null,
 }) {
   await db.promise().query(
     `
     INSERT INTO smart_suggestion_states
-      (user_key, role, suggestion_key, is_reviewed, is_dismissed, reviewed_at, dismissed_at)
+      (
+        user_key,
+        role,
+        suggestion_key,
+        is_reviewed,
+        is_dismissed,
+        action_type,
+        action_notes,
+        dismiss_reason,
+        reviewed_at,
+        dismissed_at
+      )
     VALUES
-      (?, ?, ?, ?, ?, IF(? = 1, NOW(), NULL), IF(? = 1, NOW(), NULL))
+      (?, ?, ?, ?, ?, ?, ?, ?, IF(? = 1, NOW(), NULL), IF(? = 1, NOW(), NULL))
     ON DUPLICATE KEY UPDATE
-      is_reviewed = GREATEST(is_reviewed, VALUES(is_reviewed)),
-      is_dismissed = GREATEST(is_dismissed, VALUES(is_dismissed)),
+      is_reviewed = VALUES(is_reviewed),
+      is_dismissed = VALUES(is_dismissed),
+      action_type = VALUES(action_type),
+      action_notes = VALUES(action_notes),
+      dismiss_reason = VALUES(dismiss_reason),
       reviewed_at = CASE
         WHEN VALUES(is_reviewed) = 1 THEN NOW()
         ELSE reviewed_at
       END,
       dismissed_at = CASE
         WHEN VALUES(is_dismissed) = 1 THEN NOW()
-        ELSE dismissed_at
+        ELSE NULL
       END,
       updated_at = NOW()
     `,
@@ -629,6 +658,9 @@ async function upsertSuggestionState({
       suggestionKey,
       isReviewed ? 1 : 0,
       isDismissed ? 1 : 0,
+      actionType,
+      actionNotes,
+      dismissReason,
       isReviewed ? 1 : 0,
       isDismissed ? 1 : 0,
     ]
@@ -686,11 +718,54 @@ exports.getSmartSuggestions = async (req, res) => {
   }
 };
 
+exports.takeSmartSuggestionAction = async (req, res) => {
+  try {
+    const userKey = getUserKey(req);
+    const role = getRole(req);
+    const { suggestionKey, actionType, actionNotes } = req.body;
+
+    if (!ALLOWED_ROLES.includes(role)) {
+      return res.status(403).json({ error: "You are not allowed to take action on suggestions." });
+    }
+
+    if (!suggestionKey) {
+      return res.status(400).json({ error: "Suggestion key is required." });
+    }
+
+    if (!String(actionType || "").trim()) {
+      return res.status(400).json({ error: "Action type is required." });
+    }
+
+    if (!String(actionNotes || "").trim()) {
+      return res.status(400).json({ error: "Action notes are required." });
+    }
+
+    await upsertSuggestionState({
+      userKey,
+      role,
+      suggestionKey,
+      isReviewed: true,
+      isDismissed: false,
+      actionType: String(actionType).trim(),
+      actionNotes: String(actionNotes).trim(),
+      dismissReason: null,
+    });
+
+    res.json({
+      success: true,
+      message: "Preventive action saved successfully.",
+    });
+  } catch (err) {
+    console.error("TAKE SMART SUGGESTION ACTION ERROR:", err);
+    res.status(500).json({ error: "Failed to save suggestion action." });
+  }
+};
+
 exports.markSmartSuggestionReviewed = async (req, res) => {
   try {
     const userKey = getUserKey(req);
     const role = getRole(req);
-    const suggestionKey = req.body.suggestionKey;
+    const { suggestionKey, actionType, actionNotes } = req.body;
 
     if (!suggestionKey) {
       return res.status(400).json({ error: "Suggestion key is required." });
@@ -702,6 +777,11 @@ exports.markSmartSuggestionReviewed = async (req, res) => {
       suggestionKey,
       isReviewed: true,
       isDismissed: false,
+      actionType: actionType || "HR Acknowledged",
+      actionNotes:
+        actionNotes ||
+        "HR acknowledged the smart suggestion for monitoring.",
+      dismissReason: null,
     });
 
     res.json({ success: true, message: "Suggestion marked as reviewed." });
@@ -715,18 +795,29 @@ exports.dismissSmartSuggestion = async (req, res) => {
   try {
     const userKey = getUserKey(req);
     const role = getRole(req);
-    const suggestionKey = req.body.suggestionKey;
+    const { suggestionKey, dismissReason } = req.body;
+
+    if (!ALLOWED_ROLES.includes(role)) {
+      return res.status(403).json({ error: "You are not allowed to dismiss suggestions." });
+    }
 
     if (!suggestionKey) {
       return res.status(400).json({ error: "Suggestion key is required." });
+    }
+
+    if (!String(dismissReason || "").trim()) {
+      return res.status(400).json({ error: "Dismiss reason is required." });
     }
 
     await upsertSuggestionState({
       userKey,
       role,
       suggestionKey,
-      isReviewed: true,
+      isReviewed: false,
       isDismissed: true,
+      actionType: null,
+      actionNotes: null,
+      dismissReason: String(dismissReason).trim(),
     });
 
     res.json({ success: true, message: "Suggestion dismissed." });
