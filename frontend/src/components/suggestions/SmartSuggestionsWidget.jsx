@@ -1,10 +1,89 @@
 import { useMemo, useState } from "react";
-import { FiBell, FiFilter, FiMessageCircle, FiRefreshCw, FiX } from "react-icons/fi";
+import {
+  FiAlertTriangle,
+  FiBell,
+  FiFileText,
+  FiFilter,
+  FiRefreshCw,
+  FiShuffle,
+  FiUsers,
+  FiX,
+} from "react-icons/fi";
+import { BsLightbulbFill } from "react-icons/bs";
 
 import { useAuth } from "../../context/useAuth";
 import useSmartSuggestions from "../../hooks/useSmartSuggestions";
 
 const MAX_VISIBLE_SUGGESTIONS = 5;
+
+const CATEGORY_STYLES = {
+  Workforce: {
+    icon: FiUsers,
+    iconBg: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300",
+    badge: "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
+  },
+  "Incident Prevention": {
+    icon: FiAlertTriangle,
+    iconBg: "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300",
+    badge: "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
+  },
+  Compliance: {
+    icon: FiFileText,
+    iconBg: "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300",
+    badge: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+  },
+  Deployment: {
+    icon: FiShuffle,
+    iconBg: "bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300",
+    badge: "bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
+  },
+};
+
+const DEFAULT_CATEGORY_STYLE = {
+  icon: FiBell,
+  iconBg: "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300",
+  badge: "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300",
+};
+
+const PRIORITY_STYLES = {
+  High: {
+    border: "border-l-rose-500 dark:border-l-rose-400",
+    pill: "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300",
+    dot: "bg-rose-500",
+  },
+  Medium: {
+    border: "border-l-amber-400",
+    pill: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+    dot: "bg-amber-400",
+  },
+  Low: {
+    border: "border-l-sky-300 dark:border-l-sky-400",
+    pill: "bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300",
+    dot: "bg-sky-400",
+  },
+};
+
+function getCategoryStyle(category) {
+  return CATEGORY_STYLES[category] || DEFAULT_CATEGORY_STYLE;
+}
+
+function getPriorityStyle(priority) {
+  return PRIORITY_STYLES[priority] || PRIORITY_STYLES.Low;
+}
+
+function isAlertMetric(label) {
+  const text = String(label || "").toLowerCase();
+  return ["critical", "expired", "missing"].some((keyword) =>
+    text.includes(keyword)
+  );
+}
+
+function getMetricChipClass(metric) {
+  const flagged = isAlertMetric(metric.label) && Number(metric.value) > 0;
+  return flagged
+    ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+}
 
 function formatDate(value) {
   if (!value) return "-";
@@ -49,20 +128,38 @@ function sortSuggestions(items) {
 }
 
 function SuggestionItem({ suggestion }) {
+  const categoryStyle = getCategoryStyle(suggestion.category);
+  const priorityStyle = getPriorityStyle(suggestion.priority);
+  const Icon = categoryStyle.icon;
+  const metrics = Array.isArray(suggestion.metrics) ? suggestion.metrics : [];
+
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-indigo-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950 dark:hover:border-indigo-900/70">
+    <article
+      className={`rounded-2xl border border-slate-200 border-l-4 ${priorityStyle.border} bg-white p-3 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-950`}
+    >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
-          <FiBell size={16} />
+        <div
+          className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${categoryStyle.iconBg}`}
+        >
+          <Icon size={16} />
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${categoryStyle.badge}`}
+            >
               {getSuggestionTypeLabel(suggestion.category)}
             </span>
 
-            <span className="text-[10px] font-semibold text-slate-400">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ${priorityStyle.pill}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${priorityStyle.dot}`} />
+              {suggestion.priority || "Low"}
+            </span>
+
+            <span className="ml-auto text-[10px] font-semibold text-slate-400">
               {formatDate(suggestion.generatedAt)}
             </span>
           </div>
@@ -90,6 +187,21 @@ function SuggestionItem({ suggestion }) {
               </p>
             )}
           </div>
+
+          {metrics.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {metrics.map((metric) => (
+                <span
+                  key={`${suggestion.suggestionKey}-${metric.label}`}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${getMetricChipClass(
+                    metric
+                  )}`}
+                >
+                  {metric.label}: {metric.value}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </article>
@@ -100,7 +212,7 @@ export default function SmartSuggestionsWidget() {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
-  const { canView, suggestions, isLoading, isFetching, error, refresh } =
+  const { canView, suggestions, summary, isLoading, isFetching, error, refresh } =
     useSmartSuggestions(user, {
       pollInterval: 15000,
     });
@@ -116,6 +228,16 @@ export default function SmartSuggestionsWidget() {
 
   const totalSuggestions = sortedSuggestions.length;
   const hiddenSuggestions = Math.max(totalSuggestions - visibleSuggestions.length, 0);
+
+  const highCount = summary?.high || 0;
+  const mediumCount = summary?.medium || 0;
+  const lowCount = summary?.low || 0;
+
+  const badgeColorClass = highCount > 0
+    ? "bg-rose-600"
+    : mediumCount > 0
+    ? "bg-amber-500"
+    : "bg-sky-500";
 
   if (!canView) return null;
 
@@ -134,10 +256,14 @@ export default function SmartSuggestionsWidget() {
             title="Smart Suggestions"
             aria-label="Open Smart Suggestions"
           >
-            <FiMessageCircle size={24} />
+            <BsLightbulbFill size={22} />
 
             {totalSuggestions > 0 && (
-              <span className="absolute -right-1 -top-1 flex min-h-6 min-w-6 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-black text-white ring-2 ring-white dark:ring-slate-950">
+              <span
+                className={`absolute -right-1 -top-1 flex min-h-6 min-w-6 items-center justify-center rounded-full ${badgeColorClass} px-1.5 text-[10px] font-black text-white ring-2 ring-white dark:ring-slate-950 ${
+                  highCount > 0 ? "animate-pulse" : ""
+                }`}
+              >
                 {totalSuggestions > 99 ? "99+" : totalSuggestions}
               </span>
             )}
@@ -152,7 +278,7 @@ export default function SmartSuggestionsWidget() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="flex items-center gap-2 text-lg font-black text-slate-900 dark:text-white">
-                    <FiBell className="text-indigo-600" />
+                    <BsLightbulbFill className="text-indigo-600" />
                     Smart Suggestions
                   </h2>
 
@@ -186,6 +312,29 @@ export default function SmartSuggestionsWidget() {
                   Sync
                 </button>
               </div>
+
+              {totalSuggestions > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {highCount > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-1 text-[11px] font-black text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+                      <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                      {highCount} High
+                    </span>
+                  )}
+                  {mediumCount > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-[11px] font-black text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                      {mediumCount} Medium
+                    </span>
+                  )}
+                  {lowCount > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-1 text-[11px] font-black text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
+                      <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                      {lowCount} Low
+                    </span>
+                  )}
+                </div>
+              )}
             </header>
 
             <div className="max-h-[calc(100vh-20rem)] overflow-y-auto bg-slate-50 p-3 dark:bg-slate-950">
