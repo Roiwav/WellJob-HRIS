@@ -11,7 +11,7 @@ export function SeverityBadge({ level }) {
   const config = {
     Minor: {
       class:
-        "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-300",
+        "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300",
       icon: <FiInfo size={12} />,
     },
     Major: {
@@ -46,8 +46,8 @@ export function StatusBadge({ status }) {
   const config = {
     Open: {
       class:
-        "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300",
-      dot: "bg-red-500",
+        "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-300",
+      dot: "bg-sky-500",
     },
     Investigating: {
       class:
@@ -56,8 +56,8 @@ export function StatusBadge({ status }) {
     },
     "For Review": {
       class:
-        "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-950/40 dark:text-indigo-300",
-      dot: "bg-indigo-500",
+        "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/40 dark:text-violet-300",
+      dot: "bg-violet-500",
     },
     Closed: {
       class:
