@@ -7,13 +7,10 @@ import {
   FiX,
 } from "react-icons/fi";
 
-const END_REASON_OPTIONS = [
-  "Completed Contract",
-  "End of Assignment / Pulled Out by Client",
-  "Transferred / Reassigned",
-  "Resigned",
-  "AWOL",
-  "Terminated",
+const SEPARATION_REASON_OPTIONS = [
+  "Resignation",
+  "Termination",
+  "Other Separation",
 ];
 
 function formatDisplayDate(dateValue) {
@@ -61,44 +58,67 @@ function StatusBadge({ status }) {
   );
 }
 
-function EndDeploymentModal({ deployment, onClose, onSubmit }) {
-  const [contractEnd, setContractEnd] = useState(
-    formatDateForInput(deployment?.contractEnd)
+function SeparationModal({ deployment, onClose, onSubmit }) {
+  const [separationDate, setSeparationDate] = useState(
+    formatDateForInput(deployment?.separationDate || deployment?.contractEnd)
   );
-  const [endReason, setEndReason] = useState(deployment?.endReason || "");
-  const [endRemarks, setEndRemarks] = useState(deployment?.endRemarks || "");
+  const [separationReason, setSeparationReason] = useState("");
+  const [separationRemarks, setSeparationRemarks] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!deployment) return null;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+
     setError("");
 
-    if (!contractEnd) {
-      setError("Please select contract end date.");
+    if (!separationDate) {
+      setError("Please select the employee's separation date.");
       return;
     }
 
-    if (!endReason) {
-      setError("Please select reason for ending deployment.");
+    if (!separationReason) {
+      setError("Please select a separation reason.");
       return;
     }
 
-    onSubmit({
-      ...deployment,
-      contractEnd,
-      endReason,
-      endRemarks,
-    });
+    if (separationReason === "Other Separation" && !separationRemarks.trim()) {
+      setError("Please provide details for Other Separation.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const wasSaved = await onSubmit({
+        ...deployment,
+        separationDate,
+        separationReason,
+        separationRemarks: separationRemarks.trim(),
+      });
+
+      if (!wasSaved) {
+        setError(
+          "The separation could not be saved. Review the page error and try again."
+        );
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div
       className="fixed inset-0 z-[999] overflow-y-auto bg-black/60 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6"
-      onClick={onClose}
+      onClick={isSubmitting ? undefined : onClose}
     >
       <div className="flex min-h-full items-start justify-center sm:items-center">
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="separation-dialog-title"
           className="my-auto max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-3xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-white/10 dark:bg-slate-900 sm:p-6"
           onClick={(event) => event.stopPropagation()}
         >
@@ -108,20 +128,22 @@ function EndDeploymentModal({ deployment, onClose, onSubmit }) {
                 <FiBriefcase size={22} />
               </div>
 
-              <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">
-                End Deployment Contract
+              <h2 id="separation-dialog-title" className="text-xl font-extrabold text-gray-900 dark:text-white">
+                Separate Employee
               </h2>
 
               <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-                Set the contract end date and reason. The system will update the
-                deployment and employee status automatically.
+                Record separation only when the employee resigns, is terminated,
+                or leaves for another reason.
               </p>
             </div>
 
             <button
               type="button"
               onClick={onClose}
+              disabled={isSubmitting}
               className="shrink-0 rounded-xl p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/10 dark:hover:text-white"
+              aria-label="Close separation dialog"
             >
               <FiX size={22} />
             </button>
@@ -142,29 +164,29 @@ function EndDeploymentModal({ deployment, onClose, onSubmit }) {
           <div className="space-y-4">
             <div>
               <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
-                Contract End Date
+                Separation Date
               </label>
 
               <input
                 type="date"
-                value={contractEnd}
-                onChange={(event) => setContractEnd(event.target.value)}
+                value={separationDate}
+                onChange={(event) => setSeparationDate(event.target.value)}
                 className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white"
               />
             </div>
 
             <div>
               <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
-                Reason for Ending
+                Separation Reason
               </label>
 
               <select
-                value={endReason}
-                onChange={(event) => setEndReason(event.target.value)}
+                value={separationReason}
+                onChange={(event) => setSeparationReason(event.target.value)}
                 className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white"
               >
                 <option value="">Select reason...</option>
-                {END_REASON_OPTIONS.map((reason) => (
+                {SEPARATION_REASON_OPTIONS.map((reason) => (
                   <option key={reason} value={reason}>
                     {reason}
                   </option>
@@ -174,15 +196,15 @@ function EndDeploymentModal({ deployment, onClose, onSubmit }) {
 
             <div>
               <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-300">
-                Remarks / Notes
+                Separation Details
                 <span className="ml-1 text-xs font-medium text-gray-400">
-                  optional
+                  {separationReason === "Other Separation" ? "required" : "optional"}
                 </span>
               </label>
 
               <textarea
-                value={endRemarks}
-                onChange={(event) => setEndRemarks(event.target.value)}
+                value={separationRemarks}
+                onChange={(event) => setSeparationRemarks(event.target.value)}
                 rows={3}
                 placeholder="Add short note or HR remarks..."
                 className="w-full resize-none rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-slate-800 dark:text-white"
@@ -200,16 +222,17 @@ function EndDeploymentModal({ deployment, onClose, onSubmit }) {
           )}
 
           <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-            <b>System rule:</b> Completed contract, end of assignment, and
-            reassignment will move the employee to Floating / Standby. Resigned,
-            AWOL, and Terminated will move the employee to Inactive.
+            <b>Employment rule:</b> Deployment is continuous. Saving this form
+            records that the employee has left employment and ends the active
+            deployment.
           </div>
 
           <div className="mt-6 flex flex-col-reverse justify-end gap-3 sm:flex-row">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-2xl border border-gray-200 px-5 py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10"
+              disabled={isSubmitting}
+              className="rounded-2xl border border-gray-200 px-5 py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10"
             >
               Cancel
             </button>
@@ -217,9 +240,10 @@ function EndDeploymentModal({ deployment, onClose, onSubmit }) {
             <button
               type="button"
               onClick={handleSubmit}
-              className="rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-indigo-700"
+              disabled={isSubmitting}
+              className="rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Save Contract End
+              {isSubmitting ? "Saving Separation..." : "Confirm Separation"}
             </button>
           </div>
         </div>
@@ -234,22 +258,24 @@ export default function DeploymentTable({
   onUpdateRow,
   isSuperAdmin,
 }) {
-  const [endTarget, setEndTarget] = useState(null);
+  const [separationTarget, setSeparationTarget] = useState(null);
 
   const handleOpenEndModal = (deployment) => {
-    setEndTarget(deployment);
+    setSeparationTarget(deployment);
   };
 
   const handleCloseEndModal = () => {
-    setEndTarget(null);
+    setSeparationTarget(null);
   };
 
-  const handleSubmitEndContract = async (updatedDeployment) => {
-    if (onUpdateRow) {
-      await onUpdateRow(updatedDeployment);
-    }
+  const handleSubmitSeparation = async (updatedDeployment) => {
+    if (!onUpdateRow) return false;
 
-    setEndTarget(null);
+    const wasSaved = await onUpdateRow(updatedDeployment);
+    if (!wasSaved) return false;
+
+    setSeparationTarget(null);
+    return true;
   };
 
   return (
@@ -288,10 +314,10 @@ export default function DeploymentTable({
                   Location
                 </th>
                 <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
-                  Start Date
+                  Deployment Start
                 </th>
                 <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
-                  Contract End
+                  Separation
                 </th>
                 <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
                   Status
@@ -339,11 +365,11 @@ export default function DeploymentTable({
 
                       <td className="px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-300">
                         <div>
-                          <p>{formatDisplayDate(deployment.contractEnd)}</p>
+                          <p>{formatDisplayDate(deployment.separationDate || deployment.contractEnd)}</p>
 
-                          {deployment.endReason && (
+                          {(deployment.separationReason || deployment.endReason) && (
                             <p className="mt-1 max-w-[180px] text-xs font-semibold text-gray-400 dark:text-gray-500">
-                              {deployment.endReason}
+                              {deployment.separationReason || deployment.endReason}
                             </p>
                           )}
                         </div>
@@ -360,7 +386,8 @@ export default function DeploymentTable({
                               type="button"
                               onClick={() => handleOpenEndModal(deployment)}
                               className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 transition hover:bg-blue-600 hover:text-white dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500"
-                              title="End Deployment Contract"
+                              title="Separate Employee"
+                              aria-label={`Separate ${deployment.employee}`}
                             >
                               <FiEdit2 />
                             </button>
@@ -402,11 +429,11 @@ export default function DeploymentTable({
         </div>
       </div>
 
-      {endTarget && (
-        <EndDeploymentModal
-          deployment={endTarget}
+      {separationTarget && (
+        <SeparationModal
+          deployment={separationTarget}
           onClose={handleCloseEndModal}
-          onSubmit={handleSubmitEndContract}
+          onSubmit={handleSubmitSeparation}
         />
       )}
     </>

@@ -18,6 +18,7 @@ import {
   normalizeStatus,
   normalizeIncidentWithRules,
 } from "../utils/incidents/incidentHelpers";
+import { normalizeEvidenceFiles } from "../utils/incidents/evidenceFiles";
 
 const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
@@ -171,9 +172,14 @@ function normalizeBackendIncident(incident = {}) {
           incident.sanction ||
           "",
         remarks: incident.resolutionNotes || incident.resolution_notes || "",
-        proofFiles: Array.isArray(incident.proofFiles)
-          ? incident.proofFiles
-          : [],
+        proofFiles: normalizeEvidenceFiles({
+          proofFiles:
+            incident.proofFiles ||
+            incident.proof_files ||
+            incident.evidenceFiles ||
+            incident.evidence_files ||
+            incident.attachments,
+        }),
       }
     : null;
 
@@ -741,6 +747,7 @@ export default function Incidents() {
       auditDescription,
       successTitle,
       successMessage,
+      formData,
     }) => {
       if (incident.status === "Closed") {
         showNotice(
@@ -756,15 +763,19 @@ export default function Incidents() {
           `${INCIDENT_API_URL}/${incident.id}/status`,
           {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ...payload,
-              workflowAction: payload.workflowAction,
-              userId: user?.userId || user?.id,
-              username: user?.username,
-              fullName: actorFullName,
-              role: user?.role,
-            }),
+            ...(formData
+              ? { body: formData }
+              : {
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    ...payload,
+                    workflowAction: payload.workflowAction,
+                    userId: user?.userId || user?.id,
+                    username: user?.username,
+                    fullName: actorFullName,
+                    role: user?.role,
+                  }),
+                }),
           }
         );
 
@@ -962,7 +973,22 @@ export default function Incidents() {
   };
 
   const handleSubmitResolution = async (incident, resolutionData) => {
-    if (isSuperAdmin) return;
+    if (isSuperAdmin) return false;
+
+    const validFiles = resolutionData.proofFiles.filter(
+      (item) => item.file instanceof File && !item.error
+    );
+    const formData = new FormData();
+    formData.append("status", "For Review");
+    formData.append("workflowAction", "SUBMIT_RESOLUTION");
+    formData.append("actionTaken", resolutionData.actionTaken);
+    formData.append("resolutionNotes", resolutionData.remarks);
+    formData.append("recommendation", incident.recommendation || "");
+    formData.append("userId", user?.userId || user?.id || "");
+    formData.append("username", user?.username || "");
+    formData.append("fullName", actorFullName);
+    formData.append("role", user?.role || "");
+    validFiles.forEach((item) => formData.append("evidenceFiles", item.file, item.name));
 
     const updatedIncident = normalizeIncidentWithRules(
       {
@@ -994,6 +1020,7 @@ export default function Incidents() {
         resolutionNotes: resolutionData.remarks,
         recommendation: incident.recommendation || "",
       },
+      formData,
       auditAction: "SUBMIT_RESOLUTION",
       auditDescription: `${actorFullName} submitted proof for incident ${formatIncidentCode(
         incident.id
@@ -1007,6 +1034,7 @@ export default function Incidents() {
     if (success) {
       setResolutionIncident(null);
     }
+    return success;
   };
 
   const handleApproveCase = async (incident) => {

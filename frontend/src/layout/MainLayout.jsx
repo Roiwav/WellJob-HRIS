@@ -1,31 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 
-import Sidebar from "../components/Sidebar";
 import Navbar from "../components/Navbar";
+import Sidebar from "../components/Sidebar";
 import SmartSuggestionsWidget from "../components/suggestions/SmartSuggestionsWidget";
+import useTheme from "../hooks/useTheme";
 
 export default function MainLayout() {
-  const [darkMode, setDarkMode] = useState(() => {
-    const savedTheme = localStorage.getItem("theme");
-    return savedTheme ? savedTheme === "dark" : true;
-  });
-
-  useEffect(() => {
-    const root = document.documentElement;
-
-    if (darkMode) {
-      root.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      root.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  }, [darkMode]);
-
-  const toggleTheme = useCallback(() => {
-    setDarkMode((prev) => !prev);
-  }, []);
+  const { darkMode, toggleTheme } = useTheme();
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-gray-100 dark:bg-slate-950">

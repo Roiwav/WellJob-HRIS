@@ -10,8 +10,10 @@ import DeploymentModal from "../components/deployments/modals/DeploymentModal";
 import DeploymentToast from "../components/deployments/shared/DeploymentToast";
 
 import {
+  buildLegacySeparationPayload,
   getMonthOptions,
   getYearOptions,
+  normalizeSeparationReason,
 } from "../utils/deployments/deploymentHelpers";
 
 const API_BASE = "http://localhost:5000/api";
@@ -67,7 +69,7 @@ function normalizeDeployment(item) {
     item.start_date ||
     "-";
 
-  const contractEnd =
+  const separationDate =
     item.contractEnd ||
     item.contract_end ||
     item.endDate ||
@@ -107,7 +109,18 @@ function normalizeDeployment(item) {
       item.deploymentDate ||
       item.deployment_date ||
       start,
-    contractEnd,
+    contractEnd: separationDate,
+    separationDate,
+    separationReason: normalizeSeparationReason(
+      item.separationReason || item.separation_reason || item.endReason || item.end_reason,
+      item.separationRemarks || item.separation_remarks || item.endRemarks || item.end_remarks
+    ),
+    separationRemarks:
+      item.separationRemarks ||
+      item.separation_remarks ||
+      item.endRemarks ||
+      item.end_remarks ||
+      "",
     createdAt: item.createdAt || item.created_at || null,
     updatedAt: item.updatedAt || item.updated_at || null,
   };
@@ -193,72 +206,36 @@ export default function Deployments() {
     setSelectedDeployment(deployment);
   };
 
-  const updateDeployment = async (updatedDeployment) => {
+  const handleInlineUpdateRow = async (updatedDeployment) => {
     try {
-      const targetStatus = updatedDeployment.status;
-
-      if (!["Completed", "Cancelled"].includes(targetStatus)) {
-        showSuccessToast("No backend update needed.");
-        return;
-      }
-
-      await requestJson(
-        `${DEPLOYMENT_API_URL}/${
+      const legacyPayload = buildLegacySeparationPayload(updatedDeployment);
+      await axios.put(
+        `${EMPLOYEES_API_URL}/${
           updatedDeployment.employeeId || updatedDeployment.id
-        }/status`,
+        }/contract-end`,
         {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: targetStatus,
-          }),
+          ...legacyPayload,
+          userId: user?.userId || user?.id || null,
+          username: user?.username || null,
+          fullName: user?.full_name || user?.fullName || user?.username || null,
+          role: user?.role || null,
         }
       );
 
       await fetchDeployments();
-      emitDataUpdated(`DEPLOYMENT_${targetStatus.toUpperCase()}`);
-
-      showSuccessToast(
-        targetStatus === "Cancelled"
-          ? "Deployment cancelled successfully!"
-          : "Deployment marked as completed successfully!"
-      );
+      emitDataUpdated("EMPLOYEE_SEPARATED");
+      showSuccessToast("Employee separation recorded successfully.");
+      return true;
     } catch (error) {
-      console.error("Update deployment error:", error);
-      setFetchError(error.message || "Unable to update deployment.");
+      console.error("Error recording employee separation:", error);
+      setFetchError(
+        error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          "Failed to record employee separation. Please try again."
+      );
+      return false;
     }
   };
-
-  const handleInlineUpdateRow = async (updatedDeployment) => {
-  try {
-    await axios.put(
-      `${EMPLOYEES_API_URL}/${
-        updatedDeployment.employeeId || updatedDeployment.id
-      }/contract-end`,
-      {
-        contractEnd: updatedDeployment.contractEnd,
-        endReason: updatedDeployment.endReason,
-        endRemarks: updatedDeployment.endRemarks,
-        userId: user?.userId || user?.id || null,
-        username: user?.username || null,
-        fullName: user?.full_name || user?.fullName || user?.username || null,
-        role: user?.role || null,
-      }
-    );
-
-    await fetchDeployments();
-    emitDataUpdated("DEPLOYMENT_CONTRACT_ENDED");
-
-    showSuccessToast("Deployment contract ended successfully!");
-  } catch (error) {
-    console.error("Error ending deployment contract:", error);
-    setFetchError(
-      error?.response?.data?.error ||
-        error?.response?.data?.message ||
-        "Failed to end deployment contract. Please check your backend."
-    );
-  }
-};
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -322,8 +299,7 @@ export default function Deployments() {
             </h1>
 
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Monitor employee assignments, client locations, and contract
-              duration.
+              Monitor continuous employee assignments and recorded separations.
             </p>
           </div>
 
@@ -404,7 +380,6 @@ export default function Deployments() {
         <DeploymentModal
           deployment={selectedDeployment}
           mode={modalMode}
-          onUpdate={updateDeployment}
           close={() => setSelectedDeployment(null)}
         />
       </div>

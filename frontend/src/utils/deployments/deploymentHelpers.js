@@ -117,44 +117,52 @@ export function getStatusBadgeClass(status) {
       "bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30",
     Cancelled:
       "bg-red-100 text-red-700 border border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/30",
+    Separated:
+      "bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-500/20 dark:text-slate-300 dark:border-slate-500/30",
   };
 
   return styles[status] || "bg-gray-100 text-gray-700 border border-gray-200";
 }
 
-export function getContractTimelineInfo(
-  contractStart,
-  contractEnd,
-  employmentType
-) {
-  if (employmentType === "Permanent") {
-    return "Permanent employee. No contract end date required.";
+export function getDeploymentTimelineInfo(deploymentStart, separationDate) {
+  if (!deploymentStart || deploymentStart === "-") {
+    return "Deployment start date is not available.";
   }
 
-  if (!contractStart || contractStart === "-") {
-    return "Contract start date is not available.";
+  if (!separationDate || separationDate === "-") {
+    return "Deployment is continuous and remains active until an authorized separation is recorded.";
   }
 
-  if (!contractEnd || contractEnd === "-") {
-    return "Contract end date is not available.";
+  return `Separated on ${formatLongDisplayDate(separationDate)}.`;
+}
+
+export function normalizeSeparationReason(value, remarks = "") {
+  const reason = String(value || "").trim();
+  const cleanRemarks = String(remarks || "").trim();
+
+  if (reason === "Resigned" || reason === "Resignation") return "Resignation";
+  if (reason === "Terminated" || reason === "Termination") {
+    return cleanRemarks.startsWith("[Other Separation]")
+      ? "Other Separation"
+      : "Termination";
   }
 
-  const startDate = new Date(contractStart);
-  const endDate = new Date(contractEnd);
+  return reason || "-";
+}
 
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-    return "Invalid contract date.";
-  }
+export function buildLegacySeparationPayload({
+  separationDate,
+  separationReason,
+  separationRemarks,
+}) {
+  const isOther = separationReason === "Other Separation";
 
-  const diffDays = Math.ceil(
-    (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  if (diffDays < 0) {
-    return "Contract end date is earlier than contract start.";
-  }
-
-  return `Contract duration: ${diffDays + 1} day${
-    diffDays + 1 > 1 ? "s" : ""
-  }. Contract end: ${formatLongDisplayDate(contractEnd)}.`;
+  return {
+    contractEnd: separationDate,
+    endReason:
+      separationReason === "Resignation" ? "Resigned" : "Terminated",
+    endRemarks: isOther
+      ? `[Other Separation] ${String(separationRemarks || "").trim()}`
+      : String(separationRemarks || "").trim(),
+  };
 }

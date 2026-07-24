@@ -1,10 +1,8 @@
-import { useState } from "react";
 import {
   FiAlertTriangle,
   FiBriefcase,
   FiCalendar,
   FiCheckCircle,
-  FiClock,
   FiMapPin,
   FiShield,
   FiUser,
@@ -12,28 +10,18 @@ import {
 } from "react-icons/fi";
 
 import { useAuth } from "../../../context/useAuth";
-import {
-  formatLongDisplayDate,
-  getContractTimelineInfo,
-  getStatusBadgeClass,
-} from "../../../utils/deployments/deploymentHelpers";
-import {
-  DeploymentInfoCard,
-  ConfirmDeploymentActionModal,
-} from "../shared/DeploymentModalUI";
+import { formatLongDisplayDate, getDeploymentTimelineInfo, getStatusBadgeClass } from "../../../utils/deployments/deploymentHelpers";
+import { DeploymentInfoCard } from "../shared/DeploymentModalUI";
 
-export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
+export default function DeploymentModal({ deployment, close, mode }) {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
-
-  const [confirmAction, setConfirmAction] = useState(null);
 
   if (!deployment) return null;
 
   const form = deployment;
 
   const isEdit = mode === "edit" && !isSuperAdmin;
-  const isActive = form.status === "Active";
   const isAttention = form.status === "Cancelled" || form.status === "Pending";
 
   const employeeInitials = String(form.employee || "D")
@@ -43,46 +31,12 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
     .map((part) => part[0]?.toUpperCase())
     .join("");
 
-  const timelineInfo = getContractTimelineInfo(
+  const timelineInfo = getDeploymentTimelineInfo(
     form.contractStart || form.start,
-    form.contractEnd,
-    form.employmentType
+    form.separationDate || form.contractEnd
   );
 
   const handleClose = () => {
-    setConfirmAction(null);
-    close();
-  };
-
-  const handleSave = () => {
-    onUpdate(form);
-    handleClose();
-  };
-
-  const handleComplete = () => {
-    setConfirmAction("complete");
-  };
-
-  const handleCancelDeployment = () => {
-    setConfirmAction("cancel");
-  };
-
-  const handleConfirmAction = () => {
-    if (confirmAction === "complete") {
-      onUpdate({
-        ...form,
-        status: "Completed",
-      });
-    }
-
-    if (confirmAction === "cancel") {
-      onUpdate({
-        ...form,
-        status: "Cancelled",
-      });
-    }
-
-    setConfirmAction(null);
     close();
   };
 
@@ -193,26 +147,25 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
 
             <section>
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Contract Information
+                Deployment Information
               </h3>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <DeploymentInfoCard
                   icon={<FiCalendar size={16} />}
-                  label="Contract Start"
+                   label="Deployment Start Date"
                   value={formatLongDisplayDate(form.contractStart || form.start)}
                 />
 
                 <DeploymentInfoCard
                   icon={<FiCalendar size={16} />}
-                  label="Contract End"
-                  value={formatLongDisplayDate(form.contractEnd)}
+                   label="Separation Date"
+                   value={form.separationDate || form.contractEnd ? formatLongDisplayDate(form.separationDate || form.contractEnd) : "Not separated"}
                 />
               </div>
 
               <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
                 <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                  <FiClock size={16} />
                   <span className="text-sm">Timeline Summary</span>
                 </div>
 
@@ -274,47 +227,10 @@ export default function DeploymentModal({ deployment, close, mode, onUpdate }) {
               Close
             </button>
 
-            {!isEdit && !isSuperAdmin && isActive && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleComplete}
-                  className="rounded-lg bg-green-600 px-4 py-2 text-white transition hover:bg-green-700"
-                >
-                  Mark Completed
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCancelDeployment}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-white transition hover:bg-red-700"
-                >
-                  Cancel Deployment
-                </button>
-              </>
-            )}
-
-            {isEdit && !isSuperAdmin && (
-              <button
-                type="button"
-                onClick={handleSave}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-white transition hover:bg-indigo-700"
-              >
-                Save Changes
-              </button>
-            )}
           </div>
         </div>
       </div>
 
-      {confirmAction && (
-        <ConfirmDeploymentActionModal
-          action={confirmAction}
-          employee={form.employee}
-          onClose={() => setConfirmAction(null)}
-          onConfirm={handleConfirmAction}
-        />
-      )}
     </>
   );
 }

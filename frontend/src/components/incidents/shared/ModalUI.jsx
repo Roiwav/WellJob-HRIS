@@ -3,10 +3,12 @@ import {
   FiCheckCircle,
   FiClock,
   FiFileText,
-  FiX,
   FiXCircle,
 } from "react-icons/fi";
+
+import Dialog from "../../ui/Dialog";
 import { formatDateTime } from "../../../utils/incidents/incidentHelpers";
+import { formatFileSize } from "../../../utils/incidents/evidenceFiles";
 
 export function BaseModal({
   children,
@@ -15,92 +17,92 @@ export function BaseModal({
   subtitle,
   color = "red",
   size = "lg",
+  preventClose = false,
+  initialFocusRef,
 }) {
-  const colors = {
-    red: "from-red-600 to-rose-600",
-    green: "from-green-600 to-emerald-600",
-    indigo: "from-indigo-600 to-blue-600",
-    amber: "from-amber-500 to-orange-500",
+  const toneByColor = {
+    red: "danger",
+    green: "success",
+    indigo: "default",
+    amber: "warning",
   };
 
-  const sizes = {
-    sm: "max-w-2xl",
-    lg: "max-w-5xl",
-  };
+  const dialogSize = size === "sm" ? "lg" : "xl";
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 backdrop-blur-sm">
-      <div
-        className={`mx-auto my-8 w-full ${
-          sizes[size] || sizes.lg
-        } overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900`}
-      >
-        <div className={`bg-gradient-to-r ${colors[color]} px-6 py-5 text-white`}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-extrabold">{title}</h2>
-              <p className="mt-1 text-sm text-white/80">{subtitle}</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl bg-white/10 p-2 hover:bg-white/20"
-              aria-label="Close"
-            >
-              <FiX size={20} />
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6">{children}</div>
-        <ModalStyle />
-      </div>
-    </div>
+    <Dialog
+      open
+      onClose={onClose}
+      title={title}
+      description={subtitle}
+      tone={toneByColor[color] || "default"}
+      size={dialogSize}
+      preventClose={preventClose}
+      closeOnOverlay={!preventClose}
+      closeOnEscape={!preventClose}
+      initialFocusRef={initialFocusRef}
+    >
+      {children}
+      <ModalStyle />
+    </Dialog>
   );
 }
 
-export function NoticeModal({ type = "success", title, message, onClose }) {
+export function NoticeModal({
+  type = "success",
+  title,
+  message,
+  onClose,
+  preventClose = false,
+}) {
   const isSuccess = type === "success";
-  const color = isSuccess
-    ? "from-emerald-600 to-green-600"
-    : "from-red-600 to-rose-600";
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900">
-        <div className={`bg-gradient-to-r ${color} px-6 py-5 text-white`}>
-          <div className="flex items-start gap-4">
-            <div className="rounded-2xl bg-white/15 p-3">
-              {isSuccess ? (
-                <FiCheckCircle size={24} />
-              ) : (
-                <FiAlertCircle size={24} />
-              )}
-            </div>
-
-            <div>
-              <h3 className="text-lg font-extrabold">{title}</h3>
-              <p className="mt-1 text-sm text-white/85">{message}</p>
-            </div>
-          </div>
+    <Dialog
+      open
+      onClose={onClose}
+      title={title}
+      description={message}
+      tone={isSuccess ? "success" : "danger"}
+      size="md"
+      preventClose={preventClose}
+      closeOnOverlay={!preventClose}
+      closeOnEscape={!preventClose}
+      footer={
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={preventClose}
+          className={`inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-bold text-white transition focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${
+            isSuccess
+              ? "bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500/30"
+              : "bg-red-600 hover:bg-red-700 focus:ring-red-500/30"
+          }`}
+        >
+          Close
+        </button>
+      }
+    >
+      <div className="flex items-start gap-4">
+        <div
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+            isSuccess
+              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+              : "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300"
+          }`}
+        >
+          {isSuccess ? (
+            <FiCheckCircle size={24} aria-hidden="true" />
+          ) : (
+            <FiAlertCircle size={24} aria-hidden="true" />
+          )}
         </div>
 
-        <div className="flex justify-end p-5">
-          <button
-            type="button"
-            onClick={onClose}
-            className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white ${
-              isSuccess
-                ? "bg-emerald-600 hover:bg-emerald-700"
-                : "bg-red-600 hover:bg-red-700"
-            }`}
-          >
-            OK
-          </button>
-        </div>
+        <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+          {message}
+        </p>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -392,7 +394,7 @@ export function TextDetail({ label, value }) {
   );
 }
 
-export function ProofList({ files = [] }) {
+export function ProofList({ files = [], onRemove }) {
   if (!files.length) {
     return <p className="mt-3 text-sm text-gray-500">No proof uploaded.</p>;
   }
@@ -416,9 +418,43 @@ export function ProofList({ files = [] }) {
               <p className="mt-1 text-xs text-gray-500">
                 {file.type || "Uploaded file"}
               </p>
+              <p className="text-xs text-gray-500">
+                {formatFileSize(file.size)} • {file.status || "Uploaded"}
+              </p>
               <p className="text-xs text-gray-400">
                 {file.uploadedAt ? formatDateTime(file.uploadedAt) : "-"}
               </p>
+              {file.error && (
+                <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-300">
+                  {file.error}
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(file.localUrl || file.url) && (
+                  <a
+                    href={file.localUrl || file.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/30 dark:text-indigo-300"
+                  >
+                    {file.isLocal ? "Open local preview" : "Open / Download"}
+                  </a>
+                )}
+                {onRemove && (
+                  <button
+                    type="button"
+                    onClick={() => onRemove(file.id)}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-50 dark:border-red-500/30 dark:text-red-300"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              {file.isLocal && (
+                <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
+                  Local preview only. Cross-device access begins after the server stores and returns this file.
+                </p>
+              )}
             </div>
           </div>
         </div>

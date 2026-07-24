@@ -1,218 +1,309 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Sun, Moon } from "lucide-react";
+import { Eye, EyeOff, HelpCircle, LoaderCircle, Moon, Sun } from "lucide-react";
+
+import logo from "../assets/logo.png";
 import { useAuth } from "../context/useAuth";
+import Dialog from "../components/ui/Dialog";
+import useTheme from "../hooks/useTheme";
 
 export default function Login() {
   const navigate = useNavigate();
   const { setUser } = useAuth();
+  const { darkMode, toggleTheme } = useTheme();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
 
-  const [darkMode, setDarkMode] = useState(() => {
-    const savedTheme = localStorage.getItem("theme");
-    return savedTheme ? savedTheme === "dark" : true;
-  });
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    if (isSubmitting) return;
 
-  useEffect(() => {
-    const root = document.documentElement;
-
-    if (darkMode) {
-      root.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      root.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  }, [darkMode]);
-
-  const toggleTheme = useCallback(() => {
-    setDarkMode((prev) => !prev);
-  }, []);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
+    setError("");
+    setIsSubmitting(true);
 
     try {
-      const res = await fetch("http://localhost:5000/api/login", {
+      const response = await fetch("http://localhost:5000/api/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+        }),
       });
 
-      const data = await res.json();
+      let data = {};
 
-      if (!res.ok) {
-        setError(data.message || "Login failed");
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        setError(
+          data.message ||
+            (response.status >= 500
+              ? "The server is currently unavailable. Please try again."
+              : "Invalid username or password.")
+        );
         return;
       }
 
-      // SAVE USER
-const normalizedUser = {
-  ...data.user,
-  mustChangePassword:
-    data.user?.mustChangePassword === true ||
-    data.user?.mustChangePassword === 1 ||
-    data.user?.mustChangePassword === "1" ||
-    data.user?.must_change_password === true ||
-    data.user?.must_change_password === 1 ||
-    data.user?.must_change_password === "1",
-};
+      const normalizedUser = {
+        ...data.user,
+        mustChangePassword:
+          data.user?.mustChangePassword === true ||
+          data.user?.mustChangePassword === 1 ||
+          data.user?.mustChangePassword === "1" ||
+          data.user?.must_change_password === true ||
+          data.user?.must_change_password === 1 ||
+          data.user?.must_change_password === "1",
+      };
 
-localStorage.setItem("user", JSON.stringify(normalizedUser));
-setUser(normalizedUser);
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+      setUser(normalizedUser);
 
-if (normalizedUser.mustChangePassword) {
-  navigate("/change-password", { replace: true });
-  return;
-}
+      if (normalizedUser.mustChangePassword) {
+        navigate("/change-password", { replace: true });
+        return;
+      }
 
-        // FORCE CHANGE PASSWORD FIRST
-if (normalizedUser.mustChangePassword) {
-  navigate("/change-password");
-  return;
-}
+      const redirectByRole = {
+        SUPER_ADMIN: "/",
+        HR_MANAGER: "/",
+        HR_STAFF: "/employees",
+        IT_SUPPORT: "/settings",
+      };
 
-        // ROLE-BASED REDIRECT
-        const redirectByRole = {
-          SUPER_ADMIN: "/",
-          HR_MANAGER: "/",
-          HR_STAFF: "/employees",
-          IT_SUPPORT: "/settings",
-        };
-
-        navigate(redirectByRole[data.user.role] || "/");
-
-    } catch (err) {
-      setError("Network error. Please try again.");
-      console.error("Login error:", err);
+      navigate(redirectByRole[normalizedUser.role] || "/", { replace: true });
+    } catch (loginError) {
+      console.error("Login error:", loginError);
+      setError("Network error. Check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
+  const clearError = () => {
+    if (error) setError("");
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900">
+    <div className="flex min-h-screen flex-col bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900">
+      <header className="border-b border-gray-200 bg-white/80 px-6 py-4 backdrop-blur-sm dark:border-slate-800/50 dark:bg-slate-950/80">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <img
+              src={logo}
+              alt="Welljob Solutions logo"
+              className="h-9 w-9 shrink-0 object-contain"
+            />
+            <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg dark:text-white">
+              Welljob Solutions &amp; General Services
+            </h1>
+          </div>
 
-      {/* TOP BAR */}
-      <div className="px-6 py-4 border-b border-gray-200 backdrop-blur-sm bg-white/80 dark:border-slate-800/50 dark:bg-slate-950/80">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-2 dark:text-white">
-            <img src="/Logo.svg" alt="Welljob Logo" className="w-8 h-8" />
-            Welljob Solutions & General Services
-          </h1>
-          <div className="text-xs text-gray-500 dark:text-gray-500">HR Management System</div>
+          <span className="hidden text-xs font-medium text-gray-500 sm:block dark:text-gray-400">
+            HR Management System
+          </span>
         </div>
-      </div>
+      </header>
 
-      {/* LOGIN CARD */}
-      <div className="flex flex-1 items-center justify-center p-4 relative">
-        <div className="w-full max-w-md">
-          {/* Background decoration */}
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-100/50 to-indigo-100/50 rounded-3xl blur-3xl dark:from-blue-600/20 dark:to-indigo-600/20"></div>
-          
-          {/* Main card */}
-          <div className="relative bg-white/90 backdrop-blur-xl border border-gray-200 rounded-2xl shadow-2xl p-8 space-y-6 dark:bg-slate-900/90 dark:border-slate-700/50">
-            
-            {/* Header section */}
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-lg p-2 dark:from-blue-600 dark:to-indigo-700">
-                <img src="/Logo.svg" alt="Welljob Logo" className="w-full h-full object-contain" />
-              </div>
-              <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-                Welcome Back
-              </h2>
-              <p className="text-sm text-gray-600 dark:text-gray-300">
-                Enter your credentials to access the HR System
-              </p>
+      <main className="relative flex flex-1 items-center justify-center overflow-hidden p-4 sm:p-6">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute h-[34rem] w-[34rem] rounded-full bg-gradient-to-r from-blue-200/50 to-indigo-200/50 blur-3xl dark:from-blue-600/20 dark:to-indigo-600/20"
+        />
+
+        <div className="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white/95 p-6 shadow-2xl backdrop-blur-xl sm:p-8 dark:border-slate-700/60 dark:bg-slate-900/95">
+          <div className="space-y-2 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 p-2 shadow-lg dark:from-blue-600 dark:to-indigo-700">
+              <img
+                src={logo}
+                alt=""
+                aria-hidden="true"
+                className="h-full w-full object-contain"
+              />
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-5">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
+              Welcome Back
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Enter your credentials to access the HR system.
+            </p>
+          </div>
 
-              {/* USERNAME */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 flex items-center gap-2 dark:text-gray-200">
-                  <span>Username</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    className="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 dark:border-slate-600/50 dark:bg-slate-800/50 dark:text-white dark:placeholder-gray-400"
-                    placeholder="Enter your username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* PASSWORD */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 flex items-center gap-2 dark:text-gray-200">
-                  <span>Password</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    required
-                    className="w-full px-4 py-3 pr-12 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 dark:border-slate-600/50 dark:bg-slate-800/50 dark:text-white dark:placeholder-gray-400"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 transition-colors duration-200 dark:text-gray-400 dark:hover:text-gray-200"
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* ERROR */}
-              {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 dark:bg-red-500/20 dark:border-red-500/40">
-                  <p className="text-red-600 text-sm text-center dark:text-red-300">{error}</p>
-                </div>
-              )}
-
-              {/* BUTTON */}
-              <button
-                type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-lg font-medium hover:from-blue-700 hover:to-indigo-700 transform hover:scale-[1.02] transition-all duration-200 shadow-lg hover:shadow-xl dark:from-blue-700 dark:to-indigo-700 dark:hover:from-blue-800 dark:hover:to-indigo-800"
+          <form onSubmit={handleLogin} className="mt-6 space-y-5" noValidate>
+            <div className="space-y-2">
+              <label
+                htmlFor="username"
+                className="block text-sm font-semibold text-gray-700 dark:text-gray-200"
               >
-                Sign In
-              </button>
-
-            </form>
-
-            {/* Footer */}
-            <div className="text-center pt-4 border-t border-gray-200 dark:border-slate-700/50">
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Secure login powered by Welljob Solutions
-              </p>
+                Username
+              </label>
+              <input
+                id="username"
+                name="username"
+                type="text"
+                autoComplete="username"
+                required
+                disabled={isSubmitting}
+                value={username}
+                onChange={(event) => {
+                  setUsername(event.target.value);
+                  clearError();
+                }}
+                placeholder="Enter your username"
+                className="h-11 w-full rounded-xl border border-gray-300 bg-white px-4 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+              />
             </div>
 
+            <div className="space-y-2">
+              <label
+                htmlFor="password"
+                className="block text-sm font-semibold text-gray-700 dark:text-gray-200"
+              >
+                Password
+              </label>
+
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  disabled={isSubmitting}
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    clearError();
+                  }}
+                  onKeyUp={(event) =>
+                    setCapsLockOn(event.getModifierState("CapsLock"))
+                  }
+                  onKeyDown={(event) =>
+                    setCapsLockOn(event.getModifierState("CapsLock"))
+                  }
+                  onBlur={() => setCapsLockOn(false)}
+                  placeholder="Enter your password"
+                  className="h-11 w-full rounded-xl border border-gray-300 bg-white px-4 pr-12 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  disabled={isSubmitting}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
+                >
+                  {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+                </button>
+              </div>
+
+              {capsLockOn && (
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                  Caps Lock is on.
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setForgotPasswordOpen(true)}
+                disabled={isSubmitting}
+                className="inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-indigo-600 transition hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:text-indigo-300 dark:hover:text-indigo-200"
+              >
+                <HelpCircle size={16} aria-hidden="true" />
+                Forgot password?
+              </button>
+            </div>
+
+            {error && (
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="rounded-xl border border-red-200 bg-red-50 p-3 text-center text-sm font-medium text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300"
+              >
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSubmitting || !username.trim() || !password}
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 font-semibold text-white shadow-lg transition hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSubmitting && (
+                <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+              )}
+              {isSubmitting ? "Signing in..." : "Sign In"}
+            </button>
+          </form>
+
+          <div className="mt-6 border-t border-gray-200 pt-4 text-center dark:border-slate-700/60">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Secure login powered by Welljob Solutions
+            </p>
           </div>
         </div>
 
-        {/* THEME TOGGLE BUTTON */}
+        <Dialog
+          open={forgotPasswordOpen}
+          onClose={() => setForgotPasswordOpen(false)}
+          title="Forgot Password"
+          description="Password reset assistance for authorized Welljob users."
+          tone="default"
+          size="md"
+          closeOnOverlay
+          closeOnEscape
+          footer={
+            <button
+              type="button"
+              onClick={() => setForgotPasswordOpen(false)}
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30"
+            >
+              Close
+            </button>
+          }
+        >
+          <div className="space-y-4 text-sm leading-6 text-gray-600 dark:text-gray-300">
+            <p>
+              Please contact Technical IT Support or an authorized system
+              administrator to request a password reset.
+            </p>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              For security, your identity and account must be verified before a
+              temporary password is issued. You will be required to change that
+              temporary password after signing in.
+            </div>
+          </div>
+        </Dialog>
+
         <button
+          type="button"
           onClick={toggleTheme}
-          className="fixed bottom-6 right-6 w-12 h-12 bg-white border border-gray-300 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 group dark:bg-slate-700 dark:border-slate-600"
-          aria-label="Toggle theme"
+          aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+          className="fixed bottom-6 right-6 inline-flex h-12 w-12 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-lg transition hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/25 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
         >
           {darkMode ? (
-            <Sun className="w-5 h-5 text-yellow-500 group-hover:text-yellow-400 transition-colors" />
+            <Sun className="h-5 w-5 text-yellow-500" aria-hidden="true" />
           ) : (
-            <Moon className="w-5 h-5 text-blue-600 group-hover:text-blue-500 transition-colors" />
+            <Moon className="h-5 w-5 text-blue-600" aria-hidden="true" />
           )}
         </button>
-      </div>
+      </main>
     </div>
   );
 }

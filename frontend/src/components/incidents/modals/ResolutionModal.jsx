@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FiUpload } from "react-icons/fi";
 import {
   BaseModal,
@@ -8,6 +8,10 @@ import {
   ModalFooter,
   ProofList,
 } from "../shared/ModalUI";
+import {
+  createEvidenceItem,
+  revokeEvidenceUrl,
+} from "../../../utils/incidents/evidenceFiles";
 
 export default function ResolutionModal({
   incident,
@@ -18,41 +22,40 @@ export default function ResolutionModal({
   const [actionTaken, setActionTaken] = useState("");
   const [remarks, setRemarks] = useState("");
   const [proofFiles, setProofFiles] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const proofFilesRef = useRef(proofFiles);
+
+  useEffect(() => {
+    proofFilesRef.current = proofFiles;
+  }, [proofFiles]);
+
+  useEffect(() => () => {
+    proofFilesRef.current.forEach(revokeEvidenceUrl);
+  }, []);
 
   const handleFileChange = (event) => {
     const files = Array.from(event.target.files || []);
 
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "application/pdf",
-    ];
-    const maxSize = 5 * 1024 * 1024;
+    setProofFiles((current) => {
+      const existingIds = new Set(current.map((item) => item.id));
+      const additions = files
+        .map(createEvidenceItem)
+        .filter((item) => {
+          if (!existingIds.has(item.id)) return true;
+          revokeEvidenceUrl(item);
+          return false;
+        });
+      return [...current, ...additions];
+    });
+    event.target.value = "";
+  };
 
-    const invalidFile = files.find(
-      (file) => !allowedTypes.includes(file.type) || file.size > maxSize
-    );
-
-    if (invalidFile) {
-      showNotice(
-        "error",
-        "Invalid Proof File",
-        "Only JPG, PNG, WEBP, or PDF files up to 5MB are allowed."
-      );
-      event.target.value = "";
-      return;
-    }
-
-    setProofFiles(
-      files.map((file) => ({
-        id: `${Date.now()}-${file.name}`,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        uploadedAt: new Date().toISOString(),
-      }))
-    );
+  const handleRemoveFile = (id) => {
+    setProofFiles((current) => {
+      const target = current.find((item) => item.id === id);
+      revokeEvidenceUrl(target);
+      return current.filter((item) => item.id !== id);
+    });
   };
 
   const validateResolution = () => {
@@ -70,7 +73,7 @@ export default function ResolutionModal({
           "Please enter resolution remarks to explain how the case was handled.",
       },
       {
-        valid: proofFiles.length > 0,
+        valid: proofFiles.some((item) => item.file && !item.error),
         title: "Proof Upload Required",
         message:
           "Please upload at least one proof file before submitting for review.",
@@ -87,15 +90,27 @@ export default function ResolutionModal({
     return true;
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!validateResolution()) return;
-
-    onSubmit(incident, {
-      actionTaken: actionTaken.trim(),
-      remarks: remarks.trim(),
-      proofFiles,
-    });
+    setIsSubmitting(true);
+    setProofFiles((current) => current.map((item) =>
+      item.error ? item : { ...item, status: "Uploading" }
+    ));
+    try {
+      const success = await onSubmit(incident, {
+        actionTaken: actionTaken.trim(),
+        remarks: remarks.trim(),
+        proofFiles,
+      });
+      if (!success) {
+        setProofFiles((current) => current.map((item) =>
+          item.error ? item : { ...item, status: "Failed", error: "Upload was not accepted by the server." }
+        ));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -157,16 +172,18 @@ export default function ResolutionModal({
             />
           </label>
 
-          {proofFiles.length > 0 && <ProofList files={proofFiles} />}
+          {proofFiles.length > 0 && (
+            <ProofList files={proofFiles} onRemove={handleRemoveFile} />
+          )}
         </Field>
 
         <ModalFooter>
-          <button type="button" onClick={onClose} className="btn-light">
+          <button type="button" onClick={onClose} disabled={isSubmitting} className="btn-light">
             Cancel
           </button>
 
-          <button type="submit" className="btn-green">
-            Submit for Review
+          <button type="submit" disabled={isSubmitting} className="btn-green disabled:cursor-not-allowed disabled:opacity-60">
+            {isSubmitting ? "Uploading Evidence..." : "Submit for Review"}
           </button>
         </ModalFooter>
       </form>
