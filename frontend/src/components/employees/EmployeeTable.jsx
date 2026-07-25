@@ -1,147 +1,44 @@
+import {
+  FiArchive,
+  FiEdit2,
+  FiEye,
+  FiUsers,
+} from "react-icons/fi";
+
 import StatusBadge from "./StatusBadge";
 import ComplianceBadge from "./ComplianceBadge";
-import { FiArchive, FiEdit2, FiEye, FiUsers } from "react-icons/fi";
 
-const REQUIRED_DOCUMENTS = [
-  "Resume",
-  "NSO/PSA",
-  "SSS (ID or E1 form)",
-  "Pag-IBIG (ID or MDRF Form)",
-  "PhilHealth (ID or MDF Form)",
-  "Diploma",
-  "Cedula",
-  "Barangay Clearance",
-  "NBI/Police Clearance",
-];
+import IconButton from "../ui/IconButton";
+import EmptyState from "../ui/EmptyState";
 
-const EXPIRABLE_DOCUMENTS = ["Barangay Clearance", "NBI/Police Clearance"];
+import {
+  getComplianceStatus as getDefaultComplianceStatus,
+  getEmployeeCompany,
+  getEmployeeDisplayName,
+} from "../../utils/employees/employeeHelpers";
 
-const VALID_COMPLIANCE_STATUSES = [
-  "Valid",
-  "Expiring Soon",
-  "Expired",
-  "Incomplete",
-  "No Data",
-  "No Compliance",
-  "Complete",
-];
+function normalizeComplianceStatus(status) {
+  const normalizedStatus = String(status || "").trim();
 
-function normalizeDate(value) {
-  if (!value) return "";
+  if (normalizedStatus === "Complete") {
+    return "Valid";
+  }
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  return date;
-}
-
-function hasDocumentFile(doc) {
-  return Boolean(
-    doc?.file ||
-      doc?.filePath ||
-      doc?.file_path ||
-      doc?.url ||
-      doc?.fileUrl ||
-      doc?.file_url
-  );
-}
-
-function getDocumentExpiration(doc) {
-  return (
-    doc?.expirationDate ||
-    doc?.expiration_date ||
-    doc?.expiryDate ||
-    doc?.expiry_date ||
-    doc?.expiresAt ||
-    doc?.expires_at ||
-    ""
-  );
-}
-
-function getSafeComplianceStatus(documents = []) {
-  if (!Array.isArray(documents) || documents.length === 0) {
+  if (normalizedStatus === "No Compliance") {
     return "No Data";
   }
 
-  let hasMissing = false;
-  let hasExpired = false;
-  let hasExpiringSoon = false;
-
-  REQUIRED_DOCUMENTS.forEach((requiredName) => {
-    const doc = documents.find((item) =>
-      typeof item === "string"
-        ? item === requiredName
-        : item?.name === requiredName
-    );
-
-    if (!doc) {
-      hasMissing = true;
-      return;
-    }
-
-    if (typeof doc === "string") {
-      if (EXPIRABLE_DOCUMENTS.includes(requiredName)) {
-        hasMissing = true;
-      }
-      return;
-    }
-
-    if (!hasDocumentFile(doc)) {
-      hasMissing = true;
-      return;
-    }
-
-    if (!EXPIRABLE_DOCUMENTS.includes(requiredName)) {
-      return;
-    }
-
-    const expirationValue = getDocumentExpiration(doc);
-
-    if (!expirationValue) {
-      hasMissing = true;
-      return;
-    }
-
-    const expirationDate = normalizeDate(expirationValue);
-
-    if (!expirationDate) {
-      hasMissing = true;
-      return;
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    expirationDate.setHours(0, 0, 0, 0);
-
-    const daysBeforeExpiration = Math.ceil(
-      (expirationDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    if (daysBeforeExpiration < 0) {
-      hasExpired = true;
-      return;
-    }
-
-    if (daysBeforeExpiration <= 30) {
-      hasExpiringSoon = true;
-    }
-  });
-
-  if (hasExpired) return "Expired";
-  if (hasExpiringSoon) return "Expiring Soon";
-  if (hasMissing) return "Incomplete";
-
-  return "Valid";
+  return normalizedStatus || "No Data";
 }
 
-function normalizeComplianceStatus(status, documents) {
-  if (VALID_COMPLIANCE_STATUSES.includes(status)) {
-    if (status === "Complete") return "Valid";
-    if (status === "No Compliance") return "No Data";
-    return status;
-  }
-
-  return getSafeComplianceStatus(documents);
+function getEmployeeKey(employee, index) {
+  return (
+    employee?.uid ||
+    employee?.employeeId ||
+    employee?.employee_id ||
+    employee?.id ||
+    `employee-${index}`
+  );
 }
 
 export default function EmployeeTable({
@@ -153,150 +50,218 @@ export default function EmployeeTable({
   isSuperAdmin = false,
   isHRManager = false,
 }) {
+  const safeEmployees = Array.isArray(employees) ? employees : [];
+
+  const resolveComplianceStatus = (documents) => {
+    const resolver =
+      typeof getComplianceStatus === "function"
+        ? getComplianceStatus
+        : getDefaultComplianceStatus;
+
+    return normalizeComplianceStatus(
+      resolver(documents)
+    );
+  };
+
+  const canEdit =
+    !isSuperAdmin && typeof onEdit === "function";
+
+  const canArchive =
+    isHRManager &&
+    !isSuperAdmin &&
+    typeof onArchive === "function";
+
   return (
-    <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
-      <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-white/10">
-        <div>
-          <h3 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
-            <FiUsers className="text-indigo-600 dark:text-indigo-400" />
-            Employee Records
-          </h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            View, update, and manage registered employees.
+    <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <div className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-white/10">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
+            <FiUsers
+              aria-hidden="true"
+              className="shrink-0 text-indigo-600 dark:text-indigo-400"
+            />
+
+            <span>Employee Records</span>
+          </h2>
+
+          <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
+            View registered employees, employment status, company assignment,
+            and compliance condition.
           </p>
         </div>
 
-        <span className="rounded-full bg-indigo-50 px-4 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-          {employees.length} record{employees.length === 1 ? "" : "s"}
+        <span className="w-fit rounded-full bg-indigo-50 px-4 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+          {safeEmployees.length}{" "}
+          {safeEmployees.length === 1 ? "record" : "records"}
         </span>
       </div>
 
-      <div className="max-h-[600px] overflow-x-auto overflow-y-auto">
-        <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left">
-          <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-800">
-            <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
-                Employee ID
-              </th>
-              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
-                Full Name
-              </th>
-              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
-                Company
-              </th>
-              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
-                Status
-              </th>
-              <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
-                Compliance
-              </th>
-              <th className="border-b border-gray-200 px-6 py-4 text-center dark:border-white/10">
-                Actions
-              </th>
-            </tr>
-          </thead>
+      {safeEmployees.length === 0 ? (
+        <div className="p-5 sm:p-6">
+          <EmptyState
+            icon="employees"
+            title="No employees found"
+            description="No employee records matched the current search or filter settings."
+          />
+        </div>
+      ) : (
+        <div className="max-h-[650px] overflow-auto">
+          <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left">
+            <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
+              <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
+                  Employee ID
+                </th>
 
-          <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-            {employees.length > 0 ? (
-              employees.map((emp) => {
-                const rawCompliance =
-                  typeof getComplianceStatus === "function"
-                    ? getComplianceStatus(emp.documents)
-                    : getSafeComplianceStatus(emp.documents);
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
+                  Full Name
+                </th>
 
-                const safeCompliance = normalizeComplianceStatus(
-                  rawCompliance,
-                  emp.documents
-                );
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
+                  Company
+                </th>
+
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
+                  Status
+                </th>
+
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
+                  Compliance
+                </th>
+
+                <th
+                  scope="col"
+                  className="px-6 py-4 text-right"
+                >
+                  Actions
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+              {safeEmployees.map((employee, index) => {
+                const employeeName =
+                  getEmployeeDisplayName(employee);
+
+                const employeeCompany =
+                  getEmployeeCompany(employee);
+
+                const complianceStatus =
+                  resolveComplianceStatus(
+                    employee?.documents
+                  );
 
                 return (
                   <tr
-                    key={emp.uid || emp.id}
-                    className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5"
+                    key={getEmployeeKey(employee, index)}
+                    className="transition-colors hover:bg-indigo-50/50 dark:hover:bg-white/5"
                   >
-                    <td className="whitespace-nowrap px-6 py-4">
-                      <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                        {emp.id || "-"}
+                    <td className="whitespace-nowrap px-6 py-4 align-middle">
+                      <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                        {employee?.id || "-"}
                       </span>
                     </td>
 
-                    <td className="whitespace-nowrap px-6 py-4">
-                      <p className="font-semibold text-gray-900 dark:text-white">
-                        {emp.name || "-"}
+                    <td className="whitespace-nowrap px-6 py-4 align-middle">
+                      <div className="min-w-0">
+                        <p className="max-w-[260px] truncate font-semibold text-gray-900 dark:text-white">
+                          {employeeName}
+                        </p>
+
+                        {employee?.position && (
+                          <p className="mt-1 max-w-[260px] truncate text-xs text-gray-500 dark:text-gray-400">
+                            {employee.position}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-4 align-middle">
+                      <p className="max-w-[240px] truncate text-sm font-semibold text-gray-700 dark:text-gray-300">
+                        {employeeCompany}
                       </p>
                     </td>
 
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      {emp.company || "-"}
+                    <td className="px-6 py-4 align-middle">
+                      <StatusBadge
+                        status={
+                          employee?.status ||
+                          "Floating / Standby"
+                        }
+                      />
                     </td>
 
-                    <td className="px-6 py-4">
-                      <StatusBadge status={emp.status} />
+                    <td className="px-6 py-4 align-middle">
+                      <ComplianceBadge
+                        status={complianceStatus}
+                      />
                     </td>
 
-                    <td className="px-6 py-4">
-                      <ComplianceBadge status={safeCompliance} />
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openModal(emp)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-600 hover:text-white dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500"
+                    <td className="px-6 py-4 align-middle">
+                      <div className="flex items-center justify-end gap-2">
+                        <IconButton
+                          label={`View ${employeeName}`}
                           title="View Employee"
+                          variant="primary"
+                          size="md"
+                          onClick={() =>
+                            openModal?.(employee)
+                          }
                         >
                           <FiEye />
-                        </button>
+                        </IconButton>
 
-                        {!isSuperAdmin && (
-                          <button
-                            type="button"
-                            onClick={() => onEdit(emp)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 transition hover:bg-blue-600 hover:text-white dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500"
+                        {canEdit && (
+                          <IconButton
+                            label={`Edit ${employeeName}`}
                             title="Edit Employee"
+                            variant="secondary"
+                            size="md"
+                            onClick={() =>
+                              onEdit(employee)
+                            }
                           >
                             <FiEdit2 />
-                          </button>
+                          </IconButton>
                         )}
 
-                        {isHRManager && onArchive && (
-                          <button
-                            type="button"
-                            onClick={() => onArchive(emp)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-amber-100 bg-amber-50 text-amber-700 transition hover:bg-amber-500 hover:text-white dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500 dark:hover:text-white"
+                        {canArchive && (
+                          <IconButton
+                            label={`Archive ${employeeName}`}
                             title="Archive Employee"
+                            variant="warning"
+                            size="md"
+                            onClick={() =>
+                              onArchive(employee)
+                            }
                           >
                             <FiArchive />
-                          </button>
+                          </IconButton>
                         )}
                       </div>
                     </td>
                   </tr>
                 );
-              })
-            ) : (
-              <tr>
-                <td colSpan="6" className="px-6 py-14 text-center">
-                  <div className="mx-auto flex max-w-sm flex-col items-center">
-                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-white/10">
-                      <FiUsers size={24} />
-                    </div>
-
-                    <p className="font-extrabold text-gray-900 dark:text-white">
-                      No employees found
-                    </p>
-
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      Employee records will appear here once added.
-                    </p>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }

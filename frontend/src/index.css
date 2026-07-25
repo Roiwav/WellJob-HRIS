@@ -2,25 +2,298 @@
 @tailwind components;
 @tailwind utilities;
 
-/* AUDIT LOG FILTER INPUT */
-.filter-input {
-  width: 100%;
-  border-radius: 0.5rem;
-  border: 1px solid rgb(209 213 219);
-  background: white;
-  color: rgb(17 24 39);
-  padding: 0.5rem 1rem 0.5rem 2.5rem;
-  font-size: 0.875rem;
-  outline: none;
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-height: 100%;
+    background-color: rgb(248 250 252);
+    color-scheme: light;
+  }
+
+  html.dark {
+    background-color: rgb(2 6 23);
+    color-scheme: dark;
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+    background-color: rgb(248 250 252);
+    color: rgb(15 23 42);
+    font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .dark body {
+    background-color: rgb(2 6 23);
+    color: rgb(241 245 249);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+  }
+
+  ::selection {
+    background-color: rgb(99 102 241 / 0.22);
+    color: inherit;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color:
+      rgb(148 163 184 / 0.65)
+      transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-color: rgb(148 163 184 / 0.65);
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(100 116 139 / 0.8);
+  }
+
+  .dark * {
+    scrollbar-color:
+      rgb(71 85 105 / 0.85)
+      transparent;
+  }
+
+  .dark *::-webkit-scrollbar-thumb {
+    background-color: rgb(71 85 105 / 0.85);
+  }
+
+  .dark *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(100 116 139 / 0.9);
+  }
 }
 
-.filter-input:focus {
-  box-shadow: 0 0 0 2px rgb(99 102 241);
+@layer components {
+  /*
+   * PAGE LAYOUT
+   */
+
+  .ui-page {
+    @apply min-w-0 space-y-6 p-4 sm:p-6 lg:p-8;
+  }
+
+  .ui-section {
+    @apply space-y-4;
+  }
+
+  .ui-section-gap {
+    @apply space-y-6;
+  }
+
+  /*
+   * SURFACES
+   */
+
+  .ui-card {
+    @apply rounded-card border border-slate-200 bg-white p-card shadow-card;
+    @apply dark:border-white/10 dark:bg-slate-900;
+  }
+
+  .ui-panel {
+    @apply rounded-panel border border-slate-200 bg-white shadow-panel;
+    @apply dark:border-white/10 dark:bg-slate-900;
+  }
+
+  .ui-modal {
+    @apply rounded-modal border border-white/10 bg-white shadow-modal;
+    @apply dark:bg-slate-900;
+  }
+
+  .ui-divider {
+    @apply border-slate-200 dark:border-white/10;
+  }
+
+  /*
+   * TYPOGRAPHY
+   */
+
+  .ui-page-title {
+    @apply text-2xl font-extrabold tracking-tight text-slate-900;
+    @apply dark:text-white;
+  }
+
+  .ui-section-title {
+    @apply text-lg font-extrabold text-slate-900;
+    @apply dark:text-white;
+  }
+
+  .ui-description {
+    @apply text-sm leading-6 text-slate-500;
+    @apply dark:text-slate-400;
+  }
+
+  .ui-label {
+    @apply mb-1.5 block text-sm font-bold text-slate-700;
+    @apply dark:text-slate-300;
+  }
+
+  .ui-helper-text {
+    @apply mt-1.5 text-xs leading-5 text-slate-500;
+    @apply dark:text-slate-400;
+  }
+
+  .ui-error-text {
+    @apply mt-1.5 text-xs font-semibold text-red-600;
+    @apply dark:text-red-400;
+  }
+
+  /*
+   * FORM CONTROLS
+   */
+
+  .ui-control {
+    @apply min-h-11 w-full rounded-control border border-slate-300 bg-white px-4 py-2.5;
+    @apply text-sm font-semibold text-slate-900 shadow-control outline-none;
+    @apply transition duration-ui;
+    @apply placeholder:text-slate-400;
+    @apply hover:border-slate-400;
+    @apply focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20;
+    @apply disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:opacity-70;
+    @apply dark:border-slate-700 dark:bg-slate-800 dark:text-white;
+    @apply dark:placeholder:text-slate-500;
+    @apply dark:hover:border-slate-600;
+    @apply dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20;
+    @apply dark:disabled:bg-slate-800 dark:disabled:text-slate-500;
+  }
+
+  .ui-control-error {
+    @apply border-red-500;
+    @apply focus:border-red-500 focus:ring-red-500/20;
+    @apply dark:border-red-500 dark:focus:border-red-500 dark:focus:ring-red-500/20;
+  }
+
+  .ui-control-success {
+    @apply border-emerald-500;
+    @apply focus:border-emerald-500 focus:ring-emerald-500/20;
+    @apply dark:border-emerald-500;
+  }
+
+  .ui-select {
+    @apply ui-control appearance-none pr-10;
+  }
+
+  .ui-textarea {
+    @apply ui-control min-h-28 resize-y;
+  }
+
+  /*
+   * BUTTON FOUNDATION
+   */
+
+  .ui-button {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-control px-4 py-2;
+    @apply text-sm font-bold shadow-control outline-none;
+    @apply transition duration-ui;
+    @apply focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-2;
+    @apply disabled:cursor-not-allowed disabled:opacity-60;
+    @apply dark:focus-visible:ring-offset-slate-900;
+  }
+
+  .ui-icon-button {
+    @apply inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-control;
+    @apply outline-none transition duration-ui;
+    @apply focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-2;
+    @apply disabled:cursor-not-allowed disabled:opacity-60;
+    @apply dark:focus-visible:ring-offset-slate-900;
+  }
+
+  /*
+   * FEEDBACK STATES
+   */
+
+  .ui-success-surface {
+    @apply rounded-card border border-emerald-200 bg-emerald-50 p-4 text-emerald-700;
+    @apply dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300;
+  }
+
+  .ui-warning-surface {
+    @apply rounded-card border border-amber-200 bg-amber-50 p-4 text-amber-700;
+    @apply dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300;
+  }
+
+  .ui-error-surface {
+    @apply rounded-card border border-red-200 bg-red-50 p-4 text-red-700;
+    @apply dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300;
+  }
+
+  .ui-info-surface {
+    @apply rounded-card border border-blue-200 bg-blue-50 p-4 text-blue-700;
+    @apply dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300;
+  }
+
+  /*
+   * AUDIT LOG FILTER INPUT
+   */
+
+  .filter-input {
+    @apply ui-control pl-10;
+  }
 }
 
-/* 🌙 DARK MODE */
-.dark .filter-input {
-  border-color: rgb(75 85 99);
-  background: rgb(15 23 42);
-  color: white;
+@layer utilities {
+  .ui-focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-2;
+    @apply dark:focus-visible:ring-offset-slate-900;
+  }
+
+  .ui-transition {
+    @apply transition duration-ui;
+  }
+
+  .ui-truncate {
+    @apply min-w-0 truncate;
+  }
+
+  .ui-scroll-area {
+    scrollbar-gutter: stable;
+  }
 }

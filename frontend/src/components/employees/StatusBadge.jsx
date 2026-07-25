@@ -1,9 +1,21 @@
-export default function StatusBadge({ status }) {
+import SharedStatusBadge from "../ui/StatusBadge";
 
+export default function StatusBadge({
+  status,
+  label,
+  tone,
+  icon = true,
+  size = "md",
+  className = "",
+}) {
   return (
-    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white">
-      {status}
-    </span>
+    <SharedStatusBadge
+      status={status}
+      label={label}
+      tone={tone}
+      icon={icon}
+      size={size}
+      className={className}
+    />
   );
-
 }

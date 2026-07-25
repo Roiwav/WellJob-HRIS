@@ -1,34 +1,62 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FiArrowLeft,
   FiEye,
-  FiInbox,
   FiRefreshCw,
   FiRotateCcw,
   FiTrash2,
 } from "react-icons/fi";
-import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import ComplianceBadge from "../components/employees/ComplianceBadge";
+
 import EmployeeModal from "../components/employees/EmployeeModal";
+import ComplianceBadge from "../components/employees/ComplianceBadge";
+
+import Button from "../components/ui/Button";
+import IconButton from "../components/ui/IconButton";
+import PageHeader from "../components/ui/PageHeader";
+import SearchInput from "../components/ui/SearchInput";
+import FilterBar from "../components/ui/FilterBar";
+import LoadingSkeleton from "../components/ui/LoadingSkeleton";
+import EmptyState from "../components/ui/EmptyState";
+import ErrorState from "../components/ui/ErrorState";
+import SuccessToast from "../components/ui/SuccessToast";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import StatusBadge from "../components/ui/StatusBadge";
+
+import {
+  getComplianceStatus,
+  getEmployeeCompany,
+  getEmployeeDisplayName,
+  matchesEmployeeSearch,
+} from "../utils/employees/employeeHelpers";
 
 const EMPLOYEE_API_URL = "http://localhost:5000/api/employees";
+const DATA_EVENT_SOURCE = "archived-employees-page";
 
-const REQUIRED_DOCUMENTS = [
-  "Resume",
-  "NSO/PSA",
-  "SSS (ID or E1 form)",
-  "Pag-IBIG (ID or MDRF Form)",
-  "PhilHealth (ID or MDF Form)",
-  "Diploma",
-  "Cedula",
-  "Barangay Clearance",
-  "NBI/Police Clearance",
-];
-
-const EXPIRABLE_DOCUMENTS = ["Barangay Clearance", "NBI/Police Clearance"];
+function emitDataUpdated(action) {
+  window.dispatchEvent(
+    new CustomEvent("dataUpdated", {
+      detail: {
+        source: DATA_EVENT_SOURCE,
+        domain: "employees",
+        action,
+        at: Date.now(),
+      },
+    })
+  );
+}
 
 function getApiError(error, fallback = "Something went wrong.") {
+  if (error?.response?.status === 503) {
+    return "System is currently under maintenance. Please try again later.";
+  }
+
   return (
     error?.response?.data?.error ||
     error?.response?.data?.message ||
@@ -38,430 +66,631 @@ function getApiError(error, fallback = "Something went wrong.") {
 }
 
 function parseDocuments(documents) {
-  if (typeof documents === "string") {
-    try {
-      const parsed = JSON.parse(documents);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+  if (Array.isArray(documents)) {
+    return documents;
   }
 
-  return Array.isArray(documents) ? documents : [];
+  if (typeof documents !== "string") {
+    return [];
+  }
+
+  try {
+    const parsedDocuments = JSON.parse(documents);
+
+    return Array.isArray(parsedDocuments)
+      ? parsedDocuments
+      : [];
+  } catch {
+    return [];
+  }
 }
 
-function getDocumentStatus(expirationDate) {
-  if (!expirationDate) return "No Data";
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const exp = new Date(expirationDate);
-  exp.setHours(0, 0, 0, 0);
-
-  if (Number.isNaN(exp.getTime())) return "No Data";
-
-  const diffDays = Math.ceil(
-    (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  if (diffDays < 0) return "Expired";
-  if (diffDays <= 30) return "Expiring Soon";
-  return "Valid";
-}
-
-function getCompliance(rawDocuments = []) {
-  const documents = parseDocuments(rawDocuments);
-
-  if (!documents.length) return "No Data";
-
-  const hasExpired = documents.some((doc) => {
-    if (!doc || typeof doc === "string") return false;
-    if (!EXPIRABLE_DOCUMENTS.includes(doc.name)) return false;
-    return getDocumentStatus(doc.expirationDate || doc.expiration_date) === "Expired";
-  });
-
-  if (hasExpired) return "Expired";
-
-  const hasExpiringSoon = documents.some((doc) => {
-    if (!doc || typeof doc === "string") return false;
-    if (!EXPIRABLE_DOCUMENTS.includes(doc.name)) return false;
-    return getDocumentStatus(doc.expirationDate || doc.expiration_date) === "Expiring Soon";
-  });
-
-  if (hasExpiringSoon) return "Expiring Soon";
-
-  const completedCount = REQUIRED_DOCUMENTS.filter((requiredName) => {
-    const doc = documents.find((item) =>
-      typeof item === "string" ? item === requiredName : item?.name === requiredName
-    );
-
-    if (!doc) return false;
-
-    if (typeof doc === "string") {
-      return !EXPIRABLE_DOCUMENTS.includes(requiredName);
-    }
-
-    if (!doc.filePath && !doc.file_path && !doc.file) return false;
-
-    if (
-      EXPIRABLE_DOCUMENTS.includes(requiredName) &&
-      !(doc.expirationDate || doc.expiration_date)
-    ) {
-      return false;
-    }
-
-    return true;
-  }).length;
-
-  if (completedCount === REQUIRED_DOCUMENTS.length) return "Complete";
-  return "Incomplete";
-}
-
-function SuccessModal({ message, onClose }) {
-  if (!message) return null;
-
+function isArchivedEmployee(employee) {
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-white p-6 shadow-2xl dark:bg-slate-900">
-        <h3 className="mb-2 text-lg font-extrabold text-green-600">Success</h3>
-        <p className="mb-5 text-sm text-gray-700 dark:text-gray-300">
-          {message}
-        </p>
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700"
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
+    employee?.archived === true ||
+    Number(employee?.archived) === 1 ||
+    String(employee?.status || "")
+      .trim()
+      .toLowerCase() === "inactive"
   );
 }
 
-function ConfirmModal({
-  title,
-  message,
-  confirmLabel,
-  tone = "green",
-  isProcessing = false,
-  onConfirm,
-  onCancel,
-}) {
-  const toneClass =
-    tone === "red"
-      ? "bg-red-600 hover:bg-red-700 text-white"
-      : "bg-green-600 hover:bg-green-700 text-white";
-
-  const titleClass =
-    tone === "red"
-      ? "text-red-700 dark:text-red-300"
-      : "text-green-700 dark:text-green-300";
-
+function getEmployeeKey(employee, index) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white p-6 shadow-2xl dark:bg-slate-900">
-        <h2 className={`mb-4 text-lg font-extrabold ${titleClass}`}>
-          {title}
-        </h2>
-        <p className="mb-6 text-sm leading-6 text-gray-700 dark:text-gray-300">
-          {message}
-        </p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isProcessing}
-            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
-          >
-            {isProcessing ? "Processing..." : confirmLabel}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={isProcessing}
-            className="flex-1 rounded-xl bg-gray-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+    employee?.uid ||
+    employee?.employeeId ||
+    employee?.employee_id ||
+    employee?.id ||
+    `archived-employee-${index}`
   );
 }
 
 export default function ArchivedEmployees() {
   const navigate = useNavigate();
 
-  const [archivedEmployees, setArchivedEmployees] = useState([]);
+  const [archivedEmployees, setArchivedEmployees] =
+    useState([]);
+
+  const [search, setSearch] = useState("");
+
   const [viewEmployee, setViewEmployee] = useState(null);
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
   const [isLoading, setIsLoading] = useState(true);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [processingAction, setProcessingAction] =
+    useState("");
 
-  const fetchArchivedEmployees = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setErrorMessage("");
+  const isProcessing = Boolean(processingAction);
 
-      const response = await axios.get(EMPLOYEE_API_URL);
-      const employees = Array.isArray(response.data) ? response.data : [];
+  const fetchArchivedEmployees = useCallback(
+    async ({
+      showInitialLoading = false,
+      showRefreshing = false,
+    } = {}) => {
+      if (showInitialLoading) {
+        setIsLoading(true);
+      }
 
-      const archived = employees.filter(
-        (emp) => emp.archived === true || Number(emp.archived) === 1
-      );
+      if (showRefreshing) {
+        setIsRefreshing(true);
+      }
 
-      setArchivedEmployees(archived);
-    } catch (error) {
-      console.error("Error fetching archived employees:", error);
-      setArchivedEmployees([]);
-      setErrorMessage(getApiError(error, "Unable to fetch archived employees."));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+      try {
+        setErrorMessage("");
+
+        const response = await axios.get(EMPLOYEE_API_URL);
+        const employees = Array.isArray(response.data)
+          ? response.data
+          : [];
+
+        const archivedRecords = employees
+          .filter(isArchivedEmployee)
+          .map((employee) => ({
+            ...employee,
+            documents: parseDocuments(employee?.documents),
+          }));
+
+        setArchivedEmployees(archivedRecords);
+
+        return true;
+      } catch (error) {
+        console.error(
+          "Error fetching archived employees:",
+          error
+        );
+
+        setErrorMessage(
+          getApiError(
+            error,
+            "Unable to fetch archived employees."
+          )
+        );
+
+        return false;
+      } finally {
+        if (showInitialLoading) {
+          setIsLoading(false);
+        }
+
+        if (showRefreshing) {
+          setIsRefreshing(false);
+        }
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    fetchArchivedEmployees();
+    void fetchArchivedEmployees({
+      showInitialLoading: true,
+    });
   }, [fetchArchivedEmployees]);
 
-  const handleRestore = async (id) => {
-    if (isProcessing) return;
+  useEffect(() => {
+    const handleDataUpdated = (event) => {
+      if (event?.detail?.source === DATA_EVENT_SOURCE) {
+        return;
+      }
+
+      void fetchArchivedEmployees();
+    };
+
+    window.addEventListener(
+      "dataUpdated",
+      handleDataUpdated
+    );
+
+    return () => {
+      window.removeEventListener(
+        "dataUpdated",
+        handleDataUpdated
+      );
+    };
+  }, [fetchArchivedEmployees]);
+
+  const filteredArchivedEmployees = useMemo(() => {
+    return archivedEmployees.filter((employee) =>
+      matchesEmployeeSearch(employee, search)
+    );
+  }, [archivedEmployees, search]);
+
+  const handleRefresh = useCallback(async () => {
+    await fetchArchivedEmployees({
+      showRefreshing: true,
+    });
+  }, [fetchArchivedEmployees]);
+
+  const handleRestore = useCallback(async () => {
+    if (!restoreTarget?.id || isProcessing) {
+      return;
+    }
+
+    const employeeId = restoreTarget.id;
+    const employeeName =
+      getEmployeeDisplayName(restoreTarget);
 
     try {
-      setIsProcessing(true);
+      setProcessingAction("restore");
       setErrorMessage("");
 
-      await axios.put(`${EMPLOYEE_API_URL}/restore/${id}`);
-      setArchivedEmployees((prev) => prev.filter((emp) => String(emp.id) !== String(id)));
+      await axios.put(
+        `${EMPLOYEE_API_URL}/restore/${employeeId}`
+      );
+
+      setArchivedEmployees((currentEmployees) =>
+        currentEmployees.filter(
+          (employee) =>
+            String(employee?.id) !== String(employeeId)
+        )
+      );
+
       setRestoreTarget(null);
-      setSuccessMessage("Employee restored successfully.");
+
+      setSuccessMessage(
+        `${employeeName} was restored successfully.`
+      );
+
+      emitDataUpdated("RESTORE_EMPLOYEE");
     } catch (error) {
       console.error("Error restoring employee:", error);
-      setErrorMessage(getApiError(error, "Failed to restore employee."));
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
-  const handleDelete = async (id) => {
-    if (isProcessing) return;
+      setErrorMessage(
+        getApiError(
+          error,
+          "Failed to restore the employee."
+        )
+      );
+    } finally {
+      setProcessingAction("");
+    }
+  }, [isProcessing, restoreTarget]);
+
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget?.id || isProcessing) {
+      return;
+    }
+
+    const employeeId = deleteTarget.id;
+    const employeeName =
+      getEmployeeDisplayName(deleteTarget);
 
     try {
-      setIsProcessing(true);
+      setProcessingAction("delete");
       setErrorMessage("");
 
-      await axios.delete(`${EMPLOYEE_API_URL}/${id}`);
-      setArchivedEmployees((prev) => prev.filter((emp) => String(emp.id) !== String(id)));
+      await axios.delete(
+        `${EMPLOYEE_API_URL}/${employeeId}`
+      );
+
+      setArchivedEmployees((currentEmployees) =>
+        currentEmployees.filter(
+          (employee) =>
+            String(employee?.id) !== String(employeeId)
+        )
+      );
+
       setDeleteTarget(null);
-      setSuccessMessage("Employee permanently deleted.");
+
+      setSuccessMessage(
+        `${employeeName} was permanently deleted.`
+      );
+
+      emitDataUpdated("DELETE_EMPLOYEE");
     } catch (error) {
       console.error("Error deleting employee:", error);
-      setErrorMessage(getApiError(error, "Failed to delete employee."));
+
+      setErrorMessage(
+        getApiError(
+          error,
+          "Failed to permanently delete the employee."
+        )
+      );
     } finally {
-      setIsProcessing(false);
+      setProcessingAction("");
     }
-  };
+  }, [deleteTarget, isProcessing]);
+
+  const handleCloseRestoreDialog = useCallback(() => {
+    if (isProcessing) {
+      return;
+    }
+
+    setRestoreTarget(null);
+  }, [isProcessing]);
+
+  const handleCloseDeleteDialog = useCallback(() => {
+    if (isProcessing) {
+      return;
+    }
+
+    setDeleteTarget(null);
+  }, [isProcessing]);
 
   return (
-    <div className="space-y-6 p-8">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/employees")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
-            title="Back to Employees"
-          >
-            <FiArrowLeft />
-          </button>
-          <div>
-            <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">
-              Archived Employees
-            </h1>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              View, restore, or permanently delete inactive employee records.
-            </p>
-          </div>
-        </div>
+    <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
+      <PageHeader
+        eyebrow="Employee Records"
+        title="Archived Employees"
+        description="View, restore, or permanently delete inactive employee records."
+        icon={<FiTrash2 size={22} />}
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              leftIcon={<FiArrowLeft />}
+              onClick={() => navigate("/employees")}
+            >
+              Back to Employees
+            </Button>
 
-        <button
-          type="button"
-          onClick={fetchArchivedEmployees}
-          disabled={isLoading}
-          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
-        >
-          <FiRefreshCw className={isLoading ? "animate-spin" : ""} />
-          {isLoading ? "Refreshing..." : "Refresh"}
-        </button>
-      </div>
+            <Button
+              variant="secondary"
+              leftIcon={<FiRefreshCw />}
+              loading={isRefreshing}
+              disabled={isLoading || isProcessing}
+              onClick={handleRefresh}
+            >
+              Refresh
+            </Button>
+          </>
+        }
+      />
+
+      <FilterBar
+        resultCount={filteredArchivedEmployees.length}
+        resultLabel="archived employee"
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!search.trim()}
+            onClick={() => setSearch("")}
+          >
+            Clear Search
+          </Button>
+        }
+      >
+        <div className="w-full sm:col-span-2 xl:w-96">
+          <SearchInput
+            label="Search archived employees"
+            hideLabel
+            placeholder="Search by name, ID, company, or position..."
+            value={search}
+            onChange={(event) =>
+              setSearch(event.target.value)
+            }
+            onClear={() => setSearch("")}
+          />
+        </div>
+      </FilterBar>
 
       {errorMessage && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
-          {errorMessage}
-        </div>
+        <ErrorState
+          compact
+          title="Archived employee data error"
+          message={errorMessage}
+          retryLabel="Reload archived employees"
+          onRetry={() =>
+            fetchArchivedEmployees({
+              showRefreshing: true,
+            })
+          }
+        />
       )}
 
-      <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-white/10">
-          <div>
-            <h3 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
-              Archived Records
-            </h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Records removed from the active employee list.
-            </p>
+      {isLoading ? (
+        <LoadingSkeleton
+          rows={5}
+          columns={6}
+          showHeader
+        />
+      ) : (
+        <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+          <div className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-white/10">
+            <div>
+              <h2 className="text-lg font-extrabold text-gray-900 dark:text-white">
+                Archived Records
+              </h2>
+
+              <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
+                Records removed from the active employee
+                management list.
+              </p>
+            </div>
+
+            <span className="w-fit rounded-full bg-amber-50 px-4 py-1.5 text-xs font-bold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+              {filteredArchivedEmployees.length}{" "}
+              {filteredArchivedEmployees.length === 1
+                ? "record"
+                : "records"}
+            </span>
           </div>
-          <span className="rounded-full bg-amber-50 px-4 py-1.5 text-xs font-bold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
-            {archivedEmployees.length} archived
-          </span>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left">
-            <thead className="bg-gray-50 dark:bg-white/5">
-              <tr className="border-b border-gray-200 text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:border-white/10 dark:text-gray-400">
-                <th className="px-6 py-4">Employee ID</th>
-                <th className="px-6 py-4">Full Name</th>
-                <th className="px-6 py-4">Company</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Compliance</th>
-                <th className="px-6 py-4 text-center">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-              {isLoading ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-14 text-center text-sm font-semibold text-gray-500 dark:text-gray-400">
-                    Loading archived employees from backend...
-                  </td>
-                </tr>
-              ) : archivedEmployees.length > 0 ? (
-                archivedEmployees.map((emp) => {
-                  const compliance = getCompliance(emp.documents);
-                  return (
-                    <tr
-                      key={emp.id}
-                      className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5"
+          {filteredArchivedEmployees.length === 0 ? (
+            <div className="p-5 sm:p-6">
+              <EmptyState
+                icon={
+                  search.trim()
+                    ? "search"
+                    : "records"
+                }
+                title={
+                  search.trim()
+                    ? "No archived employees found"
+                    : "No archived employees"
+                }
+                description={
+                  search.trim()
+                    ? "No archived employee records matched your search."
+                    : "Employees archived by HR will appear here."
+                }
+                secondaryActionLabel={
+                  search.trim() ? "Clear search" : ""
+                }
+                onSecondaryAction={
+                  search.trim()
+                    ? () => setSearch("")
+                    : undefined
+                }
+              />
+            </div>
+          ) : (
+            <div className="max-h-[650px] overflow-auto">
+              <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left">
+                <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
+                  <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <th
+                      scope="col"
+                      className="px-6 py-4"
                     >
-                      <td className="px-6 py-4">
-                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                          {emp.id || "-"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="font-semibold text-gray-900 dark:text-white">
-                          {emp.name || "-"}
-                        </p>
-                      </td>
-                      <td className="px-6 py-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        {emp.company || "-"}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300">
-                          Inactive
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <ComplianceBadge status={compliance} />
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setViewEmployee(emp)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-600 hover:text-white dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500"
-                            title="View employee"
-                          >
-                            <FiEye />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setRestoreTarget(emp)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-green-100 bg-green-50 text-green-700 transition hover:bg-green-600 hover:text-white dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-300 dark:hover:bg-green-600"
-                            title="Restore employee"
-                          >
-                            <FiRotateCcw />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteTarget(emp)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-700 transition hover:bg-red-600 hover:text-white dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-600"
-                            title="Permanently delete employee"
-                          >
-                            <FiTrash2 />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan="6" className="px-6 py-14 text-center">
-                    <div className="mx-auto flex max-w-sm flex-col items-center">
-                      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-white/10">
-                        <FiInbox size={24} />
-                      </div>
-                      <p className="font-extrabold text-gray-900 dark:text-white">
-                        No archived employees
-                      </p>
-                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Archived employees will appear here once HR marks them as inactive.
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      Employee ID
+                    </th>
+
+                    <th
+                      scope="col"
+                      className="px-6 py-4"
+                    >
+                      Full Name
+                    </th>
+
+                    <th
+                      scope="col"
+                      className="px-6 py-4"
+                    >
+                      Company
+                    </th>
+
+                    <th
+                      scope="col"
+                      className="px-6 py-4"
+                    >
+                      Status
+                    </th>
+
+                    <th
+                      scope="col"
+                      className="px-6 py-4"
+                    >
+                      Compliance
+                    </th>
+
+                    <th
+                      scope="col"
+                      className="px-6 py-4 text-right"
+                    >
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                  {filteredArchivedEmployees.map(
+                    (employee, index) => {
+                      const employeeName =
+                        getEmployeeDisplayName(employee);
+
+                      const employeeCompany =
+                        getEmployeeCompany(employee);
+
+                      const complianceStatus =
+                        getComplianceStatus(
+                          parseDocuments(
+                            employee?.documents
+                          )
+                        );
+
+                      return (
+                        <tr
+                          key={getEmployeeKey(
+                            employee,
+                            index
+                          )}
+                          className="transition-colors hover:bg-indigo-50/50 dark:hover:bg-white/5"
+                        >
+                          <td className="whitespace-nowrap px-6 py-4">
+                            <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                              {employee?.id || "-"}
+                            </span>
+                          </td>
+
+                          <td className="whitespace-nowrap px-6 py-4">
+                            <div className="min-w-0">
+                              <p className="max-w-[260px] truncate font-semibold text-gray-900 dark:text-white">
+                                {employeeName}
+                              </p>
+
+                              {employee?.position && (
+                                <p className="mt-1 max-w-[260px] truncate text-xs text-gray-500 dark:text-gray-400">
+                                  {employee.position}
+                                </p>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <p className="max-w-[240px] truncate text-sm font-semibold text-gray-700 dark:text-gray-300">
+                              {employeeCompany}
+                            </p>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <StatusBadge
+                              status="Inactive"
+                              size="md"
+                            />
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <ComplianceBadge
+                              status={complianceStatus}
+                            />
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-end gap-2">
+                              <IconButton
+                                label={`View ${employeeName}`}
+                                title="View Employee"
+                                variant="primary"
+                                size="md"
+                                disabled={isProcessing}
+                                onClick={() =>
+                                  setViewEmployee(employee)
+                                }
+                              >
+                                <FiEye />
+                              </IconButton>
+
+                              <IconButton
+                                label={`Restore ${employeeName}`}
+                                title="Restore Employee"
+                                variant="secondary"
+                                size="md"
+                                disabled={isProcessing}
+                                onClick={() => {
+                                  setErrorMessage("");
+                                  setRestoreTarget(employee);
+                                }}
+                              >
+                                <FiRotateCcw />
+                              </IconButton>
+
+                              <IconButton
+                                label={`Permanently delete ${employeeName}`}
+                                title="Permanently Delete Employee"
+                                variant="danger"
+                                size="md"
+                                disabled={isProcessing}
+                                onClick={() => {
+                                  setErrorMessage("");
+                                  setDeleteTarget(employee);
+                                }}
+                              >
+                                <FiTrash2 />
+                              </IconButton>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       {viewEmployee && (
-        <EmployeeModal employee={viewEmployee} onClose={() => setViewEmployee(null)} />
-      )}
-
-      {restoreTarget && (
-        <ConfirmModal
-          title="Restore Employee"
-          message={
-            <>
-              Are you sure you want to restore <b>{restoreTarget.name}</b>? This employee will return to the main employee table.
-            </>
-          }
-          confirmLabel="Yes, Restore"
-          tone="green"
-          isProcessing={isProcessing}
-          onConfirm={() => handleRestore(restoreTarget.id)}
-          onCancel={() => setRestoreTarget(null)}
+        <EmployeeModal
+          employee={viewEmployee}
+          onClose={() => setViewEmployee(null)}
         />
       )}
 
-      {deleteTarget && (
-        <ConfirmModal
-          title="Permanently Delete Employee"
-          message={
-            <>
-              Are you sure you want to permanently delete <b>{deleteTarget.name}</b>? This action cannot be undone.
-            </>
-          }
-          confirmLabel="Yes, Delete"
-          tone="red"
-          isProcessing={isProcessing}
-          onConfirm={() => handleDelete(deleteTarget.id)}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
+      <ConfirmDialog
+        open={Boolean(restoreTarget)}
+        title="Restore Employee"
+        tone="info"
+        confirmLabel="Restore Employee"
+        cancelLabel="Cancel"
+        loading={processingAction === "restore"}
+        disabled={!restoreTarget?.id}
+        closeOnBackdrop={!isProcessing}
+        onClose={handleCloseRestoreDialog}
+        onConfirm={handleRestore}
+      >
+        <p>
+          Are you sure you want to restore{" "}
+          <strong className="font-bold text-gray-900 dark:text-white">
+            {restoreTarget?.name || "this employee"}
+          </strong>
+          ?
+        </p>
 
-      <SuccessModal message={successMessage} onClose={() => setSuccessMessage("")} />
-    </div>
+        <p className="mt-2">
+          The employee will return to the active employee
+          management table.
+        </p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Permanently Delete Employee"
+        tone="danger"
+        confirmLabel="Delete Permanently"
+        cancelLabel="Cancel"
+        loading={processingAction === "delete"}
+        disabled={!deleteTarget?.id}
+        closeOnBackdrop={!isProcessing}
+        onClose={handleCloseDeleteDialog}
+        onConfirm={handleDelete}
+      >
+        <p>
+          Are you sure you want to permanently delete{" "}
+          <strong className="font-bold text-gray-900 dark:text-white">
+            {deleteTarget?.name || "this employee"}
+          </strong>
+          ?
+        </p>
+
+        <p className="mt-2 font-semibold text-red-600 dark:text-red-300">
+          This action cannot be undone, and the employee
+          record may no longer be recoverable.
+        </p>
+      </ConfirmDialog>
+
+      <SuccessToast
+        title="Archived employee updated"
+        message={successMessage}
+        duration={3500}
+        onClose={() => setSuccessMessage("")}
+      />
+    </main>
   );
 }
