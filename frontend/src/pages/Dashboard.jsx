@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -31,7 +37,12 @@ const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
 const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
+
 const DATA_EVENT_SOURCE = "dashboard-page";
+const REQUEST_TIMEOUT_MS = 15000;
+const DATA_UPDATE_DEBOUNCE_MS = 300;
+
+const activeRequests = new Map();
 
 const monthList = [
   "Jan",
@@ -48,7 +59,9 @@ const monthList = [
   "Dec",
 ];
 
-function emitDataUpdated(action = "DASHBOARD_UPDATED") {
+function emitDataUpdated(
+  action = "DASHBOARD_UPDATED"
+) {
   window.dispatchEvent(
     new CustomEvent("dataUpdated", {
       detail: {
@@ -62,52 +75,134 @@ function emitDataUpdated(action = "DASHBOARD_UPDATED") {
 }
 
 function normalizeText(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeStatus(status) {
   const value = normalizeText(status);
 
-  if (value === "resolved") return "For Review";
-  if (value === "for_review") return "For Review";
-  if (value === "for review") return "For Review";
-  if (value === "closed") return "Closed";
-  if (value === "investigating") return "Investigating";
+  if (
+    value === "resolved" ||
+    value === "for_review" ||
+    value === "for review"
+  ) {
+    return "For Review";
+  }
+
+  if (value === "closed") {
+    return "Closed";
+  }
+
+  if (value === "investigating") {
+    return "Investigating";
+  }
 
   return "Open";
 }
 
 function isArchivedEmployee(employee) {
-  return employee?.archived === true || Number(employee?.archived) === 1;
+  return (
+    employee?.archived === true ||
+    Number(employee?.archived) === 1
+  );
 }
 
 function isEmployeeDeployed(employee) {
-  const status = normalizeText(employee?.status);
-  return status === "deployed" || status === "active deployed";
+  const status = normalizeText(
+    employee?.status
+  );
+
+  return (
+    status === "deployed" ||
+    status === "active deployed"
+  );
 }
 
-function normalizeBackendEmployee(employee) {
+function parseDocuments(documents) {
+  if (Array.isArray(documents)) {
+    return documents;
+  }
+
+  if (typeof documents !== "string") {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(documents);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeBackendEmployee(
+  employee = {}
+) {
+  const employeeId =
+    employee.id ||
+    employee.employeeId ||
+    employee.employee_id ||
+    "";
+
   return {
     ...employee,
-    id: employee.id || employee.employeeId || employee.employee_id,
-    employeeId: employee.id || employee.employeeId || employee.employee_id,
+
+    id: employeeId,
+    employeeId,
+
     name:
       employee.name ||
       employee.full_name ||
       employee.fullName ||
       "Unknown Employee",
-    company: employee.company || employee.clientCompany || "Unassigned",
-    status: employee.status || "Unknown",
-    employmentType: employee.employmentType || employee.employment_type || "",
-    contractStart: employee.contractStart || employee.contract_start || null,
-    contractEnd: employee.contractEnd || employee.contract_end || null,
-    createdAt: employee.createdAt || employee.created_at || null,
-    archived: isArchivedEmployee(employee),
-    documents: Array.isArray(employee.documents) ? employee.documents : [],
+
+    company:
+      employee.company ||
+      employee.clientCompany ||
+      "Unassigned",
+
+    status:
+      employee.status ||
+      "Unknown",
+
+    employmentType:
+      employee.employmentType ||
+      employee.employment_type ||
+      "",
+
+    contractStart:
+      employee.contractStart ||
+      employee.contract_start ||
+      null,
+
+    contractEnd:
+      employee.contractEnd ||
+      employee.contract_end ||
+      null,
+
+    createdAt:
+      employee.createdAt ||
+      employee.created_at ||
+      null,
+
+    archived:
+      isArchivedEmployee(employee),
+
+    documents:
+      parseDocuments(
+        employee.documents
+      ),
   };
 }
 
-function normalizeBackendIncident(incident) {
+function normalizeBackendIncident(
+  incident = {}
+) {
   const date =
     incident.reportedAt ||
     incident.reported_at ||
@@ -120,38 +215,70 @@ function normalizeBackendIncident(incident) {
 
   return {
     ...incident,
+
     id: incident.id,
+
     employeeId:
       incident.employeeId ||
       incident.employee_id ||
       incident.empId ||
       incident.employeeID ||
       "",
+
     employee:
       incident.employee ||
       incident.employeeName ||
       incident.employee_name ||
       "Unknown Employee",
-    company: incident.company || "",
+
+    company:
+      incident.company ||
+      "",
+
     violation:
       incident.violation ||
       incident.violationType ||
       incident.violation_type ||
       "No violation type",
-    severity: incident.severity || "Minor",
-    status: normalizeStatus(incident.status || "Open"),
+
+    severity:
+      incident.severity ||
+      "Minor",
+
+    status:
+      normalizeStatus(
+        incident.status ||
+          "Open"
+      ),
+
     date,
-    reportedAt: incident.reportedAt || incident.reported_at || date,
-    createdAt: incident.createdAt || incident.created_at || date,
+
+    reportedAt:
+      incident.reportedAt ||
+      incident.reported_at ||
+      date,
+
+    createdAt:
+      incident.createdAt ||
+      incident.created_at ||
+      date,
   };
 }
 
-function normalizeBackendDeployment(deployment) {
+function normalizeBackendDeployment(
+  deployment = {}
+) {
   const employeeId =
     deployment.employeeId ||
     deployment.employee_id ||
     deployment.empId ||
     deployment.employeeID ||
+    deployment.id ||
+    "";
+
+  const deploymentId =
+    deployment.deploymentId ||
+    deployment.deployment_id ||
     deployment.id ||
     "";
 
@@ -169,34 +296,40 @@ function normalizeBackendDeployment(deployment) {
 
   return {
     ...deployment,
-    id: deployment.deploymentId || deployment.deployment_id || deployment.id,
-    deploymentId:
-      deployment.deploymentId || deployment.deployment_id || deployment.id,
+
+    id: deploymentId,
+    deploymentId,
     employeeId,
+
     employee:
       deployment.employee ||
       deployment.employeeName ||
       deployment.employee_name ||
       deployment.name ||
       "Unknown Employee",
+
     company:
       deployment.company ||
       deployment.clientCompany ||
       deployment.client_company ||
       "Unassigned",
+
     status:
       deployment.status ||
       deployment.deploymentStatus ||
       deployment.deployment_status ||
       "Active",
+
     date,
     start: date,
+
     contractStart:
       deployment.contractStart ||
       deployment.contract_start ||
       deployment.deploymentDate ||
       deployment.deployment_date ||
       date,
+
     contractEnd:
       deployment.contractEnd ||
       deployment.contract_end ||
@@ -205,43 +338,130 @@ function normalizeBackendDeployment(deployment) {
       deployment.deploymentEnd ||
       deployment.deployment_end ||
       null,
-    createdAt: deployment.createdAt || deployment.created_at || date,
+
+    createdAt:
+      deployment.createdAt ||
+      deployment.created_at ||
+      date,
   };
 }
 
-async function requestJson(url) {
-  const response = await fetch(url);
-  const data = await response.json().catch(() => null);
+async function requestJson(
+  url,
+  options = {}
+) {
+  const controller =
+    new AbortController();
 
-  if (!response.ok) {
-    throw new Error(
-      data?.error ||
-        data?.message ||
-        `Request failed with status ${response.status}`
+  const timeoutId =
+    window.setTimeout(() => {
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+
+      signal:
+        controller.signal,
+
+      cache: "no-store",
+
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {}),
+      },
+    });
+
+    const data = await response
+      .json()
+      .catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          data?.message ||
+          `Request failed with status ${response.status}`
+      );
+    }
+
+    return data;
+  } catch (error) {
+    if (
+      error?.name ===
+      "AbortError"
+    ) {
+      throw new Error(
+        "The server took too long to respond."
+      );
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(
+      timeoutId
+    );
+  }
+}
+
+function getSharedRequest(url) {
+  if (!activeRequests.has(url)) {
+    const requestPromise =
+      requestJson(url).finally(() => {
+        activeRequests.delete(url);
+      });
+
+    activeRequests.set(
+      url,
+      requestPromise
     );
   }
 
-  return data;
+  return activeRequests.get(url);
 }
 
-async function safeRequestJson(url, fallback = []) {
-  try {
-    return await requestJson(url);
-  } catch (error) {
-    console.warn(`Optional request failed: ${url}`, error);
-    return fallback;
+function getRejectedReason(
+  result,
+  fallback
+) {
+  if (
+    result?.status !==
+    "rejected"
+  ) {
+    return "";
   }
+
+  return (
+    result?.reason?.message ||
+    fallback
+  );
 }
 
 function normalizeDateValue(value) {
-  if (!value) return "";
+  if (!value) {
+    return "";
+  }
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return String(value);
+  }
+
+  const year =
+    date.getFullYear();
+
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
@@ -259,7 +479,9 @@ function getRecordDate(record) {
   );
 }
 
-function getDeploymentTrendDate(employee) {
+function getDeploymentTrendDate(
+  employee
+) {
   return (
     employee?.contractStart ||
     employee?.contract_start ||
@@ -270,7 +492,9 @@ function getDeploymentTrendDate(employee) {
   );
 }
 
-function getDeploymentRecordDate(record) {
+function getDeploymentRecordDate(
+  record
+) {
   return (
     record?.start ||
     record?.deploymentDate ||
@@ -286,43 +510,90 @@ function getDeploymentRecordDate(record) {
   );
 }
 
-function isInSelectedDashboardRange(value, selectedYear, selectedMonth) {
-  const dateValue = normalizeDateValue(value);
+function isInSelectedDashboardRange(
+  value,
+  selectedYear,
+  selectedMonth
+) {
+  const dateValue =
+    normalizeDateValue(value);
 
-  if (!dateValue) return false;
+  if (!dateValue) {
+    return false;
+  }
 
-  const recordYear = dateValue.slice(0, 4);
-  const recordMonth = dateValue.slice(5, 7);
+  const recordYear =
+    dateValue.slice(0, 4);
 
-  if (recordYear !== String(selectedYear)) return false;
+  const recordMonth =
+    dateValue.slice(5, 7);
 
-  if (Number(selectedMonth) > 0) {
-    return recordMonth === String(selectedMonth).padStart(2, "0");
+  if (
+    recordYear !==
+    String(selectedYear)
+  ) {
+    return false;
+  }
+
+  if (
+    Number(selectedMonth) > 0
+  ) {
+    return (
+      recordMonth ===
+      String(
+        selectedMonth
+      ).padStart(2, "0")
+    );
   }
 
   return true;
 }
 
-function aggregateByMonth(dataset = [], key, year, isCurrentYear) {
-  const currentMonthIndex = new Date().getMonth();
+function aggregateByMonth(
+  dataset = [],
+  key,
+  year,
+  isCurrentYear
+) {
+  const currentMonthIndex =
+    new Date().getMonth();
 
   return monthList
     .map((month, index) => {
-      const monthNumber = String(index + 1).padStart(2, "0");
+      const monthNumber =
+        String(index + 1).padStart(
+          2,
+          "0"
+        );
 
-      const total = dataset.reduce((sum, item) => {
-        const itemDate = normalizeDateValue(item?.date);
+      const total =
+        dataset.reduce(
+          (sum, item) => {
+            const itemDate =
+              normalizeDateValue(
+                item?.date
+              );
 
-        if (
-          !itemDate ||
-          !itemDate.startsWith(String(year)) ||
-          itemDate.slice(5, 7) !== monthNumber
-        ) {
-          return sum;
-        }
+            if (
+              !itemDate ||
+              !itemDate.startsWith(
+                String(year)
+              ) ||
+              itemDate.slice(5, 7) !==
+                monthNumber
+            ) {
+              return sum;
+            }
 
-        return sum + (Number(item?.[key]) || 0);
-      }, 0);
+            return (
+              sum +
+              (Number(
+                item?.[key]
+              ) || 0)
+            );
+          },
+          0
+        );
 
       return {
         label: month,
@@ -330,7 +601,12 @@ function aggregateByMonth(dataset = [], key, year, isCurrentYear) {
         index,
       };
     })
-    .filter((item) => !isCurrentYear || item.index <= currentMonthIndex);
+    .filter(
+      (item) =>
+        !isCurrentYear ||
+        item.index <=
+          currentMonthIndex
+    );
 }
 
 function buildMultiYearMonthlyTrend({
@@ -341,141 +617,292 @@ function buildMultiYearMonthlyTrend({
   currentYear,
   currentMonth,
 }) {
-  const selectedIsCurrentYear = String(selectedYear) === String(currentYear);
+  const selectedIsCurrentYear =
+    String(selectedYear) ===
+    String(currentYear);
 
-  const visibleMonthLimit = selectedIsCurrentYear
-    ? Math.max(1, Number(currentMonth) || 1)
-    : 12;
+  const visibleMonthLimit =
+    selectedIsCurrentYear
+      ? Math.max(
+          1,
+          Number(currentMonth) || 1
+        )
+      : 12;
 
-  return monthList.slice(0, visibleMonthLimit).map((month, index) => {
-    const monthNumber = String(index + 1).padStart(2, "0");
+  return monthList
+    .slice(0, visibleMonthLimit)
+    .map((month, index) => {
+      const monthNumber =
+        String(index + 1).padStart(
+          2,
+          "0"
+        );
 
-    const row = {
-      label: month,
-    };
+      const row = {
+        label: month,
+      };
 
-    years.forEach((year) => {
-      row[String(year)] = source.reduce((sum, item) => {
-        const itemDate = normalizeDateValue(item?.date);
+      years.forEach((year) => {
+        row[String(year)] =
+          source.reduce(
+            (sum, item) => {
+              const itemDate =
+                normalizeDateValue(
+                  item?.date
+                );
 
-        if (
-          itemDate &&
-          itemDate.slice(0, 4) === String(year) &&
-          itemDate.slice(5, 7) === monthNumber
-        ) {
-          return sum + (Number(item?.[valueKey]) || 0);
-        }
+              if (
+                itemDate &&
+                itemDate.slice(0, 4) ===
+                  String(year) &&
+                itemDate.slice(5, 7) ===
+                  monthNumber
+              ) {
+                return (
+                  sum +
+                  (Number(
+                    item?.[valueKey]
+                  ) || 0)
+                );
+              }
 
-        return sum;
-      }, 0);
+              return sum;
+            },
+            0
+          );
+      });
+
+      return row;
     });
-
-    return row;
-  });
 }
 
-function formatLastUpdated(date = new Date()) {
-  return date.toLocaleString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatLastUpdated(
+  date = new Date()
+) {
+  return date.toLocaleString(
+    "en-PH",
+    {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }
+  );
 }
 
-function getCaseAgeInDays(dateString) {
-  if (!dateString) return null;
+function getCaseAgeInDays(
+  dateString
+) {
+  if (!dateString) {
+    return null;
+  }
 
-  const incidentDate = new Date(dateString);
-  if (Number.isNaN(incidentDate.getTime())) return null;
+  const incidentDate =
+    new Date(dateString);
+
+  if (
+    Number.isNaN(
+      incidentDate.getTime()
+    )
+  ) {
+    return null;
+  }
 
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  incidentDate.setHours(0, 0, 0, 0);
 
-  const diffMs = today.getTime() - incidentDate.getTime();
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  today.setHours(0, 0, 0, 0);
+  incidentDate.setHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  const diffMs =
+    today.getTime() -
+    incidentDate.getTime();
+
+  return Math.floor(
+    diffMs /
+      (1000 * 60 * 60 * 24)
+  );
 }
 
 function isActiveIncident(status) {
-  return ["Open", "Investigating", "For Review"].includes(
+  return [
+    "Open",
+    "Investigating",
+    "For Review",
+  ].includes(
     normalizeStatus(status)
   );
 }
 
-function getExpiringDocumentsCount(employees) {
-  return employees.reduce((count, emp) => {
-    const docs = Array.isArray(emp.documents) ? emp.documents : [];
+function getExpiringDocumentsCount(
+  employees
+) {
+  return employees.reduce(
+    (count, employee) => {
+      const documents =
+        Array.isArray(
+          employee.documents
+        )
+          ? employee.documents
+          : [];
 
-    const expiringDocs = docs.filter((doc) => {
-      const expirationDate =
-        doc?.expirationDate ||
-        doc?.expiration_date ||
-        doc?.expiryDate ||
-        doc?.expiresAt ||
-        doc?.date;
+      const expiringDocuments =
+        documents.filter(
+          (document) => {
+            const expirationDate =
+              document?.expirationDate ||
+              document?.expiration_date ||
+              document?.expiryDate ||
+              document?.expiresAt ||
+              document?.date;
 
-      if (!expirationDate) return false;
+            if (!expirationDate) {
+              return false;
+            }
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+            const today =
+              new Date();
 
-      const exp = new Date(expirationDate);
-      if (Number.isNaN(exp.getTime())) return false;
-      exp.setHours(0, 0, 0, 0);
+            today.setHours(
+              0,
+              0,
+              0,
+              0
+            );
 
-      const diffDays = Math.ceil(
-        (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+            const expiration =
+              new Date(
+                expirationDate
+              );
+
+            if (
+              Number.isNaN(
+                expiration.getTime()
+              )
+            ) {
+              return false;
+            }
+
+            expiration.setHours(
+              0,
+              0,
+              0,
+              0
+            );
+
+            const differenceInDays =
+              Math.ceil(
+                (expiration.getTime() -
+                  today.getTime()) /
+                  (1000 *
+                    60 *
+                    60 *
+                    24)
+              );
+
+            return (
+              differenceInDays >=
+                0 &&
+              differenceInDays <=
+                30
+            );
+          }
+        );
+
+      return (
+        count +
+        expiringDocuments.length
       );
-
-      return diffDays >= 0 && diffDays <= 30;
-    });
-
-    return count + expiringDocs.length;
-  }, 0);
+    },
+    0
+  );
 }
 
-function buildSeverityDistribution(incidents = []) {
+function buildSeverityDistribution(
+  incidents = []
+) {
   const severityMap = {
     Minor: 0,
     Major: 0,
     Critical: 0,
   };
 
-  incidents.forEach((incident) => {
-    const severity = incident.severity || "Minor";
+  incidents.forEach(
+    (incident) => {
+      const severity =
+        incident.severity ||
+        "Minor";
 
-    if (severityMap[severity] !== undefined) {
-      severityMap[severity] += 1;
+      if (
+        severityMap[severity] !==
+        undefined
+      ) {
+        severityMap[severity] +=
+          1;
+      }
     }
-  });
+  );
 
-  return Object.entries(severityMap).map(([name, value]) => ({
+  return Object.entries(
+    severityMap
+  ).map(([name, value]) => ({
     name,
     value,
   }));
 }
 
-function buildCaseAgingDistribution(incidents = []) {
+function buildCaseAgingDistribution(
+  incidents = []
+) {
   const agingBuckets = {
     "0-7 Days": 0,
     "8-30 Days": 0,
     "30+ Days": 0,
   };
 
-  incidents.forEach((incident) => {
-    if (!isActiveIncident(incident.status)) return;
+  incidents.forEach(
+    (incident) => {
+      if (
+        !isActiveIncident(
+          incident.status
+        )
+      ) {
+        return;
+      }
 
-    const age = getCaseAgeInDays(getRecordDate(incident));
-    if (age === null) return;
+      const age =
+        getCaseAgeInDays(
+          getRecordDate(incident)
+        );
 
-    if (age <= 7) agingBuckets["0-7 Days"] += 1;
-    else if (age <= 30) agingBuckets["8-30 Days"] += 1;
-    else agingBuckets["30+ Days"] += 1;
-  });
+      if (age === null) {
+        return;
+      }
 
-  return Object.entries(agingBuckets).map(([name, value]) => ({
+      if (age <= 7) {
+        agingBuckets[
+          "0-7 Days"
+        ] += 1;
+      } else if (age <= 30) {
+        agingBuckets[
+          "8-30 Days"
+        ] += 1;
+      } else {
+        agingBuckets[
+          "30+ Days"
+        ] += 1;
+      }
+    }
+  );
+
+  return Object.entries(
+    agingBuckets
+  ).map(([name, value]) => ({
     name,
     value,
   }));
@@ -483,132 +910,380 @@ function buildCaseAgingDistribution(incidents = []) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const currentDate = new Date();
-  const currentYear = currentDate.getFullYear().toString();
-  const currentMonth = currentDate.getMonth() + 1;
 
-  const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState("");
-  const [fetchError, setFetchError] = useState("");
+  const currentDate =
+    new Date();
 
-  const [activeDrilldown, setActiveDrilldown] = useState(null);
-  const [editingEmployee, setEditingEmployee] = useState(null);
+  const currentYear =
+    currentDate
+      .getFullYear()
+      .toString();
 
-  const [data, setData] = useState({
-    kpis: {
-      total: 0,
-      deployed: 0,
-      available: 0,
-      activeIncidents: 0,
-      expiringDocs: 0,
-    },
-    workforce: [],
-    incidents: [],
-    rawEmployees: [],
-    rawIncidents: [],
-    rawDeployments: [],
-  });
+  const currentMonth =
+    currentDate.getMonth() + 1;
+
+  const [
+    selectedYear,
+    setSelectedYear,
+  ] = useState(currentYear);
+
+  const [
+    selectedMonth,
+    setSelectedMonth,
+  ] = useState(0);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
+
+  const [
+    lastUpdated,
+    setLastUpdated,
+  ] = useState("");
+
+  const [
+    fetchError,
+    setFetchError,
+  ] = useState("");
+
+  const [
+    activeDrilldown,
+    setActiveDrilldown,
+  ] = useState(null);
+
+  const [
+    editingEmployee,
+    setEditingEmployee,
+  ] = useState(null);
+
+  const isLoadingRef =
+    useRef(false);
+
+  const refreshTimerRef =
+    useRef(null);
+
+  const isMountedRef =
+    useRef(true);
+
+  const [data, setData] =
+    useState({
+      kpis: {
+        total: 0,
+        deployed: 0,
+        available: 0,
+        activeIncidents: 0,
+        expiringDocs: 0,
+      },
+
+      workforce: [],
+      incidents: [],
+      rawEmployees: [],
+      rawIncidents: [],
+      rawDeployments: [],
+    });
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current =
+        false;
+
+      if (
+        refreshTimerRef.current
+      ) {
+        window.clearTimeout(
+          refreshTimerRef.current
+        );
+      }
+    };
+  }, []);
 
   const loadData = useCallback(
-    async ({ silent = false, showError = true } = {}) => {
+    async ({
+      silent = false,
+      showError = true,
+    } = {}) => {
+      if (isLoadingRef.current) {
+        return false;
+      }
+
+      isLoadingRef.current = true;
+
+      if (!silent) {
+        setLoading(true);
+      }
+
       try {
-        if (!silent) {
-          setLoading(true);
+        if (showError) {
+          setFetchError("");
         }
 
-        setFetchError("");
+        const [
+          employeeResult,
+          incidentResult,
+          deploymentResult,
+        ] = await Promise.allSettled([
+          getSharedRequest(
+            EMPLOYEE_API_URL
+          ),
 
-        const [employeeData, incidentData, deploymentData] = await Promise.all([
-          requestJson(EMPLOYEE_API_URL),
-          requestJson(INCIDENT_API_URL),
-          safeRequestJson(DEPLOYMENT_API_URL, []),
+          getSharedRequest(
+            INCIDENT_API_URL
+          ),
+
+          getSharedRequest(
+            DEPLOYMENT_API_URL
+          ),
         ]);
 
-        const employeesRaw = Array.isArray(employeeData)
-          ? employeeData.map(normalizeBackendEmployee)
-          : [];
+        const employeeData =
+          employeeResult.status ===
+          "fulfilled"
+            ? employeeResult.value
+            : [];
 
-        const incidentsRaw = Array.isArray(incidentData)
-          ? incidentData.map(normalizeBackendIncident)
-          : [];
+        const incidentData =
+          incidentResult.status ===
+          "fulfilled"
+            ? incidentResult.value
+            : [];
 
-        const deploymentsRaw = Array.isArray(deploymentData)
-          ? deploymentData.map(normalizeBackendDeployment)
-          : [];
+        const deploymentData =
+          deploymentResult.status ===
+          "fulfilled"
+            ? deploymentResult.value
+            : [];
 
-        const activeEmployees = employeesRaw.filter((emp) => !emp.archived);
+        const employeesRaw =
+          Array.isArray(employeeData)
+            ? employeeData.map(
+                normalizeBackendEmployee
+              )
+            : [];
 
-        const deployedEmployeeIdSet = new Set(
-          deploymentsRaw
-            .filter((deployment) => {
-              const status = normalizeText(deployment.status);
-              return status === "active" || status === "deployed";
-            })
-            .map((deployment) => String(deployment.employeeId || ""))
-            .filter(Boolean)
-        );
+        const incidentsRaw =
+          Array.isArray(incidentData)
+            ? incidentData.map(
+                normalizeBackendIncident
+              )
+            : [];
+
+        const deploymentsRaw =
+          Array.isArray(
+            deploymentData
+          )
+            ? deploymentData.map(
+                normalizeBackendDeployment
+              )
+            : [];
+
+        const activeEmployees =
+          employeesRaw.filter(
+            (employee) =>
+              !employee.archived
+          );
+
+        const deployedEmployeeIdSet =
+          new Set(
+            deploymentsRaw
+              .filter(
+                (deployment) => {
+                  const status =
+                    normalizeText(
+                      deployment.status
+                    );
+
+                  return (
+                    status ===
+                      "active" ||
+                    status ===
+                      "deployed"
+                  );
+                }
+              )
+              .map((deployment) =>
+                String(
+                  deployment.employeeId ||
+                    ""
+                )
+              )
+              .filter(Boolean)
+          );
 
         const deployedEmployees =
-          deployedEmployeeIdSet.size > 0
-            ? activeEmployees.filter((employee) =>
-                deployedEmployeeIdSet.has(String(employee.employeeId || employee.id))
+          deployedEmployeeIdSet.size >
+          0
+            ? activeEmployees.filter(
+                (employee) =>
+                  deployedEmployeeIdSet.has(
+                    String(
+                      employee.employeeId ||
+                        employee.id
+                    )
+                  )
               )
-            : activeEmployees.filter(isEmployeeDeployed);
+            : activeEmployees.filter(
+                isEmployeeDeployed
+              );
 
         const workforceSource =
           deploymentsRaw.length > 0
             ? deploymentsRaw
-            : deployedEmployees.map((employee) => ({
-                ...employee,
-                date: getDeploymentTrendDate(employee),
-              }));
+            : deployedEmployees.map(
+                (employee) => ({
+                  ...employee,
 
-        const workforce = workforceSource
-          .map((record) => ({
-            date: normalizeDateValue(getDeploymentRecordDate(record)),
-            employees: 1,
-          }))
-          .filter((item) => item.date);
+                  date:
+                    getDeploymentTrendDate(
+                      employee
+                    ),
+                })
+              );
 
-        const incidents = incidentsRaw
-          .map((incident) => ({
-            date: normalizeDateValue(getRecordDate(incident)),
-            incidents: 1,
-          }))
-          .filter((item) => item.date);
+        const workforce =
+          workforceSource
+            .map((record) => ({
+              date:
+                normalizeDateValue(
+                  getDeploymentRecordDate(
+                    record
+                  )
+                ),
+
+              employees: 1,
+            }))
+            .filter(
+              (item) => item.date
+            );
+
+        const incidents =
+          incidentsRaw
+            .map((incident) => ({
+              date:
+                normalizeDateValue(
+                  getRecordDate(
+                    incident
+                  )
+                ),
+
+              incidents: 1,
+            }))
+            .filter(
+              (item) => item.date
+            );
+
+        if (!isMountedRef.current) {
+          return false;
+        }
 
         setData({
           kpis: {
-            total: activeEmployees.length,
-            deployed: deployedEmployees.length,
-            available: Math.max(
-              activeEmployees.length - deployedEmployees.length,
-              0
-            ),
-            activeIncidents: incidentsRaw.filter((incident) =>
-              isActiveIncident(incident.status)
-            ).length,
-            expiringDocs: getExpiringDocumentsCount(activeEmployees),
+            total:
+              activeEmployees.length,
+
+            deployed:
+              deployedEmployees.length,
+
+            available:
+              Math.max(
+                activeEmployees.length -
+                  deployedEmployees.length,
+                0
+              ),
+
+            activeIncidents:
+              incidentsRaw.filter(
+                (incident) =>
+                  isActiveIncident(
+                    incident.status
+                  )
+              ).length,
+
+            expiringDocs:
+              getExpiringDocumentsCount(
+                activeEmployees
+              ),
           },
+
           workforce,
           incidents,
-          rawEmployees: activeEmployees,
-          rawIncidents: incidentsRaw,
-          rawDeployments: deploymentsRaw,
+
+          rawEmployees:
+            activeEmployees,
+
+          rawIncidents:
+            incidentsRaw,
+
+          rawDeployments:
+            deploymentsRaw,
         });
 
-        setLastUpdated(formatLastUpdated());
-      } catch (error) {
-        console.error("Dashboard backend fetch error:", error);
+        setLastUpdated(
+          formatLastUpdated()
+        );
 
-        if (showError) {
-          setFetchError(error.message || "Unable to load dashboard data.");
+        const requestErrors = [
+          getRejectedReason(
+            employeeResult,
+            "Employee data failed to load."
+          ),
+
+          getRejectedReason(
+            incidentResult,
+            "Incident data failed to load."
+          ),
+
+          getRejectedReason(
+            deploymentResult,
+            "Deployment data failed to load."
+          ),
+        ].filter(Boolean);
+
+        if (
+          showError &&
+          requestErrors.length > 0
+        ) {
+          setFetchError(
+            `Some dashboard data could not be loaded: ${requestErrors.join(
+              " "
+            )}`
+          );
         }
+
+        return (
+          requestErrors.length <
+          3
+        );
+      } catch (error) {
+        console.error(
+          "Dashboard backend fetch error:",
+          error
+        );
+
+        if (
+          showError &&
+          isMountedRef.current
+        ) {
+          setFetchError(
+            error?.message ||
+              "Unable to load dashboard data."
+          );
+        }
+
+        return false;
       } finally {
-        if (!silent) {
+        isLoadingRef.current =
+          false;
+
+        if (
+          !silent &&
+          isMountedRef.current
+        ) {
           setLoading(false);
         }
       }
@@ -617,96 +1292,200 @@ export default function Dashboard() {
   );
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
   useEffect(() => {
-    let refreshTimer = null;
-
-    const refreshSilently = () => {
-      if (refreshTimer) {
-        clearTimeout(refreshTimer);
+    const scheduleRefresh = () => {
+      if (
+        refreshTimerRef.current
+      ) {
+        window.clearTimeout(
+          refreshTimerRef.current
+        );
       }
 
-      refreshTimer = setTimeout(() => {
-        loadData({ silent: true, showError: false });
-      }, 150);
+      refreshTimerRef.current =
+        window.setTimeout(() => {
+          void loadData({
+            silent: true,
+            showError: false,
+          });
+        }, DATA_UPDATE_DEBOUNCE_MS);
     };
 
-    const handleDataUpdated = (event) => {
-      if (event?.detail?.source === DATA_EVENT_SOURCE) return;
-      refreshSilently();
+    const handleDataUpdated = (
+      event
+    ) => {
+      if (
+        event?.detail?.source ===
+        DATA_EVENT_SOURCE
+      ) {
+        return;
+      }
+
+      scheduleRefresh();
     };
 
-    window.addEventListener("dataUpdated", handleDataUpdated);
-    window.addEventListener("focus", refreshSilently);
+    window.addEventListener(
+      "dataUpdated",
+      handleDataUpdated
+    );
 
     return () => {
-      if (refreshTimer) {
-        clearTimeout(refreshTimer);
+      if (
+        refreshTimerRef.current
+      ) {
+        window.clearTimeout(
+          refreshTimerRef.current
+        );
       }
 
-      window.removeEventListener("dataUpdated", handleDataUpdated);
-      window.removeEventListener("focus", refreshSilently);
+      window.removeEventListener(
+        "dataUpdated",
+        handleDataUpdated
+      );
     };
   }, [loadData]);
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadData({ silent: true });
-    setRefreshing(false);
-  }, [loadData]);
+  const handleRefresh =
+    useCallback(async () => {
+      if (
+        refreshing ||
+        isLoadingRef.current
+      ) {
+        return;
+      }
 
-  const isCurrentYear = selectedYear === currentYear;
+      setRefreshing(true);
+
+      try {
+        await loadData({
+          silent: true,
+          showError: true,
+        });
+      } finally {
+        if (
+          isMountedRef.current
+        ) {
+          setRefreshing(false);
+        }
+      }
+    }, [
+      loadData,
+      refreshing,
+    ]);
+
+  const isCurrentYear =
+    selectedYear === currentYear;
 
   useEffect(() => {
-    if (isCurrentYear && Number(selectedMonth) > currentMonth) {
+    if (
+      isCurrentYear &&
+      Number(selectedMonth) >
+        currentMonth
+    ) {
       setSelectedMonth(0);
     }
-  }, [isCurrentYear, selectedMonth, currentMonth]);
+  }, [
+    isCurrentYear,
+    selectedMonth,
+    currentMonth,
+  ]);
 
-  const availableYears = useMemo(() => {
-    const years = new Set([currentYear]);
+  const availableYears =
+    useMemo(() => {
+      const years = new Set([
+        currentYear,
+      ]);
 
-    data.workforce.forEach((item) => {
-      if (item?.date) years.add(item.date.slice(0, 4));
-    });
+      data.workforce.forEach(
+        (item) => {
+          if (item?.date) {
+            years.add(
+              item.date.slice(0, 4)
+            );
+          }
+        }
+      );
 
-    data.incidents.forEach((item) => {
-      if (item?.date) years.add(item.date.slice(0, 4));
-    });
+      data.incidents.forEach(
+        (item) => {
+          if (item?.date) {
+            years.add(
+              item.date.slice(0, 4)
+            );
+          }
+        }
+      );
 
-    return [...years].sort((a, b) => Number(b) - Number(a));
-  }, [data.workforce, data.incidents, currentYear]);
+      return [...years].sort(
+        (first, second) =>
+          Number(second) -
+          Number(first)
+      );
+    }, [
+      data.workforce,
+      data.incidents,
+      currentYear,
+    ]);
 
-  const availableMonths = useMemo(() => {
-    return monthList.map((month, index) => {
-      const monthNumber = index + 1;
-      const isFutureMonth =
-        selectedYear === currentYear && monthNumber > currentMonth;
+  const availableMonths =
+    useMemo(() => {
+      return monthList.map(
+        (month, index) => {
+          const monthNumber =
+            index + 1;
 
-      return {
-        name: month,
-        value: monthNumber,
-        available: !isFutureMonth,
-      };
-    });
-  }, [selectedYear, currentYear, currentMonth]);
+          const isFutureMonth =
+            selectedYear ===
+              currentYear &&
+            monthNumber >
+              currentMonth;
 
-  const handleYearChange = (event) => {
-    const nextYear = event.target.value;
+          return {
+            name: month,
+            value: monthNumber,
+            available:
+              !isFutureMonth,
+          };
+        }
+      );
+    }, [
+      selectedYear,
+      currentYear,
+      currentMonth,
+    ]);
+
+  const handleYearChange = (
+    event
+  ) => {
+    const nextYear =
+      event.target.value;
 
     setSelectedYear(nextYear);
 
-    if (nextYear === currentYear && Number(selectedMonth) > currentMonth) {
+    if (
+      nextYear === currentYear &&
+      Number(selectedMonth) >
+        currentMonth
+    ) {
       setSelectedMonth(0);
     }
   };
 
-  const handleMonthChange = (event) => {
-    const nextMonth = Number(event.target.value);
+  const handleMonthChange = (
+    event
+  ) => {
+    const nextMonth = Number(
+      event.target.value
+    );
 
-    if (selectedYear === currentYear && nextMonth > currentMonth) {
+    if (
+      selectedYear ===
+        currentYear &&
+      nextMonth > currentMonth
+    ) {
       setSelectedMonth(0);
       return;
     }
@@ -714,320 +1493,729 @@ export default function Dashboard() {
     setSelectedMonth(nextMonth);
   };
 
-  const workforceTrend = useMemo(
-    () =>
-      aggregateByMonth(
+  const workforceTrend =
+    useMemo(
+      () =>
+        aggregateByMonth(
+          data.workforce,
+          "employees",
+          selectedYear,
+          isCurrentYear
+        ),
+      [
         data.workforce,
-        "employees",
         selectedYear,
-        isCurrentYear
-      ),
-    [data.workforce, selectedYear, isCurrentYear]
-  );
+        isCurrentYear,
+      ]
+    );
 
-  const incidentTrend = useMemo(
-    () =>
-      aggregateByMonth(
+  const incidentTrend =
+    useMemo(
+      () =>
+        aggregateByMonth(
+          data.incidents,
+          "incidents",
+          selectedYear,
+          isCurrentYear
+        ),
+      [
         data.incidents,
-        "incidents",
         selectedYear,
-        isCurrentYear
-      ),
-    [data.incidents, selectedYear, isCurrentYear]
-  );
-
-  const comparisonYears = useMemo(() => {
-    const selected = Number(selectedYear);
-    const availableYearSet = new Set(availableYears.map(Number));
-
-    return [selected - 1, selected].filter(
-      (year) => year >= 2024 && availableYearSet.has(year)
+        isCurrentYear,
+      ]
     );
-  }, [selectedYear, availableYears]);
 
-  const deploymentComparisonTrend = useMemo(() => {
-    return buildMultiYearMonthlyTrend({
-      source: data.workforce,
-      valueKey: "employees",
-      years: comparisonYears,
+  const comparisonYears =
+    useMemo(() => {
+      const selected = Number(
+        selectedYear
+      );
+
+      const availableYearSet =
+        new Set(
+          availableYears.map(Number)
+        );
+
+      return [
+        selected - 1,
+        selected,
+      ].filter(
+        (year) =>
+          year >= 2024 &&
+          availableYearSet.has(year)
+      );
+    }, [
+      selectedYear,
+      availableYears,
+    ]);
+
+  const deploymentComparisonTrend =
+    useMemo(() => {
+      return buildMultiYearMonthlyTrend(
+        {
+          source:
+            data.workforce,
+
+          valueKey:
+            "employees",
+
+          years:
+            comparisonYears,
+
+          selectedYear,
+          currentYear,
+          currentMonth,
+        }
+      );
+    }, [
+      data.workforce,
+      comparisonYears,
       selectedYear,
       currentYear,
       currentMonth,
-    });
-  }, [data.workforce, comparisonYears, selectedYear, currentYear, currentMonth]);
+    ]);
 
-  const incidentComparisonTrend = useMemo(() => {
-    return buildMultiYearMonthlyTrend({
-      source: data.incidents,
-      valueKey: "incidents",
-      years: comparisonYears,
+  const incidentComparisonTrend =
+    useMemo(() => {
+      return buildMultiYearMonthlyTrend(
+        {
+          source:
+            data.incidents,
+
+          valueKey:
+            "incidents",
+
+          years:
+            comparisonYears,
+
+          selectedYear,
+          currentYear,
+          currentMonth,
+        }
+      );
+    }, [
+      data.incidents,
+      comparisonYears,
       selectedYear,
       currentYear,
       currentMonth,
-    });
-  }, [data.incidents, comparisonYears, selectedYear, currentYear, currentMonth]);
+    ]);
 
-  const reportScope = useMemo(() => {
-    const scopedIncidents = data.rawIncidents.filter((incident) =>
-      isInSelectedDashboardRange(
-        getRecordDate(incident),
-        selectedYear,
-        selectedMonth
-      )
+  const reportScope =
+    useMemo(() => {
+      const scopedIncidents =
+        data.rawIncidents.filter(
+          (incident) =>
+            isInSelectedDashboardRange(
+              getRecordDate(
+                incident
+              ),
+              selectedYear,
+              selectedMonth
+            )
+        );
+
+      return {
+        incidents:
+          scopedIncidents,
+      };
+    }, [
+      data.rawIncidents,
+      selectedYear,
+      selectedMonth,
+    ]);
+
+  const currentKPIS =
+    data.kpis;
+
+  const utilizationRate =
+    useMemo(() => {
+      const total =
+        Number(
+          currentKPIS.total
+        ) || 0;
+
+      const deployed =
+        Number(
+          currentKPIS.deployed
+        ) || 0;
+
+      if (!total) {
+        return 0;
+      }
+
+      return Number(
+        (
+          (deployed / total) *
+          100
+        ).toFixed(1)
+      );
+    }, [currentKPIS]);
+
+  const filteredSeverity =
+    useMemo(
+      () =>
+        buildSeverityDistribution(
+          reportScope.incidents
+        ),
+      [reportScope.incidents]
     );
 
-    return {
-      incidents: scopedIncidents,
-    };
-  }, [data.rawIncidents, selectedYear, selectedMonth]);
-
-  const currentKPIS = data.kpis;
-
-  const utilizationRate = useMemo(() => {
-    const total = Number(currentKPIS.total) || 0;
-    const deployed = Number(currentKPIS.deployed) || 0;
-
-    if (!total) return 0;
-
-    return Number(((deployed / total) * 100).toFixed(1));
-  }, [currentKPIS]);
-
-  const filteredSeverity = useMemo(() => {
-    return buildSeverityDistribution(reportScope.incidents);
-  }, [reportScope.incidents]);
-
-  const filteredAging = useMemo(() => {
-    return buildCaseAgingDistribution(reportScope.incidents);
-  }, [reportScope.incidents]);
+  const filteredAging =
+    useMemo(
+      () =>
+        buildCaseAgingDistribution(
+          reportScope.incidents
+        ),
+      [reportScope.incidents]
+    );
 
   const selectedPeriodLabel =
     Number(selectedMonth) === 0
       ? selectedYear
-      : `${monthList[selectedMonth - 1]} ${selectedYear}`;
+      : `${
+          monthList[
+            selectedMonth - 1
+          ]
+        } ${selectedYear}`;
 
-  const executiveActions = useMemo(() => {
-    return buildExecutiveActionItems({
-      employees: data.rawEmployees,
-      incidents: reportScope.incidents,
-      kpis: currentKPIS,
+  const executiveActions =
+    useMemo(() => {
+      return buildExecutiveActionItems(
+        {
+          employees:
+            data.rawEmployees,
+
+          incidents:
+            reportScope.incidents,
+
+          kpis:
+            currentKPIS,
+
+          utilizationRate,
+        }
+      );
+    }, [
+      data.rawEmployees,
+      reportScope.incidents,
+      currentKPIS,
       utilizationRate,
-    });
-  }, [data.rawEmployees, reportScope.incidents, currentKPIS, utilizationRate]);
+    ]);
 
-  const dashboardInsights = useMemo(() => {
-    return buildDashboardInsights({
-      employees: data.rawEmployees,
-      incidents: data.rawIncidents,
+  const dashboardInsights =
+    useMemo(() => {
+      return buildDashboardInsights({
+        employees:
+          data.rawEmployees,
+
+        incidents:
+          data.rawIncidents,
+
+        selectedYear,
+        selectedMonth,
+
+        kpis:
+          currentKPIS,
+
+        utilizationRate,
+      });
+    }, [
+      data.rawEmployees,
+      data.rawIncidents,
       selectedYear,
       selectedMonth,
-      kpis: currentKPIS,
+      currentKPIS,
       utilizationRate,
-    });
-  }, [
-    data.rawEmployees,
-    data.rawIncidents,
-    selectedYear,
-    selectedMonth,
-    currentKPIS,
-    utilizationRate,
-  ]);
+    ]);
 
-  const kpiTrendData = useMemo(
-    () => ({
-      total: {
-        label: "Current snapshot",
-        direction: "flat",
-        tone: "neutral",
-      },
-      deployed: {
-        label: "Current deployed",
-        direction: "flat",
-        tone: "neutral",
-      },
-      available: {
-        label: "Current available",
-        direction: "flat",
-        tone: "neutral",
-      },
-      utilizationRate: {
-        label: `${utilizationRate}% current`,
-        direction: "flat",
-        tone:
-          utilizationRate >= 80
-            ? "good"
-            : utilizationRate < 60
-            ? "bad"
-            : "neutral",
-      },
-      activeIncidents: {
-        label: "Current active cases",
-        direction: "flat",
-        tone: currentKPIS.activeIncidents > 0 ? "bad" : "good",
-      },
-      expiringDocs: {
-        label: `${currentKPIS.expiringDocs} due soon`,
-        direction: currentKPIS.expiringDocs > 0 ? "up" : "flat",
-        tone: currentKPIS.expiringDocs > 0 ? "bad" : "good",
-      },
-    }),
-    [currentKPIS, utilizationRate]
-  );
+  const kpiTrendData =
+    useMemo(
+      () => ({
+        total: {
+          label:
+            "Current snapshot",
+          direction: "flat",
+          tone: "neutral",
+        },
 
-  const handleOpenDrilldown = useCallback(
-    (key) => {
-      const disabledKeys = ["total", "deployed", "available"];
-      if (disabledKeys.includes(key)) return;
+        deployed: {
+          label:
+            "Current deployed",
+          direction: "flat",
+          tone: "neutral",
+        },
 
-      if (key === "activeIncidents") {
-        navigate("/incidents");
-        return;
+        available: {
+          label:
+            "Current available",
+          direction: "flat",
+          tone: "neutral",
+        },
+
+        utilizationRate: {
+          label: `${utilizationRate}% current`,
+          direction: "flat",
+
+          tone:
+            utilizationRate >= 80
+              ? "good"
+              : utilizationRate < 60
+                ? "bad"
+                : "neutral",
+        },
+
+        activeIncidents: {
+          label:
+            "Current active cases",
+
+          direction: "flat",
+
+          tone:
+            currentKPIS.activeIncidents >
+            0
+              ? "bad"
+              : "good",
+        },
+
+        expiringDocs: {
+          label: `${currentKPIS.expiringDocs} due soon`,
+
+          direction:
+            currentKPIS.expiringDocs >
+            0
+              ? "up"
+              : "flat",
+
+          tone:
+            currentKPIS.expiringDocs >
+            0
+              ? "bad"
+              : "good",
+        },
+      }),
+      [
+        currentKPIS,
+        utilizationRate,
+      ]
+    );
+
+  const handleOpenDrilldown =
+    useCallback(
+      (key) => {
+        const disabledKeys = [
+          "total",
+          "deployed",
+          "available",
+        ];
+
+        if (
+          disabledKeys.includes(
+            key
+          )
+        ) {
+          return;
+        }
+
+        if (
+          key ===
+          "activeIncidents"
+        ) {
+          navigate("/incidents");
+          return;
+        }
+
+        const detail =
+          dashboardInsights
+            ?.drilldowns?.[key];
+
+        if (detail) {
+          setActiveDrilldown(
+            detail
+          );
+        }
+      },
+      [
+        dashboardInsights,
+        navigate,
+      ]
+    );
+
+  const handleRowClick =
+    useCallback(
+      (row) => {
+        if (!row.employeeId) {
+          return;
+        }
+
+        const targetEmployee =
+          data.rawEmployees.find(
+            (employee) =>
+              String(
+                employee.id
+              ) ===
+                String(
+                  row.employeeId
+                ) ||
+              String(
+                employee.employeeId
+              ) ===
+                String(
+                  row.employeeId
+                )
+          );
+
+        if (targetEmployee) {
+          setEditingEmployee(
+            targetEmployee
+          );
+
+          setActiveDrilldown(
+            null
+          );
+        }
+      },
+      [data.rawEmployees]
+    );
+
+  const totalIncidentsForYear =
+    useMemo(
+      () =>
+        incidentTrend.reduce(
+          (sum, item) =>
+            sum + item.value,
+          0
+        ),
+      [incidentTrend]
+    );
+
+  const totalIncidentsForPeriod =
+    reportScope.incidents.length;
+
+  const peakDeploymentMonth =
+    useMemo(() => {
+      if (
+        !workforceTrend.length
+      ) {
+        return "N/A";
       }
 
-      const detail = dashboardInsights?.drilldowns?.[key];
+      const highest = [
+        ...workforceTrend,
+      ].sort(
+        (first, second) =>
+          second.value -
+          first.value
+      )[0];
 
-      if (detail) {
-        setActiveDrilldown(detail);
+      return highest?.value
+        ? `${highest.label} (${highest.value})`
+        : "N/A";
+    }, [workforceTrend]);
+
+  const highestIncidentMonth =
+    useMemo(() => {
+      if (
+        !incidentTrend.length
+      ) {
+        return "N/A";
       }
-    },
-    [dashboardInsights, navigate]
-  );
 
-  const handleRowClick = useCallback(
-    (row) => {
-      if (!row.employeeId) return;
+      const highest = [
+        ...incidentTrend,
+      ].sort(
+        (first, second) =>
+          second.value -
+          first.value
+      )[0];
 
-      const targetEmployee = data.rawEmployees.find(
-        (emp) =>
-          String(emp.id) === String(row.employeeId) ||
-          String(emp.employeeId) === String(row.employeeId)
+      return highest?.value
+        ? `${highest.label} (${highest.value})`
+        : "N/A";
+    }, [incidentTrend]);
+
+  const topSeverity =
+    useMemo(() => {
+      if (
+        !filteredSeverity.length
+      ) {
+        return "N/A";
+      }
+
+      const highest = [
+        ...filteredSeverity,
+      ].sort(
+        (first, second) =>
+          second.value -
+          first.value
+      )[0];
+
+      return highest?.value
+        ? highest.name
+        : "N/A";
+    }, [filteredSeverity]);
+
+  const handleExportPDF =
+    useCallback(() => {
+      const doc = new jsPDF();
+
+      doc.setFontSize(16);
+
+      doc.text(
+        "Welljob Solutions & General Services Inc.",
+        14,
+        18
       );
 
-      if (targetEmployee) {
-        setEditingEmployee(targetEmployee);
-        setActiveDrilldown(null);
-      }
-    },
-    [data.rawEmployees]
-  );
+      doc.setFontSize(12);
 
-  const totalIncidentsForYear = useMemo(
-    () => incidentTrend.reduce((sum, item) => sum + item.value, 0),
-    [incidentTrend]
-  );
+      doc.text(
+        "Executive Workforce Dashboard Report",
+        14,
+        26
+      );
 
-  const totalIncidentsForPeriod = reportScope.incidents.length;
+      doc.text(
+        `Report Scope: ${selectedPeriodLabel}`,
+        14,
+        34
+      );
 
-  const peakDeploymentMonth = useMemo(() => {
-    if (!workforceTrend.length) return "N/A";
+      doc.text(
+        `Generated: ${
+          lastUpdated ||
+          formatLastUpdated()
+        }`,
+        14,
+        42
+      );
 
-    const highest = [...workforceTrend].sort((a, b) => b.value - a.value)[0];
+      autoTable(doc, {
+        startY: 52,
 
-    return highest?.value ? `${highest.label} (${highest.value})` : "N/A";
-  }, [workforceTrend]);
+        head: [
+          ["Metric", "Value"],
+        ],
 
-  const highestIncidentMonth = useMemo(() => {
-    if (!incidentTrend.length) return "N/A";
+        body: [
+          [
+            "Total Employees",
+            currentKPIS.total,
+          ],
 
-    const highest = [...incidentTrend].sort((a, b) => b.value - a.value)[0];
+          [
+            "Deployed Employees",
+            currentKPIS.deployed,
+          ],
 
-    return highest?.value ? `${highest.label} (${highest.value})` : "N/A";
-  }, [incidentTrend]);
+          [
+            "Available Workers",
+            currentKPIS.available,
+          ],
 
-  const topSeverity = useMemo(() => {
-    if (!filteredSeverity.length) return "N/A";
+          [
+            "Utilization Rate",
+            `${utilizationRate}%`,
+          ],
 
-    const highest = [...filteredSeverity].sort((a, b) => b.value - a.value)[0];
+          [
+            "Current Active Incidents",
+            currentKPIS.activeIncidents,
+          ],
 
-    return highest?.value ? highest.name : "N/A";
-  }, [filteredSeverity]);
+          [
+            "Expiring Documents",
+            currentKPIS.expiringDocs,
+          ],
 
-  const handleExportPDF = useCallback(() => {
-    const doc = new jsPDF();
+          [
+            "Incidents in Report Scope",
+            totalIncidentsForPeriod,
+          ],
 
-    doc.setFontSize(16);
-    doc.text("Welljob Solutions & General Services Inc.", 14, 18);
+          [
+            "Total Year Incidents",
+            totalIncidentsForYear,
+          ],
 
-    doc.setFontSize(12);
-    doc.text("Executive Workforce Dashboard Report", 14, 26);
-    doc.text(`Report Scope: ${selectedPeriodLabel}`, 14, 34);
-    doc.text(`Generated: ${lastUpdated || formatLastUpdated()}`, 14, 42);
+          [
+            "Peak Deployment Month",
+            peakDeploymentMonth,
+          ],
 
-    autoTable(doc, {
-      startY: 52,
-      head: [["Metric", "Value"]],
-      body: [
-        ["Total Employees", currentKPIS.total],
-        ["Deployed Employees", currentKPIS.deployed],
-        ["Available Workers", currentKPIS.available],
-        ["Utilization Rate", `${utilizationRate}%`],
-        ["Current Active Incidents", currentKPIS.activeIncidents],
-        ["Expiring Documents", currentKPIS.expiringDocs],
-        ["Incidents in Report Scope", totalIncidentsForPeriod],
-        ["Total Year Incidents", totalIncidentsForYear],
-        ["Peak Deployment Month", peakDeploymentMonth],
-        ["Highest Incident Month", highestIncidentMonth],
-        ["Top Severity in Scope", topSeverity],
-      ],
-      theme: "grid",
-      headStyles: { fillColor: [79, 70, 229] },
-    });
+          [
+            "Highest Incident Month",
+            highestIncidentMonth,
+          ],
 
-    autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 10,
-      head: [["Priority", "Type", "Recommendation", "Basis"]],
-      body:
-        executiveActions.length > 0
-          ? executiveActions.map((action) => [
-              action.priority,
-              action.type,
-              action.recommendation,
-              action.basis || "-",
-            ])
-          : [["-", "No Alert", "No priority action item detected.", "-"]],
-      theme: "grid",
-      headStyles: { fillColor: [22, 163, 74] },
-      styles: { fontSize: 8 },
-      columnStyles: {
-        0: { cellWidth: 24 },
-        1: { cellWidth: 28 },
-        2: { cellWidth: 78 },
-        3: { cellWidth: 52 },
-      },
-    });
+          [
+            "Top Severity in Scope",
+            topSeverity,
+          ],
+        ],
 
-    autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 10,
-      head: [["Month", "Deployment", "Incidents"]],
-      body: monthList.map((month) => {
-        const deployment = workforceTrend.find((item) => item.label === month);
-        const incident = incidentTrend.find((item) => item.label === month);
+        theme: "grid",
 
-        return [month, deployment?.value ?? 0, incident?.value ?? 0];
-      }),
-      theme: "striped",
-      headStyles: { fillColor: [30, 41, 59] },
-    });
+        headStyles: {
+          fillColor: [
+            79,
+            70,
+            229,
+          ],
+        },
+      });
 
-    doc.save(`Welljob_Dashboard_Report_${selectedPeriodLabel}.pdf`);
-  }, [
-    selectedPeriodLabel,
-    lastUpdated,
-    currentKPIS,
-    utilizationRate,
-    totalIncidentsForPeriod,
-    totalIncidentsForYear,
-    peakDeploymentMonth,
-    highestIncidentMonth,
-    topSeverity,
-    workforceTrend,
-    incidentTrend,
-    executiveActions,
-  ]);
+      autoTable(doc, {
+        startY:
+          doc.lastAutoTable
+            .finalY + 10,
+
+        head: [
+          [
+            "Priority",
+            "Type",
+            "Recommendation",
+            "Basis",
+          ],
+        ],
+
+        body:
+          executiveActions.length >
+          0
+            ? executiveActions.map(
+                (action) => [
+                  action.priority,
+                  action.type,
+                  action.recommendation,
+                  action.basis ||
+                    "-",
+                ]
+              )
+            : [
+                [
+                  "-",
+                  "No Alert",
+                  "No priority action item detected.",
+                  "-",
+                ],
+              ],
+
+        theme: "grid",
+
+        headStyles: {
+          fillColor: [
+            22,
+            163,
+            74,
+          ],
+        },
+
+        styles: {
+          fontSize: 8,
+        },
+
+        columnStyles: {
+          0: {
+            cellWidth: 24,
+          },
+
+          1: {
+            cellWidth: 28,
+          },
+
+          2: {
+            cellWidth: 78,
+          },
+
+          3: {
+            cellWidth: 52,
+          },
+        },
+      });
+
+      autoTable(doc, {
+        startY:
+          doc.lastAutoTable
+            .finalY + 10,
+
+        head: [
+          [
+            "Month",
+            "Deployment",
+            "Incidents",
+          ],
+        ],
+
+        body: monthList.map(
+          (month) => {
+            const deployment =
+              workforceTrend.find(
+                (item) =>
+                  item.label ===
+                  month
+              );
+
+            const incident =
+              incidentTrend.find(
+                (item) =>
+                  item.label ===
+                  month
+              );
+
+            return [
+              month,
+              deployment?.value ??
+                0,
+              incident?.value ?? 0,
+            ];
+          }
+        ),
+
+        theme: "striped",
+
+        headStyles: {
+          fillColor: [
+            30,
+            41,
+            59,
+          ],
+        },
+      });
+
+      doc.save(
+        `Welljob_Dashboard_Report_${selectedPeriodLabel}.pdf`
+      );
+    }, [
+      selectedPeriodLabel,
+      lastUpdated,
+      currentKPIS,
+      utilizationRate,
+      totalIncidentsForPeriod,
+      totalIncidentsForYear,
+      peakDeploymentMonth,
+      highestIncidentMonth,
+      topSeverity,
+      workforceTrend,
+      incidentTrend,
+      executiveActions,
+    ]);
 
   if (loading) {
     return (
-      <div className="flex h-[70vh] items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-        Loading dashboard...
+      <div className="flex h-[70vh] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+        <FiRefreshCw
+          className="animate-spin text-2xl text-indigo-500"
+          aria-hidden="true"
+        />
+
+        <p className="font-semibold">
+          Loading dashboard...
+        </p>
+
+        <p className="text-xs text-slate-400">
+          Requests automatically stop
+          after 15 seconds if the server
+          does not respond.
+        </p>
       </div>
     );
   }
@@ -1035,8 +2223,27 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
       {fetchError && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
-          {fetchError}
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p>{fetchError}</p>
+
+            <button
+              type="button"
+              onClick={
+                handleRefresh
+              }
+              disabled={
+                refreshing ||
+                isLoadingRef.current
+              }
+              className="w-fit rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20"
+            >
+              Try Again
+            </button>
+          </div>
         </div>
       )}
 
@@ -1045,7 +2252,10 @@ export default function Dashboard() {
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white/90">
-                <FiBarChart2 />
+                <FiBarChart2
+                  aria-hidden="true"
+                />
+
                 Executive Overview
               </div>
 
@@ -1054,70 +2264,128 @@ export default function Dashboard() {
               </h1>
 
               <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">
-                Real-time summary of employee deployment, workforce availability,
-                incident monitoring, document compliance, and case aging.
+                Real-time summary of
+                employee deployment,
+                workforce availability,
+                incident monitoring,
+                document compliance, and
+                case aging.
               </p>
 
               <p className="mt-3 text-xs text-white/70">
-                Last Updated: {lastUpdated || "Not yet updated"}
+                Last Updated:{" "}
+                {lastUpdated ||
+                  "Not yet updated"}
               </p>
 
               <p className="mt-1 text-xs font-semibold text-white/70">
-                Report Scope: {selectedPeriodLabel}
+                Report Scope:{" "}
+                {
+                  selectedPeriodLabel
+                }
               </p>
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <select
-                value={selectedMonth}
-                onChange={handleMonthChange}
+                value={
+                  selectedMonth
+                }
+                onChange={
+                  handleMonthChange
+                }
                 className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50"
               >
-                <option className="text-slate-900" value={0}>
+                <option
+                  className="text-slate-900"
+                  value={0}
+                >
                   All Months
                 </option>
 
-                {availableMonths.map((month) => (
-                  <option
-                    className="text-slate-900"
-                    key={month.name}
-                    value={month.value}
-                    disabled={!month.available}
-                  >
-                    {month.name}
-                  </option>
-                ))}
+                {availableMonths.map(
+                  (month) => (
+                    <option
+                      className="text-slate-900"
+                      key={
+                        month.name
+                      }
+                      value={
+                        month.value
+                      }
+                      disabled={
+                        !month.available
+                      }
+                    >
+                      {month.name}
+                    </option>
+                  )
+                )}
               </select>
 
               <select
-                value={selectedYear}
-                onChange={handleYearChange}
+                value={
+                  selectedYear
+                }
+                onChange={
+                  handleYearChange
+                }
                 className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50"
               >
-                {availableYears.map((year) => (
-                  <option className="text-slate-900" key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
+                {availableYears.map(
+                  (year) => (
+                    <option
+                      className="text-slate-900"
+                      key={year}
+                      value={year}
+                    >
+                      {year}
+                    </option>
+                  )
+                )}
               </select>
 
               <button
                 type="button"
-                onClick={handleRefresh}
-                disabled={refreshing}
+                onClick={
+                  handleRefresh
+                }
+                disabled={
+                  refreshing ||
+                  isLoadingRef.current
+                }
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <FiRefreshCw className={refreshing ? "animate-spin" : ""} />
-                {refreshing ? "Refreshing..." : "Refresh"}
+                <FiRefreshCw
+                  className={
+                    refreshing
+                      ? "animate-spin"
+                      : ""
+                  }
+                  aria-hidden="true"
+                />
+
+                {refreshing
+                  ? "Refreshing..."
+                  : "Refresh"}
               </button>
 
-              <RoleGuard permission={PERMISSIONS.CAN_EXPORT_PDF}>
+              <RoleGuard
+                permission={
+                  PERMISSIONS.CAN_EXPORT_PDF
+                }
+              >
                 <button
                   type="button"
-                  onClick={handleExportPDF}
+                  onClick={
+                    handleExportPDF
+                  }
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50"
                 >
-                  <FiDownload />
+                  <FiDownload
+                    aria-hidden="true"
+                  />
+
                   Export PDF
                 </button>
               </RoleGuard>
@@ -1128,34 +2396,57 @@ export default function Dashboard() {
 
       <KPICards
         kpis={currentKPIS}
-        utilizationRate={utilizationRate}
+        utilizationRate={
+          utilizationRate
+        }
         trendData={kpiTrendData}
-        onCardClick={handleOpenDrilldown}
+        onCardClick={
+          handleOpenDrilldown
+        }
       />
 
-      <WorkforceHealthBanner health={dashboardInsights.health} />
+      <WorkforceHealthBanner
+        health={
+          dashboardInsights.health
+        }
+      />
 
-<ExecutiveActionItems
-  actions={executiveActions}
-  onOpenDrilldown={handleOpenDrilldown}
-/>
+      <ExecutiveActionItems
+        actions={executiveActions}
+        onOpenDrilldown={
+          handleOpenDrilldown
+        }
+      />
+
       <ExecutiveInsightTabs
-        insights={dashboardInsights}
-        onOpenDrilldown={handleOpenDrilldown}
+        insights={
+          dashboardInsights
+        }
+        onOpenDrilldown={
+          handleOpenDrilldown
+        }
       />
 
-      <PredictiveInsightsPanel predictions={dashboardInsights.predictions} />
+      <PredictiveInsightsPanel
+        predictions={
+          dashboardInsights.predictions
+        }
+      />
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <InsightCard
           title="Peak Deployment Month"
-          value={peakDeploymentMonth}
+          value={
+            peakDeploymentMonth
+          }
           tone="indigo"
         />
 
         <InsightCard
           title="Highest Incident Month"
-          value={highestIncidentMonth}
+          value={
+            highestIncidentMonth
+          }
           tone="red"
         />
 
@@ -1167,46 +2458,87 @@ export default function Dashboard() {
 
         <InsightCard
           title={`Total Incidents (${selectedPeriodLabel})`}
-          value={totalIncidentsForPeriod}
+          value={
+            totalIncidentsForPeriod
+          }
           tone="emerald"
         />
       </section>
 
       <DeploymentTrendChart
         data={workforceTrend}
-        comparisonData={deploymentComparisonTrend}
-        years={comparisonYears}
-        selectedYear={selectedYear}
+        comparisonData={
+          deploymentComparisonTrend
+        }
+        years={
+          comparisonYears
+        }
+        selectedYear={
+          selectedYear
+        }
       />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <IncidentTrendChart
           data={incidentTrend}
-          comparisonData={incidentComparisonTrend}
-          years={comparisonYears}
-          selectedYear={selectedYear}
+          comparisonData={
+            incidentComparisonTrend
+          }
+          years={
+            comparisonYears
+          }
+          selectedYear={
+            selectedYear
+          }
         />
 
-        <SeverityPieChart data={filteredSeverity} />
+        <SeverityPieChart
+          data={
+            filteredSeverity
+          }
+        />
 
-        <CaseAgingChart data={filteredAging} />
+        <CaseAgingChart
+          data={filteredAging}
+        />
       </div>
 
       <DashboardDrilldownModal
         detail={activeDrilldown}
-        onClose={() => setActiveDrilldown(null)}
-        onRowClick={handleRowClick}
+        onClose={() =>
+          setActiveDrilldown(null)
+        }
+        onRowClick={
+          handleRowClick
+        }
       />
 
       {editingEmployee && (
         <EditEmployeeModal
-          employeeToEdit={editingEmployee}
-          employees={data.rawEmployees}
-          onClose={() => setEditingEmployee(null)}
+          employeeToEdit={
+            editingEmployee
+          }
+          employees={
+            data.rawEmployees
+          }
+          onClose={() =>
+            setEditingEmployee(
+              null
+            )
+          }
           onSaveSuccess={async () => {
-            setEditingEmployee(null);
-            await loadData({ silent: true, showError: false });
-            emitDataUpdated("DASHBOARD_EMPLOYEE_EDIT");
+            setEditingEmployee(
+              null
+            );
+
+            await loadData({
+              silent: true,
+              showError: false,
+            });
+
+            emitDataUpdated(
+              "DASHBOARD_EMPLOYEE_EDIT"
+            );
           }}
         />
       )}
@@ -1214,22 +2546,32 @@ export default function Dashboard() {
   );
 }
 
-function InsightCard({ title, value, tone = "indigo" }) {
+function InsightCard({
+  title,
+  value,
+  tone = "indigo",
+}) {
   const tones = {
     indigo:
       "from-indigo-50 to-white dark:from-indigo-950/30 dark:to-slate-900",
-    red: "from-red-50 to-white dark:from-red-950/30 dark:to-slate-900",
+
+    red:
+      "from-red-50 to-white dark:from-red-950/30 dark:to-slate-900",
+
     amber:
       "from-amber-50 to-white dark:from-amber-950/30 dark:to-slate-900",
+
     emerald:
       "from-emerald-50 to-white dark:from-emerald-950/30 dark:to-slate-900",
   };
 
   return (
     <div
-      className={`rounded-2xl border border-slate-200 bg-gradient-to-br p-5 shadow-sm dark:border-white/10 ${
-        tones[tone] || tones.indigo
-      }`}
+      className={[
+        "rounded-2xl border border-slate-200 bg-gradient-to-br p-5 shadow-sm dark:border-white/10",
+        tones[tone] ||
+          tones.indigo,
+      ].join(" ")}
     >
       <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {title}
@@ -1243,10 +2585,23 @@ function InsightCard({ title, value, tone = "indigo" }) {
 }
 
 function PredictiveInsightsPanel({
-  predictions = { weekly: [], monthly: [], yearly: [] },
+  predictions = {
+    weekly: [],
+    monthly: [],
+    yearly: [],
+  },
 }) {
-  const [forecastRange, setForecastRange] = useState("weekly");
-  const [selectedCategory, setSelectedCategory] = useState("All Categories");
+  const [
+    forecastRange,
+    setForecastRange,
+  ] = useState("weekly");
+
+  const [
+    selectedCategory,
+    setSelectedCategory,
+  ] = useState(
+    "All Categories"
+  );
 
   const categories = [
     "All Categories",
@@ -1260,140 +2615,212 @@ function PredictiveInsightsPanel({
     "VIII. HABITUAL VIOLATIONS",
   ];
 
-  const basePredictions = Array.isArray(predictions?.[forecastRange])
-    ? predictions[forecastRange]
-    : [];
+  const basePredictions =
+    Array.isArray(
+      predictions?.[
+        forecastRange
+      ]
+    )
+      ? predictions[
+          forecastRange
+        ]
+      : [];
 
-  const activePredictions = basePredictions.filter(
-    (prediction) =>
-      selectedCategory === "All Categories" ||
-      prediction.category === selectedCategory
-  );
+  const activePredictions =
+    basePredictions.filter(
+      (prediction) =>
+        selectedCategory ===
+          "All Categories" ||
+        prediction.category ===
+          selectedCategory
+    );
 
   return (
     <section className="rounded-3xl border border-indigo-200 bg-gradient-to-b from-indigo-50/40 to-white p-6 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/20 dark:to-slate-900">
       <div className="mb-6 flex flex-col items-start justify-between gap-5 xl:flex-row xl:items-center">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 dark:shadow-none">
-            <FiTrendingUp size={24} />
+            <FiTrendingUp
+              size={24}
+              aria-hidden="true"
+            />
           </div>
 
           <div>
             <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-              System Forecasting & Next Steps
+              System Forecasting &
+              Next Steps
             </h2>
 
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Run-rate predictive analysis based on current workforce data.
+              Run-rate predictive
+              analysis based on current
+              workforce data.
             </p>
           </div>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <select
-            value={selectedCategory}
-            onChange={(event) => setSelectedCategory(event.target.value)}
+            value={
+              selectedCategory
+            }
+            onChange={(event) =>
+              setSelectedCategory(
+                event.target.value
+              )
+            }
             className="h-10 cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           >
-            {categories.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
+            {categories.map(
+              (category) => (
+                <option
+                  key={category}
+                  value={category}
+                >
+                  {category}
+                </option>
+              )
+            )}
           </select>
 
           <div className="flex shrink-0 rounded-xl bg-indigo-100/60 p-1 dark:bg-slate-800/80">
-            {["weekly", "monthly", "yearly"].map((range) => (
+            {[
+              "weekly",
+              "monthly",
+              "yearly",
+            ].map((range) => (
               <button
                 key={range}
                 type="button"
-                onClick={() => setForecastRange(range)}
-                className={`rounded-lg px-5 py-2 text-xs font-bold transition-all ${
-                  forecastRange === range
+                onClick={() =>
+                  setForecastRange(
+                    range
+                  )
+                }
+                className={[
+                  "rounded-lg px-5 py-2 text-xs font-bold transition-all",
+
+                  forecastRange ===
+                  range
                     ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white"
-                    : "text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-white"
-                }`}
+                    : "text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-white",
+                ].join(" ")}
               >
-                {range.charAt(0).toUpperCase() + range.slice(1)}
+                {range
+                  .charAt(0)
+                  .toUpperCase() +
+                  range.slice(1)}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {activePredictions.length === 0 ? (
+      {activePredictions.length ===
+      0 ? (
         <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/50 py-12 text-center dark:border-white/10 dark:bg-slate-950/30">
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-            <FiBarChart2 className="text-slate-400" size={20} />
+            <FiBarChart2
+              className="text-slate-400"
+              size={20}
+              aria-hidden="true"
+            />
           </div>
 
           <p className="text-base font-bold text-slate-700 dark:text-slate-300">
-            No operational trend detected.
+            No operational trend
+            detected.
           </p>
 
           <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-            The system has not reached the percentage threshold to trigger a
-            forecast for this category and period.
+            The system has not reached
+            the percentage threshold to
+            trigger a forecast for this
+            category and period.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {activePredictions.map((prediction, index) => {
-            const isForecast = String(prediction.action || "").includes(
-              "Forecast:"
-            );
+          {activePredictions.map(
+            (
+              prediction,
+              index
+            ) => {
+              const isForecast =
+                String(
+                  prediction.action ||
+                    ""
+                ).includes(
+                  "Forecast:"
+                );
 
-            const actionText = String(prediction.action || "").replace(
-              "Forecast: ",
-              ""
-            );
+              const actionText =
+                String(
+                  prediction.action ||
+                    ""
+                ).replace(
+                  "Forecast: ",
+                  ""
+                );
 
-            return (
-              <div
-                key={prediction.id || `${prediction.category}-${index}`}
-                className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
-              >
-                <div>
-                  <div className="mb-4 flex items-start justify-between gap-2">
-                    <div className="flex flex-col">
-                      <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
-                        {prediction.percentage || "0%"}
-                      </span>
+              return (
+                <div
+                  key={
+                    prediction.id ||
+                    `${prediction.category}-${index}`
+                  }
+                  className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
+                >
+                  <div>
+                    <div className="mb-4 flex items-start justify-between gap-2">
+                      <div className="flex flex-col">
+                        <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
+                          {prediction.percentage ||
+                            "0%"}
+                        </span>
 
-                      <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                        Affected Workforce
+                        <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                          Affected Workforce
+                        </span>
+                      </div>
+
+                      <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                        {prediction.count ||
+                          0}{" "}
+                        Cases
                       </span>
                     </div>
 
-                    <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                      {prediction.count || 0} Cases
-                    </span>
+                    <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
+                      {prediction.category ||
+                        "Uncategorized"}
+                    </h4>
+
+                    <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
+                      {prediction.title ||
+                        "Operational Notice"}
+                    </h3>
                   </div>
 
-                  <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
-                    {prediction.category || "Uncategorized"}
-                  </h4>
+                  <div className="mt-5">
+                    <div className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50" />
 
-                  <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
-                    {prediction.title || "Operational Notice"}
-                  </h3>
+                    <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
+                      {isForecast && (
+                        <span className="font-extrabold text-indigo-600 dark:text-indigo-400">
+                          Forecast:{" "}
+                        </span>
+                      )}
+
+                      {actionText ||
+                        "No suggested action available."}
+                    </p>
+                  </div>
                 </div>
-
-                <div className="mt-5">
-                  <div className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50" />
-
-                  <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
-                    {isForecast && (
-                      <span className="font-extrabold text-indigo-600 dark:text-indigo-400">
-                        Forecast:{" "}
-                      </span>
-                    )}
-                    {actionText || "No suggested action available."}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+              );
+            }
+          )}
         </div>
       )}
     </section>
