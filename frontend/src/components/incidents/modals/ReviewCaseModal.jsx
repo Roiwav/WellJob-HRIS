@@ -1,15 +1,20 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { FiCheckCircle, FiXCircle } from "react-icons/fi";
+
+import Button from "../../ui/Button";
+
 import { SmartAlertCard } from "../badges/IncidentBadges";
+
 import { formatDateTime } from "../../../utils/incidents/incidentHelpers";
+
 import {
   BaseModal,
-  InfoCard,
+  CaseTimeline,
   Detail,
   Field,
+  InfoCard,
   ModalFooter,
   ProofReview,
-  CaseTimeline,
 } from "../shared/ModalUI";
 
 export default function ReviewCaseModal({
@@ -20,45 +25,196 @@ export default function ReviewCaseModal({
   showNotice,
 }) {
   const [rejectComment, setRejectComment] = useState("");
+  const [processingAction, setProcessingAction] = useState(null);
 
-  const handleReject = () => {
-    if (!rejectComment.trim()) {
-      showNotice(
+  const isProcessing = processingAction !== null;
+  const isApproving = processingAction === "approve";
+  const isRejecting = processingAction === "reject";
+
+  const handleClose = useCallback(() => {
+    if (isProcessing) {
+      return;
+    }
+
+    onClose?.();
+  }, [isProcessing, onClose]);
+
+  const handleRejectCommentChange = useCallback((event) => {
+    setRejectComment(event.target.value);
+  }, []);
+
+  const handleReject = useCallback(async () => {
+    if (isProcessing || !incident) {
+      return;
+    }
+
+    const cleanComment = rejectComment.trim();
+
+    if (!cleanComment) {
+      showNotice?.(
         "error",
         "Return Comment Required",
         "Please enter a return comment before sending this case back for correction."
       );
+
       return;
     }
 
-    onReject(incident, rejectComment.trim());
-  };
+    try {
+      setProcessingAction("reject");
+
+      const success = await onReject?.(incident, cleanComment);
+
+      if (success === false) {
+        setProcessingAction(null);
+      }
+    } catch (error) {
+      console.error("Return incident case error:", error);
+
+      setProcessingAction(null);
+
+      showNotice?.(
+        "error",
+        "Return Failed",
+        error?.message ||
+          "The case could not be returned for correction. Please try again."
+      );
+    }
+  }, [
+    incident,
+    isProcessing,
+    onReject,
+    rejectComment,
+    showNotice,
+  ]);
+
+  const handleApprove = useCallback(async () => {
+    if (isProcessing || !incident) {
+      return;
+    }
+
+    try {
+      setProcessingAction("approve");
+
+      const success = await onApprove?.(incident);
+
+      if (success === false) {
+        setProcessingAction(null);
+      }
+    } catch (error) {
+      console.error("Approve incident case error:", error);
+
+      setProcessingAction(null);
+
+      showNotice?.(
+        "error",
+        "Approval Failed",
+        error?.message ||
+          "The case could not be approved and closed. Please try again."
+      );
+    }
+  }, [
+    incident,
+    isProcessing,
+    onApprove,
+    showNotice,
+  ]);
+
+  if (!incident) {
+    return null;
+  }
+
+  const incidentCode =
+    incident.displayId ||
+    incident.id ||
+    "-";
+
+  const employeeName =
+    incident.employee ||
+    incident.employeeName ||
+    "Unknown Employee";
+
+  const violation =
+    incident.violation ||
+    incident.violationType ||
+    "-";
+
+  const sanction =
+    incident.sanction ||
+    incident.actionTaken ||
+    "-";
+
+  const investigation =
+    incident.investigation || {};
+
+  const resolution =
+    incident.resolution || null;
+
+  const smartAlerts = Array.isArray(incident.smartAlerts)
+    ? incident.smartAlerts
+    : [];
 
   return (
     <BaseModal
-      onClose={onClose}
+      onClose={handleClose}
       title="Super Admin Case Review"
-      subtitle={`${incident.id} • ${incident.employee}`}
+      subtitle={`${incidentCode} • ${employeeName}`}
       color="indigo"
+      size="lg"
+      preventClose={isProcessing}
     >
-      <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-5">
           <InfoCard title="Incident Summary">
-            <Detail label="Violation" value={incident.violation} />
-            <Detail label="Severity" value={incident.severity} />
-            <Detail label="Sanction" value={incident.sanction} />
-            <Detail label="Status" value={incident.status} />
+            <Detail
+              label="Incident ID"
+              value={incidentCode}
+            />
+
+            <Detail
+              label="Employee"
+              value={employeeName}
+            />
+
+            <Detail
+              label="Violation"
+              value={violation}
+            />
+
+            <Detail
+              label="Severity"
+              value={incident.severity}
+            />
+
+            <Detail
+              label="Sanction"
+              value={sanction}
+            />
+
+            <Detail
+              label="Status"
+              value={incident.status}
+            />
+
             <Detail
               label="Case Age"
-              value={`${incident.caseAgeDays || 0} day(s)`}
+              value={`${Number(
+                incident.caseAgeDays || 0
+              )} day(s)`}
             />
           </InfoCard>
 
-          {incident.smartAlerts?.length > 0 && (
+          {smartAlerts.length > 0 && (
             <InfoCard title="Smart Alerts">
               <div className="space-y-2">
-                {incident.smartAlerts.map((alert) => (
-                  <SmartAlertCard key={alert.id} alert={alert} />
+                {smartAlerts.map((alert, index) => (
+                  <SmartAlertCard
+                    key={
+                      alert.id ||
+                      `${alert.type || "alert"}-${index}`
+                    }
+                    alert={alert}
+                  />
                 ))}
               </div>
             </InfoCard>
@@ -67,52 +223,104 @@ export default function ReviewCaseModal({
           <InfoCard title="Investigation Information">
             <Detail
               label="Started By"
-              value={incident.investigation?.startedByName || "-"}
+              value={
+                investigation.startedByName ||
+                incident.investigationStartedByName ||
+                incident.investigation_started_by_name ||
+                "-"
+              }
             />
+
             <Detail
               label="Username"
-              value={incident.investigation?.startedByUsername || "-"}
+              value={
+                investigation.startedByUsername ||
+                incident.investigationStartedByUsername ||
+                "-"
+              }
             />
+
             <Detail
               label="User ID"
-              value={incident.investigation?.startedById || "-"}
+              value={
+                investigation.startedById ||
+                incident.investigationStartedById ||
+                "-"
+              }
             />
+
             <Detail
               label="Date Started"
-              value={formatDateTime(incident.investigation?.startedAt)}
+              value={formatDateTime(
+                investigation.startedAt ||
+                  incident.investigationStartedAt ||
+                  incident.investigation_started_at
+              )}
             />
           </InfoCard>
 
-          {incident.resolution && <ProofReview resolution={incident.resolution} />}
+          {resolution ? (
+            <ProofReview resolution={resolution} />
+          ) : (
+            <InfoCard title="Resolution Proof Review">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                No resolution proof was submitted for this case.
+              </p>
+            </InfoCard>
+          )}
 
           <Field label="Return Comment if Proof is Not Enough">
             <textarea
-              rows="3"
+              rows={4}
               value={rejectComment}
-              onChange={(event) => setRejectComment(event.target.value)}
-              placeholder="Example: Proof is incomplete. Please upload signed memo or acknowledged document."
-              className="input-field resize-none"
+              onChange={handleRejectCommentChange}
+              disabled={isProcessing}
+              placeholder="Example: Proof is incomplete. Please upload the signed memo or acknowledged document."
+              className="input-field resize-none disabled:cursor-not-allowed disabled:opacity-60"
             />
+
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              A comment is required only when returning the case for
+              correction.
+            </p>
           </Field>
 
           <ModalFooter>
-            <button type="button" onClick={handleReject} className="btn-red">
-              <FiXCircle />
-              Return Case
-            </button>
-
-            <button
+            <Button
               type="button"
-              onClick={() => onApprove(incident)}
-              className="btn-green"
+              variant="danger"
+              leftIcon={
+                <FiXCircle aria-hidden="true" />
+              }
+              loading={isRejecting}
+              disabled={isProcessing}
+              onClick={handleReject}
             >
-              <FiCheckCircle />
-              Approve & Close
-            </button>
+              {isRejecting
+                ? "Returning Case..."
+                : "Return Case"}
+            </Button>
+
+            <Button
+              type="button"
+              variant="success"
+              leftIcon={
+                <FiCheckCircle aria-hidden="true" />
+              }
+              loading={isApproving}
+              disabled={isProcessing}
+              onClick={handleApprove}
+            >
+              {isApproving
+                ? "Approving Case..."
+                : "Approve & Close"}
+            </Button>
           </ModalFooter>
         </div>
 
-        <CaseTimeline incident={incident} />
+        <aside className="min-w-0">
+          <CaseTimeline incident={incident} />
+        </aside>
       </div>
     </BaseModal>
   );

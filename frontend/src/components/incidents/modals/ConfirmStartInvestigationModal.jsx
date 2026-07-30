@@ -1,10 +1,15 @@
+import { useCallback, useMemo, useState } from "react";
 import { FiPlay } from "react-icons/fi";
+
 import { formatDateTime } from "../../../utils/incidents/incidentHelpers";
+
+import Button from "../../ui/Button";
+
 import {
-  BaseModal,
   AlertBox,
-  InfoCard,
+  BaseModal,
   Detail,
+  InfoCard,
   ModalFooter,
 } from "../shared/ModalUI";
 
@@ -14,56 +19,177 @@ export default function ConfirmStartInvestigationModal({
   onClose,
   onConfirm,
 }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const currentDateTime = useMemo(() => {
+    return formatDateTime(new Date().toISOString());
+  }, []);
+
+const safeIncident = useMemo(() => {
+  return incident || {};
+}, [incident]);
+
+const safeCurrentUser = useMemo(() => {
+  return currentUser || {};
+}, [currentUser]);
+
+  const handleClose = useCallback(() => {
+    if (isSubmitting) {
+      return;
+    }
+
+    onClose?.();
+  }, [isSubmitting, onClose]);
+
+  const handleConfirm = useCallback(async () => {
+    if (isSubmitting || !safeIncident?.id) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      const result = await onConfirm?.(safeIncident);
+
+      if (result === false) {
+        setIsSubmitting(false);
+      }
+    } catch (error) {
+      console.error(
+        "Start investigation confirmation error:",
+        error
+      );
+
+      setIsSubmitting(false);
+    }
+  }, [
+    isSubmitting,
+    onConfirm,
+    safeIncident,
+  ]);
+
+  if (!incident) {
+    return null;
+  }
+
   return (
     <BaseModal
-      onClose={onClose}
+      onClose={handleClose}
       title="Confirm Investigation Start"
       subtitle="This action will be recorded in the case timeline."
       color="amber"
       size="sm"
+      preventClose={isSubmitting}
     >
       <div className="space-y-5">
         <AlertBox
           type="warning"
-          title="Are you sure you want to start investigation?"
-          message="This will move the case to Investigating status and log your name, username, user ID, role, date, and time."
+          title="Are you sure you want to start the investigation?"
+          message="This will move the case to Investigating status and record the responsible user's identity, role, date, and time in the case timeline."
         />
 
         <InfoCard title="Case to Investigate">
-          <Detail label="Incident ID" value={incident.id} />
-          <Detail label="Employee" value={incident.employee} />
-          <Detail label="Violation Type" value={incident.violation} />
-          <Detail label="Severity" value={incident.severity} />
+          <Detail
+            label="Incident ID"
+            value={
+              safeIncident.displayId ||
+              safeIncident.id
+            }
+          />
+
+          <Detail
+            label="Employee"
+            value={
+              safeIncident.employee ||
+              safeIncident.employeeName
+            }
+          />
+
+          <Detail
+            label="Violation Type"
+            value={
+              safeIncident.violation ||
+              safeIncident.violationType
+            }
+          />
+
+          <Detail
+            label="Severity"
+            value={safeIncident.severity}
+          />
+
+          <Detail
+            label="Current Status"
+            value={safeIncident.status}
+          />
+
           <Detail
             label="Case Age"
-            value={`${incident.caseAgeDays || 0} day(s)`}
+            value={`${Number(
+              safeIncident.caseAgeDays || 0
+            )} day(s)`}
           />
         </InfoCard>
 
         <InfoCard title="Investigation Started By">
-          <Detail label="Name" value={currentUser.name} />
-          <Detail label="Username" value={currentUser.username} />
-          <Detail label="User ID" value={currentUser.id} />
-          <Detail label="Role" value={currentUser.role} />
+          <Detail
+            label="Name"
+            value={
+              safeCurrentUser.name ||
+              safeCurrentUser.fullName ||
+              safeCurrentUser.full_name
+            }
+          />
+
+          <Detail
+            label="Username"
+            value={safeCurrentUser.username}
+          />
+
+          <Detail
+            label="User ID"
+            value={
+              safeCurrentUser.id ||
+              safeCurrentUser.userId
+            }
+          />
+
+          <Detail
+            label="Role"
+            value={safeCurrentUser.role}
+          />
+
           <Detail
             label="Date and Time"
-            value={formatDateTime(new Date().toISOString())}
+            value={currentDateTime}
           />
         </InfoCard>
 
         <ModalFooter>
-          <button type="button" onClick={onClose} className="btn-light">
-            Cancel
-          </button>
-
-          <button
+          <Button
             type="button"
-            onClick={() => onConfirm(incident)}
-            className="btn-amber"
+            variant="secondary"
+            disabled={isSubmitting}
+            onClick={handleClose}
           >
-            <FiPlay />
-            Yes, Start Investigation
-          </button>
+            Cancel
+          </Button>
+
+          <Button
+            type="button"
+            variant="warning"
+            leftIcon={<FiPlay aria-hidden="true" />}
+            loading={isSubmitting}
+            disabled={
+              isSubmitting ||
+              !safeIncident?.id
+            }
+            onClick={handleConfirm}
+          >
+            {isSubmitting
+              ? "Starting Investigation..."
+              : "Yes, Start Investigation"}
+          </Button>
         </ModalFooter>
       </div>
     </BaseModal>

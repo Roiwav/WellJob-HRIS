@@ -6,9 +6,163 @@ import {
   FiXCircle,
 } from "react-icons/fi";
 
+import Button from "../../ui/Button";
 import Dialog from "../../ui/Dialog";
+
 import { formatDateTime } from "../../../utils/incidents/incidentHelpers";
 import { formatFileSize } from "../../../utils/incidents/evidenceFiles";
+
+const DIALOG_TONE_BY_COLOR = {
+  red: "danger",
+  green: "success",
+  indigo: "default",
+  amber: "warning",
+};
+
+const DIALOG_SIZE_MAP = {
+  sm: "md",
+  md: "lg",
+  lg: "xl",
+  xl: "xl",
+};
+
+function getDisplayValue(value, fallback = "-") {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  const normalizedValue = String(value).trim();
+
+  return normalizedValue || fallback;
+}
+
+function getTimelineEventAction(event) {
+  return String(
+    event?.actionType ||
+      event?.action_type ||
+      event?.status ||
+      ""
+  )
+    .trim()
+    .toUpperCase();
+}
+
+function getTimelineEventDate(event) {
+  return (
+    event?.createdAt ||
+    event?.created_at ||
+    event?.date ||
+    event?.reportedAt ||
+    null
+  );
+}
+
+function getTimelineEventCreator(event) {
+  return (
+    event?.createdByName ||
+    event?.created_by_name ||
+    event?.createdBy ||
+    event?.created_by ||
+    "System"
+  );
+}
+
+function getTimelineEventDescription(event) {
+  if (event?.description) {
+    return event.description;
+  }
+
+  const action = getTimelineEventAction(event);
+  const createdBy = getTimelineEventCreator(event);
+
+  if (action === "CREATE_INCIDENT") {
+    return `Reported by ${createdBy}.`;
+  }
+
+  if (action === "START_INVESTIGATION") {
+    return `${createdBy} started the investigation.`;
+  }
+
+  if (
+    action === "SUBMIT_RESOLUTION" ||
+    action === "SUBMIT_INVESTIGATION"
+  ) {
+    return `${createdBy} submitted proof for Super Admin review.`;
+  }
+
+  if (action === "RETURN_INCIDENT") {
+    return `${createdBy} returned the case for correction.`;
+  }
+
+  if (action === "CLOSE_INCIDENT") {
+    return `${createdBy} approved and closed the case.`;
+  }
+
+  return `Updated by ${createdBy}.`;
+}
+
+function getTimelineEventTitle(event) {
+  if (event?.title) {
+    return event.title;
+  }
+
+  const action = getTimelineEventAction(event);
+
+  if (action === "CREATE_INCIDENT") {
+    return "Reported";
+  }
+
+  if (action === "START_INVESTIGATION") {
+    return "Investigation Started";
+  }
+
+  if (
+    action === "SUBMIT_RESOLUTION" ||
+    action === "SUBMIT_INVESTIGATION"
+  ) {
+    return "Proof Submitted";
+  }
+
+  if (action === "RETURN_INCIDENT") {
+    return "Returned by Super Admin";
+  }
+
+  if (action === "CLOSE_INCIDENT") {
+    return "Approved and Closed";
+  }
+
+  return "Timeline Event";
+}
+
+function getTimelineEventState(event) {
+  const action = getTimelineEventAction(event);
+
+  if (action === "RETURN_INCIDENT") {
+    return "rejected";
+  }
+
+  if (action === "CLOSE_INCIDENT") {
+    return "closed";
+  }
+
+  const title = String(event?.title || "").toLowerCase();
+
+  if (
+    title.includes("return") ||
+    title.includes("reject")
+  ) {
+    return "rejected";
+  }
+
+  if (
+    title.includes("closed") ||
+    title.includes("approved")
+  ) {
+    return "closed";
+  }
+
+  return "done";
+}
 
 export function BaseModal({
   children,
@@ -20,14 +174,11 @@ export function BaseModal({
   preventClose = false,
   initialFocusRef,
 }) {
-  const toneByColor = {
-    red: "danger",
-    green: "success",
-    indigo: "default",
-    amber: "warning",
-  };
+  const dialogTone =
+    DIALOG_TONE_BY_COLOR[color] || "default";
 
-  const dialogSize = size === "sm" ? "lg" : "xl";
+  const dialogSize =
+    DIALOG_SIZE_MAP[size] || "xl";
 
   return (
     <Dialog
@@ -35,7 +186,7 @@ export function BaseModal({
       onClose={onClose}
       title={title}
       description={subtitle}
-      tone={toneByColor[color] || "default"}
+      tone={dialogTone}
       size={dialogSize}
       preventClose={preventClose}
       closeOnOverlay={!preventClose}
@@ -43,6 +194,7 @@ export function BaseModal({
       initialFocusRef={initialFocusRef}
     >
       {children}
+
       <ModalStyle />
     </Dialog>
   );
@@ -69,18 +221,14 @@ export function NoticeModal({
       closeOnOverlay={!preventClose}
       closeOnEscape={!preventClose}
       footer={
-        <button
+        <Button
           type="button"
-          onClick={onClose}
+          variant={isSuccess ? "success" : "danger"}
           disabled={preventClose}
-          className={`inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-bold text-white transition focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${
-            isSuccess
-              ? "bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500/30"
-              : "bg-red-600 hover:bg-red-700 focus:ring-red-500/30"
-          }`}
+          onClick={onClose}
         >
           Close
-        </button>
+        </Button>
       }
     >
       <div className="flex items-start gap-4">
@@ -92,9 +240,15 @@ export function NoticeModal({
           }`}
         >
           {isSuccess ? (
-            <FiCheckCircle size={24} aria-hidden="true" />
+            <FiCheckCircle
+              size={24}
+              aria-hidden="true"
+            />
           ) : (
-            <FiAlertCircle size={24} aria-hidden="true" />
+            <FiAlertCircle
+              size={24}
+              aria-hidden="true"
+            />
           )}
         </div>
 
@@ -106,121 +260,95 @@ export function NoticeModal({
   );
 }
 
-export function AlertBox({ type = "warning", title, message }) {
+export function AlertBox({
+  type = "warning",
+  title,
+  message,
+}) {
   const style =
     type === "error"
       ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
       : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300";
 
   return (
-    <div className={`flex items-start gap-4 rounded-2xl border p-5 ${style}`}>
+    <div
+      role={type === "error" ? "alert" : "status"}
+      className={`flex items-start gap-4 rounded-2xl border p-5 ${style}`}
+    >
       <div className="rounded-full bg-white/50 p-3">
-        <FiAlertCircle size={22} />
+        <FiAlertCircle
+          size={22}
+          aria-hidden="true"
+        />
       </div>
 
-      <div>
-        <h3 className="text-lg font-extrabold">{title}</h3>
-        <p className="mt-1 text-sm leading-6">{message}</p>
+      <div className="min-w-0">
+        <h3 className="text-lg font-extrabold">
+          {title}
+        </h3>
+
+        <p className="mt-1 text-sm leading-6">
+          {message}
+        </p>
       </div>
     </div>
   );
 }
 
 export function CaseTimeline({ incident }) {
-  const status = String(incident?.status || "Open").trim();
+  const status = String(
+    incident?.status || "Open"
+  ).trim();
 
-  const timelineEvents = Array.isArray(incident?.timelineEvents)
+  const timelineEvents = Array.isArray(
+    incident?.timelineEvents
+  )
     ? incident.timelineEvents
     : Array.isArray(incident?.timeline_events)
-    ? incident.timeline_events
-    : Array.isArray(incident?.timeline)
-    ? incident.timeline
-    : [];
-
-  const getEventAction = (event) =>
-    String(event?.actionType || event?.action_type || event?.status || "")
-      .trim()
-      .toUpperCase();
-
-  const getEventDate = (event) =>
-    event?.createdAt ||
-    event?.created_at ||
-    event?.date ||
-    event?.reportedAt ||
-    null;
-
-  const getEventCreatedBy = (event) =>
-    event?.createdByName ||
-    event?.created_by_name ||
-    event?.createdBy ||
-    event?.created_by ||
-    "System";
-
-  const getEventDescription = (event) => {
-    if (event?.description) return event.description;
-
-    const action = getEventAction(event);
-    const createdBy = getEventCreatedBy(event);
-
-    if (action === "CREATE_INCIDENT") return `Reported by ${createdBy}.`;
-    if (action === "START_INVESTIGATION")
-      return `${createdBy} started the investigation.`;
-    if (action === "SUBMIT_RESOLUTION" || action === "SUBMIT_INVESTIGATION")
-      return `${createdBy} submitted proof for Super Admin review.`;
-    if (action === "RETURN_INCIDENT")
-      return `${createdBy} returned the case for correction.`;
-    if (action === "CLOSE_INCIDENT")
-      return `${createdBy} approved and closed the case.`;
-
-    return `Updated by ${createdBy}.`;
-  };
-
-  const getEventTitle = (event) => {
-    if (event?.title) return event.title;
-
-    const action = getEventAction(event);
-
-    if (action === "CREATE_INCIDENT") return "Reported";
-    if (action === "START_INVESTIGATION") return "Investigation Started";
-    if (action === "SUBMIT_RESOLUTION") return "Proof Submitted";
-    if (action === "SUBMIT_INVESTIGATION") return "Proof Submitted";
-    if (action === "RETURN_INCIDENT") return "Returned by Super Admin";
-    if (action === "CLOSE_INCIDENT") return "Approved and Closed";
-
-    return "Timeline Event";
-  };
-
-  const getEventState = (event) => {
-    const action = getEventAction(event);
-
-    if (action === "RETURN_INCIDENT") return "rejected";
-    if (action === "CLOSE_INCIDENT") return "closed";
-
-    const title = String(event?.title || "").toLowerCase();
-
-    if (title.includes("return") || title.includes("reject")) return "rejected";
-    if (title.includes("closed") || title.includes("approved")) return "closed";
-
-    return "done";
-  };
+      ? incident.timeline_events
+      : Array.isArray(incident?.timeline)
+        ? incident.timeline
+        : [];
 
   const databaseSteps = timelineEvents
-    .filter((event) => event && (event.title || getEventAction(event)))
+    .filter(
+      (event) =>
+        event &&
+        (event.title ||
+          getTimelineEventAction(event))
+    )
     .map((event, index) => ({
       id:
         event.id ||
-        `${getEventAction(event) || "timeline"}-${getEventDate(event) || index}`,
-      title: getEventTitle(event),
-      description: getEventDescription(event),
-      createdAt: getEventDate(event),
-      state: getEventState(event),
+        `${
+          getTimelineEventAction(event) ||
+          "timeline"
+        }-${
+          getTimelineEventDate(event) ||
+          index
+        }`,
+
+      title:
+        getTimelineEventTitle(event),
+
+      description:
+        getTimelineEventDescription(event),
+
+      createdAt:
+        getTimelineEventDate(event),
+
+      state:
+        getTimelineEventState(event),
     }));
 
-  const hasDatabaseTimeline = databaseSteps.length > 0;
+  const investigation =
+    incident?.investigation || null;
 
-  const investigation = incident?.investigation || null;
-  const resolution = incident?.resolution || null;
-  const review = incident?.review || null;
+  const resolution =
+    incident?.resolution || null;
+
+  const review =
+    incident?.review || null;
 
   const reportedBy =
     incident?.reportedByName ||
@@ -228,6 +356,14 @@ export function CaseTimeline({ incident }) {
     incident?.reportedBy ||
     incident?.reported_by ||
     "Unknown Reporter";
+
+  const reportedAt =
+    incident?.reportedAt ||
+    incident?.reported_at ||
+    incident?.date ||
+    incident?.createdAt ||
+    incident?.created_at ||
+    null;
 
   const investigationStartedAt =
     investigation?.startedAt ||
@@ -254,7 +390,10 @@ export function CaseTimeline({ incident }) {
     "-";
 
   const reviewedAt =
-    review?.reviewedAt || incident?.reviewedAt || incident?.reviewed_at || null;
+    review?.reviewedAt ||
+    incident?.reviewedAt ||
+    incident?.reviewed_at ||
+    null;
 
   const reviewedBy =
     review?.reviewedByName ||
@@ -266,18 +405,26 @@ export function CaseTimeline({ incident }) {
     review?.decision ||
     incident?.reviewDecision ||
     incident?.review_decision ||
-    (status === "Closed" ? "Approved" : "");
+    (status === "Closed"
+      ? "Approved"
+      : "");
+
+  const normalizedDecision = String(
+    reviewDecision
+  )
+    .trim()
+    .toLowerCase();
 
   const isReturned =
-    String(reviewDecision).toLowerCase() === "returned" ||
-    String(reviewDecision).toLowerCase() === "rejected";
+    normalizedDecision === "returned" ||
+    normalizedDecision === "rejected";
 
   const fallbackSteps = [
     {
       id: "reported",
       title: "Reported",
       description: `Reported by ${reportedBy}`,
-      createdAt: incident?.reportedAt || incident?.date || incident?.createdAt,
+      createdAt: reportedAt,
       state: "done",
     },
     {
@@ -287,7 +434,9 @@ export function CaseTimeline({ incident }) {
         ? `Started by ${investigationStartedBy}`
         : "Waiting for HR action",
       createdAt: investigationStartedAt,
-      state: investigationStartedAt ? "done" : "pending",
+      state: investigationStartedAt
+        ? "done"
+        : "pending",
     },
     {
       id: "proof",
@@ -296,20 +445,33 @@ export function CaseTimeline({ incident }) {
         ? `Submitted by ${resolutionSubmittedBy}`
         : "Waiting for resolution proof",
       createdAt: resolutionSubmittedAt,
-      state: resolutionSubmittedAt ? "done" : "pending",
+      state: resolutionSubmittedAt
+        ? "done"
+        : "pending",
     },
     {
       id: "review",
-      title: isReturned ? "Returned by Super Admin" : "Approved and Closed",
+      title: isReturned
+        ? "Returned by Super Admin"
+        : "Approved and Closed",
       description: reviewedAt
-        ? `${reviewDecision || "Reviewed"} by ${reviewedBy}`
+        ? `${
+            reviewDecision || "Reviewed"
+          } by ${reviewedBy}`
         : "Waiting for Super Admin review",
       createdAt: reviewedAt,
-      state: isReturned ? "rejected" : status === "Closed" ? "closed" : "pending",
+      state: isReturned
+        ? "rejected"
+        : status === "Closed"
+          ? "closed"
+          : "pending",
     },
   ];
 
-  const steps = hasDatabaseTimeline ? databaseSteps : fallbackSteps;
+  const steps =
+    databaseSteps.length > 0
+      ? databaseSteps
+      : fallbackSteps;
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950">
@@ -319,43 +481,66 @@ export function CaseTimeline({ incident }) {
 
       <div className="space-y-5">
         {steps.map((item, index) => {
+          const isCompleted =
+            item.state === "done" ||
+            item.state === "closed";
+
           const iconStyle =
             item.state === "rejected"
               ? "border-red-300 bg-red-100 text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300"
-              : item.state === "done" || item.state === "closed"
-              ? "border-green-300 bg-green-100 text-green-700 dark:border-green-500/40 dark:bg-green-500/15 dark:text-green-300"
-              : "border-slate-300 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400";
+              : isCompleted
+                ? "border-green-300 bg-green-100 text-green-700 dark:border-green-500/40 dark:bg-green-500/15 dark:text-green-300"
+                : "border-slate-300 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400";
 
           return (
-            <div key={item.id} className="relative flex gap-3">
-              {index !== steps.length - 1 && (
-                <span className="absolute left-[15px] top-8 h-full w-px bg-gray-200 dark:bg-white/10" />
+            <div
+              key={item.id}
+              className="relative flex gap-3"
+            >
+              {index !==
+                steps.length - 1 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute left-[15px] top-8 h-full w-px bg-gray-200 dark:bg-white/10"
+                />
               )}
 
               <div
                 className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${iconStyle}`}
               >
-                {item.state === "rejected" ? (
-                  <FiXCircle />
-                ) : item.state === "done" || item.state === "closed" ? (
-                  <FiCheckCircle />
+                {item.state ===
+                "rejected" ? (
+                  <FiXCircle
+                    aria-hidden="true"
+                  />
+                ) : isCompleted ? (
+                  <FiCheckCircle
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <FiClock />
+                  <FiClock
+                    aria-hidden="true"
+                  />
                 )}
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-bold text-gray-900 dark:text-white">
                   {item.title}
                 </p>
 
-                <p className="mt-0.5 text-xs text-gray-500">
+                <p className="mt-0.5 break-words text-xs text-gray-500">
                   {item.description || "-"}
                 </p>
 
                 <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
-                  <FiClock />
-                  {formatDateTime(item.createdAt)}
+                  <FiClock
+                    aria-hidden="true"
+                  />
+
+                  {formatDateTime(
+                    item.createdAt
+                  )}
                 </p>
               </div>
             </div>
@@ -366,139 +551,291 @@ export function CaseTimeline({ incident }) {
   );
 }
 
-export function ProofReview({ resolution }) {
+export function ProofReview({
+  resolution,
+}) {
+  if (!resolution) {
+    return (
+      <InfoCard title="Resolution Proof Review">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          No resolution proof was submitted.
+        </p>
+      </InfoCard>
+    );
+  }
+
+  const submittedBy =
+    resolution.submittedByName ||
+    resolution.submitted_by_name ||
+    "-";
+
+  const submittedAt =
+    resolution.submittedAt ||
+    resolution.submitted_at ||
+    null;
+
+  const actionTaken =
+    resolution.actionTaken ||
+    resolution.action_taken ||
+    "-";
+
+  const remarks =
+    resolution.remarks ||
+    resolution.resolutionNotes ||
+    resolution.resolution_notes ||
+    "-";
+
+  const proofFiles = Array.isArray(
+    resolution.proofFiles
+  )
+    ? resolution.proofFiles
+    : Array.isArray(
+          resolution.proof_files
+        )
+      ? resolution.proof_files
+      : [];
+
   return (
     <InfoCard title="Resolution Proof Review">
-      <Detail label="Submitted By" value={resolution.submittedByName || "-"} />
       <Detail
-        label="Submitted Date"
-        value={formatDateTime(resolution.submittedAt)}
+        label="Submitted By"
+        value={submittedBy}
       />
 
-      <TextDetail label="Action Taken" value={resolution.actionTaken || "-"} />
-      <TextDetail label="Remarks" value={resolution.remarks || "-"} />
+      <Detail
+        label="Submitted Date"
+        value={formatDateTime(
+          submittedAt
+        )}
+      />
 
-      <ProofList files={resolution.proofFiles || []} />
+      <TextDetail
+        label="Action Taken"
+        value={actionTaken}
+      />
+
+      <TextDetail
+        label="Remarks"
+        value={remarks}
+      />
+
+      <ProofList files={proofFiles} />
     </InfoCard>
   );
 }
 
-export function TextDetail({ label, value }) {
+export function TextDetail({
+  label,
+  value,
+}) {
   return (
     <div className="mt-3">
       <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
         {label}
       </p>
-      <p className="mt-1 whitespace-pre-line text-sm leading-6">{value}</p>
+
+      <p className="mt-1 whitespace-pre-line break-words text-sm leading-6">
+        {getDisplayValue(value)}
+      </p>
     </div>
   );
 }
 
-export function ProofList({ files = [], onRemove }) {
-  if (!files.length) {
-    return <p className="mt-3 text-sm text-gray-500">No proof uploaded.</p>;
+export function ProofList({
+  files = [],
+  onRemove,
+}) {
+  const safeFiles = Array.isArray(files)
+    ? files
+    : [];
+
+  if (safeFiles.length === 0) {
+    return (
+      <p className="mt-3 text-sm text-gray-500">
+        No proof uploaded.
+      </p>
+    );
   }
 
   return (
     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-      {files.map((file) => (
-        <div
-          key={file.id || file.name}
-          className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900"
-        >
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
-              <FiFileText />
-            </div>
+      {safeFiles.map((file, index) => {
+        const fileId =
+          file?.id ||
+          file?.name ||
+          `proof-${index}`;
 
-            <div className="min-w-0">
-              <p className="break-all text-sm font-bold text-gray-900 dark:text-white">
-                {file.name}
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                {file.type || "Uploaded file"}
-              </p>
-              <p className="text-xs text-gray-500">
-                {formatFileSize(file.size)} • {file.status || "Uploaded"}
-              </p>
-              <p className="text-xs text-gray-400">
-                {file.uploadedAt ? formatDateTime(file.uploadedAt) : "-"}
-              </p>
-              {file.error && (
-                <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-300">
-                  {file.error}
+        const fileName =
+          file?.name ||
+          file?.fileName ||
+          "Uploaded file";
+
+        const fileUrl =
+          file?.localUrl ||
+          file?.url ||
+          null;
+
+        return (
+          <div
+            key={fileId}
+            className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900"
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
+                <FiFileText
+                  aria-hidden="true"
+                />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="break-all text-sm font-bold text-gray-900 dark:text-white">
+                  {fileName}
                 </p>
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(file.localUrl || file.url) && (
-                  <a
-                    href={file.localUrl || file.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/30 dark:text-indigo-300"
-                  >
-                    {file.isLocal ? "Open local preview" : "Open / Download"}
-                  </a>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  {file?.type ||
+                    "Uploaded file"}
+                </p>
+
+                <p className="text-xs text-gray-500">
+                  {formatFileSize(
+                    file?.size
+                  )}{" "}
+                  •{" "}
+                  {file?.status ||
+                    "Uploaded"}
+                </p>
+
+                <p className="text-xs text-gray-400">
+                  {file?.uploadedAt
+                    ? formatDateTime(
+                        file.uploadedAt
+                      )
+                    : "-"}
+                </p>
+
+                {file?.error && (
+                  <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-300">
+                    {file.error}
+                  </p>
                 )}
-                {onRemove && (
-                  <button
-                    type="button"
-                    onClick={() => onRemove(file.id)}
-                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-50 dark:border-red-500/30 dark:text-red-300"
-                  >
-                    Remove
-                  </button>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {fileUrl && (
+                    <a
+                      href={fileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex min-h-9 items-center justify-center rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-indigo-500/30 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                    >
+                      {file?.isLocal
+                        ? "Open local preview"
+                        : "Open / Download"}
+                    </a>
+                  )}
+
+                  {onRemove && (
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      onClick={() =>
+                        onRemove(fileId)
+                      }
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+
+                {file?.isLocal && (
+                  <p className="mt-2 text-[11px] leading-4 text-amber-700 dark:text-amber-300">
+                    Local preview only.
+                    Cross-device access begins
+                    after the server stores and
+                    returns this file.
+                  </p>
                 )}
               </div>
-              {file.isLocal && (
-                <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
-                  Local preview only. Cross-device access begins after the server stores and returns this file.
-                </p>
-              )}
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-export function InfoCard({ title, children }) {
+export function InfoCard({
+  title,
+  children,
+}) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm text-gray-700 dark:border-white/10 dark:bg-slate-900 dark:text-gray-300">
       <p className="mb-4 text-xs font-bold uppercase tracking-wide text-gray-500">
         {title}
       </p>
-      <div className="space-y-2">{children}</div>
+
+      <div className="space-y-2">
+        {children}
+      </div>
     </div>
   );
 }
 
-export function Detail({ label, value }) {
+export function Detail({
+  label,
+  value,
+}) {
   return (
-    <div className="grid grid-cols-[140px_1fr] gap-3 text-sm">
-      <span className="font-semibold text-gray-500">{label}</span>
-      <span className="font-medium text-gray-900 dark:text-white">
-        {value || "-"}
+    <div className="grid grid-cols-1 gap-1 text-sm sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-3">
+      <span className="font-semibold text-gray-500">
+        {label}
+      </span>
+
+      <span className="min-w-0 break-words font-medium text-gray-900 dark:text-white">
+        {getDisplayValue(value)}
       </span>
     </div>
   );
 }
 
-export function Field({ label, required = false, children }) {
+export function Field({
+  label,
+  required = false,
+  children,
+}) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-semibold text-gray-700 dark:text-gray-300">
-        {label} {required && <span className="text-red-500">*</span>}
-      </label>
+      <div className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+        {label}
+
+        {required && (
+          <>
+            {" "}
+            <span
+              className="text-red-500"
+              aria-hidden="true"
+            >
+              *
+            </span>
+
+            <span className="sr-only">
+              Required
+            </span>
+          </>
+        )}
+      </div>
+
       {children}
     </div>
   );
 }
 
-export function ModalFooter({ children }) {
+export function ModalFooter({
+  children,
+}) {
   return (
-    <div className="flex flex-wrap justify-end gap-3 border-t border-gray-200 pt-5 dark:border-white/10">
+    <div className="flex flex-col-reverse gap-3 border-t border-gray-200 pt-5 sm:flex-row sm:flex-wrap sm:justify-end dark:border-white/10">
       {children}
     </div>
   );
@@ -514,12 +851,31 @@ function ModalStyle() {
         background: white;
         padding: 0.75rem 1rem;
         font-size: 0.875rem;
+        line-height: 1.5rem;
+        color: rgb(17 24 39);
         outline: none;
+        transition:
+          border-color 150ms ease,
+          box-shadow 150ms ease,
+          background-color 150ms ease;
+      }
+
+      .input-field::placeholder {
+        color: rgb(156 163 175);
+      }
+
+      .input-field:hover:not(:disabled) {
+        border-color: rgb(156 163 175);
       }
 
       .input-field:focus {
         border-color: rgb(99 102 241);
         box-shadow: 0 0 0 3px rgb(224 231 255);
+      }
+
+      .input-field:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
       }
 
       .dark .input-field {
@@ -532,55 +888,13 @@ function ModalStyle() {
         color: rgb(148 163 184);
       }
 
-      .btn-light {
-        border-radius: 0.75rem;
-        border: 1px solid rgb(229 231 235);
-        padding: 0.625rem 1.25rem;
-        font-size: 0.875rem;
-        font-weight: 700;
-        color: rgb(55 65 81);
+      .dark .input-field:hover:not(:disabled) {
+        border-color: rgba(255, 255, 255, 0.2);
       }
 
-      .dark .btn-light {
-        border-color: rgba(255, 255, 255, 0.1);
-        color: rgb(209 213 219);
-      }
-
-      .btn-green,
-      .btn-red,
-      .btn-amber {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        border-radius: 0.75rem;
-        padding: 0.625rem 1.25rem;
-        font-size: 0.875rem;
-        font-weight: 700;
-        color: white;
-      }
-
-      .btn-green {
-        background: rgb(22 163 74);
-      }
-
-      .btn-green:hover {
-        background: rgb(21 128 61);
-      }
-
-      .btn-red {
-        background: rgb(220 38 38);
-      }
-
-      .btn-red:hover {
-        background: rgb(185 28 28);
-      }
-
-      .btn-amber {
-        background: rgb(245 158 11);
-      }
-
-      .btn-amber:hover {
-        background: rgb(217 119 6);
+      .dark .input-field:focus {
+        border-color: rgb(129 140 248);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
       }
     `}</style>
   );

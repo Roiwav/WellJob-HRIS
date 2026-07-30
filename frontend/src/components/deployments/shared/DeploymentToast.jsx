@@ -1,18 +1,23 @@
-import { createPortal } from "react-dom";
+import SuccessToast from "../../ui/SuccessToast";
 
-export default function DeploymentToast({ show, message }) {
-  if (typeof document === "undefined") return null;
+export default function DeploymentToast({
+  show = false,
+  message = "",
+  title = "Deployment Updated",
+  duration = 3500,
+  onClose,
+}) {
+  const visibleMessage =
+    show && String(message || "").trim()
+      ? String(message).trim()
+      : "";
 
-  return createPortal(
-    <div
-      className={`fixed bottom-6 right-6 z-[9999] transform transition-all duration-500 ${
-        show ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0"
-      }`}
-    >
-      <div className="rounded-xl bg-green-600 px-5 py-3 text-white shadow-lg">
-        {message}
-      </div>
-    </div>,
-    document.body
+  return (
+    <SuccessToast
+      title={title}
+      message={visibleMessage}
+      duration={duration}
+      onClose={onClose}
+    />
   );
 }

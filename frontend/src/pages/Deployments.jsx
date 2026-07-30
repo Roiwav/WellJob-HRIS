@@ -1,5 +1,3 @@
-// Deployments.jsx
-
 import {
   useCallback,
   useEffect,
@@ -8,9 +6,9 @@ import {
   useState,
 } from "react";
 import {
+  FiBriefcase,
   FiCalendar,
   FiRefreshCw,
-  FiSearch,
 } from "react-icons/fi";
 import axios from "axios";
 
@@ -19,6 +17,14 @@ import { useAuth } from "../context/useAuth";
 import DeploymentTable from "../components/deployments/table/DeploymentTable";
 import DeploymentModal from "../components/deployments/modals/DeploymentModal";
 import DeploymentToast from "../components/deployments/shared/DeploymentToast";
+
+import Button from "../components/ui/Button";
+import PageHeader from "../components/ui/PageHeader";
+import SearchInput from "../components/ui/SearchInput";
+import FilterBar from "../components/ui/FilterBar";
+import LoadingSkeleton from "../components/ui/LoadingSkeleton";
+import ErrorState from "../components/ui/ErrorState";
+import EmptyState from "../components/ui/EmptyState";
 
 import {
   buildLegacySeparationPayload,
@@ -33,12 +39,21 @@ const EMPLOYEES_API_URL = `${API_BASE}/employees`;
 
 const DATA_EVENT_SOURCE = "deployments-page";
 const REQUEST_TIMEOUT_MS = 15000;
+const DATA_UPDATE_DEBOUNCE_MS = 300;
+
+const SELECT_CLASS_NAME = [
+  "min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5",
+  "text-sm font-semibold text-gray-900 shadow-sm outline-none transition",
+  "focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20",
+  "disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500",
+  "dark:border-slate-700 dark:bg-slate-900 dark:text-white",
+  "dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20",
+  "dark:disabled:bg-slate-800 dark:disabled:text-gray-500",
+].join(" ");
 
 let activeDeploymentRequest = null;
 
-function emitDataUpdated(
-  action = "DEPLOYMENTS_UPDATED"
-) {
+function emitDataUpdated(action = "DEPLOYMENTS_UPDATED") {
   window.dispatchEvent(
     new CustomEvent("dataUpdated", {
       detail: {
@@ -51,10 +66,7 @@ function emitDataUpdated(
   );
 }
 
-async function requestJson(
-  url,
-  options = {}
-) {
+async function requestJson(url, options = {}) {
   const controller = new AbortController();
 
   const timeoutId = window.setTimeout(() => {
@@ -103,6 +115,33 @@ function getDeploymentData() {
   }
 
   return activeDeploymentRequest;
+}
+
+function normalizeDeploymentStatus(status) {
+  const normalized = String(status || "")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "active") {
+    return "Active";
+  }
+
+  if (normalized === "completed") {
+    return "Completed";
+  }
+
+  if (
+    normalized === "cancelled" ||
+    normalized === "canceled"
+  ) {
+    return "Cancelled";
+  }
+
+  if (normalized === "pending") {
+    return "Pending";
+  }
+
+  return status || "Active";
 }
 
 function normalizeDeployment(item = {}) {
@@ -179,11 +218,12 @@ function normalizeDeployment(item = {}) {
 
     start,
 
-    status:
+    status: normalizeDeploymentStatus(
       item.status ||
-      item.deploymentStatus ||
-      item.deployment_status ||
-      "Active",
+        item.deploymentStatus ||
+        item.deployment_status ||
+        "Active"
+    ),
 
     employmentType:
       item.employmentType ||
@@ -223,12 +263,16 @@ function normalizeDeployment(item = {}) {
   };
 }
 
-function getRequestError(
-  error,
-  fallbackMessage
-) {
+function getRequestError(error, fallbackMessage) {
   if (error?.response?.status === 503) {
     return "The system is currently under maintenance. Please try again later.";
+  }
+
+  if (
+    error?.code === "ECONNABORTED" ||
+    error?.name === "AbortError"
+  ) {
+    return "The server took too long to respond. Check that the backend and database are running, then try again.";
   }
 
   return (
@@ -239,17 +283,24 @@ function getRequestError(
   );
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function Deployments() {
   const { user } = useAuth();
 
   const isSuperAdmin =
     user?.role === "SUPER_ADMIN";
 
-  const [selectedDeployment, setSelectedDeployment] =
-    useState(null);
-
-  const [modalMode, setModalMode] =
-    useState("view");
+  const [
+    selectedDeployment,
+    setSelectedDeployment,
+  ] = useState(null);
 
   const [deployments, setDeployments] =
     useState([]);
@@ -263,9 +314,6 @@ export default function Deployments() {
   const [fetchError, setFetchError] =
     useState("");
 
-  const [showToast, setShowToast] =
-    useState(false);
-
   const [toastMessage, setToastMessage] =
     useState("");
 
@@ -278,9 +326,9 @@ export default function Deployments() {
   const [selectedYear, setSelectedYear] =
     useState("");
 
+  const isMountedRef = useRef(true);
   const isFetchingRef = useRef(false);
-  const toastStartTimerRef = useRef(null);
-  const toastEndTimerRef = useRef(null);
+  const dataUpdateTimerRef = useRef(null);
 
   const monthOptions = useMemo(
     () => getMonthOptions(),
@@ -292,40 +340,25 @@ export default function Deployments() {
     [deployments]
   );
 
-  const showSuccessToast = useCallback(
-    (message) => {
-      if (toastStartTimerRef.current) {
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+
+      if (dataUpdateTimerRef.current) {
         window.clearTimeout(
-          toastStartTimerRef.current
+          dataUpdateTimerRef.current
         );
       }
-
-      if (toastEndTimerRef.current) {
-        window.clearTimeout(
-          toastEndTimerRef.current
-        );
-      }
-
-      setShowToast(false);
-
-      toastStartTimerRef.current =
-        window.setTimeout(() => {
-          setToastMessage(message);
-          setShowToast(true);
-
-          toastEndTimerRef.current =
-            window.setTimeout(() => {
-              setShowToast(false);
-            }, 2200);
-        }, 50);
-    },
-    []
-  );
+    };
+  }, []);
 
   const fetchDeployments = useCallback(
     async ({
       showInitialLoading = false,
       showRefreshing = false,
+      showError = true,
     } = {}) => {
       if (isFetchingRef.current) {
         return false;
@@ -333,19 +366,34 @@ export default function Deployments() {
 
       isFetchingRef.current = true;
 
-      if (showInitialLoading) {
+      if (
+        showInitialLoading &&
+        isMountedRef.current
+      ) {
         setIsLoading(true);
       }
 
-      if (showRefreshing) {
+      if (
+        showRefreshing &&
+        isMountedRef.current
+      ) {
         setIsRefreshing(true);
       }
 
       try {
-        setFetchError("");
+        if (
+          showError &&
+          isMountedRef.current
+        ) {
+          setFetchError("");
+        }
 
         const data =
           await getDeploymentData();
+
+        if (!isMountedRef.current) {
+          return false;
+        }
 
         const normalized =
           Array.isArray(data)
@@ -363,25 +411,30 @@ export default function Deployments() {
           error
         );
 
-        setFetchError(
-          getRequestError(
-            error,
-            "Unable to load deployment records."
-          )
-        );
-
-        setDeployments([]);
+        if (
+          showError &&
+          isMountedRef.current
+        ) {
+          setFetchError(
+            getRequestError(
+              error,
+              "Unable to load deployment records."
+            )
+          );
+        }
 
         return false;
       } finally {
         isFetchingRef.current = false;
 
-        if (showInitialLoading) {
-          setIsLoading(false);
-        }
+        if (isMountedRef.current) {
+          if (showInitialLoading) {
+            setIsLoading(false);
+          }
 
-        if (showRefreshing) {
-          setIsRefreshing(false);
+          if (showRefreshing) {
+            setIsRefreshing(false);
+          }
         }
       }
     },
@@ -395,6 +448,21 @@ export default function Deployments() {
   }, [fetchDeployments]);
 
   useEffect(() => {
+    const scheduleRefresh = () => {
+      if (dataUpdateTimerRef.current) {
+        window.clearTimeout(
+          dataUpdateTimerRef.current
+        );
+      }
+
+      dataUpdateTimerRef.current =
+        window.setTimeout(() => {
+          void fetchDeployments({
+            showError: false,
+          });
+        }, DATA_UPDATE_DEBOUNCE_MS);
+    };
+
     const handleDataUpdated = (event) => {
       if (
         event?.detail?.source ===
@@ -403,7 +471,7 @@ export default function Deployments() {
         return;
       }
 
-      void fetchDeployments();
+      scheduleRefresh();
     };
 
     window.addEventListener(
@@ -411,33 +479,36 @@ export default function Deployments() {
       handleDataUpdated
     );
 
+    window.addEventListener(
+      "focus",
+      scheduleRefresh
+    );
+
     return () => {
+      if (dataUpdateTimerRef.current) {
+        window.clearTimeout(
+          dataUpdateTimerRef.current
+        );
+      }
+
       window.removeEventListener(
         "dataUpdated",
         handleDataUpdated
       );
+
+      window.removeEventListener(
+        "focus",
+        scheduleRefresh
+      );
     };
   }, [fetchDeployments]);
 
-  useEffect(() => {
-    return () => {
-      if (toastStartTimerRef.current) {
-        window.clearTimeout(
-          toastStartTimerRef.current
-        );
-      }
-
-      if (toastEndTimerRef.current) {
-        window.clearTimeout(
-          toastEndTimerRef.current
-        );
-      }
-    };
-  }, []);
-
   const openView = useCallback(
     (deployment) => {
-      setModalMode("view");
+      if (!deployment) {
+        return;
+      }
+
       setSelectedDeployment(deployment);
     },
     []
@@ -448,11 +519,25 @@ export default function Deployments() {
       setSelectedDeployment(null);
     }, []);
 
+  const handleCloseToast =
+    useCallback(() => {
+      setToastMessage("");
+    }, []);
+
   const handleInlineUpdateRow =
     useCallback(
       async (updatedDeployment) => {
+        if (isSuperAdmin) {
+          setFetchError(
+            "Super Admin access is view-only for deployment records."
+          );
+
+          return false;
+        }
+
         const employeeId =
           updatedDeployment?.employeeId ||
+          updatedDeployment?.employee_id ||
           updatedDeployment?.id;
 
         if (!employeeId) {
@@ -472,7 +557,9 @@ export default function Deployments() {
             );
 
           await axios.put(
-            `${EMPLOYEES_API_URL}/${employeeId}/contract-end`,
+            `${EMPLOYEES_API_URL}/${encodeURIComponent(
+              employeeId
+            )}/contract-end`,
             {
               ...legacyPayload,
 
@@ -501,13 +588,15 @@ export default function Deployments() {
             }
           );
 
-          await fetchDeployments();
+          await fetchDeployments({
+            showError: false,
+          });
 
           emitDataUpdated(
             "EMPLOYEE_SEPARATED"
           );
 
-          showSuccessToast(
+          setToastMessage(
             "Employee separation recorded successfully."
           );
 
@@ -518,22 +607,19 @@ export default function Deployments() {
             error
           );
 
-          const message =
-            error?.code === "ECONNABORTED"
-              ? "The server took too long to save the separation. Please check the backend and try again."
-              : getRequestError(
-                  error,
-                  "Failed to record employee separation. Please try again."
-                );
-
-          setFetchError(message);
+          setFetchError(
+            getRequestError(
+              error,
+              "Failed to record employee separation. Please try again."
+            )
+          );
 
           return false;
         }
       },
       [
         fetchDeployments,
-        showSuccessToast,
+        isSuperAdmin,
         user,
       ]
     );
@@ -557,94 +643,70 @@ export default function Deployments() {
     ]
   );
 
+  const handleResetFilters =
+    useCallback(() => {
+      setSearch("");
+      setSelectedMonth("");
+      setSelectedYear("");
+    }, []);
+
   const filteredDeployments =
     useMemo(() => {
-      const cleanSearch = search
-        .toLowerCase()
-        .replace(
-          /[^a-z0-9\s]/g,
-          ""
-        )
-        .trim();
+      const normalizedSearch =
+        normalizeSearchText(search);
 
-      const searchTerms = cleanSearch
-        ? cleanSearch.split(/\s+/)
-        : [];
-
-      const rawSearch = search
-        .toLowerCase()
-        .trim();
+      const searchTerms =
+        normalizedSearch
+          ? normalizedSearch.split(/\s+/)
+          : [];
 
       return deployments.filter(
         (deployment) => {
-          const cleanEmployeeName =
-            String(
-              deployment.employee || ""
-            )
-              .toLowerCase()
-              .replace(
-                /[^a-z0-9\s]/g,
-                ""
-              );
+          const searchableText =
+            normalizeSearchText(
+              [
+                deployment.id,
+                deployment.deploymentId,
+                deployment.employeeId,
+                deployment.employee,
+                deployment.company,
+                deployment.location,
+                deployment.status,
+                deployment.employmentType,
+                deployment.separationReason,
+              ].join(" ")
+            );
 
-          const matchName =
+          const matchesSearch =
             searchTerms.length === 0 ||
             searchTerms.every((term) =>
-              cleanEmployeeName.includes(
-                term
-              )
+              searchableText.includes(term)
             );
 
-          const matchSearch =
-            !rawSearch ||
-            matchName ||
-            String(
-              deployment.id || ""
-            )
-              .toLowerCase()
-              .includes(rawSearch) ||
-            String(
-              deployment.employeeId ||
-                ""
-            )
-              .toLowerCase()
-              .includes(rawSearch) ||
-            String(
-              deployment.company || ""
-            )
-              .toLowerCase()
-              .includes(rawSearch) ||
-            String(
-              deployment.location || ""
-            )
-              .toLowerCase()
-              .includes(rawSearch) ||
-            String(
-              deployment.status || ""
-            )
-              .toLowerCase()
-              .includes(rawSearch) ||
-            String(
-              deployment.employmentType ||
-                ""
-            )
-              .toLowerCase()
-              .includes(rawSearch);
-
-          if (
-            !deployment.start ||
-            deployment.start === "-"
-          ) {
-            return (
-              matchSearch &&
-              !selectedMonth &&
-              !selectedYear
-            );
+          if (!matchesSearch) {
+            return false;
           }
 
-          const startDate = new Date(
-            deployment.start
-          );
+          if (
+            !selectedMonth &&
+            !selectedYear
+          ) {
+            return true;
+          }
+
+          const startDateValue =
+            deployment.start ||
+            deployment.contractStart;
+
+          if (
+            !startDateValue ||
+            startDateValue === "-"
+          ) {
+            return false;
+          }
+
+          const startDate =
+            new Date(startDateValue);
 
           if (
             Number.isNaN(
@@ -654,21 +716,20 @@ export default function Deployments() {
             return false;
           }
 
-          const matchMonth =
+          const matchesMonth =
             selectedMonth === "" ||
             startDate.getMonth() ===
               Number(selectedMonth);
 
-          const matchYear =
+          const matchesYear =
             selectedYear === "" ||
             String(
               startDate.getFullYear()
             ) === selectedYear;
 
           return (
-            matchSearch &&
-            matchMonth &&
-            matchYear
+            matchesMonth &&
+            matchesYear
           );
         }
       );
@@ -679,106 +740,123 @@ export default function Deployments() {
       selectedYear,
     ]);
 
+  const hasActiveFilters =
+    Boolean(
+      search.trim() ||
+      selectedMonth ||
+      selectedYear
+    );
+
+  const pageDescription =
+    isSuperAdmin
+      ? "View continuous employee assignments and recorded separations. Super Admin access is view-only."
+      : "Monitor continuous employee assignments and record employee separations.";
+
   return (
-    <>
-      <main className="space-y-8">
-        <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Deployment Tracking
-            </h1>
-
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Monitor continuous employee
-              assignments and recorded
-              separations.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleRefresh}
+    <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
+      <PageHeader
+        eyebrow="Workforce Assignment"
+        title="Deployment Tracking"
+        description={pageDescription}
+        icon={
+          <FiBriefcase size={22} />
+        }
+        actions={
+          <Button
+            variant="secondary"
+            leftIcon={
+              <FiRefreshCw
+                className={
+                  isRefreshing
+                    ? "animate-spin"
+                    : ""
+                }
+              />
+            }
+            loading={isRefreshing}
             disabled={
               isLoading ||
               isRefreshing ||
               isFetchingRef.current
             }
-            className="inline-flex w-fit items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
+            onClick={handleRefresh}
           >
-            <FiRefreshCw
-              className={
-                isRefreshing
-                  ? "animate-spin"
-                  : ""
-              }
-              aria-hidden="true"
-            />
+            Refresh
+          </Button>
+        }
+      />
 
-            {isRefreshing
-              ? "Refreshing..."
-              : "Refresh"}
-          </button>
-        </header>
+      {fetchError && (
+        <ErrorState
+          compact
+          title="Deployment data error"
+          message={fetchError}
+          retryLabel="Reload deployments"
+          onRetry={handleRefresh}
+        />
+      )}
 
-        {fetchError && (
-          <div
-            role="alert"
-            className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+      {!isLoading && (
+        <ClientDeploymentSummary
+          deployments={deployments}
+        />
+      )}
+
+      <FilterBar
+        resultCount={
+          filteredDeployments.length
+        }
+        resultLabel="deployment"
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={
+              !hasActiveFilters ||
+              isLoading
+            }
+            onClick={
+              handleResetFilters
+            }
           >
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p>{fetchError}</p>
-
-              <button
-                type="button"
-                disabled={
-                  isRefreshing ||
-                  isFetchingRef.current
-                }
-                onClick={handleRefresh}
-                className="w-fit rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20"
-              >
-                Try Again
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!isLoading && (
-          <ClientDeploymentSummary
-            deployments={deployments}
+            Clear Filters
+          </Button>
+        }
+      >
+        <div className="w-full sm:col-span-2 xl:w-96">
+          <SearchInput
+            label="Search deployments"
+            hideLabel
+            placeholder="Search ID, employee, company, location, or status..."
+            value={search}
+            disabled={isLoading}
+            onChange={(event) =>
+              setSearch(
+                event.target.value
+              )
+            }
+            onClear={() =>
+              setSearch("")
+            }
           />
-        )}
+        </div>
 
-        <section className="flex flex-col items-start gap-3 xl:flex-row xl:items-center">
-          <div className="relative w-full max-w-xs">
-            <FiSearch
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
-              aria-hidden="true"
-            />
-
-            <input
-              type="search"
-              aria-label="Search deployments"
-              placeholder="Search ID, employee, company, location..."
-              value={search}
-              disabled={isLoading}
-              onChange={(event) =>
-                setSearch(
-                  event.target.value
-                )
-              }
-              className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-gray-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-            />
-          </div>
+        <div className="min-w-0 xl:w-52">
+          <label
+            htmlFor="deployment-month-filter"
+            className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-200"
+          >
+            Deployment Month
+          </label>
 
           <div className="relative">
             <FiCalendar
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
               aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-gray-400"
             />
 
             <select
-              aria-label="Filter deployment month"
+              id="deployment-month-filter"
               value={selectedMonth}
               disabled={isLoading}
               onChange={(event) =>
@@ -786,12 +864,12 @@ export default function Deployments() {
                   event.target.value
                 )
               }
-              className="rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-gray-900 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              className={`${SELECT_CLASS_NAME} pl-10`}
             >
               {monthOptions.map(
                 (month) => (
                   <option
-                    key={month.label}
+                    key={`${month.label}-${month.value}`}
                     value={month.value}
                   >
                     {month.label}
@@ -800,9 +878,18 @@ export default function Deployments() {
               )}
             </select>
           </div>
+        </div>
+
+        <div className="min-w-0 xl:w-44">
+          <label
+            htmlFor="deployment-year-filter"
+            className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-200"
+          >
+            Deployment Year
+          </label>
 
           <select
-            aria-label="Filter deployment year"
+            id="deployment-year-filter"
             value={selectedYear}
             disabled={isLoading}
             onChange={(event) =>
@@ -810,69 +897,94 @@ export default function Deployments() {
                 event.target.value
               )
             }
-            className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-gray-900 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            className={
+              SELECT_CLASS_NAME
+            }
           >
-            {yearOptions.map((year) => (
-              <option
-                key={year.label}
-                value={year.value}
-              >
-                {year.label}
-              </option>
-            ))}
+            {yearOptions.map(
+              (year) => (
+                <option
+                  key={`${year.label}-${year.value}`}
+                  value={year.value}
+                >
+                  {year.label}
+                </option>
+              )
+            )}
           </select>
-        </section>
+        </div>
+      </FilterBar>
 
-        {isLoading ? (
-          <section className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center text-sm font-semibold text-gray-500 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-gray-400">
-            <div className="flex flex-col items-center gap-3">
-              <FiRefreshCw
-                className="animate-spin text-xl text-indigo-500"
-                aria-hidden="true"
-              />
-
-              <p>
-                Loading deployment records...
-              </p>
-
-              <p className="text-xs font-normal text-gray-400 dark:text-gray-500">
-                Requests automatically stop
-                after 15 seconds when the
-                server does not respond.
-              </p>
-            </div>
-          </section>
-        ) : (
-          <DeploymentTable
-            deployments={
-              filteredDeployments
+      {isLoading ? (
+        <LoadingSkeleton
+          rows={6}
+          columns={8}
+          showHeader
+        />
+      ) : filteredDeployments.length > 0 ? (
+        <DeploymentTable
+          deployments={
+            filteredDeployments
+          }
+          openView={openView}
+          onUpdateRow={
+            handleInlineUpdateRow
+          }
+          isSuperAdmin={
+            isSuperAdmin
+          }
+        />
+      ) : (
+        <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900 sm:p-6">
+          <EmptyState
+            icon={
+              hasActiveFilters
+                ? "search"
+                : "records"
             }
-            openView={openView}
-            onUpdateRow={
-              handleInlineUpdateRow
+            title={
+              hasActiveFilters
+                ? "No deployments matched"
+                : "No deployment records"
             }
-            isSuperAdmin={
-              isSuperAdmin
+            description={
+              hasActiveFilters
+                ? "No deployment records matched the current search and date filters."
+                : "Deployment records will appear once employees are assigned."
+            }
+            secondaryActionLabel={
+              hasActiveFilters
+                ? "Clear filters"
+                : ""
+            }
+            onSecondaryAction={
+              hasActiveFilters
+                ? handleResetFilters
+                : undefined
             }
           />
-        )}
+        </section>
+      )}
 
+      {selectedDeployment && (
         <DeploymentModal
           deployment={
             selectedDeployment
           }
-          mode={modalMode}
+          mode="view"
           close={
             closeDeploymentModal
           }
         />
-      </main>
+      )}
 
       <DeploymentToast
-        show={showToast}
+        show={Boolean(toastMessage)}
+        title="Deployment Updated"
         message={toastMessage}
+        onClose={handleCloseToast}
       />
-    </>
+    </main>
   );
 }
 
@@ -884,12 +996,13 @@ function ClientDeploymentSummary({
     setShowAllCompanies,
   ] = useState(false);
 
-  const summaryData = useMemo(() => {
-    const safeDeployments =
-      Array.isArray(deployments)
-        ? deployments
-        : [];
+  const safeDeployments = useMemo(() => {
+    return Array.isArray(deployments)
+      ? deployments
+      : [];
+  }, [deployments]);
 
+  const summaryData = useMemo(() => {
     const companyMap = new Map();
 
     safeDeployments.forEach(
@@ -898,14 +1011,16 @@ function ClientDeploymentSummary({
           deployment.company ||
           "Unassigned Company";
 
-        const status = String(
-          deployment.status || "Active"
-        ).toLowerCase();
+        const status =
+          normalizeDeploymentStatus(
+            deployment.status
+          );
 
         if (!companyMap.has(company)) {
           companyMap.set(company, {
             company,
             total: 0,
+            active: 0,
             completed: 0,
             cancelled: 0,
           });
@@ -916,35 +1031,44 @@ function ClientDeploymentSummary({
 
         current.total += 1;
 
-        if (status === "completed") {
+        if (status === "Active") {
+          current.active += 1;
+        }
+
+        if (status === "Completed") {
           current.completed += 1;
         }
 
-        if (
-          status === "cancelled" ||
-          status === "canceled"
-        ) {
+        if (status === "Cancelled") {
           current.cancelled += 1;
         }
       }
     );
 
-    const companies = Array.from(
-      companyMap.values()
-    ).sort(
-      (first, second) =>
-        second.total -
-          first.total ||
-        first.company.localeCompare(
-          second.company
-        )
-    );
+    const companies =
+      Array.from(
+        companyMap.values()
+      ).sort(
+        (first, second) =>
+          second.total -
+            first.total ||
+          first.company.localeCompare(
+            second.company
+          )
+      );
 
     const totalDeployments =
       safeDeployments.length;
 
     const totalCompanies =
       companies.length;
+
+    const activeDeployments =
+      companies.reduce(
+        (sum, company) =>
+          sum + company.active,
+        0
+      );
 
     const completedDeployments =
       companies.reduce(
@@ -960,18 +1084,17 @@ function ClientDeploymentSummary({
         0
       );
 
-    const topCompany =
-      companies[0] || null;
-
     return {
       companies,
       totalDeployments,
       totalCompanies,
+      activeDeployments,
       completedDeployments,
       cancelledDeployments,
-      topCompany,
+      topCompany:
+        companies[0] || null,
     };
-  }, [deployments]);
+  }, [safeDeployments]);
 
   const visibleCompanies =
     showAllCompanies
@@ -981,71 +1104,61 @@ function ClientDeploymentSummary({
           6
         );
 
-  if (deployments.length === 0) {
-    return (
-      <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <div className="text-center">
-          <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
-            No deployment summary
-            available
-          </h2>
-
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Client deployment
-            distribution will appear once
-            records are available.
-          </p>
-        </div>
-      </section>
-    );
+  if (
+    safeDeployments.length === 0
+  ) {
+    return null;
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
-      <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4 dark:border-white/10 dark:bg-slate-950/40">
+    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-5 dark:border-white/10 dark:bg-slate-950/40 sm:px-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+          <div className="min-w-0">
+            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
               Client Deployment Summary
             </h2>
 
-            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Compact overview of assigned
-              employees per client company.
+            <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Overview of assigned employees per client company.
             </p>
           </div>
 
           {summaryData.topCompany && (
-            <div className="rounded-xl border border-indigo-100 bg-white px-4 py-2 dark:border-indigo-500/20 dark:bg-slate-900">
+            <div className="w-fit max-w-full rounded-2xl border border-indigo-100 bg-white px-4 py-3 dark:border-indigo-500/20 dark:bg-slate-900">
               <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
                 Highest Deployment
               </p>
 
-              <p className="mt-0.5 max-w-xs truncate text-xs font-extrabold text-slate-900 dark:text-white">
+              <p className="mt-1 max-w-xs truncate text-sm font-extrabold text-slate-900 dark:text-white">
                 {
                   summaryData.topCompany
                     .company
                 }
               </p>
 
-              <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-300">
+              <p className="mt-0.5 text-xs font-bold text-indigo-600 dark:text-indigo-300">
                 {
                   summaryData.topCompany
                     .total
                 }{" "}
-                employee(s)
+                employee
+                {summaryData.topCompany
+                  .total === 1
+                  ? ""
+                  : "s"}
               </p>
             </div>
           )}
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
           <SummaryStatCard
             label="Total"
             value={
               summaryData.totalDeployments
             }
-            helper="Assigned employees"
+            helper="All records"
           />
 
           <SummaryStatCard
@@ -1057,11 +1170,20 @@ function ClientDeploymentSummary({
           />
 
           <SummaryStatCard
-            label="Done"
+            label="Active"
+            value={
+              summaryData.activeDeployments
+            }
+            helper="Ongoing"
+            tone="green"
+          />
+
+          <SummaryStatCard
+            label="Completed"
             value={
               summaryData.completedDeployments
             }
-            helper="Completed"
+            helper="Finished"
             tone="blue"
           />
 
@@ -1076,14 +1198,14 @@ function ClientDeploymentSummary({
         </div>
       </div>
 
-      <div className="p-5">
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="p-5 sm:p-6">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
               Distribution by Client
             </h3>
 
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Showing{" "}
               {visibleCompanies.length} of{" "}
               {
@@ -1096,24 +1218,24 @@ function ClientDeploymentSummary({
 
           {summaryData.companies
             .length > 6 && (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() =>
                 setShowAllCompanies(
-                  (current) =>
-                    !current
+                  (currentValue) =>
+                    !currentValue
                 )
               }
-              className="w-fit rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-indigo-500 dark:hover:text-indigo-300"
             >
               {showAllCompanies
-                ? "Show less"
-                : `Show all ${summaryData.companies.length}`}
-            </button>
+                ? "Show Less"
+                : `Show All ${summaryData.companies.length}`}
+            </Button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {visibleCompanies.map(
             (item, index) => (
               <ClientCompanyRow
@@ -1142,6 +1264,9 @@ function SummaryStatCard({
     slate:
       "border-slate-200 bg-white text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white",
 
+    green:
+      "border-emerald-100 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300",
+
     blue:
       "border-blue-100 bg-blue-50 text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300",
 
@@ -1152,7 +1277,7 @@ function SummaryStatCard({
   return (
     <div
       className={[
-        "rounded-xl border px-4 py-3",
+        "rounded-2xl border px-4 py-3",
         toneStyles[tone] ||
           toneStyles.slate,
       ].join(" ")}
@@ -1186,16 +1311,10 @@ function ClientCompanyRow({
         )
       : 0;
 
-  const hasCompleted =
-    Number(item.completed || 0) > 0;
-
-  const hasCancelled =
-    Number(item.cancelled || 0) > 0;
-
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 transition hover:border-indigo-300 hover:bg-white hover:shadow-sm dark:border-white/10 dark:bg-slate-950/40 dark:hover:border-indigo-500/50 dark:hover:bg-slate-950">
+    <article className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 transition hover:border-indigo-300 hover:bg-white hover:shadow-sm dark:border-white/10 dark:bg-slate-950/40 dark:hover:border-indigo-500/50 dark:hover:bg-slate-950">
       <div className="flex items-center gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-[11px] font-black text-slate-500 shadow-sm dark:bg-slate-900 dark:text-slate-400">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-500 shadow-sm dark:bg-slate-900 dark:text-slate-400">
           #{rank}
         </div>
 
@@ -1207,8 +1326,7 @@ function ClientCompanyRow({
               </h4>
 
               <p className="mt-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                {percentage}% of total
-                deployments
+                {percentage}% of total deployments
               </p>
             </div>
 
@@ -1224,7 +1342,14 @@ function ClientCompanyRow({
           </div>
 
           <div className="mt-3 flex items-center gap-3">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+            <div
+              className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+              role="progressbar"
+              aria-label={`${item.company} deployment percentage`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={percentage}
+            >
               <div
                 className="h-full rounded-full bg-indigo-600 transition-all"
                 style={{
@@ -1237,21 +1362,31 @@ function ClientCompanyRow({
             </div>
 
             <div className="flex shrink-0 items-center gap-1">
-              <StatusPill
+              <SummaryPill
+                label="Active"
+                value={item.active}
+                tone={
+                  item.active > 0
+                    ? "green"
+                    : "muted"
+                }
+              />
+
+              <SummaryPill
                 label="Done"
                 value={item.completed}
                 tone={
-                  hasCompleted
+                  item.completed > 0
                     ? "blue"
                     : "muted"
                 }
               />
 
-              <StatusPill
-                label="Cancel"
+              <SummaryPill
+                label="Cancelled"
                 value={item.cancelled}
                 tone={
-                  hasCancelled
+                  item.cancelled > 0
                     ? "rose"
                     : "muted"
                 }
@@ -1264,12 +1399,15 @@ function ClientCompanyRow({
   );
 }
 
-function StatusPill({
+function SummaryPill({
   label,
   value,
   tone = "muted",
 }) {
   const toneStyles = {
+    green:
+      "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
+
     blue:
       "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300",
 

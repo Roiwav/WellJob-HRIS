@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
 } from "react";
@@ -6,11 +7,10 @@ import {
   FiAlertTriangle,
   FiCheck,
   FiFileText,
-  FiX,
 } from "react-icons/fi";
 
 import Button from "../ui/Button";
-import IconButton from "../ui/IconButton";
+import Dialog from "../ui/Dialog";
 import ErrorState from "../ui/ErrorState";
 
 import {
@@ -31,9 +31,7 @@ import {
   getSelectedDocuments,
 } from "../../utils/employees/employeeFormHelpers";
 
-function DocumentPreview({
-  document,
-}) {
+function DocumentPreview({ document }) {
   const previewUrl = useMemo(
     () => getDocumentPreviewUrl(document),
     [document]
@@ -90,9 +88,12 @@ function DocumentPreview({
       href={previewUrl}
       target="_blank"
       rel="noreferrer"
-      className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 dark:border-white/10 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-white/5"
+      className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-white/5"
     >
-      <FiFileText className="shrink-0" />
+      <FiFileText
+        className="shrink-0"
+        aria-hidden="true"
+      />
 
       <span className="truncate">
         {fileName}
@@ -112,53 +113,14 @@ export default function EmployeeReviewDialog({
   onClose,
   onConfirm,
 }) {
-  const isEditMode = mode === "edit";
+  const isEditMode =
+    mode === "edit";
 
   const selectedDocuments = useMemo(() => {
     return getSelectedDocuments(
       formData?.documents
     );
   }, [formData?.documents]);
-
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-
-    const handleKeyDown = (event) => {
-      if (
-        event.key === "Escape" &&
-        !isSaving
-      ) {
-        onClose?.();
-      }
-    };
-
-    document.addEventListener(
-      "keydown",
-      handleKeyDown
-    );
-
-    const previousOverflow =
-      document.body.style.overflow;
-
-    document.body.style.overflow =
-      "hidden";
-
-    return () => {
-      document.removeEventListener(
-        "keydown",
-        handleKeyDown
-      );
-
-      document.body.style.overflow =
-        previousOverflow;
-    };
-  }, [isSaving, onClose, open]);
-
-  if (!open) {
-    return null;
-  }
 
   const isDeployed =
     formData?.status === "Deployed";
@@ -175,69 +137,94 @@ export default function EmployeeReviewDialog({
     ? "Confirm Update"
     : "Confirm Save";
 
+  const handleClose = useCallback(() => {
+    if (isSaving) {
+      return;
+    }
+
+    onClose?.();
+  }, [isSaving, onClose]);
+
+  const handleConfirm = useCallback(() => {
+    if (isSaving) {
+      return;
+    }
+
+    onConfirm?.();
+  }, [isSaving, onConfirm]);
+
+  if (!open) {
+    return null;
+  }
+
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm"
-      onMouseDown={(event) => {
-        if (
-          event.target ===
-            event.currentTarget &&
-          !isSaving
-        ) {
-          onClose?.();
-        }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="employee-review-dialog-title"
-        className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-white/10 bg-white p-5 shadow-2xl sm:p-6 dark:bg-slate-900"
-        onMouseDown={(event) =>
-          event.stopPropagation()
-        }
-      >
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <StatusPill tone="green">
-              <FiCheck />
-              Ready for Confirmation
-            </StatusPill>
-
-            <h2
-              id="employee-review-dialog-title"
-              className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white"
-            >
-              {dialogTitle}
-            </h2>
-
-            <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              {dialogDescription}
-            </p>
-          </div>
-
-          <IconButton
-            label="Close employee review"
-            title="Back to edit"
-            variant="ghost"
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      title={dialogTitle}
+      description={dialogDescription}
+      tone="success"
+      size="xl"
+      height="xl"
+      preventClose={isSaving}
+      closeOnOverlay={!isSaving}
+      closeOnEscape={!isSaving}
+      scrollBody
+      bodyClassName="p-5 sm:p-6"
+      footer={
+        <div className="flex w-full flex-col-reverse justify-end gap-3 sm:flex-row">
+          <Button
+            type="button"
+            variant="secondary"
             disabled={isSaving}
-            onClick={onClose}
+            onClick={handleClose}
           >
-            <FiX size={22} />
-          </IconButton>
+            Back to Edit
+          </Button>
+
+          <Button
+            type="button"
+            variant="success"
+            loading={isSaving}
+            disabled={isSaving}
+            onClick={handleConfirm}
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill tone="green">
+            <FiCheck aria-hidden="true" />
+            Ready for Confirmation
+          </StatusPill>
+
+          {isEditMode && (
+            <StatusPill tone="indigo">
+              Edit Mode
+            </StatusPill>
+          )}
         </div>
 
         {complianceWarning && (
-          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+          <div
+            role="status"
+            className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+          >
             <div className="flex gap-3">
-              <FiAlertTriangle className="mt-0.5 shrink-0" />
+              <FiAlertTriangle
+                className="mt-0.5 shrink-0"
+                aria-hidden="true"
+              />
 
-              <div>
+              <div className="min-w-0">
                 <p className="font-extrabold">
                   Compliance Warning
                 </p>
 
-                <p className="mt-1 leading-6">
+                <p className="mt-1 break-words leading-6">
                   {complianceWarning}
                 </p>
               </div>
@@ -291,13 +278,13 @@ export default function EmployeeReviewDialog({
           />
         </div>
 
-        <section className="mt-5 rounded-2xl border border-gray-200 p-5 dark:border-white/10">
+        <section className="rounded-2xl border border-gray-200 p-5 dark:border-white/10">
           <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
-              <FiFileText />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+              <FiFileText aria-hidden="true" />
             </div>
 
-            <div>
+            <div className="min-w-0">
               <h3 className="font-extrabold text-gray-900 dark:text-white">
                 Compliance Documents
               </h3>
@@ -337,14 +324,18 @@ export default function EmployeeReviewDialog({
                     documentStatus ===
                       "Expiring Soon";
 
+                  const hasMissingData =
+                    isExpirable &&
+                    !document.expirationDate;
+
                   return (
                     <article
                       key={document.name}
-                      className="rounded-2xl bg-gray-50 px-4 py-4 dark:bg-slate-800"
+                      className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 dark:border-white/10 dark:bg-slate-800"
                     >
                       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
                         <div className="min-w-0">
-                          <p className="font-bold text-gray-900 dark:text-white">
+                          <p className="break-words font-bold text-gray-900 dark:text-white">
                             {document.name}
                           </p>
 
@@ -360,12 +351,16 @@ export default function EmployeeReviewDialog({
 
                         <StatusPill
                           tone={
-                            isRisky
-                              ? "amber"
-                              : "green"
+                            hasMissingData
+                              ? "red"
+                              : isRisky
+                                ? "amber"
+                                : "green"
                           }
                         >
-                          {documentStatus}
+                          {hasMissingData
+                            ? "Missing Date"
+                            : documentStatus}
                         </StatusPill>
                       </div>
 
@@ -378,44 +373,24 @@ export default function EmployeeReviewDialog({
               )}
             </div>
           ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500 dark:border-white/10 dark:bg-slate-800 dark:text-gray-400">
               No compliance documents selected.
-            </p>
+            </div>
           )}
         </section>
 
         {saveError && (
-          <div className="mt-5">
-            <ErrorState
-              compact
-              title={
-                isEditMode
-                  ? "Unable to update employee"
-                  : "Unable to save employee"
-              }
-              message={saveError}
-            />
-          </div>
+          <ErrorState
+            compact
+            title={
+              isEditMode
+                ? "Unable to update employee"
+                : "Unable to save employee"
+            }
+            message={saveError}
+          />
         )}
-
-        <div className="mt-6 flex flex-col-reverse justify-end gap-3 sm:flex-row">
-          <Button
-            variant="secondary"
-            disabled={isSaving}
-            onClick={onClose}
-          >
-            Back to Edit
-          </Button>
-
-          <Button
-            variant="success"
-            loading={isSaving}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </Button>
-        </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

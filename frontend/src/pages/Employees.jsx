@@ -381,21 +381,19 @@ export default function Employees() {
         }
 
         return false;
-      } finally {
-        isFetchingRef.current = false;
+} finally {
+  isFetchingRef.current = false;
 
-        if (!isMountedRef.current) {
-          return;
-        }
+  if (isMountedRef.current) {
+    if (showLoading) {
+      setIsLoadingEmployees(false);
+    }
 
-        if (showLoading) {
-          setIsLoadingEmployees(false);
-        }
-
-        if (showRefreshing) {
-          setIsRefreshingEmployees(false);
-        }
-      }
+    if (showRefreshing) {
+      setIsRefreshingEmployees(false);
+    }
+  }
+}
     },
     []
   );

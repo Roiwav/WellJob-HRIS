@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   FiAlertCircle,
   FiEye,
@@ -7,8 +8,37 @@ import {
   FiUserCheck,
 } from "react-icons/fi";
 
+const STATUS = {
+  OPEN: "open",
+  INVESTIGATING: "investigating",
+  FOR_REVIEW: "for review",
+  CLOSED: "closed",
+};
+
+const ACTION_BUTTON_STYLES = {
+  view:
+    "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 focus-visible:ring-slate-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white",
+
+  start:
+    "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100 hover:text-amber-800 focus-visible:ring-amber-500/30 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50",
+
+  resolve:
+    "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-800 focus-visible:ring-emerald-500/30 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50",
+
+  review:
+    "border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 hover:text-indigo-800 focus-visible:ring-indigo-500/30 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/50",
+};
+
 function normalizeIdentity(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeStatus(value) {
+  return normalizeIdentity(value)
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
 }
 
 function buildUserAliases(user) {
@@ -17,7 +47,10 @@ function buildUserAliases(user) {
       user?.id,
       user?.userId,
       user?.user_id,
+      user?.employeeId,
+      user?.employee_id,
       user?.username,
+      user?.email,
       user?.name,
       user?.fullName,
       user?.full_name,
@@ -30,17 +63,66 @@ function buildUserAliases(user) {
   );
 }
 
-function hasAliasMatch(aliases, values = []) {
-  if (!aliases || aliases.size === 0) return false;
+function hasAliasMatch(
+  aliases,
+  values = []
+) {
+  if (
+    !(aliases instanceof Set) ||
+    aliases.size === 0
+  ) {
+    return false;
+  }
 
-  return values.some((value) => aliases.has(normalizeIdentity(value)));
+  return values.some((value) => {
+    const normalizedValue =
+      normalizeIdentity(value);
+
+    return (
+      normalizedValue &&
+      aliases.has(normalizedValue)
+    );
+  });
+}
+
+function getLastActionType(incident) {
+  return normalizeIdentity(
+    incident?.lastActionType ||
+      incident?.last_action_type
+  ).toUpperCase();
 }
 
 function getInvestigatorValues(incident) {
+  const lastActionType =
+    getLastActionType(incident);
+
+  const lastActionValues =
+    lastActionType ===
+    "START_INVESTIGATION"
+      ? [
+          incident?.lastActionById,
+          incident?.last_action_by_id,
+          incident?.lastActionByUsername,
+          incident?.last_action_by_username,
+          incident?.lastActionByName,
+          incident?.last_action_by_name,
+        ]
+      : [];
+
   return [
     incident?.investigation?.startedById,
-    incident?.investigation?.startedByUsername,
-    incident?.investigation?.startedByName,
+    incident?.investigation
+      ?.started_by_id,
+
+    incident?.investigation
+      ?.startedByUsername,
+    incident?.investigation
+      ?.started_by_username,
+
+    incident?.investigation
+      ?.startedByName,
+    incident?.investigation
+      ?.started_by_name,
 
     incident?.investigationStartedById,
     incident?.investigation_started_by_id,
@@ -51,155 +133,228 @@ function getInvestigatorValues(incident) {
     incident?.investigationStartedByName,
     incident?.investigation_started_by_name,
 
-    incident?.lastActionType === "START_INVESTIGATION"
-      ? incident?.lastActionById
-      : null,
-    incident?.last_action_type === "START_INVESTIGATION"
-      ? incident?.last_action_by_id
-      : null,
-
-    incident?.lastActionType === "START_INVESTIGATION"
-      ? incident?.lastActionByUsername
-      : null,
-    incident?.last_action_type === "START_INVESTIGATION"
-      ? incident?.last_action_by_username
-      : null,
-
-    incident?.lastActionType === "START_INVESTIGATION"
-      ? incident?.lastActionByName
-      : null,
-    incident?.last_action_type === "START_INVESTIGATION"
-      ? incident?.last_action_by_name
-      : null,
+    ...lastActionValues,
   ].filter(Boolean);
 }
 
 function getInvestigatorName(incident) {
+  const lastActionType =
+    getLastActionType(incident);
+
   return (
-    incident?.investigation?.startedByName ||
+    incident?.investigation
+      ?.startedByName ||
+    incident?.investigation
+      ?.started_by_name ||
     incident?.investigationStartedByName ||
     incident?.investigation_started_by_name ||
-    (incident?.lastActionType === "START_INVESTIGATION"
-      ? incident?.lastActionByName
-      : "") ||
-    (incident?.last_action_type === "START_INVESTIGATION"
-      ? incident?.last_action_by_name
+    (lastActionType ===
+    "START_INVESTIGATION"
+      ? incident?.lastActionByName ||
+        incident?.last_action_by_name
       : "") ||
     "Assigned HR"
   );
 }
 
-function isCurrentUserInvestigator(incident, currentUser) {
-  const investigatorValues = getInvestigatorValues(incident);
+function ActionButton({
+  icon,
+  title,
+  variant = "view",
+  onClick,
+  disabled = false,
+}) {
+  const variantStyle =
+    ACTION_BUTTON_STYLES[variant] ||
+    ACTION_BUTTON_STYLES.view;
 
-  if (investigatorValues.length === 0) {
-    return false;
-  }
-
-  return hasAliasMatch(buildUserAliases(currentUser), investigatorValues);
-}
-
-function ActionButton({ icon, title, color, onClick }) {
   return (
     <button
       type="button"
       title={title}
       aria-label={title}
+      disabled={disabled}
       onClick={onClick}
-      className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border text-sm shadow-sm transition ${color}`}
+      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-sm shadow-sm transition focus:outline-none focus-visible:ring-4 disabled:cursor-not-allowed disabled:opacity-50 ${variantStyle}`}
     >
       {icon}
     </button>
   );
 }
 
-function DisabledActionPill({ icon, label, title }) {
+function DisabledActionPill({
+  icon,
+  label,
+  title,
+}) {
   return (
     <span
+      role="status"
       title={title || label}
       className="inline-flex max-w-[190px] items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-300"
     >
-      <span className="shrink-0">{icon}</span>
-      <span className="truncate">{label}</span>
+      <span
+        className="shrink-0"
+        aria-hidden="true"
+      >
+        {icon}
+      </span>
+
+      <span className="truncate">
+        {label}
+      </span>
     </span>
   );
 }
 
 export default function ActionButtons({
   incident,
-  isSuperAdmin,
+  isSuperAdmin = false,
   currentUser,
   onView,
   onStartReview,
   onResolve,
   onReview,
 }) {
-  const status = String(incident?.status || "").trim();
-  const investigatorName = getInvestigatorName(incident);
-  const currentUserIsInvestigator = isCurrentUserInvestigator(
-    incident,
-    currentUser
+  const status = normalizeStatus(
+    incident?.status
   );
 
-  if (isSuperAdmin && status === "For Review") {
+  const investigatorName =
+    getInvestigatorName(incident);
+
+  const currentUserAliases = useMemo(
+    () => buildUserAliases(currentUser),
+    [currentUser]
+  );
+
+  const investigatorValues = useMemo(
+    () => getInvestigatorValues(incident),
+    [incident]
+  );
+
+  const currentUserIsInvestigator =
+    useMemo(
+      () =>
+        hasAliasMatch(
+          currentUserAliases,
+          investigatorValues
+        ),
+      [
+        currentUserAliases,
+        investigatorValues,
+      ]
+    );
+
+  if (!incident) {
+    return null;
+  }
+
+  if (
+    isSuperAdmin &&
+    status === STATUS.FOR_REVIEW
+  ) {
     return (
       <ActionButton
-        icon={<FiAlertCircle size={15} />}
+        icon={
+          <FiAlertCircle
+            size={15}
+            aria-hidden="true"
+          />
+        }
         title="Review submitted case"
-        color="border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/50"
-        onClick={() => onReview?.(incident)}
+        variant="review"
+        onClick={() =>
+          onReview?.(incident)
+        }
       />
     );
   }
 
-  if (!isSuperAdmin && status === "Open") {
+  if (
+    !isSuperAdmin &&
+    status === STATUS.OPEN
+  ) {
     return (
       <ActionButton
-        icon={<FiPlay size={15} />}
+        icon={
+          <FiPlay
+            size={15}
+            aria-hidden="true"
+          />
+        }
         title="Start investigation"
-        color="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
-        onClick={() => onStartReview?.(incident)}
+        variant="start"
+        onClick={() =>
+          onStartReview?.(incident)
+        }
       />
     );
   }
 
-  if (!isSuperAdmin && status === "Investigating") {
+  if (
+    !isSuperAdmin &&
+    status === STATUS.INVESTIGATING
+  ) {
     if (currentUserIsInvestigator) {
       return (
         <ActionButton
-          icon={<FiUpload size={15} />}
-          title="Submit or resubmit proof"
-          color="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
-          onClick={() => onResolve?.(incident)}
+          icon={
+            <FiUpload
+              size={15}
+              aria-hidden="true"
+            />
+          }
+          title="Submit or resubmit resolution proof"
+          variant="resolve"
+          onClick={() =>
+            onResolve?.(incident)
+          }
         />
       );
     }
 
     return (
       <DisabledActionPill
-        icon={<FiUserCheck size={14} />}
+        icon={
+          <FiUserCheck size={14} />
+        }
         label={`Investigating by ${investigatorName}`}
-        title={`This case is already being investigated by ${investigatorName}`}
+        title={`This case is already being investigated by ${investigatorName}.`}
       />
     );
   }
 
-  if (!isSuperAdmin && status === "For Review") {
+  if (
+    !isSuperAdmin &&
+    status === STATUS.FOR_REVIEW
+  ) {
     return (
       <DisabledActionPill
         icon={<FiLock size={14} />}
         label="Waiting for SA review"
-        title="This case is already submitted to Super Admin for review."
+        title="This case has already been submitted to the Super Admin for review."
       />
     );
   }
 
   return (
     <ActionButton
-      icon={<FiEye size={15} />}
-      title="View incident details"
-      color="border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-      onClick={() => onView?.(incident)}
+      icon={
+        <FiEye
+          size={15}
+          aria-hidden="true"
+        />
+      }
+      title={
+        status === STATUS.CLOSED
+          ? "View closed incident details"
+          : "View incident details"
+      }
+      variant="view"
+      onClick={() =>
+        onView?.(incident)
+      }
     />
   );
 }

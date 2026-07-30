@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { FiPlus } from "react-icons/fi";
 
 import RoleGuard from "../components/auth/RoleGuard";
+import Button from "../components/ui/Button";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 
@@ -425,7 +427,8 @@ async function requestJson(url, options = {}) {
 export default function Incidents() {
   const { user } = useAuth();
   const currentUser = getUserIdentity(user);
-  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const isSuperAdmin =
+    String(user?.role || "").trim().toUpperCase() === "SUPER_ADMIN";
 
   const actorFullName =
     user?.full_name ||
@@ -440,6 +443,9 @@ export default function Incidents() {
 
   const location = useLocation();
   const navigate = useNavigate();
+
+  const isMountedRef = useRef(true);
+  const fetchRequestIdRef = useRef(0);
 
   const [employees, setEmployees] = useState([]);
   const [incidents, setIncidents] = useState([]);
@@ -461,6 +467,10 @@ export default function Incidents() {
   const [notice, setNotice] = useState(null);
 
   const showNotice = useCallback((type, title, message) => {
+    if (!isMountedRef.current) {
+      return;
+    }
+
     setNotice({ type, title, message });
   }, []);
 
@@ -606,8 +616,11 @@ export default function Incidents() {
 
   const fetchPageData = useCallback(
     async ({ silent = false, showError = true } = {}) => {
+      const requestId = fetchRequestIdRef.current + 1;
+      fetchRequestIdRef.current = requestId;
+
       try {
-        if (!silent) {
+        if (!silent && isMountedRef.current) {
           setIsLoading(true);
         }
 
@@ -616,6 +629,13 @@ export default function Incidents() {
           requestJson(INCIDENT_API_URL),
           requestJson(DEPLOYMENT_API_URL),
         ]);
+
+        if (
+          !isMountedRef.current ||
+          requestId !== fetchRequestIdRef.current
+        ) {
+          return false;
+        }
 
         const backendIncidents = buildIncidentList(
           Array.isArray(incidentData) ? incidentData : []
@@ -628,10 +648,16 @@ export default function Incidents() {
         setEmployees(Array.isArray(employeeData) ? employeeData : []);
         setIncidents(backendIncidents);
         setDeploymentRecords(backendDeployments);
+
+        return true;
       } catch (error) {
         console.error("Fetch incident page data error:", error);
 
-        if (showError) {
+        if (
+          showError &&
+          isMountedRef.current &&
+          requestId === fetchRequestIdRef.current
+        ) {
           showNotice(
             "error",
             "Backend Fetch Failed",
@@ -639,14 +665,28 @@ export default function Incidents() {
               "Unable to load employee, deployment, and incident records."
           );
         }
+
+        return false;
       } finally {
-        if (!silent) {
+        if (
+          isMountedRef.current &&
+          requestId === fetchRequestIdRef.current
+        ) {
           setIsLoading(false);
         }
       }
     },
     [showNotice]
   );
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      fetchRequestIdRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     fetchPageData();
@@ -749,7 +789,7 @@ export default function Incidents() {
       successMessage,
       formData,
     }) => {
-      if (incident.status === "Closed") {
+      if (normalizeStatus(incident.status) === "Closed") {
         showNotice(
           "error",
           "Case Already Closed",
@@ -931,7 +971,9 @@ export default function Incidents() {
   };
 
   const handleConfirmStartInvestigation = async (incident) => {
-    if (isSuperAdmin) return;
+    if (isSuperAdmin || !incident) {
+      return false;
+    }
 
     const updatedIncident = normalizeIncidentWithRules(
       {
@@ -970,13 +1012,19 @@ export default function Incidents() {
       setConfirmStartIncident(null);
       setStartReviewIncident(null);
     }
+
+    return success;
   };
 
   const handleSubmitResolution = async (incident, resolutionData) => {
     if (isSuperAdmin) return false;
 
-    const validFiles = resolutionData.proofFiles.filter(
-      (item) => item.file instanceof File && !item.error
+    const proofFiles = Array.isArray(resolutionData?.proofFiles)
+      ? resolutionData.proofFiles
+      : [];
+
+    const validFiles = proofFiles.filter(
+      (item) => item?.file instanceof File && !item?.error
     );
     const formData = new FormData();
     formData.append("status", "For Review");
@@ -1002,7 +1050,7 @@ export default function Incidents() {
           submittedByRole: currentUser.role,
           actionTaken: resolutionData.actionTaken,
           remarks: resolutionData.remarks,
-          proofFiles: resolutionData.proofFiles,
+          proofFiles,
         },
         actionTaken: resolutionData.actionTaken,
         resolutionNotes: resolutionData.remarks,
@@ -1038,7 +1086,9 @@ export default function Incidents() {
   };
 
   const handleApproveCase = async (incident) => {
-    if (!isSuperAdmin) return;
+    if (!isSuperAdmin || !incident) {
+      return false;
+    }
 
     const updatedIncident = normalizeIncidentWithRules(
       {
@@ -1088,10 +1138,14 @@ export default function Incidents() {
       setReviewIncident(null);
       setCaseTab("CLOSED");
     }
+
+    return success;
   };
 
   const handleRejectCase = async (incident, comments) => {
-    if (!isSuperAdmin) return;
+    if (!isSuperAdmin || !incident) {
+      return false;
+    }
 
     const updatedIncident = normalizeIncidentWithRules(
       {
@@ -1134,6 +1188,8 @@ export default function Incidents() {
       setReviewIncident(null);
       setCaseTab("ACTIVE");
     }
+
+    return success;
   };
 
   const filteredIncidents = useMemo(() => {
@@ -1205,13 +1261,14 @@ export default function Incidents() {
 
         {!isSuperAdmin && (
           <RoleGuard permission={PERMISSIONS.CAN_ADD_INCIDENT}>
-            <button
+            <Button
               type="button"
+              variant="danger"
+              leftIcon={<FiPlus aria-hidden="true" />}
               onClick={() => setOpenAddModal(true)}
-              className="rounded-lg bg-red-500 px-4 py-2 text-white transition hover:bg-red-600"
             >
-              + Add Incident Report
-            </button>
+              Add Incident Report
+            </Button>
           </RoleGuard>
         )}
       </div>

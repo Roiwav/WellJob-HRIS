@@ -1,4 +1,7 @@
-import { useState } from "react";
+import {
+  useCallback,
+  useState,
+} from "react";
 import {
   FiAlertTriangle,
   FiBriefcase,
@@ -8,6 +11,8 @@ import {
 
 import Button from "../../ui/Button";
 import Dialog from "../../ui/Dialog";
+import IconButton from "../../ui/IconButton";
+import StatusBadge from "../../ui/StatusBadge";
 
 const SEPARATION_REASON_OPTIONS = [
   "Resignation",
@@ -23,7 +28,7 @@ function formatDisplayDate(dateValue) {
   const date = new Date(dateValue);
 
   if (Number.isNaN(date.getTime())) {
-    return dateValue;
+    return String(dateValue);
   }
 
   return date.toLocaleDateString("en-PH", {
@@ -44,35 +49,67 @@ function formatDateForInput(dateValue) {
     return "";
   }
 
-  return date.toISOString().split("T")[0];
+  const year = date.getFullYear();
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
-function StatusBadge({ status }) {
-  const styles = {
-    Active:
-      "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300",
-
-    Completed:
-      "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
-
-    Pending:
-      "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
-
-    Cancelled:
-      "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
-  };
-
+function getDeploymentKey(
+  deployment,
+  index
+) {
   return (
-    <span
-      className={[
-        "inline-flex rounded-full px-3 py-1 text-xs font-semibold",
-        styles[status] ||
-          "bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200",
-      ].join(" ")}
-    >
-      {status || "-"}
-    </span>
+    deployment?.deploymentId ||
+    deployment?.deployment_id ||
+    deployment?.id ||
+    deployment?.employeeId ||
+    deployment?.employee_id ||
+    `deployment-${index}`
   );
+}
+
+function getEmployeeName(deployment) {
+  return (
+    deployment?.employee ||
+    deployment?.employeeName ||
+    deployment?.employee_name ||
+    "Employee"
+  );
+}
+
+function normalizeDeploymentStatus(status) {
+  const normalized = String(
+    status || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "active") {
+    return "Active";
+  }
+
+  if (normalized === "completed") {
+    return "Completed";
+  }
+
+  if (
+    normalized === "cancelled" ||
+    normalized === "canceled"
+  ) {
+    return "Cancelled";
+  }
+
+  if (normalized === "pending") {
+    return "Pending";
+  }
+
+  return status || "Pending";
 }
 
 function SeparationModal({
@@ -80,37 +117,45 @@ function SeparationModal({
   onClose,
   onSubmit,
 }) {
-  const [separationDate, setSeparationDate] = useState(() =>
-    formatDateForInput(
-      deployment?.separationDate ||
-        deployment?.contractEnd
-    )
-  );
+  const [separationDate, setSeparationDate] =
+    useState(() =>
+      formatDateForInput(
+        deployment?.separationDate ||
+          deployment?.contractEnd
+      )
+    );
 
-  const [separationReason, setSeparationReason] =
+  const [
+    separationReason,
+    setSeparationReason,
+  ] = useState("");
+
+  const [
+    separationRemarks,
+    setSeparationRemarks,
+  ] = useState("");
+
+  const [error, setError] =
     useState("");
 
-  const [separationRemarks, setSeparationRemarks] =
-    useState("");
+  const [
+    isSubmitting,
+    setIsSubmitting,
+  ] = useState(false);
 
-  const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] =
-    useState(false);
-
-  if (!deployment) {
-    return null;
-  }
-
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (isSubmitting) {
       return;
     }
 
     onClose?.();
-  };
+  }, [isSubmitting, onClose]);
 
-  const handleSubmit = async () => {
-    if (isSubmitting) {
+  const handleSubmit = useCallback(async () => {
+    if (
+      isSubmitting ||
+      !deployment
+    ) {
       return;
     }
 
@@ -131,7 +176,8 @@ function SeparationModal({
     }
 
     if (
-      separationReason === "Other Separation" &&
+      separationReason ===
+        "Other Separation" &&
       !separationRemarks.trim()
     ) {
       setError(
@@ -143,13 +189,14 @@ function SeparationModal({
     try {
       setIsSubmitting(true);
 
-      const wasSaved = await onSubmit?.({
-        ...deployment,
-        separationDate,
-        separationReason,
-        separationRemarks:
-          separationRemarks.trim(),
-      });
+      const wasSaved =
+        await onSubmit?.({
+          ...deployment,
+          separationDate,
+          separationReason,
+          separationRemarks:
+            separationRemarks.trim(),
+        });
 
       if (!wasSaved) {
         setError(
@@ -169,14 +216,28 @@ function SeparationModal({
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [
+    deployment,
+    isSubmitting,
+    onSubmit,
+    separationDate,
+    separationReason,
+    separationRemarks,
+  ]);
+
+  if (!deployment) {
+    return null;
+  }
+
+  const employeeName =
+    getEmployeeName(deployment);
 
   return (
     <Dialog
       open={Boolean(deployment)}
       onClose={handleClose}
       title="Separate Employee"
-      description="Record separation only when the employee resigns, is terminated, or leaves for another reason."
+      description="Record separation only when the employee resigns, is terminated, or leaves employment for another reason."
       size="lg"
       tone="warning"
       closeOnOverlay={!isSubmitting}
@@ -185,8 +246,9 @@ function SeparationModal({
       showCloseButton
       bodyClassName="space-y-5 p-6"
       footer={
-        <>
+        <div className="flex w-full flex-col-reverse justify-end gap-3 sm:flex-row">
           <Button
+            type="button"
             variant="secondary"
             disabled={isSubmitting}
             onClick={handleClose}
@@ -195,6 +257,7 @@ function SeparationModal({
           </Button>
 
           <Button
+            type="button"
             variant="warning"
             loading={isSubmitting}
             disabled={isSubmitting}
@@ -202,7 +265,7 @@ function SeparationModal({
           >
             Confirm Separation
           </Button>
-        </>
+        </div>
       }
     >
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-800/60">
@@ -220,11 +283,14 @@ function SeparationModal({
             </p>
 
             <p className="mt-1 truncate font-extrabold text-slate-900 dark:text-white">
-              {deployment.employee || "-"}
+              {employeeName}
             </p>
 
-            <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              {deployment.company || "-"} •{" "}
+            <p className="mt-1 break-words text-sm font-semibold text-slate-500 dark:text-slate-400">
+              {deployment.company || "-"}{" "}
+              <span aria-hidden="true">
+                •
+              </span>{" "}
               {deployment.location || "-"}
             </p>
           </div>
@@ -246,7 +312,9 @@ function SeparationModal({
             value={separationDate}
             disabled={isSubmitting}
             onChange={(event) => {
-              setSeparationDate(event.target.value);
+              setSeparationDate(
+                event.target.value
+              );
               setError("");
             }}
             className="ui-control"
@@ -266,7 +334,9 @@ function SeparationModal({
             value={separationReason}
             disabled={isSubmitting}
             onChange={(event) => {
-              setSeparationReason(event.target.value);
+              setSeparationReason(
+                event.target.value
+              );
               setError("");
             }}
             className="ui-select"
@@ -308,6 +378,7 @@ function SeparationModal({
             value={separationRemarks}
             disabled={isSubmitting}
             rows={4}
+            maxLength={1000}
             placeholder="Add a short note or HR remarks..."
             onChange={(event) => {
               setSeparationRemarks(
@@ -317,6 +388,10 @@ function SeparationModal({
             }}
             className="ui-textarea"
           />
+
+          <p className="mt-1 text-right text-xs text-gray-400">
+            {separationRemarks.length}/1000
+          </p>
         </div>
       </div>
 
@@ -331,13 +406,17 @@ function SeparationModal({
               aria-hidden="true"
             />
 
-            <span>{error}</span>
+            <span className="break-words">
+              {error}
+            </span>
           </div>
         </div>
       )}
 
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-        <strong>Employment rule:</strong>{" "}
+        <strong>
+          Employment rule:
+        </strong>{" "}
         Deployment is continuous. Saving this form
         records that the employee has left employment
         and ends the active deployment.
@@ -352,61 +431,83 @@ export default function DeploymentTable({
   onUpdateRow,
   isSuperAdmin = false,
 }) {
-  const [separationTarget, setSeparationTarget] =
-    useState(null);
+  const [
+    separationTarget,
+    setSeparationTarget,
+  ] = useState(null);
 
-  const safeDeployments = Array.isArray(deployments)
-    ? deployments
-    : [];
+  const safeDeployments =
+    Array.isArray(deployments)
+      ? deployments
+      : [];
 
-  const handleOpenSeparationModal = (
-    deployment
-  ) => {
-    if (
-      isSuperAdmin ||
-      deployment?.status !== "Active"
-    ) {
-      return;
-    }
+  const handleOpenSeparationModal =
+    useCallback(
+      (deployment) => {
+        const status =
+          normalizeDeploymentStatus(
+            deployment?.status
+          );
 
-    setSeparationTarget(deployment);
-  };
+        if (
+          isSuperAdmin ||
+          status !== "Active"
+        ) {
+          return;
+        }
 
-  const handleCloseSeparationModal = () => {
-    setSeparationTarget(null);
-  };
-
-  const handleSubmitSeparation = async (
-    updatedDeployment
-  ) => {
-    if (typeof onUpdateRow !== "function") {
-      return false;
-    }
-
-    const wasSaved = await onUpdateRow(
-      updatedDeployment
+        setSeparationTarget(
+          deployment
+        );
+      },
+      [isSuperAdmin]
     );
 
-    if (!wasSaved) {
-      return false;
-    }
+  const handleCloseSeparationModal =
+    useCallback(() => {
+      setSeparationTarget(null);
+    }, []);
 
-    setSeparationTarget(null);
-    return true;
-  };
+  const handleSubmitSeparation =
+    useCallback(
+      async (updatedDeployment) => {
+        if (
+          typeof onUpdateRow !==
+          "function"
+        ) {
+          return false;
+        }
+
+        const wasSaved =
+          await onUpdateRow(
+            updatedDeployment
+          );
+
+        if (!wasSaved) {
+          return false;
+        }
+
+        setSeparationTarget(null);
+
+        return true;
+      },
+      [onUpdateRow]
+    );
 
   return (
     <>
       <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
-        <header className="flex items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-white/10">
-          <div>
+        <header className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-white/10">
+          <div className="min-w-0">
             <h3 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
               <FiBriefcase
-                className="text-indigo-600 dark:text-indigo-400"
+                className="shrink-0 text-indigo-600 dark:text-indigo-400"
                 aria-hidden="true"
               />
 
-              Deployment Records
+              <span>
+                Deployment Records
+              </span>
             </h3>
 
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -415,47 +516,71 @@ export default function DeploymentTable({
             </p>
           </div>
 
-          <span className="rounded-full bg-indigo-50 px-4 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-            {safeDeployments.length} record
+          <span className="w-fit rounded-full bg-indigo-50 px-4 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+            {safeDeployments.length}{" "}
             {safeDeployments.length === 1
-              ? ""
-              : "s"}
+              ? "record"
+              : "records"}
           </span>
         </header>
 
-        <div className="max-h-[600px] overflow-x-auto overflow-y-auto">
+        <div className="max-h-[600px] overflow-auto">
           <table className="w-full min-w-[1000px] border-separate border-spacing-0 text-left">
-            <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-800">
+            <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
               <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Employee ID
                 </th>
 
-                <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Employee
                 </th>
 
-                <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Company
                 </th>
 
-                <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Location
                 </th>
 
-                <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Deployment Start
                 </th>
 
-                <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Separation
                 </th>
 
-                <th className="border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Status
                 </th>
 
-                <th className="border-b border-gray-200 px-6 py-4 text-center dark:border-white/10">
+                <th
+                  scope="col"
+                  className="px-6 py-4 text-center"
+                >
                   Actions
                 </th>
               </tr>
@@ -464,50 +589,70 @@ export default function DeploymentTable({
             <tbody className="divide-y divide-gray-100 dark:divide-white/5">
               {safeDeployments.length > 0 ? (
                 safeDeployments.map(
-                  (deployment) => {
+                  (
+                    deployment,
+                    index
+                  ) => {
+                    const employeeName =
+                      getEmployeeName(
+                        deployment
+                      );
+
+                    const status =
+                      normalizeDeploymentStatus(
+                        deployment.status
+                      );
+
                     const canSeparateEmployee =
                       !isSuperAdmin &&
-                      deployment.status ===
-                        "Active";
+                      status === "Active";
 
                     return (
                       <tr
-                        key={deployment.id}
-                        className="transition hover:bg-indigo-50/50 dark:hover:bg-white/5"
+                        key={getDeploymentKey(
+                          deployment,
+                          index
+                        )}
+                        className="transition-colors hover:bg-indigo-50/50 dark:hover:bg-white/5"
                       >
-                        <td className="whitespace-nowrap px-6 py-4">
+                        <td className="whitespace-nowrap px-6 py-4 align-middle">
                           <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                            {deployment.id ||
+                            {deployment.employeeId ||
+                              deployment.id ||
                               "-"}
                           </span>
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <p className="font-semibold text-gray-900 dark:text-white">
-                            {deployment.employee ||
+                        <td className="whitespace-nowrap px-6 py-4 align-middle">
+                          <p className="max-w-[240px] truncate font-semibold text-gray-900 dark:text-white">
+                            {employeeName}
+                          </p>
+                        </td>
+
+                        <td className="px-6 py-4 align-middle">
+                          <p className="max-w-[220px] truncate text-sm font-semibold text-gray-700 dark:text-gray-300">
+                            {deployment.company ||
                               "-"}
                           </p>
                         </td>
 
-                        <td className="px-6 py-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          {deployment.company ||
-                            "-"}
+                        <td className="px-6 py-4 align-middle">
+                          <p className="max-w-[220px] truncate text-sm font-medium text-gray-600 dark:text-gray-300">
+                            {deployment.location ||
+                              "-"}
+                          </p>
                         </td>
 
-                        <td className="px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-300">
-                          {deployment.location ||
-                            "-"}
-                        </td>
-
-                        <td className="px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-300">
+                        <td className="whitespace-nowrap px-6 py-4 align-middle text-sm font-medium text-gray-600 dark:text-gray-300">
                           {formatDisplayDate(
-                            deployment.start
+                            deployment.start ||
+                              deployment.contractStart
                           )}
                         </td>
 
-                        <td className="px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-300">
+                        <td className="px-6 py-4 align-middle text-sm font-medium text-gray-600 dark:text-gray-300">
                           <div>
-                            <p>
+                            <p className="whitespace-nowrap">
                               {formatDisplayDate(
                                 deployment.separationDate ||
                                   deployment.contractEnd
@@ -516,7 +661,7 @@ export default function DeploymentTable({
 
                             {(deployment.separationReason ||
                               deployment.endReason) && (
-                              <p className="mt-1 max-w-[180px] text-xs font-semibold text-gray-400 dark:text-gray-500">
+                              <p className="mt-1 max-w-[180px] truncate text-xs font-semibold text-gray-400 dark:text-gray-500">
                                 {deployment.separationReason ||
                                   deployment.endReason}
                               </p>
@@ -524,49 +669,48 @@ export default function DeploymentTable({
                           </div>
                         </td>
 
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 align-middle">
                           <StatusBadge
-                            status={
-                              deployment.status
-                            }
+                            status={status}
+                            size="md"
                           />
                         </td>
 
-                        <td className="px-6 py-4">
-                          <div className="flex justify-center gap-2">
+                        <td className="px-6 py-4 align-middle">
+                          <div className="flex items-center justify-center gap-2">
                             {canSeparateEmployee && (
-                              <button
-                                type="button"
+                              <IconButton
+                                label={`Separate ${employeeName}`}
+                                title="Separate Employee"
+                                variant="secondary"
+                                size="md"
                                 onClick={() =>
                                   handleOpenSeparationModal(
                                     deployment
                                   )
                                 }
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 transition hover:bg-blue-600 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500"
-                                title="Separate Employee"
-                                aria-label={`Separate ${deployment.employee}`}
                               >
                                 <FiEdit2
                                   aria-hidden="true"
                                 />
-                              </button>
+                              </IconButton>
                             )}
 
-                            <button
-                              type="button"
+                            <IconButton
+                              label={`View ${employeeName} deployment`}
+                              title="View Deployment"
+                              variant="primary"
+                              size="md"
                               onClick={() =>
                                 openView?.(
                                   deployment
                                 )
                               }
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-600 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500"
-                              title="View Deployment"
-                              aria-label={`View ${deployment.employee || "deployment"}`}
                             >
                               <FiEye
                                 aria-hidden="true"
                               />
-                            </button>
+                            </IconButton>
                           </div>
                         </td>
                       </tr>
@@ -592,9 +736,8 @@ export default function DeploymentTable({
                       </p>
 
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Deployment records will
-                        appear here once an employee
-                        is deployed.
+                        Deployment records will appear here once
+                        an employee is deployed.
                       </p>
                     </div>
                   </td>
@@ -605,11 +748,22 @@ export default function DeploymentTable({
         </div>
       </section>
 
-      <SeparationModal
-        deployment={separationTarget}
-        onClose={handleCloseSeparationModal}
-        onSubmit={handleSubmitSeparation}
-      />
+      {separationTarget && (
+        <SeparationModal
+          key={
+            separationTarget.deploymentId ||
+            separationTarget.id ||
+            separationTarget.employeeId
+          }
+          deployment={separationTarget}
+          onClose={
+            handleCloseSeparationModal
+          }
+          onSubmit={
+            handleSubmitSeparation
+          }
+        />
+      )}
     </>
   );
 }
