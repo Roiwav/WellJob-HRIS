@@ -682,7 +682,7 @@ export default function DeploymentTable({
                               <IconButton
                                 label={`Separate ${employeeName}`}
                                 title="Separate Employee"
-                                variant="secondary"
+                                variant="warning"
                                 size="md"
                                 onClick={() =>
                                   handleOpenSeparationModal(

@@ -8,12 +8,16 @@ import {
   FiChevronDown,
   FiChevronUp,
   FiCornerDownRight,
-  FiFileText,
-  FiSearch,
 } from "react-icons/fi";
 
 import FilterSelect from "./IncidentFilters";
 import ActionButtons from "./IncidentActionButtons";
+
+import Button from "../../ui/Button";
+import EmptyState from "../../ui/EmptyState";
+import FilterBar from "../../ui/FilterBar";
+import LoadingSkeleton from "../../ui/LoadingSkeleton";
+import SearchInput from "../../ui/SearchInput";
 
 import {
   CaseAgeBadge,
@@ -188,69 +192,79 @@ function getTabStyle(
   return "border-slate-300 bg-slate-100 text-slate-800 shadow-sm focus-visible:ring-slate-500/30 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 }
 
-function LoadingTableState() {
-  return (
-    <tr>
-      <td
-        colSpan={7}
-        className="px-6 py-14 text-center text-gray-500 dark:text-gray-400"
-      >
-        <div
-          role="status"
-          aria-live="polite"
-          className="flex flex-col items-center justify-center text-center"
-        >
-          <div className="mb-3 flex h-14 w-14 animate-pulse items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-900 dark:text-slate-500">
-            <FiFileText
-              size={22}
-              aria-hidden="true"
-            />
-          </div>
+function getEmptyStateContent({
+  totalIncidentCount,
+  search,
+  caseTab,
+  severityFilter,
+}) {
+  const hasSearch =
+    Boolean(String(search || "").trim());
 
-          <p className="font-bold">
-            Loading incident records...
-          </p>
-        </div>
-      </td>
-    </tr>
-  );
-}
+  const hasSeverityFilter =
+    severityFilter !== "ALL";
 
-function EmptyTableState() {
-  return (
-    <tr>
-      <td
-        colSpan={7}
-        className="px-6 py-14"
-      >
-        <div className="flex flex-col items-center justify-center text-center">
-          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-900 dark:text-slate-500">
-            <FiSearch
-              size={22}
-              aria-hidden="true"
-            />
-          </div>
+  const hasCaseFilter =
+    caseTab !== "ALL";
 
-          <p className="font-bold text-gray-800 dark:text-white">
-            No incident records found.
-          </p>
+  if (totalIncidentCount === 0) {
+    return {
+      icon: "records",
+      title: "No incident records",
+      description:
+        "Incident records will appear here after an authorized HR user reports a case.",
+    };
+  }
 
-          <p className="mt-1 max-w-sm text-sm text-gray-500 dark:text-gray-400">
-            Switch case tabs or adjust
-            the search and severity
-            filter.
-          </p>
-        </div>
-      </td>
-    </tr>
-  );
+  if (hasSearch) {
+    return {
+      icon: "search",
+      title: "No search results",
+      description:
+        "No incident matched the current search. Try another incident ID, employee, company, or violation.",
+    };
+  }
+
+  if (hasSeverityFilter) {
+    return {
+      icon: "filter",
+      title: "No severity-filter results",
+      description:
+        "Incident records exist, but none match the selected severity level.",
+    };
+  }
+
+  if (hasCaseFilter) {
+    const tabLabel =
+      CASE_TABS.find(
+        (tab) => tab.key === caseTab
+      )?.label || "selected case category";
+
+    return {
+      icon: "records",
+      title: `No ${tabLabel.toLowerCase()}`,
+      description:
+        "No incident records currently belong to this case category.",
+    };
+  }
+
+  return {
+    icon: "records",
+    title: "No incident records found",
+    description:
+      "No incident records are currently available.",
+  };
 }
 
 export default function IncidentTable({
   isLoading = false,
+  isRefreshing = false,
   incidents = [],
+  totalIncidentCount = 0,
   search = "",
   onSearchChange,
+  onClearSearch,
+  onClearFilters,
   caseTab = "ACTIVE",
   onCaseTabChange,
   caseCounts = DEFAULT_CASE_COUNTS,
@@ -274,6 +288,24 @@ export default function IncidentTable({
       ? incidents.filter(Boolean)
       : [];
   }, [incidents]);
+
+  const safeTotalIncidentCount =
+    Number.isFinite(
+      Number(totalIncidentCount)
+    )
+      ? Number(totalIncidentCount)
+      : safeIncidents.length;
+
+  const hasSearch =
+    Boolean(String(search || "").trim());
+
+  const controlsDisabled =
+    isLoading || isRefreshing;
+
+  const hasActiveFilters =
+    hasSearch ||
+    severityFilter !== "ALL" ||
+    caseTab !== "ALL";
 
   const getIncidentDisplayId =
     useCallback(
@@ -359,7 +391,10 @@ export default function IncidentTable({
             const sortedRecords = [
               ...groupRecords,
             ].sort(
-              (firstRecord, secondRecord) =>
+              (
+                firstRecord,
+                secondRecord
+              ) =>
                 getIncidentTimestamp(
                   secondRecord
                 ) -
@@ -388,8 +423,14 @@ export default function IncidentTable({
         );
     }, [safeIncidents]);
 
-  const recordCount =
-    safeIncidents.length;
+  const emptyStateContent =
+    getEmptyStateContent({
+      totalIncidentCount:
+        safeTotalIncidentCount,
+      search,
+      caseTab,
+      severityFilter,
+    });
 
   return (
     <section
@@ -417,12 +458,13 @@ export default function IncidentTable({
                 role="tab"
                 aria-selected={isActive}
                 aria-controls="incident-records-table"
+                disabled={controlsDisabled}
                 onClick={() =>
                   onCaseTabChange?.(
                     tab.key
                   )
                 }
-                className={`rounded-2xl border px-4 py-3 text-left transition focus:outline-none focus-visible:ring-4 ${getTabStyle(
+                className={`rounded-2xl border px-4 py-3 text-left transition focus:outline-none focus-visible:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${getTabStyle(
                   isActive,
                   tab.key
                 )}`}
@@ -448,36 +490,48 @@ export default function IncidentTable({
         </div>
       </div>
 
-      <div className="flex flex-col items-start gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px] xl:max-w-3xl">
-          <div className="relative min-w-0">
-            <FiSearch
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              aria-hidden="true"
-            />
+      <FilterBar
+        resultCount={
+          safeIncidents.length
+        }
+        resultLabel="incident"
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={
+              !hasActiveFilters ||
+              controlsDisabled
+            }
+            onClick={onClearFilters}
+          >
+            Clear Filters
+          </Button>
+        }
+      >
+        <div className="w-full sm:col-span-2 xl:w-[520px]">
+          <SearchInput
+            label="Search incident records"
+            hideLabel
+            placeholder="Search incident ID, employee, company, or violation..."
+            value={search}
+            disabled={controlsDisabled}
+            onChange={(event) =>
+              onSearchChange?.(
+                event.target.value
+              )
+            }
+            onClear={
+              typeof onClearSearch ===
+              "function"
+                ? onClearSearch
+                : () =>
+                    onSearchChange?.("")
+            }
+          />
+        </div>
 
-            <label
-              htmlFor="incident-search"
-              className="sr-only"
-            >
-              Search incident records
-            </label>
-
-            <input
-              id="incident-search"
-              type="search"
-              autoComplete="off"
-              placeholder="Search incident ID, employee, company, or violation..."
-              value={search}
-              onChange={(event) =>
-                onSearchChange?.(
-                  event.target.value
-                )
-              }
-              className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm font-semibold text-gray-900 shadow-sm outline-none transition hover:border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:border-slate-600"
-            />
-          </div>
-
+        <div className="min-w-0 xl:w-52">
           <FilterSelect
             value={severityFilter}
             onChange={
@@ -492,101 +546,116 @@ export default function IncidentTable({
             labels={{
               ALL: "All Severity",
             }}
+            disabled={controlsDisabled}
           />
         </div>
+      </FilterBar>
 
+      {isLoading ? (
+        <LoadingSkeleton
+          rows={6}
+          columns={7}
+          showHeader
+        />
+      ) : groupedIncidents.length ===
+        0 ? (
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:p-6">
+          <EmptyState
+            icon={
+              emptyStateContent.icon
+            }
+            title={
+              emptyStateContent.title
+            }
+            description={
+              emptyStateContent.description
+            }
+            secondaryActionLabel={
+              hasActiveFilters
+                ? "Clear filters"
+                : ""
+            }
+            onSecondaryAction={
+              hasActiveFilters
+                ? onClearFilters
+                : undefined
+            }
+          />
+        </section>
+      ) : (
         <div
-          aria-live="polite"
-          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+          id="incident-records-table"
+          role="tabpanel"
+          className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800"
         >
-          Showing {recordCount} record
-          {recordCount === 1
-            ? ""
-            : "s"}
-        </div>
-      </div>
+          <div className="border-b border-gray-200 bg-white px-5 py-4 dark:border-slate-700 dark:bg-slate-800">
+            <h2 className="text-base font-extrabold text-gray-900 dark:text-white">
+              Incident Records
+            </h2>
 
-      <div
-        id="incident-records-table"
-        role="tabpanel"
-        className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800"
-      >
-        <div className="border-b border-gray-200 bg-white px-5 py-4 dark:border-slate-700 dark:bg-slate-800">
-          <h2 className="text-base font-extrabold text-gray-900 dark:text-white">
-            Incident Records
-          </h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Cases are grouped by employee and violation.
+              Expand a record to view its related history.
+            </p>
+          </div>
 
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Cases are grouped by
-            employee and violation.
-            Expand a record to view its
-            related history.
-          </p>
-        </div>
+          <div className="max-h-[70vh] w-full overflow-auto">
+            <table className="w-full min-w-[1080px] table-fixed text-left text-sm">
+              <thead className="sticky top-0 z-20 bg-gray-50 text-gray-700 shadow-sm dark:bg-slate-900 dark:text-gray-300">
+                <tr>
+                  <th
+                    scope="col"
+                    className="w-[13%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
+                  >
+                    Incident ID
+                  </th>
 
-        <div className="max-h-[70vh] w-full overflow-auto">
-          <table className="w-full min-w-[1080px] table-fixed text-left text-sm">
-            <thead className="sticky top-0 z-20 bg-gray-50 text-gray-700 shadow-sm dark:bg-slate-900 dark:text-gray-300">
-              <tr>
-                <th
-                  scope="col"
-                  className="w-[13%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
-                >
-                  Incident ID
-                </th>
+                  <th
+                    scope="col"
+                    className="w-[22%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
+                  >
+                    Employee
+                  </th>
 
-                <th
-                  scope="col"
-                  className="w-[22%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
-                >
-                  Employee
-                </th>
+                  <th
+                    scope="col"
+                    className="w-[27%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
+                  >
+                    Violation
+                  </th>
 
-                <th
-                  scope="col"
-                  className="w-[27%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
-                >
-                  Violation
-                </th>
+                  <th
+                    scope="col"
+                    className="w-[12%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
+                  >
+                    Status
+                  </th>
 
-                <th
-                  scope="col"
-                  className="w-[12%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
-                >
-                  Status
-                </th>
+                  <th
+                    scope="col"
+                    className="w-[10%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
+                  >
+                    Case Age
+                  </th>
 
-                <th
-                  scope="col"
-                  className="w-[10%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
-                >
-                  Case Age
-                </th>
+                  <th
+                    scope="col"
+                    className="w-[8%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
+                  >
+                    Alerts
+                  </th>
 
-                <th
-                  scope="col"
-                  className="w-[8%] bg-gray-50 px-4 py-4 text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
-                >
-                  Alerts
-                </th>
+                  <th
+                    scope="col"
+                    className="w-[15%] bg-gray-50 px-4 py-4 text-right text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
+                  >
+                    Action
+                  </th>
+                </tr>
+              </thead>
 
-                <th
-                  scope="col"
-                  className="w-[15%] bg-gray-50 px-4 py-4 text-right text-xs font-extrabold uppercase tracking-wide dark:bg-slate-900"
-                >
-                  Action
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="text-gray-700 dark:text-gray-200">
-              {isLoading ? (
-                <LoadingTableState />
-              ) : groupedIncidents.length ===
-                0 ? (
-                <EmptyTableState />
-              ) : (
-                groupedIncidents.map(
+              <tbody className="text-gray-700 dark:text-gray-200">
+                {groupedIncidents.map(
                   (group) => {
                     const isExpanded =
                       Boolean(
@@ -888,12 +957,12 @@ export default function IncidentTable({
                       </Fragment>
                     );
                   }
-                )
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

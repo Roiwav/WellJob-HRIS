@@ -5,16 +5,26 @@ import {
   FiUsers,
 } from "react-icons/fi";
 
-function CompactMetric({ icon, label, value, suffix = "", tone = "slate" }) {
+function CompactMetric({
+  icon,
+  label,
+  value,
+  suffix = "",
+  tone = "slate",
+}) {
   const tones = {
     indigo:
       "border-indigo-500/30 bg-indigo-500/10 text-indigo-200",
+
     emerald:
       "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+
     amber:
       "border-amber-500/30 bg-amber-500/10 text-amber-200",
-    rose:
-      "border-rose-500/30 bg-rose-500/10 text-rose-200",
+
+    red:
+      "border-red-500/30 bg-red-500/10 text-red-200",
+
     slate:
       "border-slate-700 bg-slate-900 text-slate-200",
   };
@@ -32,7 +42,9 @@ function CompactMetric({ icon, label, value, suffix = "", tone = "slate" }) {
           </p>
 
           <div className="mt-1 flex items-end gap-1">
-            <p className="text-2xl font-black leading-none">{value}</p>
+            <p className="text-2xl font-black leading-none">
+              {value}
+            </p>
 
             {suffix && (
               <span className="pb-0.5 text-xs font-black opacity-80">
@@ -82,7 +94,11 @@ export default function KPISummarySection({
           label="Compliance Rate"
           value={complianceRate}
           suffix="%"
-          tone={complianceRate >= 80 ? "emerald" : "rose"}
+          tone={
+            complianceRate >= 80
+              ? "emerald"
+              : "amber"
+          }
         />
 
         <CompactMetric
@@ -96,7 +112,7 @@ export default function KPISummarySection({
           icon={<FiAlertTriangle />}
           label="High Risk"
           value={highRiskEmployees}
-          tone="rose"
+          tone="red"
         />
       </div>
     </section>

@@ -22,6 +22,8 @@ import RoleGuard from "../components/auth/RoleGuard";
 import Button from "../components/ui/Button";
 import IconButton from "../components/ui/IconButton";
 import PageHeader from "../components/ui/PageHeader";
+import SearchInput from "../components/ui/SearchInput";
+import FilterBar from "../components/ui/FilterBar";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingSkeleton from "../components/ui/LoadingSkeleton";
 import EmptyState from "../components/ui/EmptyState";
@@ -181,6 +183,14 @@ function getAccountStatus(account) {
   return status || "Active";
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ");
+}
+
 function AccountDetailRow({
   label,
   value,
@@ -220,6 +230,9 @@ export default function SuperAdminPortal() {
     userRoleFilter,
     setUserRoleFilter,
   ] = useState("ALL");
+
+  const [search, setSearch] =
+    useState("");
 
   const [userId, setUserId] =
     useState("");
@@ -435,21 +448,78 @@ export default function SuperAdminPortal() {
 
   const filteredAccounts =
     useMemo(() => {
-      if (
-        userRoleFilter === "ALL"
-      ) {
-        return accounts;
-      }
+      const normalizedSearch =
+        normalizeSearchText(search);
+
+      const searchTerms =
+        normalizedSearch
+          ? normalizedSearch.split(/\s+/)
+          : [];
 
       return accounts.filter(
-        (account) =>
-          account?.role ===
-          userRoleFilter
+        (account) => {
+          const matchesRole =
+            userRoleFilter === "ALL" ||
+            account?.role ===
+              userRoleFilter;
+
+          if (!matchesRole) {
+            return false;
+          }
+
+          if (
+            searchTerms.length === 0
+          ) {
+            return true;
+          }
+
+          const searchableText =
+            normalizeSearchText(
+              [
+                account?.id,
+                account?.user_id,
+                account?.userId,
+                account?.full_name,
+                account?.fullName,
+                account?.name,
+                account?.username,
+                account?.role,
+                getRoleLabel(
+                  account?.role
+                ),
+                getAccountStatus(
+                  account
+                ),
+              ]
+                .filter(Boolean)
+                .join(" ")
+            );
+
+          return searchTerms.every(
+            (term) =>
+              searchableText.includes(
+                term
+              )
+          );
+        }
       );
     }, [
       accounts,
+      search,
       userRoleFilter,
     ]);
+
+  const hasActiveFilters =
+    Boolean(
+      search.trim() ||
+      userRoleFilter !== "ALL"
+    );
+
+  const handleClearFilters =
+    useCallback(() => {
+      setSearch("");
+      setUserRoleFilter("ALL");
+    }, []);
 
   const handleRefresh =
     useCallback(async () => {
@@ -967,76 +1037,123 @@ export default function SuperAdminPortal() {
         </RoleGuard>
 
         <section className="flex min-h-[450px] flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
-          <header className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6 dark:border-white/10">
-            <div>
-              <h2 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
-                <FiUsers
-                  className="text-indigo-600 dark:text-indigo-400"
-                  aria-hidden="true"
-                />
+          <header className="border-b border-gray-200 px-5 py-5 sm:px-6 dark:border-white/10">
+            <h2 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
+              <FiUsers
+                className="text-indigo-600 dark:text-indigo-400"
+                aria-hidden="true"
+              />
 
-                Created Accounts
-              </h2>
+              Created Accounts
+            </h2>
 
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Review existing internal system accounts.
-              </p>
-            </div>
-
-            <div className="w-full sm:w-56">
-              <label
-                htmlFor="account-role-filter"
-                className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-gray-400"
-              >
-                Filter by Role
-              </label>
-
-              <select
-                id="account-role-filter"
-                value={userRoleFilter}
-                disabled={
-                  isLoadingAccounts ||
-                  isSubmitting
-                }
-                className={
-                  CONTROL_CLASS_NAME
-                }
-                onChange={(event) =>
-                  setUserRoleFilter(
-                    event.target.value
-                  )
-                }
-              >
-                <option value="ALL">
-                  All Roles
-                </option>
-
-                <option
-                  value={
-                    ROLES.HR_STAFF
-                  }
-                >
-                  HR Staff
-                </option>
-
-                <option
-                  value={
-                    ROLES.HR_MANAGER
-                  }
-                >
-                  HR Manager
-                </option>
-
-                <option
-                  value={
-                    ROLES.IT_SUPPORT
-                  }
-                >
-                  IT Support
-                </option>
-              </select>
-            </div>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Review existing internal system accounts.
+            </p>
           </header>
+
+          <div className="border-b border-gray-200 p-5 sm:p-6 dark:border-white/10">
+            <FilterBar
+              resultCount={
+                filteredAccounts.length
+              }
+              resultLabel="account"
+              actions={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={
+                    !hasActiveFilters ||
+                    isLoadingAccounts ||
+                    isRefreshingAccounts ||
+                    isSubmitting
+                  }
+                  onClick={
+                    handleClearFilters
+                  }
+                >
+                  Clear Filters
+                </Button>
+              }
+            >
+              <div className="w-full sm:col-span-2 xl:w-80">
+                <SearchInput
+                  label="Search created accounts"
+                  hideLabel
+                  placeholder="Search ID, name, username, role, or status..."
+                  value={search}
+                  disabled={
+                    isLoadingAccounts ||
+                    isRefreshingAccounts ||
+                    isSubmitting
+                  }
+                  onChange={(event) =>
+                    setSearch(
+                      event.target.value
+                    )
+                  }
+                  onClear={() =>
+                    setSearch("")
+                  }
+                />
+              </div>
+
+              <div className="min-w-0 xl:w-56">
+                <label
+                  htmlFor="account-role-filter"
+                  className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300"
+                >
+                  Filter by Role
+                </label>
+
+                <select
+                  id="account-role-filter"
+                  value={userRoleFilter}
+                  disabled={
+                    isLoadingAccounts ||
+                    isRefreshingAccounts ||
+                    isSubmitting
+                  }
+                  className={
+                    CONTROL_CLASS_NAME
+                  }
+                  onChange={(event) =>
+                    setUserRoleFilter(
+                      event.target.value
+                    )
+                  }
+                >
+                  <option value="ALL">
+                    All Roles
+                  </option>
+
+                  <option
+                    value={
+                      ROLES.HR_STAFF
+                    }
+                  >
+                    HR Staff
+                  </option>
+
+                  <option
+                    value={
+                      ROLES.HR_MANAGER
+                    }
+                  >
+                    HR Manager
+                  </option>
+
+                  <option
+                    value={
+                      ROLES.IT_SUPPORT
+                    }
+                  >
+                    IT Support
+                  </option>
+                </select>
+              </div>
+            </FilterBar>
+          </div>
 
           {isLoadingAccounts ? (
             <div className="p-5 sm:p-6">
@@ -1152,27 +1269,38 @@ export default function SuperAdminPortal() {
           ) : (
             <div className="flex flex-1 items-center p-5 sm:p-6">
               <EmptyState
-                icon="records"
-                title="No accounts found"
+                icon={
+                  search.trim()
+                    ? "search"
+                    : userRoleFilter !==
+                      "ALL"
+                    ? "filter"
+                    : "records"
+                }
+                title={
+                  search.trim()
+                    ? "No accounts matched"
+                    : userRoleFilter !==
+                      "ALL"
+                    ? "No role-filter results"
+                    : "No accounts found"
+                }
                 description={
-                  userRoleFilter ===
-                  "ALL"
-                    ? "No internal user accounts are currently available."
-                    : "No accounts match the selected role filter."
+                  search.trim()
+                    ? "No internal user accounts matched the current search and role filter."
+                    : userRoleFilter !==
+                      "ALL"
+                    ? "Internal accounts exist, but none match the selected role."
+                    : "No internal user accounts are currently available."
                 }
                 secondaryActionLabel={
-                  userRoleFilter !==
-                  "ALL"
-                    ? "Show all roles"
+                  hasActiveFilters
+                    ? "Clear filters"
                     : ""
                 }
                 onSecondaryAction={
-                  userRoleFilter !==
-                  "ALL"
-                    ? () =>
-                        setUserRoleFilter(
-                          "ALL"
-                        )
+                  hasActiveFilters
+                    ? handleClearFilters
                     : undefined
                 }
               />

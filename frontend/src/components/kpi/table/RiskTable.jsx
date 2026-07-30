@@ -171,18 +171,16 @@ function getWorkflowWeight(action) {
 
 function getPriorityAccent(emp) {
   const risk = emp?.riskLevel || "";
-  const confidence = emp?.decisionConfidence || DECISION_CONFIDENCE.LOW;
   const severity = emp?.severityLabel || "";
 
   if (
     risk === "High Risk" ||
-    confidence === DECISION_CONFIDENCE.HIGH ||
     severity === "Critical"
   ) {
-    return "border-l-rose-500";
+    return "border-l-red-500";
   }
 
-  if (risk === "Repeat" || confidence === DECISION_CONFIDENCE.MODERATE) {
+  if (risk === "Repeat") {
     return "border-l-amber-500";
   }
 
@@ -250,10 +248,10 @@ function StatChip({
   const tones = {
     emerald:
       "border-emerald-500/25 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15",
-    sky: "border-sky-500/25 bg-sky-500/10 text-sky-300 hover:bg-sky-500/15",
     amber:
       "border-amber-500/25 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15",
-    rose: "border-rose-500/25 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15",
+    red:
+      "border-red-500/25 bg-red-500/10 text-red-300 hover:bg-red-500/15",
     indigo:
       "border-indigo-500/25 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/15",
     slate:
@@ -515,19 +513,23 @@ export default function RiskTable({
               <StatChip
                 label="For HR Action"
                 value={decisionSummary.pending}
-                tone="indigo"
+                tone="amber"
               />
               <StatChip
                 label="High Confidence"
                 value={decisionSummary.high}
-                tone="rose"
+                tone="indigo"
               />
               <StatChip
                 label="Moderate"
                 value={decisionSummary.moderate}
                 tone="amber"
               />
-              <StatChip label="Low" value={decisionSummary.low} tone="sky" />
+              <StatChip
+                label="Low"
+                value={decisionSummary.low}
+                tone="slate"
+              />
             </div>
           </div>
 
@@ -544,7 +546,7 @@ export default function RiskTable({
             <StatChip
               label="Counseling"
               value={summary.counseling}
-              tone="sky"
+              tone="indigo"
               active={actionGroupFilter === ACTION_GROUPS.COUNSELING}
               onClick={() => handleActionGroupClick(ACTION_GROUPS.COUNSELING)}
               title="Show employees under Counseling recommendation"
@@ -562,7 +564,7 @@ export default function RiskTable({
             <StatChip
               label="Development"
               value={summary.development}
-              tone="rose"
+              tone="indigo"
               active={actionGroupFilter === ACTION_GROUPS.DEVELOPMENT}
               onClick={() => handleActionGroupClick(ACTION_GROUPS.DEVELOPMENT)}
               title="Show employees under Development recommendation"

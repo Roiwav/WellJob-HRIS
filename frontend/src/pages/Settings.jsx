@@ -23,6 +23,7 @@ import Button from "../components/ui/Button";
 import IconButton from "../components/ui/IconButton";
 import PageHeader from "../components/ui/PageHeader";
 import SearchInput from "../components/ui/SearchInput";
+import FilterBar from "../components/ui/FilterBar";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingSkeleton from "../components/ui/LoadingSkeleton";
 import EmptyState from "../components/ui/EmptyState";
@@ -145,6 +146,14 @@ async function requestJson(
   } finally {
     window.clearTimeout(timeoutId);
   }
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ");
 }
 
 function AccountSummaryCard({
@@ -324,33 +333,52 @@ export default function Settings() {
 
   const filteredAccounts =
     useMemo(() => {
-      const keyword = search
-        .trim()
-        .toLowerCase();
+      const normalizedSearch =
+        normalizeSearchText(search);
 
-      if (!keyword) {
+      const searchTerms =
+        normalizedSearch
+          ? normalizedSearch.split(/\s+/)
+          : [];
+
+      if (searchTerms.length === 0) {
         return accounts;
       }
 
       return accounts.filter(
         (account) => {
-          const searchableText = [
-            account?.id,
-            account?.user_id,
-            account?.userId,
-            account?.full_name,
-            account?.fullName,
-            account?.name,
-            account?.username,
-            account?.role,
-            account?.status,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
+          const accountStatus =
+            getAccountStatus(account);
 
-          return searchableText.includes(
-            keyword
+          const roleLabel =
+            ROLE_LABELS[account?.role] ||
+            account?.role ||
+            "";
+
+          const searchableText =
+            normalizeSearchText(
+              [
+                account?.id,
+                account?.user_id,
+                account?.userId,
+                account?.full_name,
+                account?.fullName,
+                account?.name,
+                account?.username,
+                account?.role,
+                roleLabel,
+                accountStatus,
+                account?.status,
+              ]
+                .filter(Boolean)
+                .join(" ")
+            );
+
+          return searchTerms.every(
+            (term) =>
+              searchableText.includes(
+                term
+              )
           );
         }
       );
@@ -756,43 +784,68 @@ export default function Settings() {
       </div>
 
       <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
-        <header className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 lg:flex-row lg:items-end lg:justify-between sm:px-6 dark:border-white/10">
-          <div>
-            <h2 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
-              <FiUsers
-                className="text-indigo-600 dark:text-indigo-400"
-                aria-hidden="true"
-              />
-
-              User Account Maintenance
-            </h2>
-
-            <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              Review accounts and perform authorized technical support actions.
-            </p>
-          </div>
-
-          <div className="w-full lg:w-96">
-            <SearchInput
-              label="Search user accounts"
-              hideLabel
-              placeholder="Search user, role, username, or status..."
-              value={search}
-              disabled={
-                isLoadingUsers ||
-                isProcessing
-              }
-              onChange={(event) =>
-                setSearch(
-                  event.target.value
-                )
-              }
-              onClear={() =>
-                setSearch("")
-              }
+        <header className="border-b border-gray-200 px-5 py-5 sm:px-6 dark:border-white/10">
+          <h2 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
+            <FiUsers
+              className="text-indigo-600 dark:text-indigo-400"
+              aria-hidden="true"
             />
-          </div>
+
+            User Account Maintenance
+          </h2>
+
+          <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
+            Review accounts and perform authorized technical support actions.
+          </p>
         </header>
+
+        <div className="border-b border-gray-200 p-5 sm:p-6 dark:border-white/10">
+          <FilterBar
+            resultCount={
+              filteredAccounts.length
+            }
+            resultLabel="account"
+            actions={
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={
+                  !search.trim() ||
+                  isLoadingUsers ||
+                  isRefreshingUsers ||
+                  isProcessing
+                }
+                onClick={() =>
+                  setSearch("")
+                }
+              >
+                Clear Search
+              </Button>
+            }
+          >
+            <div className="w-full sm:col-span-2 xl:w-96">
+              <SearchInput
+                label="Search user accounts"
+                hideLabel
+                placeholder="Search ID, name, username, role, or status..."
+                value={search}
+                disabled={
+                  isLoadingUsers ||
+                  isRefreshingUsers ||
+                  isProcessing
+                }
+                onChange={(event) =>
+                  setSearch(
+                    event.target.value
+                  )
+                }
+                onClear={() =>
+                  setSearch("")
+                }
+              />
+            </div>
+          </FilterBar>
+        </div>
 
         {isLoadingUsers ? (
           <div className="p-5 sm:p-6">

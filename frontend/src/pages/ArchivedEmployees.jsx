@@ -57,6 +57,13 @@ function getApiError(error, fallback = "Something went wrong.") {
     return "System is currently under maintenance. Please try again later.";
   }
 
+  if (
+    error?.code === "ECONNABORTED" ||
+    error?.name === "AbortError"
+  ) {
+    return "The server took too long to respond. Check that the backend and database are running, then try again.";
+  }
+
   return (
     error?.response?.data?.error ||
     error?.response?.data?.message ||
@@ -143,7 +150,12 @@ export default function ArchivedEmployees() {
       try {
         setErrorMessage("");
 
-        const response = await axios.get(EMPLOYEE_API_URL);
+        const response = await axios.get(EMPLOYEE_API_URL, {
+          timeout: 15000,
+          headers: {
+            Accept: "application/json",
+          },
+        });
         const employees = Array.isArray(response.data)
           ? response.data
           : [];
@@ -352,7 +364,11 @@ export default function ArchivedEmployees() {
               variant="secondary"
               leftIcon={<FiRefreshCw />}
               loading={isRefreshing}
-              disabled={isLoading || isProcessing}
+              disabled={
+                isLoading ||
+                isRefreshing ||
+                isProcessing
+              }
               onClick={handleRefresh}
             >
               Refresh
@@ -368,7 +384,12 @@ export default function ArchivedEmployees() {
           <Button
             variant="ghost"
             size="sm"
-            disabled={!search.trim()}
+            disabled={
+              !search.trim() ||
+              isLoading ||
+              isRefreshing ||
+              isProcessing
+            }
             onClick={() => setSearch("")}
           >
             Clear Search
@@ -381,6 +402,11 @@ export default function ArchivedEmployees() {
             hideLabel
             placeholder="Search by name, ID, company, or position..."
             value={search}
+            disabled={
+              isLoading ||
+              isRefreshing ||
+              isProcessing
+            }
             onChange={(event) =>
               setSearch(event.target.value)
             }
@@ -423,7 +449,7 @@ export default function ArchivedEmployees() {
               </p>
             </div>
 
-            <span className="w-fit rounded-full bg-amber-50 px-4 py-1.5 text-xs font-bold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+            <span className="w-fit rounded-full bg-slate-100 px-4 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
               {filteredArchivedEmployees.length}{" "}
               {filteredArchivedEmployees.length === 1
                 ? "record"
@@ -589,7 +615,7 @@ export default function ArchivedEmployees() {
                               <IconButton
                                 label={`Restore ${employeeName}`}
                                 title="Restore Employee"
-                                variant="secondary"
+                                variant="success"
                                 size="md"
                                 disabled={isProcessing}
                                 onClick={() => {
@@ -636,7 +662,7 @@ export default function ArchivedEmployees() {
       <ConfirmDialog
         open={Boolean(restoreTarget)}
         title="Restore Employee"
-        tone="info"
+        tone="success"
         confirmLabel="Restore Employee"
         cancelLabel="Cancel"
         loading={processingAction === "restore"}

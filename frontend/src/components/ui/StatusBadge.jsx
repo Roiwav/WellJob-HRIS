@@ -16,18 +16,25 @@ const STATUS_CONFIG = {
       "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
   },
 
-  inactive: {
-    label: "Inactive",
-    icon: FiXCircle,
-    className:
-      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
-  },
-
   deployed: {
     label: "Deployed",
     icon: FiCheckCircle,
     className:
-      "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300",
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
+  },
+
+  inactive: {
+    label: "Inactive",
+    icon: FiMinusCircle,
+    className:
+      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  },
+
+  archived: {
+    label: "Archived",
+    icon: FiMinusCircle,
+    className:
+      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
   },
 
   floating: {
@@ -44,15 +51,29 @@ const STATUS_CONFIG = {
       "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
   },
 
+  "on leave": {
+    label: "On Leave",
+    icon: FiPauseCircle,
+    className:
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
+  },
+
   pending: {
     label: "Pending",
     icon: FiClock,
     className:
-      "border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-500/30 dark:bg-yellow-500/15 dark:text-yellow-300",
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
   },
 
   approved: {
     label: "Approved",
+    icon: FiCheckCircle,
+    className:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
+  },
+
+  completed: {
+    label: "Completed",
     icon: FiCheckCircle,
     className:
       "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
@@ -63,13 +84,6 @@ const STATUS_CONFIG = {
     icon: FiXCircle,
     className:
       "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300",
-  },
-
-  completed: {
-    label: "Completed",
-    icon: FiCheckCircle,
-    className:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
   },
 
   cancelled: {
@@ -104,20 +118,42 @@ const STATUS_CONFIG = {
     label: "Unknown",
     icon: FiMinusCircle,
     className:
-      "border-gray-200 bg-gray-100 text-gray-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
+      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
   },
 };
 
 function normalizeStatusKey(status) {
   const value = String(status || "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
 
-  if (!value) return "default";
+  if (!value) {
+    return "default";
+  }
 
-  if (value === "floating / standby") return "floating";
-  if (value === "floating") return "floating";
-  if (value === "standby") return "standby";
+  if (
+    value === "floating / standby" ||
+    value === "floating" ||
+    value === "standby"
+  ) {
+    return "floating";
+  }
+
+  if (
+    value === "on leave" ||
+    value === "leave"
+  ) {
+    return "on leave";
+  }
+
+  if (
+    value === "archive" ||
+    value === "archived"
+  ) {
+    return "archived";
+  }
 
   return value;
 }
@@ -135,7 +171,8 @@ export default function StatusBadge({
     : normalizeStatusKey(status);
 
   const config =
-    STATUS_CONFIG[normalizedKey] || STATUS_CONFIG.default;
+    STATUS_CONFIG[normalizedKey] ||
+    STATUS_CONFIG.default;
 
   const Icon = config.icon;
 

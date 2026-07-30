@@ -1,6 +1,53 @@
 import RiskTable from "../table/RiskTable";
 
-export default function RiskIntelligenceSection({ employees = [] }) {
+function getSeverity(violationCount) {
+  const count = Number(
+    violationCount || 0
+  );
+
+  if (count >= 5) {
+    return "Critical";
+  }
+
+  if (count >= 3) {
+    return "Major";
+  }
+
+  if (count >= 1) {
+    return "Minor";
+  }
+
+  return "None";
+}
+
+function getRiskLevel(violationCount) {
+  const count = Number(
+    violationCount || 0
+  );
+
+  if (count >= 5) {
+    return "High Risk";
+  }
+
+  if (count >= 3) {
+    return "Repeat";
+  }
+
+  if (count >= 1) {
+    return "Monitor";
+  }
+
+  return "Low Risk";
+}
+
+export default function RiskIntelligenceSection({
+  employees = [],
+}) {
+  const safeEmployees =
+    Array.isArray(employees)
+      ? employees
+      : [];
+
   return (
     <section className="min-w-0 space-y-4">
       <div>
@@ -15,19 +62,9 @@ export default function RiskIntelligenceSection({ employees = [] }) {
       </div>
 
       <RiskTable
-        employees={employees}
-        getSeverity={(violationCount) => {
-          if (violationCount >= 5) return "Critical";
-          if (violationCount >= 3) return "Major";
-          if (violationCount >= 1) return "Minor";
-          return "None";
-        }}
-        getRiskLevel={(violationCount) => {
-          if (violationCount >= 5) return "High Risk";
-          if (violationCount >= 3) return "Repeat";
-          if (violationCount >= 1) return "Monitor";
-          return "Low Risk";
-        }}
+        employees={safeEmployees}
+        getSeverity={getSeverity}
+        getRiskLevel={getRiskLevel}
       />
     </section>
   );

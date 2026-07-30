@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { FiPlus } from "react-icons/fi";
+import {
+  FiPlus,
+  FiRefreshCw,
+} from "react-icons/fi";
 
 import RoleGuard from "../components/auth/RoleGuard";
 import Button from "../components/ui/Button";
+import ErrorState from "../components/ui/ErrorState";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 
@@ -28,6 +32,7 @@ const INCIDENT_API_URL = `${API_BASE}/incidents`;
 const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
 const AUDIT_API_URL = `${API_BASE}/audit-logs`;
 const DATA_EVENT_SOURCE = "incidents-page";
+const REQUEST_TIMEOUT_MS = 15000;
 
 function emitDataUpdated(action = "INCIDENTS_UPDATED") {
   window.dispatchEvent(
@@ -410,18 +415,46 @@ function buildIncidentList(rawIncidents = []) {
 }
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(url, options);
-  const data = await response.json().catch(() => null);
+  const controller = new AbortController();
 
-  if (!response.ok) {
-    throw new Error(
-      data?.error ||
-        data?.message ||
-        `Request failed with status ${response.status}`
-    );
+  const timeoutId = window.setTimeout(() => {
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {}),
+      },
+    });
+
+    const data = await response
+      .json()
+      .catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          data?.message ||
+          `Request failed with status ${response.status}`
+      );
+    }
+
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(
+        "The server took too long to respond. Check that the backend server and database are running, then try again."
+      );
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-
-  return data;
 }
 
 export default function Incidents() {
@@ -451,6 +484,11 @@ export default function Incidents() {
   const [incidents, setIncidents] = useState([]);
   const [deploymentRecords, setDeploymentRecords] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] =
+  useState(false);
+
+const [fetchError, setFetchError] =
+  useState("");
 
   const [openAddModal, setOpenAddModal] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState(null);
@@ -615,69 +653,124 @@ export default function Incidents() {
   );
 
   const fetchPageData = useCallback(
-    async ({ silent = false, showError = true } = {}) => {
-      const requestId = fetchRequestIdRef.current + 1;
-      fetchRequestIdRef.current = requestId;
+  async ({
+    silent = false,
+    showError = true,
+    showRefreshing = false,
+  } = {}) => {
+    const requestId =
+      fetchRequestIdRef.current + 1;
 
-      try {
-        if (!silent && isMountedRef.current) {
-          setIsLoading(true);
-        }
+    fetchRequestIdRef.current =
+      requestId;
 
-        const [employeeData, incidentData, deploymentData] = await Promise.all([
-          requestJson(EMPLOYEE_API_URL),
-          requestJson(INCIDENT_API_URL),
-          requestJson(DEPLOYMENT_API_URL),
-        ]);
+    try {
+      if (
+        !silent &&
+        !showRefreshing &&
+        isMountedRef.current
+      ) {
+        setIsLoading(true);
+      }
 
-        if (
-          !isMountedRef.current ||
-          requestId !== fetchRequestIdRef.current
-        ) {
-          return false;
-        }
+      if (
+        showRefreshing &&
+        isMountedRef.current
+      ) {
+        setIsRefreshing(true);
+      }
 
-        const backendIncidents = buildIncidentList(
-          Array.isArray(incidentData) ? incidentData : []
+      if (
+        showError &&
+        isMountedRef.current
+      ) {
+        setFetchError("");
+      }
+
+      const [
+        employeeData,
+        incidentData,
+        deploymentData,
+      ] = await Promise.all([
+        requestJson(EMPLOYEE_API_URL),
+        requestJson(INCIDENT_API_URL),
+        requestJson(DEPLOYMENT_API_URL),
+      ]);
+
+      if (
+        !isMountedRef.current ||
+        requestId !==
+          fetchRequestIdRef.current
+      ) {
+        return false;
+      }
+
+      const backendIncidents =
+        buildIncidentList(
+          Array.isArray(incidentData)
+            ? incidentData
+            : []
         );
 
-        const backendDeployments = Array.isArray(deploymentData)
-          ? deploymentData.map(normalizeBackendDeployment)
+      const backendDeployments =
+        Array.isArray(deploymentData)
+          ? deploymentData.map(
+              normalizeBackendDeployment
+            )
           : [];
 
-        setEmployees(Array.isArray(employeeData) ? employeeData : []);
-        setIncidents(backendIncidents);
-        setDeploymentRecords(backendDeployments);
+      setEmployees(
+        Array.isArray(employeeData)
+          ? employeeData
+          : []
+      );
 
-        return true;
-      } catch (error) {
-        console.error("Fetch incident page data error:", error);
+      setIncidents(
+        backendIncidents
+      );
 
-        if (
-          showError &&
-          isMountedRef.current &&
-          requestId === fetchRequestIdRef.current
-        ) {
-          showNotice(
-            "error",
-            "Backend Fetch Failed",
-            error.message ||
-              "Unable to load employee, deployment, and incident records."
-          );
-        }
+      setDeploymentRecords(
+        backendDeployments
+      );
 
-        return false;
-      } finally {
-        if (
-          isMountedRef.current &&
-          requestId === fetchRequestIdRef.current
-        ) {
+      return true;
+    } catch (error) {
+      console.error(
+        "Fetch incident page data error:",
+        error
+      );
+
+      if (
+        showError &&
+        isMountedRef.current &&
+        requestId ===
+          fetchRequestIdRef.current
+      ) {
+        setFetchError(
+          error?.message ||
+            "Unable to load employee, deployment, and incident records."
+        );
+      }
+
+      return false;
+    } finally {
+      if (
+        isMountedRef.current &&
+        requestId ===
+          fetchRequestIdRef.current
+      ) {
+        if (!silent) {
           setIsLoading(false);
         }
+
+        if (showRefreshing) {
+          setIsRefreshing(false);
+        }
       }
-    },
-    [showNotice]
-  );
+    }
+  },
+  []
+);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1192,57 +1285,99 @@ export default function Incidents() {
     return success;
   };
 
-  const filteredIncidents = useMemo(() => {
-    const cleanSearch = search
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, "")
-      .trim();
+  const handleRefresh =
+  useCallback(async () => {
+    if (isRefreshing) {
+      return;
+    }
 
-    const rawSearch = search.toLowerCase().trim();
-    const searchTerms = cleanSearch ? cleanSearch.split(/\s+/) : [];
+    await fetchPageData({
+      silent: true,
+      showError: true,
+      showRefreshing: true,
+    });
+  }, [
+    fetchPageData,
+    isRefreshing,
+  ]);
+
+const handleClearIncidentFilters =
+  useCallback(() => {
+    setSearch("");
+    setSeverityFilter("ALL");
+    setCaseTab("ALL");
+  }, []);
+
+  const filteredIncidents = useMemo(() => {
+    const normalizedSearch = normalizeName(search);
+
+    const searchTerms = normalizedSearch
+      ? normalizedSearch.split(/\s+/)
+      : [];
 
     return incidents.filter((incident) => {
       const status = normalizeStatus(incident.status);
 
       const matchesCaseTab =
         caseTab === "ALL" ||
-        (caseTab === "ACTIVE" && ["Open", "Investigating"].includes(status)) ||
-        (caseTab === "FOR_REVIEW" && status === "For Review") ||
-        (caseTab === "CLOSED" && status === "Closed");
+        (caseTab === "ACTIVE" &&
+          ["Open", "Investigating"].includes(status)) ||
+        (caseTab === "FOR_REVIEW" &&
+          status === "For Review") ||
+        (caseTab === "CLOSED" &&
+          status === "Closed");
 
-      const cleanEmployeeName = String(
-        incident.employee || incident.employeeName || ""
-      )
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, "");
+      const searchableText = normalizeName(
+        [
+          incident.displayId,
+          incident.id,
+          incident.employeeId,
+          incident.employee,
+          incident.employeeName,
+          incident.violation,
+          incident.violationType,
+          incident.company,
+          incident.location,
+          incident.severity,
+          incident.status,
+          incident.sanction,
+          incident.actionTaken,
+          incident.recommendation,
+          incident.description,
+          incident.reportedBy,
+          incident.reportedByName,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
 
-      const matchName =
+      const matchesSearch =
         searchTerms.length === 0 ||
-        searchTerms.every((term) => cleanEmployeeName.includes(term));
-
-      const fallbackString = [
-        incident.displayId,
-        incident.id,
-        incident.employeeId,
-        incident.violation,
-        incident.company,
-        incident.severity,
-        incident.status,
-        incident.sanction,
-        incident.recommendation,
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      const matchSearch =
-        !rawSearch || matchName || fallbackString.includes(rawSearch);
+        searchTerms.every((term) =>
+          searchableText.includes(term)
+        );
 
       const matchesSeverity =
-        severityFilter === "ALL" || incident.severity === severityFilter;
+        severityFilter === "ALL" ||
+        String(incident.severity || "")
+          .trim()
+          .toLowerCase() ===
+          String(severityFilter)
+            .trim()
+            .toLowerCase();
 
-      return matchesCaseTab && matchSearch && matchesSeverity;
+      return (
+        matchesCaseTab &&
+        matchesSearch &&
+        matchesSeverity
+      );
     });
-  }, [incidents, search, caseTab, severityFilter]);
+  }, [
+    incidents,
+    search,
+    caseTab,
+    severityFilter,
+  ]);
 
   return (
     <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
@@ -1259,26 +1394,77 @@ export default function Incidents() {
           </p>
         </div>
 
-        {!isSuperAdmin && (
-          <RoleGuard permission={PERMISSIONS.CAN_ADD_INCIDENT}>
-            <Button
-              type="button"
-              variant="danger"
-              leftIcon={<FiPlus aria-hidden="true" />}
-              onClick={() => setOpenAddModal(true)}
-            >
-              Add Incident Report
-            </Button>
-          </RoleGuard>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+  <Button
+    type="button"
+    variant="secondary"
+    leftIcon={
+      <FiRefreshCw
+        aria-hidden="true"
+        className={
+          isRefreshing
+            ? "animate-spin"
+            : ""
+        }
+      />
+    }
+    loading={isRefreshing}
+    disabled={
+      isLoading ||
+      isRefreshing
+    }
+    onClick={handleRefresh}
+  >
+    Refresh
+  </Button>
+
+  {!isSuperAdmin && (
+    <RoleGuard
+      permission={
+        PERMISSIONS.CAN_ADD_INCIDENT
+      }
+    >
+      <Button
+        type="button"
+        variant="danger"
+        leftIcon={
+          <FiPlus aria-hidden="true" />
+        }
+        disabled={
+          isLoading ||
+          isRefreshing
+        }
+        onClick={() =>
+          setOpenAddModal(true)
+        }
+      >
+        Add Incident Report
+      </Button>
+    </RoleGuard>
+  )}
+</div>
       </div>
+
+{fetchError && (
+        <ErrorState
+          compact
+          title="Incident data error"
+          message={fetchError}
+          retryLabel="Reload incident records"
+          onRetry={handleRefresh}
+        />
+      )}
 
       <div className="min-w-0">
         <IncidentTable
           isLoading={isLoading}
+          isRefreshing={isRefreshing}
           incidents={filteredIncidents}
+          totalIncidentCount={incidents.length}
           search={search}
           onSearchChange={setSearch}
+          onClearSearch={() => setSearch("")}
+          onClearFilters={handleClearIncidentFilters}
           caseTab={caseTab}
           onCaseTabChange={setCaseTab}
           caseCounts={incidentCaseCounts}

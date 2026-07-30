@@ -15,13 +15,13 @@ const COMPLIANCE_CONFIG = {
   Incomplete: {
     icon: FiAlertTriangle,
     className:
-      "border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-500/30 dark:bg-yellow-500/15 dark:text-yellow-300",
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
   },
 
   "Expiring Soon": {
     icon: FiAlertTriangle,
     className:
-      "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/15 dark:text-orange-300",
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
   },
 
   Expired: {
@@ -40,32 +40,51 @@ const COMPLIANCE_CONFIG = {
 function normalizeComplianceStatus(status) {
   const value = String(status || "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
 
   if (!value) {
     return "No Data";
   }
 
-  if (value === "valid" || value === "complete") {
+  if (
+    value === "valid" ||
+    value === "complete" ||
+    value === "compliant"
+  ) {
     return "Complete";
   }
 
-  if (value === "incomplete") {
+  if (
+    value === "incomplete" ||
+    value === "partially complete" ||
+    value === "partial"
+  ) {
     return "Incomplete";
   }
 
-  if (value === "expiring soon") {
+  if (
+    value === "expiring soon" ||
+    value === "near expiry" ||
+    value === "near expiration"
+  ) {
     return "Expiring Soon";
   }
 
-  if (value === "expired") {
+  if (
+    value === "expired" ||
+    value === "invalid"
+  ) {
     return "Expired";
   }
 
   if (
     value === "no compliance" ||
     value === "no data" ||
-    value === "missing"
+    value === "missing" ||
+    value === "not available" ||
+    value === "n a"
   ) {
     return "No Data";
   }
@@ -79,9 +98,13 @@ export default function ComplianceBadge({
   icon = true,
   className = "",
 }) {
-  const normalizedStatus = normalizeComplianceStatus(status);
+  const normalizedStatus =
+    normalizeComplianceStatus(status);
+
   const config =
-    COMPLIANCE_CONFIG[normalizedStatus] ||
+    COMPLIANCE_CONFIG[
+      normalizedStatus
+    ] ||
     COMPLIANCE_CONFIG["No Data"];
 
   const Icon = config.icon;
@@ -96,7 +119,8 @@ export default function ComplianceBadge({
     <span
       className={[
         "inline-flex w-fit items-center gap-1.5 rounded-full border font-bold",
-        sizeClasses[size] || sizeClasses.md,
+        sizeClasses[size] ||
+          sizeClasses.md,
         config.className,
         className,
       ]
@@ -110,7 +134,9 @@ export default function ComplianceBadge({
         />
       )}
 
-      <span>{normalizedStatus}</span>
+      <span>
+        {normalizedStatus}
+      </span>
     </span>
   );
 }

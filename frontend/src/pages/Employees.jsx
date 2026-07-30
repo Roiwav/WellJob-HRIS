@@ -1,5 +1,3 @@
-// Employees.jsx
-
 import {
   useCallback,
   useEffect,
@@ -1039,28 +1037,26 @@ export default function Employees() {
         />
       ) : (
         <EmployeeTable
-          employees={
-            filteredEmployees
-          }
-          openModal={
-            setViewEmployee
-          }
-          onEdit={
-            handleEditEmployee
-          }
-          getComplianceStatus={
-            getComplianceStatus
-          }
-          onArchive={
-            handleOpenArchiveDialog
-          }
-          isHRManager={
-            isHRManager
-          }
-          isSuperAdmin={
-            isSuperAdmin
-          }
-        />
+            employees={filteredEmployees}
+            totalRecords={
+              employees.filter(
+                (employee) => !employee?.archived
+              ).length
+            }
+            searchQuery={search}
+            hasFilters={
+              filterStatus !== "All" ||
+              filterCompliance !== "All"
+            }
+            onClearSearch={() => setSearch("")}
+            onClearFilters={handleResetFilters}
+            openModal={setViewEmployee}
+            onEdit={handleEditEmployee}
+            getComplianceStatus={getComplianceStatus}
+            onArchive={handleOpenArchiveDialog}
+            isHRManager={isHRManager}
+            isSuperAdmin={isSuperAdmin}
+          />
       )}
 
       {showEmployeeForm &&
@@ -1118,7 +1114,7 @@ export default function Employees() {
           !isSuperAdmin
         }
         title="Archive Employee"
-        tone="danger"
+        tone="warning"
         confirmLabel="Archive Employee"
         cancelLabel="Cancel"
         loading={

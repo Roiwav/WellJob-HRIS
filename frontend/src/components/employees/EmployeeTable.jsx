@@ -2,12 +2,15 @@ import {
   FiArchive,
   FiEdit2,
   FiEye,
+  FiSearch,
+  FiSliders,
   FiUsers,
 } from "react-icons/fi";
 
 import StatusBadge from "./StatusBadge";
 import ComplianceBadge from "./ComplianceBadge";
 
+import Button from "../ui/Button";
 import IconButton from "../ui/IconButton";
 import EmptyState from "../ui/EmptyState";
 
@@ -41,8 +44,104 @@ function getEmployeeKey(employee, index) {
   );
 }
 
+function EmployeeEmptyState({
+  totalRecords = 0,
+  searchQuery = "",
+  hasFilters = false,
+  onClearSearch,
+  onClearFilters,
+}) {
+  const hasSearch = Boolean(String(searchQuery || "").trim());
+
+  if (totalRecords === 0) {
+    return (
+      <EmptyState
+        icon="employees"
+        title="No employee records yet"
+        description="No active employee records are currently registered in the system."
+      />
+    );
+  }
+
+  if (hasSearch) {
+    return (
+      <div className="space-y-4">
+        <EmptyState
+          icon="search"
+          title="No search results"
+          description={`No employee matched “${String(
+            searchQuery
+          ).trim()}”. Check the spelling or try a different name, employee ID, company, or position.`}
+        />
+
+        <div className="flex flex-wrap justify-center gap-2">
+          {typeof onClearSearch === "function" && (
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<FiSearch aria-hidden="true" />}
+              onClick={onClearSearch}
+            >
+              Clear Search
+            </Button>
+          )}
+
+          {hasFilters && typeof onClearFilters === "function" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<FiSliders aria-hidden="true" />}
+              onClick={onClearFilters}
+            >
+              Clear Filters
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (hasFilters) {
+    return (
+      <div className="space-y-4">
+        <EmptyState
+          icon="filter"
+          title="No filtered results"
+          description="Employee records exist, but none match the selected employment or compliance filters."
+        />
+
+        {typeof onClearFilters === "function" && (
+          <div className="flex justify-center">
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<FiSliders aria-hidden="true" />}
+              onClick={onClearFilters}
+            >
+              Clear Filters
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <EmptyState
+      icon="employees"
+      title="No employees found"
+      description="No employee records are currently available."
+    />
+  );
+}
+
 export default function EmployeeTable({
   employees = [],
+  totalRecords = 0,
+  searchQuery = "",
+  hasFilters = false,
+  onClearSearch,
+  onClearFilters,
   openModal,
   onEdit,
   getComplianceStatus,
@@ -52,15 +151,17 @@ export default function EmployeeTable({
 }) {
   const safeEmployees = Array.isArray(employees) ? employees : [];
 
+  const safeTotalRecords = Number.isFinite(Number(totalRecords))
+    ? Number(totalRecords)
+    : safeEmployees.length;
+
   const resolveComplianceStatus = (documents) => {
     const resolver =
       typeof getComplianceStatus === "function"
         ? getComplianceStatus
         : getDefaultComplianceStatus;
 
-    return normalizeComplianceStatus(
-      resolver(documents)
-    );
+    return normalizeComplianceStatus(resolver(documents));
   };
 
   const canEdit =
@@ -70,6 +171,13 @@ export default function EmployeeTable({
     isHRManager &&
     !isSuperAdmin &&
     typeof onArchive === "function";
+
+  const recordCountLabel =
+    safeTotalRecords > safeEmployees.length
+      ? `${safeEmployees.length} of ${safeTotalRecords} records`
+      : `${safeEmployees.length} ${
+          safeEmployees.length === 1 ? "record" : "records"
+        }`;
 
   return (
     <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
@@ -90,18 +198,22 @@ export default function EmployeeTable({
           </p>
         </div>
 
-        <span className="w-fit rounded-full bg-indigo-50 px-4 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-          {safeEmployees.length}{" "}
-          {safeEmployees.length === 1 ? "record" : "records"}
+        <span
+          aria-label={recordCountLabel}
+          className="w-fit rounded-full bg-indigo-50 px-4 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300"
+        >
+          {recordCountLabel}
         </span>
       </div>
 
       {safeEmployees.length === 0 ? (
         <div className="p-5 sm:p-6">
-          <EmptyState
-            icon="employees"
-            title="No employees found"
-            description="No employee records matched the current search or filter settings."
+          <EmployeeEmptyState
+            totalRecords={safeTotalRecords}
+            searchQuery={searchQuery}
+            hasFilters={hasFilters}
+            onClearSearch={onClearSearch}
+            onClearFilters={onClearFilters}
           />
         </div>
       ) : (
@@ -109,45 +221,27 @@ export default function EmployeeTable({
           <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left">
             <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
               <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                <th
-                  scope="col"
-                  className="px-6 py-4"
-                >
+                <th scope="col" className="px-6 py-4">
                   Employee ID
                 </th>
 
-                <th
-                  scope="col"
-                  className="px-6 py-4"
-                >
+                <th scope="col" className="px-6 py-4">
                   Full Name
                 </th>
 
-                <th
-                  scope="col"
-                  className="px-6 py-4"
-                >
+                <th scope="col" className="px-6 py-4">
                   Company
                 </th>
 
-                <th
-                  scope="col"
-                  className="px-6 py-4"
-                >
+                <th scope="col" className="px-6 py-4">
                   Status
                 </th>
 
-                <th
-                  scope="col"
-                  className="px-6 py-4"
-                >
+                <th scope="col" className="px-6 py-4">
                   Compliance
                 </th>
 
-                <th
-                  scope="col"
-                  className="px-6 py-4 text-right"
-                >
+                <th scope="col" className="px-6 py-4 text-right">
                   Actions
                 </th>
               </tr>
@@ -162,9 +256,13 @@ export default function EmployeeTable({
                   getEmployeeCompany(employee);
 
                 const complianceStatus =
-                  resolveComplianceStatus(
-                    employee?.documents
-                  );
+                  resolveComplianceStatus(employee?.documents);
+
+                const employeeId =
+                  employee?.id ||
+                  employee?.employeeId ||
+                  employee?.employee_id ||
+                  "-";
 
                 return (
                   <tr
@@ -173,18 +271,24 @@ export default function EmployeeTable({
                   >
                     <td className="whitespace-nowrap px-6 py-4 align-middle">
                       <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">
-                        {employee?.id || "-"}
+                        {employeeId}
                       </span>
                     </td>
 
                     <td className="whitespace-nowrap px-6 py-4 align-middle">
                       <div className="min-w-0">
-                        <p className="max-w-[260px] truncate font-semibold text-gray-900 dark:text-white">
+                        <p
+                          title={employeeName}
+                          className="max-w-[260px] truncate font-semibold text-gray-900 dark:text-white"
+                        >
                           {employeeName}
                         </p>
 
                         {employee?.position && (
-                          <p className="mt-1 max-w-[260px] truncate text-xs text-gray-500 dark:text-gray-400">
+                          <p
+                            title={employee.position}
+                            className="mt-1 max-w-[260px] truncate text-xs text-gray-500 dark:text-gray-400"
+                          >
                             {employee.position}
                           </p>
                         )}
@@ -192,7 +296,10 @@ export default function EmployeeTable({
                     </td>
 
                     <td className="px-6 py-4 align-middle">
-                      <p className="max-w-[240px] truncate text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      <p
+                        title={employeeCompany}
+                        className="max-w-[240px] truncate text-sm font-semibold text-gray-700 dark:text-gray-300"
+                      >
                         {employeeCompany}
                       </p>
                     </td>
@@ -219,11 +326,9 @@ export default function EmployeeTable({
                           title="View Employee"
                           variant="primary"
                           size="md"
-                          onClick={() =>
-                            openModal?.(employee)
-                          }
+                          onClick={() => openModal?.(employee)}
                         >
-                          <FiEye />
+                          <FiEye aria-hidden="true" />
                         </IconButton>
 
                         {canEdit && (
@@ -232,11 +337,9 @@ export default function EmployeeTable({
                             title="Edit Employee"
                             variant="secondary"
                             size="md"
-                            onClick={() =>
-                              onEdit(employee)
-                            }
+                            onClick={() => onEdit(employee)}
                           >
-                            <FiEdit2 />
+                            <FiEdit2 aria-hidden="true" />
                           </IconButton>
                         )}
 
@@ -246,11 +349,9 @@ export default function EmployeeTable({
                             title="Archive Employee"
                             variant="warning"
                             size="md"
-                            onClick={() =>
-                              onArchive(employee)
-                            }
+                            onClick={() => onArchive(employee)}
                           >
-                            <FiArchive />
+                            <FiArchive aria-hidden="true" />
                           </IconButton>
                         )}
                       </div>

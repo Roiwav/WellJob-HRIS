@@ -813,11 +813,10 @@ export default function Deployments() {
             size="sm"
             disabled={
               !hasActiveFilters ||
-              isLoading
+              isLoading ||
+              isRefreshing
             }
-            onClick={
-              handleResetFilters
-            }
+            onClick={handleResetFilters}
           >
             Clear Filters
           </Button>
@@ -829,7 +828,10 @@ export default function Deployments() {
             hideLabel
             placeholder="Search ID, employee, company, location, or status..."
             value={search}
-            disabled={isLoading}
+            disabled={
+              isLoading ||
+              isRefreshing
+            }
             onChange={(event) =>
               setSearch(
                 event.target.value
@@ -858,7 +860,10 @@ export default function Deployments() {
             <select
               id="deployment-month-filter"
               value={selectedMonth}
-              disabled={isLoading}
+              disabled={
+                isLoading ||
+                isRefreshing
+              }
               onChange={(event) =>
                 setSelectedMonth(
                   event.target.value
@@ -891,7 +896,10 @@ export default function Deployments() {
           <select
             id="deployment-year-filter"
             value={selectedYear}
-            disabled={isLoading}
+            disabled={
+              isLoading ||
+              isRefreshing
+            }
             onChange={(event) =>
               setSelectedYear(
                 event.target.value
