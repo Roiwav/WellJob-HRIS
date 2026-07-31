@@ -298,40 +298,61 @@
   }
 }
 
-@keyframes notification-bell-new {
+/*
+ * SMART NOTIFICATION BELL
+ */
+
+@keyframes notification-bell-icon-new {
   0%,
   100% {
     transform: rotate(0deg) scale(1);
+    filter: drop-shadow(0 0 0 transparent);
   }
 
-  20% {
-    transform: rotate(-12deg) scale(1.08);
+  12% {
+    transform: rotate(-24deg) scale(1.15);
   }
 
-  40% {
-    transform: rotate(12deg) scale(1.12);
+  24% {
+    transform: rotate(24deg) scale(1.22);
+    filter: drop-shadow(0 0 8px rgb(239 68 68 / 0.95));
+  }
+
+  36% {
+    transform: rotate(-20deg) scale(1.18);
+  }
+
+  48% {
+    transform: rotate(20deg) scale(1.22);
+    filter: drop-shadow(0 0 12px rgb(239 68 68 / 0.9));
   }
 
   60% {
-    transform: rotate(-8deg) scale(1.08);
+    transform: rotate(-14deg) scale(1.14);
   }
 
-  80% {
-    transform: rotate(8deg) scale(1.04);
+  72% {
+    transform: rotate(14deg) scale(1.16);
+    filter: drop-shadow(0 0 8px rgb(239 68 68 / 0.8));
+  }
+
+  84% {
+    transform: rotate(-7deg) scale(1.08);
   }
 }
 
-.notification-bell-new {
-  animation:
-    notification-bell-new
-    0.75s
-    ease-in-out
-    3;
-  transform-origin: 50% 15%;
+.notification-bell-icon-new {
+  color: rgb(248 113 113);
+  animation: notification-bell-icon-new 0.85s ease-in-out 3;
+  transform-box: fill-box;
+  transform-origin: 50% 10%;
+  will-change: transform, filter;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .notification-bell-new {
+  .notification-bell-icon-new {
     animation: none;
+    color: rgb(248 113 113);
+    filter: drop-shadow(0 0 8px rgb(239 68 68 / 0.8));
   }
 }

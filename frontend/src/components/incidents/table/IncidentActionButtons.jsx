@@ -15,6 +15,11 @@ const STATUS = {
   CLOSED: "closed",
 };
 
+const REVIEWER_ROLES = new Set([
+  "HR_MANAGER",
+  "SUPER_ADMIN",
+]);
+
 const ACTION_BUTTON_STYLES = {
   view:
     "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 focus-visible:ring-slate-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white",
@@ -33,6 +38,37 @@ function normalizeIdentity(value) {
   return String(value ?? "")
     .trim()
     .toLowerCase();
+}
+
+function normalizeRole(value) {
+  const role = String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+
+  if (
+    role === "SUPERADMIN" ||
+    role === "SUPER_ADMIN" ||
+    role === "ADMIN"
+  ) {
+    return "SUPER_ADMIN";
+  }
+
+  if (
+    role === "HRMANAGER" ||
+    role === "HR_MANAGER"
+  ) {
+    return "HR_MANAGER";
+  }
+
+  if (
+    role === "HRSTAFF" ||
+    role === "HR_STAFF"
+  ) {
+    return "HR_STAFF";
+  }
+
+  return role;
 }
 
 function normalizeStatus(value) {
@@ -63,10 +99,7 @@ function buildUserAliases(user) {
   );
 }
 
-function hasAliasMatch(
-  aliases,
-  values = []
-) {
+function hasAliasMatch(aliases, values = []) {
   if (
     !(aliases instanceof Set) ||
     aliases.size === 0
@@ -111,28 +144,17 @@ function getInvestigatorValues(incident) {
 
   return [
     incident?.investigation?.startedById,
-    incident?.investigation
-      ?.started_by_id,
-
-    incident?.investigation
-      ?.startedByUsername,
-    incident?.investigation
-      ?.started_by_username,
-
-    incident?.investigation
-      ?.startedByName,
-    incident?.investigation
-      ?.started_by_name,
-
+    incident?.investigation?.started_by_id,
+    incident?.investigation?.startedByUsername,
+    incident?.investigation?.started_by_username,
+    incident?.investigation?.startedByName,
+    incident?.investigation?.started_by_name,
     incident?.investigationStartedById,
     incident?.investigation_started_by_id,
-
     incident?.investigationStartedByUsername,
     incident?.investigation_started_by_username,
-
     incident?.investigationStartedByName,
     incident?.investigation_started_by_name,
-
     ...lastActionValues,
   ].filter(Boolean);
 }
@@ -142,14 +164,11 @@ function getInvestigatorName(incident) {
     getLastActionType(incident);
 
   return (
-    incident?.investigation
-      ?.startedByName ||
-    incident?.investigation
-      ?.started_by_name ||
+    incident?.investigation?.startedByName ||
+    incident?.investigation?.started_by_name ||
     incident?.investigationStartedByName ||
     incident?.investigation_started_by_name ||
-    (lastActionType ===
-    "START_INVESTIGATION"
+    (lastActionType === "START_INVESTIGATION"
       ? incident?.lastActionByName ||
         incident?.last_action_by_name
       : "") ||
@@ -220,6 +239,14 @@ export default function ActionButtons({
     incident?.status
   );
 
+  const currentRole = normalizeRole(
+    currentUser?.role
+  );
+
+  const isReviewer =
+    isSuperAdmin ||
+    REVIEWER_ROLES.has(currentRole);
+
   const investigatorName =
     getInvestigatorName(incident);
 
@@ -251,7 +278,7 @@ export default function ActionButtons({
   }
 
   if (
-    isSuperAdmin &&
+    isReviewer &&
     status === STATUS.FOR_REVIEW
   ) {
     return (
@@ -317,7 +344,10 @@ export default function ActionButtons({
     return (
       <DisabledActionPill
         icon={
-          <FiUserCheck size={14} />
+          <FiUserCheck
+            size={14}
+            aria-hidden="true"
+          />
         }
         label={`Investigating by ${investigatorName}`}
         title={`This case is already being investigated by ${investigatorName}.`}
@@ -326,14 +356,19 @@ export default function ActionButtons({
   }
 
   if (
-    !isSuperAdmin &&
+    !isReviewer &&
     status === STATUS.FOR_REVIEW
   ) {
     return (
       <DisabledActionPill
-        icon={<FiLock size={14} />}
-        label="Waiting for SA review"
-        title="This case has already been submitted to the Super Admin for review."
+        icon={
+          <FiLock
+            size={14}
+            aria-hidden="true"
+          />
+        }
+        label="Waiting for reviewer"
+        title="This case has already been submitted to an authorized reviewer."
       />
     );
   }

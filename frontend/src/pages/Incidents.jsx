@@ -72,6 +72,27 @@ function normalizeName(value) {
     .replace(/\s+/g, " ");
 }
 
+function normalizeRole(value) {
+  const role = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+
+  if (["SUPERADMIN", "SUPER_ADMIN", "ADMIN"].includes(role)) {
+    return "SUPER_ADMIN";
+  }
+
+  if (["HRMANAGER", "HR_MANAGER"].includes(role)) {
+    return "HR_MANAGER";
+  }
+
+  if (["HRSTAFF", "HR_STAFF"].includes(role)) {
+    return "HR_STAFF";
+  }
+
+  return role;
+}
+
 function normalizeTimelineEvent(event = {}) {
   const createdAt =
     event.createdAt ||
@@ -460,8 +481,10 @@ async function requestJson(url, options = {}) {
 export default function Incidents() {
   const { user } = useAuth();
   const currentUser = getUserIdentity(user);
-  const isSuperAdmin =
-    String(user?.role || "").trim().toUpperCase() === "SUPER_ADMIN";
+  const currentRole = normalizeRole(user?.role || currentUser?.role);
+  const isSuperAdmin = currentRole === "SUPER_ADMIN";
+  const isHrManager = currentRole === "HR_MANAGER";
+  const isAuthorizedReviewer = isSuperAdmin || isHrManager;
 
   const actorFullName =
     user?.full_name ||
@@ -499,7 +522,7 @@ const [fetchError, setFetchError] =
 
   const [search, setSearch] = useState("");
   const [caseTab, setCaseTab] = useState(
-    isSuperAdmin ? "FOR_REVIEW" : "ACTIVE"
+    isAuthorizedReviewer ? "FOR_REVIEW" : "ACTIVE"
   );
   const [severityFilter, setSeverityFilter] = useState("ALL");
   const [notice, setNotice] = useState(null);
@@ -817,9 +840,14 @@ const [fetchError, setFetchError] =
   }, [fetchPageData]);
 
   useEffect(() => {
-    if (!location.state?.incidentId || incidents.length === 0) return;
+    if (!location.state?.incidentId || incidents.length === 0) {
+      return;
+    }
 
     const targetId = String(location.state.incidentId);
+    const requestedAction = String(location.state.action || "view")
+      .trim()
+      .toLowerCase();
 
     const foundIncident = incidents.find(
       (incident) =>
@@ -827,12 +855,59 @@ const [fetchError, setFetchError] =
         String(incident.displayId) === targetId
     );
 
-    if (foundIncident) {
+    if (!foundIncident) {
+      navigate(location.pathname, {
+        replace: true,
+        state: {},
+      });
+      return;
+    }
+
+    const currentStatus = normalizeStatus(foundIncident.status);
+
+    setSelectedIncident(null);
+    setStartReviewIncident(null);
+    setConfirmStartIncident(null);
+    setResolutionIncident(null);
+    setReviewIncident(null);
+
+    if (
+      requestedAction === "review" &&
+      currentStatus === "For Review" &&
+      isAuthorizedReviewer
+    ) {
+      setCaseTab("FOR_REVIEW");
+      setReviewIncident(foundIncident);
+    } else if (
+      requestedAction === "submit-resolution" &&
+      currentStatus === "Investigating" &&
+      !isSuperAdmin
+    ) {
+      setCaseTab("ACTIVE");
+      setResolutionIncident(foundIncident);
+    } else if (
+      requestedAction === "start-investigation" &&
+      currentStatus === "Open" &&
+      !isSuperAdmin
+    ) {
+      setCaseTab("ACTIVE");
+      setStartReviewIncident(foundIncident);
+    } else {
       setSelectedIncident(foundIncident);
     }
 
-    navigate(location.pathname, { replace: true, state: {} });
-  }, [location.state, location.pathname, navigate, incidents]);
+    navigate(location.pathname, {
+      replace: true,
+      state: {},
+    });
+  }, [
+    incidents,
+    isAuthorizedReviewer,
+    isSuperAdmin,
+    location.pathname,
+    location.state,
+    navigate,
+  ]);
 
   const syncModalIncident = useCallback((updatedIncident) => {
     const updateIfSelected = (setter) => {
@@ -1169,7 +1244,7 @@ const [fetchError, setFetchError] =
       successTitle: "Submitted for Review",
       successMessage: `Proof for incident ${formatIncidentCode(
         incident.id
-      )} has been submitted to Super Admin.`,
+      )} has been submitted for authorized review.`,
     });
 
     if (success) {
@@ -1179,7 +1254,21 @@ const [fetchError, setFetchError] =
   };
 
   const handleApproveCase = async (incident) => {
-    if (!isSuperAdmin || !incident) {
+    if (!isAuthorizedReviewer || !incident) {
+      showNotice(
+        "error",
+        "Review Access Required",
+        "Only an HR Manager or Super Admin can approve and close submitted cases."
+      );
+      return false;
+    }
+
+    if (normalizeStatus(incident.status) !== "For Review") {
+      showNotice(
+        "error",
+        "Case Not Ready for Review",
+        "Only cases currently marked For Review can be approved and closed."
+      );
       return false;
     }
 
@@ -1236,7 +1325,21 @@ const [fetchError, setFetchError] =
   };
 
   const handleRejectCase = async (incident, comments) => {
-    if (!isSuperAdmin || !incident) {
+    if (!isAuthorizedReviewer || !incident) {
+      showNotice(
+        "error",
+        "Review Access Required",
+        "Only an HR Manager or Super Admin can return submitted cases for correction."
+      );
+      return false;
+    }
+
+    if (normalizeStatus(incident.status) !== "For Review") {
+      showNotice(
+        "error",
+        "Case Not Ready for Review",
+        "Only cases currently marked For Review can be returned for correction."
+      );
       return false;
     }
 
@@ -1388,8 +1491,8 @@ const handleClearIncidentFilters =
           </h1>
 
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {isSuperAdmin
-              ? "Review submitted proof and close verified cases."
+            {isAuthorizedReviewer
+              ? "Manage incident investigations and review submitted proof when authorized."
               : "Review reported cases, start investigations, and submit proof for review."}
           </p>
         </div>

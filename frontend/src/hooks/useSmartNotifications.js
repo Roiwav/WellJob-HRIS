@@ -343,6 +343,12 @@ export default function useSmartNotifications(
 
         const normalizedKey =
           String(alertKey);
+          
+          setPopupAlert((currentPopup) =>
+          getAlertKey(currentPopup) === normalizedKey
+            ? null
+            : currentPopup
+        );
 
         setAlerts(
           (currentAlerts) =>

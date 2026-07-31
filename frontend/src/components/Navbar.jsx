@@ -1,14 +1,5 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-
-import {
-  useNavigate,
-} from "react-router-dom";
-
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FiAlertTriangle,
   FiBell,
@@ -20,56 +11,62 @@ import {
 } from "react-icons/fi";
 
 import { useAuth } from "../context/useAuth";
-
 import useSmartNotifications from "../hooks/useSmartNotifications";
-
 import SmartAlertToast from "./notifications/SmartAlertToast";
-
 import {
   formatSmartAlertDate,
   getAlertPriorityClasses,
 } from "../utils/notifications/smartNotifications";
 
+const ROLE_CONFIGS = {
+  HR_MANAGER: {
+    label: "HM",
+    color: "bg-blue-600",
+    roleName: "HR Manager",
+  },
+  HR_STAFF: {
+    label: "HS",
+    color: "bg-amber-500",
+    roleName: "HR Staff",
+  },
+  IT_SUPPORT: {
+    label: "IT",
+    color: "bg-green-600",
+    roleName: "IT Support",
+  },
+  SUPER_ADMIN: {
+    label: "SA",
+    color: "bg-red-600",
+    roleName: "Super Admin",
+  },
+};
+
+const DEFAULT_ROLE_CONFIG = {
+  label: "US",
+  color: "bg-gray-500",
+  roleName: "User",
+};
+
+function getAlertKey(alert) {
+  return String(alert?.alertKey || alert?.id || "");
+}
+
 export default function Navbar({
   title = "Welljob Solutions & General Services",
 }) {
-  const [
-    openProfile,
-    setOpenProfile,
-  ] = useState(false);
+  const navigate = useNavigate();
+  const { user, setUser } = useAuth();
 
-  const [
-    openNotifications,
-    setOpenNotifications,
-  ] = useState(false);
+  const [openProfile, setOpenProfile] = useState(false);
+  const [openNotifications, setOpenNotifications] = useState(false);
+  const [animateNotificationBell, setAnimateNotificationBell] = useState(false);
 
-  const profileRef =
-    useRef(null);
+  const profileRef = useRef(null);
+  const notificationRef = useRef(null);
+  const previousPopupAlertKeyRef = useRef("");
+  const bellAnimationTimerRef = useRef(null);
 
-  const notificationRef =
-    useRef(null);
-
-  const previousUnreadCountRef =
-    useRef(null);
-
-  const bellAnimationTimerRef =
-    useRef(null);
-
-  const [
-    animateNotificationBell,
-    setAnimateNotificationBell,
-  ] = useState(false);
-
-  const navigate =
-    useNavigate();
-
-  const {
-    user,
-    setUser,
-  } = useAuth();
-
-  const currentRole =
-    user?.role || "USER";
+  const currentRole = user?.role || "USER";
 
   const {
     canView,
@@ -84,53 +81,14 @@ export default function Navbar({
     markAlertAsRead,
     dismissAlert,
     clearReadAlerts,
-  } = useSmartNotifications(
-    user,
-    {
-      pollInterval: 10000,
-    }
+  } = useSmartNotifications(user, {
+    pollInterval: 10000,
+  });
+
+  const roleConfig = useMemo(
+    () => ROLE_CONFIGS[currentRole] || DEFAULT_ROLE_CONFIG,
+    [currentRole]
   );
-
-  const roleConfig =
-    useMemo(() => {
-      const configs = {
-        HR_MANAGER: {
-          label: "HM",
-          color: "bg-blue-600",
-          roleName:
-            "HR Manager",
-        },
-
-        HR_STAFF: {
-          label: "HS",
-          color: "bg-amber-500",
-          roleName:
-            "HR Staff",
-        },
-
-        IT_SUPPORT: {
-          label: "IT",
-          color: "bg-green-600",
-          roleName:
-            "IT Support",
-        },
-
-        SUPER_ADMIN: {
-          label: "SA",
-          color: "bg-red-600",
-          roleName:
-            "Super Admin",
-        },
-      };
-
-      return (
-        configs[currentRole] || {
-          label: "US",
-          color: "bg-gray-500",
-          roleName: "User",
-        }
-      );
-    }, [currentRole]);
 
   const displayName =
     user?.name ||
@@ -140,279 +98,172 @@ export default function Navbar({
     user?.username ||
     "User";
 
-  const username =
-    user?.username || "-";
+  const username = user?.username || "-";
 
   useEffect(() => {
-    const previousUnreadCount =
-      previousUnreadCountRef.current;
+    const currentAlertKey = getAlertKey(popupAlert);
+    const previousAlertKey = previousPopupAlertKeyRef.current;
 
-    if (previousUnreadCount === null) {
-      previousUnreadCountRef.current =
-        unreadCount;
-      return;
+    if (!currentAlertKey) {
+      previousPopupAlertKeyRef.current = "";
+      return undefined;
     }
 
-    const hasNewUnreadAlert =
-      unreadCount >
-      previousUnreadCount;
+    previousPopupAlertKeyRef.current = currentAlertKey;
 
-    previousUnreadCountRef.current =
-      unreadCount;
-
-    if (
-      !hasNewUnreadAlert ||
-      openNotifications
-    ) {
-      return;
+    if (currentAlertKey === previousAlertKey || openNotifications) {
+      return undefined;
     }
 
-    setAnimateNotificationBell(true);
+    setAnimateNotificationBell(false);
 
-    if (
-      bellAnimationTimerRef.current
-    ) {
-      window.clearTimeout(
-        bellAnimationTimerRef.current
-      );
+    const firstFrame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setAnimateNotificationBell(true);
+      });
+    });
+
+    if (bellAnimationTimerRef.current) {
+      window.clearTimeout(bellAnimationTimerRef.current);
     }
 
-    bellAnimationTimerRef.current =
-      window.setTimeout(() => {
-        setAnimateNotificationBell(
-          false
-        );
-
-        bellAnimationTimerRef.current =
-          null;
-      }, 2400);
+    bellAnimationTimerRef.current = window.setTimeout(() => {
+      setAnimateNotificationBell(false);
+      bellAnimationTimerRef.current = null;
+    }, 2600);
 
     return () => {
-      if (
-        bellAnimationTimerRef.current
-      ) {
-        window.clearTimeout(
-          bellAnimationTimerRef.current
-        );
-
-        bellAnimationTimerRef.current =
-          null;
-      }
+      window.cancelAnimationFrame(firstFrame);
     };
-  }, [
-    unreadCount,
-    openNotifications,
-  ]);
+  }, [popupAlert, openNotifications]);
 
   useEffect(() => {
-    const handleClickOutside =
-      (event) => {
-        if (
-          profileRef.current &&
-          !profileRef.current.contains(
-            event.target
-          )
-        ) {
-          setOpenProfile(false);
-        }
+    const handleClickOutside = (event) => {
+      if (
+        profileRef.current &&
+        !profileRef.current.contains(event.target)
+      ) {
+        setOpenProfile(false);
+      }
 
-        if (
-          notificationRef.current &&
-          !notificationRef.current.contains(
-            event.target
-          )
-        ) {
-          setOpenNotifications(
-            false
-          );
-        }
-      };
+      if (
+        notificationRef.current &&
+        !notificationRef.current.contains(event.target)
+      ) {
+        setOpenNotifications(false);
+      }
+    };
 
-    const handleEscapeKey =
-      (event) => {
-        if (
-          event.key !==
-          "Escape"
-        ) {
-          return;
-        }
-
+    const handleEscapeKey = (event) => {
+      if (event.key === "Escape") {
         setOpenProfile(false);
         setOpenNotifications(false);
-      };
+      }
+    };
 
-    if (
-      openProfile ||
-      openNotifications
-    ) {
-      document.addEventListener(
-        "mousedown",
-        handleClickOutside
-      );
-
-      document.addEventListener(
-        "keydown",
-        handleEscapeKey
-      );
+    if (openProfile || openNotifications) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleEscapeKey);
     }
 
     return () => {
-      document.removeEventListener(
-        "mousedown",
-        handleClickOutside
-      );
-
-      document.removeEventListener(
-        "keydown",
-        handleEscapeKey
-      );
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscapeKey);
     };
-  }, [
-    openProfile,
-    openNotifications,
-  ]);
+  }, [openProfile, openNotifications]);
 
-  const openAlertTarget =
-    async (alert) => {
-      if (!alert) {
-        return;
-      }
-
-      setOpenNotifications(false);
-
-      if (
-        alert.route ===
-          "/incidents" &&
-        alert.incidentId
-      ) {
-        navigate("/incidents", {
-          state: {
-            incidentId:
-              alert.incidentId,
-          },
-        });
-      } else {
-        navigate(
-          alert.route ||
-            "/notifications"
-        );
-      }
-
-      try {
-        await markAlertAsRead(
-          alert.alertKey
-        );
-      } catch (error) {
-        console.error(
-          "Failed to mark smart alert as read:",
-          error
-        );
+  useEffect(() => {
+    return () => {
+      if (bellAnimationTimerRef.current) {
+        window.clearTimeout(bellAnimationTimerRef.current);
       }
     };
+  }, []);
 
-  const handleToggleNotifications =
-    async () => {
-      if (!canView) {
-        return;
-      }
+  const stopBellAnimation = () => {
+    setAnimateNotificationBell(false);
 
-      setAnimateNotificationBell(
-        false
-      );
+    if (bellAnimationTimerRef.current) {
+      window.clearTimeout(bellAnimationTimerRef.current);
+      bellAnimationTimerRef.current = null;
+    }
+  };
 
-      if (
-        bellAnimationTimerRef.current
-      ) {
-        window.clearTimeout(
-          bellAnimationTimerRef.current
-        );
+  const openAlertTarget = async (alert) => {
+    if (!alert) return;
 
-        bellAnimationTimerRef.current =
-          null;
-      }
+    setOpenNotifications(false);
+    stopBellAnimation();
 
-      setOpenNotifications(
-        (current) => !current
-      );
+    try {
+      await markAlertAsRead(alert.alertKey);
+    } catch (error) {
+      console.error("Failed to mark smart alert as read:", error);
+    }
 
-      setOpenProfile(false);
+    if (alert.route === "/incidents" && alert.incidentId) {
+      navigate("/incidents", {
+        state: {
+          incidentId: alert.incidentId,
+          action: alert.action || alert.navigationAction || "view",
+        },
+      });
+      return;
+    }
 
-      try {
-        await refresh({
-          silent: true,
-        });
-      } catch (error) {
-        console.error(
-          "Failed to refresh smart alerts:",
-          error
-        );
-      }
-    };
+    navigate(alert.route || "/notifications");
+  };
 
-  const handleViewNotifications =
-    () => {
-      if (!canView) {
-        return;
-      }
+  const handleToggleNotifications = async () => {
+    if (!canView) return;
 
-      setOpenNotifications(false);
-      navigate("/notifications");
-    };
+    stopBellAnimation();
+    setOpenNotifications((current) => !current);
+    setOpenProfile(false);
 
-  const handleClearReadAlerts =
-    async () => {
-      if (
-        !canView ||
-        !hasReadAlerts ||
-        isClearingRead
-      ) {
-        return;
-      }
+    try {
+      await refresh({ silent: true });
+    } catch (error) {
+      console.error("Failed to refresh smart alerts:", error);
+    }
+  };
 
-      try {
-        await clearReadAlerts();
-      } catch (error) {
-        console.error(
-          "Failed to clear read smart alerts:",
-          error
-        );
-      }
-    };
+  const handleViewNotifications = () => {
+    if (!canView) return;
 
-  const handleDismissToast =
-    async (alert) => {
-      if (!alert?.alertKey) {
-        return;
-      }
+    setOpenNotifications(false);
+    navigate("/notifications");
+  };
 
-      try {
-        await dismissAlert(
-          alert.alertKey
-        );
-      } catch (error) {
-        console.error(
-          "Failed to dismiss smart alert:",
-          error
-        );
-      }
-    };
+  const handleClearReadAlerts = async () => {
+    if (!canView || !hasReadAlerts || isClearingRead) return;
+
+    try {
+      await clearReadAlerts();
+    } catch (error) {
+      console.error("Failed to clear read smart alerts:", error);
+    }
+  };
+
+  const handleDismissToast = async (alert) => {
+    if (!alert?.alertKey) return;
+
+    try {
+      await dismissAlert(alert.alertKey);
+    } catch (error) {
+      console.error("Failed to dismiss smart alert:", error);
+    }
+  };
 
   const handleLogout = () => {
-    localStorage.removeItem(
-      "user"
-    );
-
-    localStorage.removeItem(
-      "token"
-    );
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
 
     setUser(null);
     setOpenProfile(false);
     setOpenNotifications(false);
 
-    navigate("/login", {
-      replace: true,
-    });
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -424,42 +275,31 @@ export default function Navbar({
 
         <div className="flex items-center gap-3">
           {canView && (
-            <div
-              className="relative"
-              ref={notificationRef}
-            >
+            <div className="relative" ref={notificationRef}>
               <button
                 type="button"
-                onClick={
-                  handleToggleNotifications
-                }
-                className={`relative flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 transition hover:bg-gray-100 hover:text-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/15 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white ${
-                  animateNotificationBell &&
-                  !openNotifications
-                    ? "notification-bell-new"
-                    : ""
-                }`}
+                onClick={handleToggleNotifications}
+                className="relative flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 transition hover:bg-gray-100 hover:text-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/15 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
                 title="Smart Alerts"
                 aria-label={`Smart Alerts${
-                  unreadCount > 0
-                    ? `, ${unreadCount} unread`
-                    : ""
+                  unreadCount > 0 ? `, ${unreadCount} unread` : ""
                 }`}
-                aria-expanded={
-                  openNotifications
-                }
+                aria-expanded={openNotifications}
                 aria-haspopup="dialog"
               >
                 <FiBell
                   size={20}
                   aria-hidden="true"
+                  className={
+                    animateNotificationBell && !openNotifications
+                      ? "notification-bell-icon-new"
+                      : ""
+                  }
                 />
 
                 {unreadCount > 0 && (
                   <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-extrabold text-white ring-2 ring-white dark:ring-slate-950">
-                    {unreadCount > 99
-                      ? "99+"
-                      : unreadCount}
+                    {unreadCount > 99 ? "99+" : unreadCount}
                   </span>
                 )}
               </button>
@@ -475,31 +315,20 @@ export default function Navbar({
                       <h3 className="text-sm font-black text-gray-900 dark:text-white">
                         Smart Alerts
                       </h3>
-
                       <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                        Rule-based incident
-                        and priority
-                        notifications
+                        Rule-based incident and priority notifications
                       </p>
                     </div>
 
                     <button
                       type="button"
-                      onClick={
-                        handleClearReadAlerts
-                      }
-                      disabled={
-                        !hasReadAlerts ||
-                        isClearingRead
-                      }
+                      onClick={handleClearReadAlerts}
+                      disabled={!hasReadAlerts || isClearingRead}
                       className="shrink-0 rounded-lg px-2 py-1 text-xs font-black text-amber-700 transition hover:bg-amber-50 hover:text-amber-800 disabled:cursor-not-allowed disabled:opacity-40 dark:text-amber-300 dark:hover:bg-amber-950/30 dark:hover:text-amber-200"
                       title={
                         hasReadAlerts
                           ? `Clear ${readAlertCount} read alert${
-                              readAlertCount ===
-                              1
-                                ? ""
-                                : "s"
+                              readAlertCount === 1 ? "" : "s"
                             }`
                           : "No read alerts to clear"
                       }
@@ -507,216 +336,143 @@ export default function Navbar({
                       {isClearingRead
                         ? "Clearing..."
                         : `Clear Read${
-                            readAlertCount >
-                            0
-                              ? ` (${readAlertCount})`
-                              : ""
+                            readAlertCount > 0 ? ` (${readAlertCount})` : ""
                           }`}
                     </button>
                   </div>
 
                   <div className="max-h-96 overflow-y-auto">
-                    {isFetching &&
-                    latestAlerts.length ===
-                      0 ? (
+                    {isFetching && latestAlerts.length === 0 ? (
                       <div
                         role="status"
                         aria-live="polite"
                         className="space-y-3 px-5 py-5"
                       >
-                        {[1, 2, 3].map(
-                          (item) => (
-                            <div
-                              key={item}
-                              className="flex animate-pulse gap-3 rounded-2xl border border-slate-100 p-3 dark:border-slate-800"
-                            >
-                              <div className="h-9 w-9 shrink-0 rounded-xl bg-slate-200 dark:bg-slate-700" />
-
-                              <div className="min-w-0 flex-1 space-y-2">
-                                <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-slate-700" />
-
-                                <div className="h-2.5 w-full rounded bg-slate-100 dark:bg-slate-800" />
-
-                                <div className="h-2.5 w-4/5 rounded bg-slate-100 dark:bg-slate-800" />
-                              </div>
+                        {[1, 2, 3].map((item) => (
+                          <div
+                            key={item}
+                            className="flex animate-pulse gap-3 rounded-2xl border border-slate-100 p-3 dark:border-slate-800"
+                          >
+                            <div className="h-9 w-9 shrink-0 rounded-xl bg-slate-200 dark:bg-slate-700" />
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-slate-700" />
+                              <div className="h-2.5 w-full rounded bg-slate-100 dark:bg-slate-800" />
+                              <div className="h-2.5 w-4/5 rounded bg-slate-100 dark:bg-slate-800" />
                             </div>
-                          )
-                        )}
-
-                        <span className="sr-only">
-                          Loading smart
-                          alerts...
-                        </span>
+                          </div>
+                        ))}
+                        <span className="sr-only">Loading smart alerts...</span>
                       </div>
-                    ) : latestAlerts.length >
-                      0 ? (
-                      latestAlerts.map(
-                        (alert) => {
-                          const styles =
-                            getAlertPriorityClasses(
-                              alert.priority
-                            );
+                    ) : latestAlerts.length > 0 ? (
+                      latestAlerts.map((alert) => {
+                        const styles = getAlertPriorityClasses(alert.priority);
 
-                          return (
-                            <button
-                              type="button"
-                              key={
-                                alert.alertKey
-                              }
-                              onClick={() =>
-                                openAlertTarget(
-                                  alert
-                                )
-                              }
-                              className={`flex w-full gap-3 border-b border-gray-100 px-5 py-4 text-left transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-inset focus:ring-indigo-500/10 dark:border-white/10 dark:hover:bg-white/5 ${
-                                !alert.isRead
-                                  ? "bg-indigo-50/50 dark:bg-indigo-950/10"
-                                  : ""
-                              }`}
-                              aria-label={`${
-                                alert.title
-                              }. ${
-                                alert.isRead
-                                  ? "Read"
-                                  : "Unread"
-                              }. Open affected record.`}
+                        return (
+                          <button
+                            type="button"
+                            key={alert.alertKey}
+                            onClick={() => openAlertTarget(alert)}
+                            className={`flex w-full gap-3 border-b border-gray-100 px-5 py-4 text-left transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-inset focus:ring-indigo-500/10 dark:border-white/10 dark:hover:bg-white/5 ${
+                              !alert.isRead
+                                ? "bg-indigo-50/50 dark:bg-indigo-950/10"
+                                : ""
+                            }`}
+                            aria-label={`${alert.title}. ${
+                              alert.isRead ? "Read" : "Unread"
+                            }. Open affected record.`}
+                          >
+                            <div
+                              className={`mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${styles.icon}`}
                             >
-                              <div
-                                className={`mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${styles.icon}`}
-                              >
-                                {alert.priority ===
-                                "High" ? (
-                                  <FiAlertTriangle
-                                    aria-hidden="true"
-                                  />
-                                ) : (
-                                  <FiClock
-                                    aria-hidden="true"
-                                  />
+                              {alert.priority === "High" ? (
+                                <FiAlertTriangle aria-hidden="true" />
+                              ) : (
+                                <FiClock aria-hidden="true" />
+                              )}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="truncate text-sm font-black text-gray-900 dark:text-white">
+                                  {alert.title}
+                                </p>
+                                <span className="shrink-0 text-[11px] text-gray-400">
+                                  {formatSmartAlertDate(alert.date)}
+                                </span>
+                              </div>
+
+                              <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                                {alert.message}
+                              </p>
+
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-black ${styles.badge}`}
+                                >
+                                  {alert.priority}
+                                </span>
+
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                  {alert.status}
+                                </span>
+
+                                {!alert.isRead && (
+                                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-black text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                                    New
+                                  </span>
                                 )}
                               </div>
-
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between gap-3">
-                                  <p className="truncate text-sm font-black text-gray-900 dark:text-white">
-                                    {
-                                      alert.title
-                                    }
-                                  </p>
-
-                                  <span className="shrink-0 text-[11px] text-gray-400">
-                                    {formatSmartAlertDate(
-                                      alert.date
-                                    )}
-                                  </span>
-                                </div>
-
-                                <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                                  {
-                                    alert.message
-                                  }
-                                </p>
-
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <span
-                                    className={`rounded-full px-2 py-0.5 text-[10px] font-black ${styles.badge}`}
-                                  >
-                                    {
-                                      alert.priority
-                                    }
-                                  </span>
-
-                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                    {
-                                      alert.status
-                                    }
-                                  </span>
-
-                                  {!alert.isRead && (
-                                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-black text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
-                                      New
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        }
-                      )
+                            </div>
+                          </button>
+                        );
+                      })
                     ) : (
                       <div className="px-5 py-10 text-center">
                         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-slate-800">
-                          <FiBell
-                            size={22}
-                            aria-hidden="true"
-                          />
+                          <FiBell size={22} aria-hidden="true" />
                         </div>
-
                         <p className="text-sm font-semibold text-gray-900 dark:text-white">
                           No smart alerts
                         </p>
-
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          Priority incident
-                          alerts will appear
-                          here.
+                          Priority incident alerts will appear here.
                         </p>
                       </div>
                     )}
                   </div>
 
-                  {latestAlerts.length >
-                    0 && (
+                  {latestAlerts.length > 0 && (
                     <div className="border-t border-gray-100 px-5 py-3 dark:border-white/10">
                       <button
                         type="button"
-                        onClick={
-                          handleViewNotifications
-                        }
+                        onClick={handleViewNotifications}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/20"
                       >
-                        <FiEye
-                          aria-hidden="true"
-                        />
-
-                        View All Smart
-                        Alerts
+                        <FiEye aria-hidden="true" />
+                        View All Smart Alerts
                       </button>
                     </div>
                   )}
 
-                  {isFetching &&
-                    latestAlerts.length >
-                      0 && (
-                      <div className="border-t border-gray-100 px-5 py-2 text-center text-[11px] font-semibold text-gray-400 dark:border-white/10">
-                        Syncing alerts...
-                      </div>
-                    )}
+                  {isFetching && latestAlerts.length > 0 && (
+                    <div className="border-t border-gray-100 px-5 py-2 text-center text-[11px] font-semibold text-gray-400 dark:border-white/10">
+                      Syncing alerts...
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          <div
-            className="relative"
-            ref={profileRef}
-          >
+          <div className="relative" ref={profileRef}>
             <button
               type="button"
               onClick={() => {
-                setOpenProfile(
-                  (current) =>
-                    !current
-                );
-
-                setOpenNotifications(
-                  false
-                );
+                setOpenProfile((current) => !current);
+                setOpenNotifications(false);
               }}
               className="flex max-w-[260px] items-center gap-3 rounded-xl px-2 py-1.5 text-sm text-gray-700 transition hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-indigo-500/15 dark:text-gray-300 dark:hover:bg-white/10"
-              aria-expanded={
-                openProfile
-              }
+              aria-expanded={openProfile}
               aria-haspopup="menu"
             >
               <div
@@ -733,9 +489,7 @@ export default function Navbar({
 
               <FiChevronDown
                 className={`shrink-0 text-sm transition-transform ${
-                  openProfile
-                    ? "rotate-180"
-                    : ""
+                  openProfile ? "rotate-180" : ""
                 }`}
                 aria-hidden="true"
               />
@@ -748,22 +502,15 @@ export default function Navbar({
                     <div
                       className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold text-white ${roleConfig.color}`}
                     >
-                      <FiUser
-                        size={17}
-                        aria-hidden="true"
-                      />
+                      <FiUser size={17} aria-hidden="true" />
                     </div>
 
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-gray-900 dark:text-white">
                         {displayName}
                       </p>
-
                       <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                        {username} •{" "}
-                        {
-                          roleConfig.roleName
-                        }
+                        {username} • {roleConfig.roleName}
                       </p>
                     </div>
                   </div>
@@ -771,15 +518,10 @@ export default function Navbar({
 
                 <button
                   type="button"
-                  onClick={
-                    handleLogout
-                  }
+                  onClick={handleLogout}
                   className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-red-500 transition hover:bg-gray-100 dark:hover:bg-white/10"
                 >
-                  <FiLogOut
-                    aria-hidden="true"
-                  />
-
+                  <FiLogOut aria-hidden="true" />
                   Logout
                 </button>
               </div>
@@ -789,17 +531,9 @@ export default function Navbar({
       </div>
 
       <SmartAlertToast
-        alert={
-          openNotifications
-            ? null
-            : popupAlert
-        }
-        onDismiss={
-          handleDismissToast
-        }
-        onView={
-          openAlertTarget
-        }
+        alert={openNotifications ? null : popupAlert}
+        onDismiss={handleDismissToast}
+        onView={openAlertTarget}
       />
     </>
   );

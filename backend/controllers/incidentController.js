@@ -3,6 +3,17 @@ const { logAudit, AUDIT_CATEGORY } = require("../utils/auditLogger");
 
 const API_BASE = process.env.API_BASE_URL || "http://localhost:5000";
 
+const WORKFLOW_ACTION = {
+  START: "START_INVESTIGATION",
+  SUBMIT_RESOLUTION: "SUBMIT_RESOLUTION",
+  SUBMIT_INVESTIGATION: "SUBMIT_INVESTIGATION",
+  RETURN: "RETURN_INCIDENT",
+  CLOSE: "CLOSE_INCIDENT",
+};
+
+const INVESTIGATOR_ROLES = new Set(["HR_MANAGER", "HR_STAFF"]);
+const REVIEWER_ROLES = new Set(["HR_MANAGER", "SUPER_ADMIN"]);
+
 function toNullable(value) {
   if (value === undefined || value === null) return null;
 
@@ -44,6 +55,69 @@ function normalizeSeverity(value) {
 
 function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function normalizeRole(value) {
+  const role = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+
+  if (["SUPERADMIN", "SUPER_ADMIN", "ADMIN"].includes(role)) {
+    return "SUPER_ADMIN";
+  }
+
+  if (["HRMANAGER", "HR_MANAGER"].includes(role)) {
+    return "HR_MANAGER";
+  }
+
+  if (["HRSTAFF", "HR_STAFF"].includes(role)) {
+    return "HR_STAFF";
+  }
+
+  if (["ITSUPPORT", "IT_SUPPORT"].includes(role)) {
+    return "IT_SUPPORT";
+  }
+
+  return role || "USER";
+}
+
+function isInvestigatorRole(role) {
+  return INVESTIGATOR_ROLES.has(normalizeRole(role));
+}
+
+function isReviewerRole(role) {
+  return REVIEWER_ROLES.has(normalizeRole(role));
+}
+
+function normalizeWorkflowAction(value, status) {
+  const action = String(value || "").trim().toUpperCase();
+
+  if (Object.values(WORKFLOW_ACTION).includes(action)) {
+    return action;
+  }
+
+  return getActionTypeFromStatus(status);
+}
+
+function getWorkflowTargetStatus(actionType, requestedStatus) {
+  switch (actionType) {
+    case WORKFLOW_ACTION.START:
+      return "Investigating";
+
+    case WORKFLOW_ACTION.SUBMIT_RESOLUTION:
+    case WORKFLOW_ACTION.SUBMIT_INVESTIGATION:
+      return "For Review";
+
+    case WORKFLOW_ACTION.RETURN:
+      return "Investigating";
+
+    case WORKFLOW_ACTION.CLOSE:
+      return "Closed";
+
+    default:
+      return normalizeStatus(requestedStatus);
+  }
 }
 
 function isDeployedEmployee(employee) {
@@ -141,6 +215,7 @@ function serializeEvidenceItem(item) {
 function serializeTimelineItem(item) {
   return {
     id: item.id,
+
     incidentId: item.incident_id,
     incident_id: item.incident_id,
 
@@ -257,15 +332,20 @@ function getTimelineTitle(actionType, existingIncident) {
   switch (actionType) {
     case "CREATE_INCIDENT":
       return "Reported";
-    case "START_INVESTIGATION":
+
+    case WORKFLOW_ACTION.START:
       return "Investigation Started";
-    case "SUBMIT_RESOLUTION":
-    case "SUBMIT_INVESTIGATION":
+
+    case WORKFLOW_ACTION.SUBMIT_RESOLUTION:
+    case WORKFLOW_ACTION.SUBMIT_INVESTIGATION:
       return wasReturned ? "Proof Resubmitted" : "Proof Submitted";
-    case "RETURN_INCIDENT":
-      return "Returned by Super Admin";
-    case "CLOSE_INCIDENT":
+
+    case WORKFLOW_ACTION.RETURN:
+      return "Returned by Reviewer";
+
+    case WORKFLOW_ACTION.CLOSE:
       return "Approved and Closed";
+
     default:
       return "Incident Updated";
   }
@@ -277,17 +357,22 @@ function getTimelineDescription(actionType, actor, details = {}) {
   switch (actionType) {
     case "CREATE_INCIDENT":
       return `Reported by ${actorName}.`;
-    case "START_INVESTIGATION":
+
+    case WORKFLOW_ACTION.START:
       return `${actorName} started the investigation.`;
-    case "SUBMIT_RESOLUTION":
-    case "SUBMIT_INVESTIGATION":
-      return `${actorName} submitted proof for Super Admin review.`;
-    case "RETURN_INCIDENT":
+
+    case WORKFLOW_ACTION.SUBMIT_RESOLUTION:
+    case WORKFLOW_ACTION.SUBMIT_INVESTIGATION:
+      return `${actorName} submitted proof for authorized reviewer assessment.`;
+
+    case WORKFLOW_ACTION.RETURN:
       return details?.comments
         ? `${actorName} returned the case for correction: ${details.comments}`
         : `${actorName} returned the case for correction.`;
-    case "CLOSE_INCIDENT":
+
+    case WORKFLOW_ACTION.CLOSE:
       return `${actorName} approved and closed the case.`;
+
     default:
       return `${actorName} updated the incident record.`;
   }
@@ -318,7 +403,7 @@ function serializeIncident(incident, evidence = [], timelineEvents = []) {
         submittedByName: incident.resolution_submitted_by_name,
         actionTaken: incident.action_taken || "",
         remarks: incident.resolution_notes || "",
-        proofFiles: [],
+        proofFiles: evidence.map(serializeEvidenceItem),
       }
     : null;
 
@@ -380,26 +465,63 @@ function serializeIncident(incident, evidence = [], timelineEvents = []) {
 
     investigationStartedAt: incident.investigation_started_at || null,
     investigation_started_at: incident.investigation_started_at || null,
-    investigationStartedByName: incident.investigation_started_by_name || null,
+
+    investigationStartedById:
+      incident.investigation_started_by_id || null,
+    investigation_started_by_id:
+      incident.investigation_started_by_id || null,
+
+    investigationStartedByUsername:
+      incident.investigation_started_by_username || null,
+    investigation_started_by_username:
+      incident.investigation_started_by_username || null,
+
+    investigationStartedByName:
+      incident.investigation_started_by_name || null,
     investigation_started_by_name:
       incident.investigation_started_by_name || null,
 
-    resolutionSubmittedAt: incident.resolution_submitted_at || null,
-    resolution_submitted_at: incident.resolution_submitted_at || null,
-    resolutionSubmittedByName: incident.resolution_submitted_by_name || null,
-    resolution_submitted_by_name: incident.resolution_submitted_by_name || null,
+    resolutionSubmittedAt:
+      incident.resolution_submitted_at || null,
+    resolution_submitted_at:
+      incident.resolution_submitted_at || null,
+
+    resolutionSubmittedById:
+      incident.resolution_submitted_by_id || null,
+    resolution_submitted_by_id:
+      incident.resolution_submitted_by_id || null,
+
+    resolutionSubmittedByUsername:
+      incident.resolution_submitted_by_username || null,
+    resolution_submitted_by_username:
+      incident.resolution_submitted_by_username || null,
+
+    resolutionSubmittedByName:
+      incident.resolution_submitted_by_name || null,
+    resolution_submitted_by_name:
+      incident.resolution_submitted_by_name || null,
 
     reviewedAt: incident.reviewed_at || null,
     reviewed_at: incident.reviewed_at || null,
+
+    reviewedById: incident.reviewed_by_id || null,
+    reviewed_by_id: incident.reviewed_by_id || null,
+
+    reviewedByUsername: incident.reviewed_by_username || null,
+    reviewed_by_username: incident.reviewed_by_username || null,
+
     reviewedByName: incident.reviewed_by_name || null,
     reviewed_by_name: incident.reviewed_by_name || null,
+
     reviewDecision: incident.review_decision || null,
     review_decision: incident.review_decision || null,
+
     reviewComments: incident.review_comments || null,
     review_comments: incident.review_comments || null,
 
     createdAt: incident.created_at,
     created_at: incident.created_at,
+
     updatedAt: incident.updated_at,
     updated_at: incident.updated_at,
 
@@ -429,7 +551,7 @@ function serializeIncident(incident, evidence = [], timelineEvents = []) {
 async function getIncidentWithEvidence(id) {
   const [rows] = await db.promise().query(
     `
-    SELECT 
+    SELECT
       i.*,
       e.name AS employeeNameFromEmployee,
       e.company AS employeeCompany,
@@ -524,10 +646,28 @@ async function resolveActorFullName({ userId, username, fullName }) {
 
 async function getActor(req) {
   const body = req.body || {};
+  const authenticatedUser = req.user || req.auth?.user || {};
 
-  const userId = body.userId || body.user_id || null;
-  const username = body.username || null;
+  const userId =
+    authenticatedUser.userId ||
+    authenticatedUser.user_id ||
+    authenticatedUser.id ||
+    body.userId ||
+    body.user_id ||
+    null;
+
+  const username =
+    authenticatedUser.username ||
+    authenticatedUser.email ||
+    body.username ||
+    null;
+
   const fullName =
+    authenticatedUser.fullName ||
+    authenticatedUser.full_name ||
+    authenticatedUser.displayName ||
+    authenticatedUser.display_name ||
+    authenticatedUser.name ||
     body.fullName ||
     body.full_name ||
     body.name ||
@@ -535,6 +675,13 @@ async function getActor(req) {
     body.display_name ||
     body.username ||
     "Unknown User";
+
+  const role = normalizeRole(
+    authenticatedUser.role ||
+      authenticatedUser.userRole ||
+      body.role ||
+      "USER"
+  );
 
   return {
     userId,
@@ -544,7 +691,7 @@ async function getActor(req) {
       username,
       fullName,
     }),
-    role: body.role || null,
+    role,
   };
 }
 
@@ -578,9 +725,17 @@ function getSafePersonName(inputName, actor) {
 function getActionTypeFromStatus(status) {
   const normalizedStatus = normalizeStatus(status);
 
-  if (normalizedStatus === "Investigating") return "START_INVESTIGATION";
-  if (normalizedStatus === "For Review") return "SUBMIT_INVESTIGATION";
-  if (normalizedStatus === "Closed") return "CLOSE_INCIDENT";
+  if (normalizedStatus === "Investigating") {
+    return WORKFLOW_ACTION.START;
+  }
+
+  if (normalizedStatus === "For Review") {
+    return WORKFLOW_ACTION.SUBMIT_INVESTIGATION;
+  }
+
+  if (normalizedStatus === "Closed") {
+    return WORKFLOW_ACTION.CLOSE;
+  }
 
   return "UPDATE_INCIDENT";
 }
@@ -599,7 +754,7 @@ exports.getIncidents = async (req, res) => {
     await ensureIncidentTimelineTable();
 
     const [incidents] = await db.promise().query(`
-      SELECT 
+      SELECT
         i.*,
         e.name AS employeeNameFromEmployee,
         e.company AS employeeCompany,
@@ -617,7 +772,7 @@ exports.getIncidents = async (req, res) => {
 
     const [evidence] = await db.promise().query(
       `
-      SELECT * 
+      SELECT *
       FROM incident_evidence
       WHERE incident_id IN (?)
       ORDER BY created_at DESC, id DESC
@@ -645,11 +800,11 @@ exports.getIncidents = async (req, res) => {
       return serializeIncident(incident, incidentEvidence, timelineEvents);
     });
 
-    res.json(result);
+    return res.json(result);
   } catch (err) {
     console.error("GET INCIDENTS ERROR:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: err.sqlMessage || err.message || "Failed to fetch incidents",
     });
   }
@@ -688,7 +843,7 @@ exports.getIncidentsByEmployee = async (req, res) => {
 
     const [incidents] = await db.promise().query(
       `
-      SELECT 
+      SELECT
         i.*,
         e.name AS employeeNameFromEmployee,
         e.company AS employeeCompany,
@@ -696,7 +851,7 @@ exports.getIncidentsByEmployee = async (req, res) => {
       FROM incidents i
       LEFT JOIN employees e ON e.id = i.employee_id
       WHERE ${conditions.join(" OR ")}
-      ORDER BY 
+      ORDER BY
         i.incident_date ASC,
         i.created_at ASC,
         i.id ASC
@@ -734,13 +889,15 @@ exports.getIncidentsByEmployee = async (req, res) => {
       );
     });
 
-    res.json(result);
+    return res.json(result);
   } catch (err) {
     console.error("GET INCIDENTS BY EMPLOYEE ERROR:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error:
-        err.sqlMessage || err.message || "Failed to fetch employee incidents",
+        err.sqlMessage ||
+        err.message ||
+        "Failed to fetch employee incidents",
     });
   }
 };
@@ -753,14 +910,16 @@ exports.getIncidentById = async (req, res) => {
     const incident = await getIncidentWithEvidence(id);
 
     if (!incident) {
-      return res.status(404).json({ error: "Incident not found" });
+      return res.status(404).json({
+        error: "Incident not found",
+      });
     }
 
-    res.json(incident);
+    return res.json(incident);
   } catch (err) {
     console.error("GET INCIDENT ERROR:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: err.sqlMessage || err.message || "Failed to fetch incident",
     });
   }
@@ -795,7 +954,9 @@ exports.createIncident = async (req, res) => {
     const finalEmployeeId = employeeId || employee_id;
 
     if (!finalEmployeeId) {
-      return res.status(400).json({ error: "Employee is required." });
+      return res.status(400).json({
+        error: "Employee is required.",
+      });
     }
 
     const [employeeRows] = await db.promise().query(
@@ -804,7 +965,9 @@ exports.createIncident = async (req, res) => {
     );
 
     if (employeeRows.length === 0) {
-      return res.status(404).json({ error: "Selected employee not found." });
+      return res.status(404).json({
+        error: "Selected employee not found.",
+      });
     }
 
     const employeeRecord = employeeRows[0];
@@ -833,13 +996,17 @@ exports.createIncident = async (req, res) => {
     const finalViolation = violationType || violation;
 
     if (!finalViolation) {
-      return res.status(400).json({ error: "Violation type is required." });
+      return res.status(400).json({
+        error: "Violation type is required.",
+      });
     }
 
     const finalDate = normalizeDate(incidentDate || date);
 
     if (!finalDate) {
-      return res.status(400).json({ error: "Incident date is required." });
+      return res.status(400).json({
+        error: "Incident date is required.",
+      });
     }
 
     const normalizedStatus = normalizeStatus(status);
@@ -925,7 +1092,7 @@ exports.createIncident = async (req, res) => {
 
     const createdIncident = await getIncidentWithEvidence(incidentId);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Incident created successfully",
       id: incidentId,
@@ -935,7 +1102,7 @@ exports.createIncident = async (req, res) => {
   } catch (err) {
     console.error("CREATE INCIDENT ERROR:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: err.sqlMessage || err.message || "Failed to create incident",
     });
   }
@@ -947,11 +1114,7 @@ function normalizeIdentity(value) {
 
 function buildActorAliases(actor) {
   return new Set(
-    [
-      actor?.userId,
-      actor?.username,
-      actor?.fullName,
-    ]
+    [actor?.userId, actor?.username, actor?.fullName]
       .map(normalizeIdentity)
       .filter(Boolean)
   );
@@ -969,13 +1132,15 @@ function getAssignedInvestigatorValues(incident) {
     incident.investigation_started_by_username,
     incident.investigation_started_by_name,
 
-    incident.last_action_type === "START_INVESTIGATION"
+    incident.last_action_type === WORKFLOW_ACTION.START
       ? incident.last_action_by_id
       : null,
-    incident.last_action_type === "START_INVESTIGATION"
+
+    incident.last_action_type === WORKFLOW_ACTION.START
       ? incident.last_action_by_username
       : null,
-    incident.last_action_type === "START_INVESTIGATION"
+
+    incident.last_action_type === WORKFLOW_ACTION.START
       ? incident.last_action_by_name
       : null,
   ].filter(Boolean);
@@ -1013,7 +1178,9 @@ exports.updateIncident = async (req, res) => {
     const finalEmployeeId = employeeId || employee_id;
 
     if (!finalEmployeeId) {
-      return res.status(400).json({ error: "Employee is required." });
+      return res.status(400).json({
+        error: "Employee is required.",
+      });
     }
 
     const [employeeRows] = await db.promise().query(
@@ -1022,7 +1189,9 @@ exports.updateIncident = async (req, res) => {
     );
 
     if (employeeRows.length === 0) {
-      return res.status(404).json({ error: "Selected employee not found." });
+      return res.status(404).json({
+        error: "Selected employee not found.",
+      });
     }
 
     const employeeRecord = employeeRows[0];
@@ -1052,11 +1221,15 @@ exports.updateIncident = async (req, res) => {
     const finalDate = normalizeDate(incidentDate || date);
 
     if (!finalViolation) {
-      return res.status(400).json({ error: "Violation type is required." });
+      return res.status(400).json({
+        error: "Violation type is required.",
+      });
     }
 
     if (!finalDate) {
-      return res.status(400).json({ error: "Incident date is required." });
+      return res.status(400).json({
+        error: "Incident date is required.",
+      });
     }
 
     const normalizedStatus = normalizeStatus(status);
@@ -1136,7 +1309,7 @@ exports.updateIncident = async (req, res) => {
 
     const updatedIncident = await getIncidentWithEvidence(id);
 
-    res.json({
+    return res.json({
       success: true,
       message: "Incident updated successfully",
       incident: updatedIncident,
@@ -1144,7 +1317,7 @@ exports.updateIncident = async (req, res) => {
   } catch (err) {
     console.error("UPDATE INCIDENT ERROR:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: err.sqlMessage || err.message || "Failed to update incident",
     });
   }
@@ -1166,9 +1339,9 @@ exports.updateIncidentStatus = async (req, res) => {
     } = req.body || {};
 
     const actor = await getActor(req);
-    const normalizedStatus = normalizeStatus(status);
-    const actionType =
-      workflowAction || getActionTypeFromStatus(normalizedStatus);
+    const actionType = normalizeWorkflowAction(workflowAction, status);
+    const normalizedStatus = getWorkflowTargetStatus(actionType, status);
+    const evidenceFiles = buildEvidenceFromReq(req);
 
     const [existingRows] = await db.promise().query(
       `SELECT * FROM incidents WHERE id = ? LIMIT 1`,
@@ -1182,39 +1355,136 @@ exports.updateIncidentStatus = async (req, res) => {
     }
 
     const existingIncident = existingRows[0];
+    const existingStatus = normalizeStatus(existingIncident.status);
 
-    const investigatorValues = getAssignedInvestigatorValues(existingIncident);
+    const investigatorValues =
+      getAssignedInvestigatorValues(existingIncident);
 
-if (actionType === "START_INVESTIGATION") {
-  const alreadyStarted =
-    existingIncident.investigation_started_at ||
-    normalizeStatus(existingIncident.status) !== "Open";
+    const cleanResolutionNotes = toNullable(resolutionNotes);
+    const cleanActionTaken = toNullable(actionTaken);
+    const cleanRecommendation = toNullable(recommendation);
 
-  if (alreadyStarted) {
-    return res.status(409).json({
-      error: "This case is already under investigation.",
-    });
-  }
-}
+    if (existingStatus === "Closed") {
+      return res.status(409).json({
+        error: "This case is already closed and can no longer be modified.",
+      });
+    }
 
-if (
-  actionType === "SUBMIT_RESOLUTION" ||
-  actionType === "SUBMIT_INVESTIGATION"
-) {
-  if (investigatorValues.length === 0) {
-    return res.status(409).json({
-      error:
-        "This case has no assigned investigator yet. Start investigation before submitting proof.",
-    });
-  }
+    if (actionType === WORKFLOW_ACTION.START) {
+      if (!isInvestigatorRole(actor.role)) {
+        return res.status(403).json({
+          error:
+            "Only an HR Manager or HR Staff user can start an investigation.",
+        });
+      }
 
-  if (!hasActorMatch(actor, investigatorValues)) {
-    return res.status(403).json({
-      error:
-        "Only the HR user who started this investigation can submit or resubmit proof.",
-    });
-  }
-}
+      if (
+        existingStatus !== "Open" ||
+        existingIncident.investigation_started_at
+      ) {
+        return res.status(409).json({
+          error: "Only an Open case can begin investigation.",
+        });
+      }
+    }
+
+    if (
+      actionType === WORKFLOW_ACTION.SUBMIT_RESOLUTION ||
+      actionType === WORKFLOW_ACTION.SUBMIT_INVESTIGATION
+    ) {
+      if (!isInvestigatorRole(actor.role)) {
+        return res.status(403).json({
+          error:
+            "Only an HR Manager or HR Staff user can submit investigation proof.",
+        });
+      }
+
+      if (existingStatus !== "Investigating") {
+        return res.status(409).json({
+          error:
+            "Only an Investigating case can be submitted for review.",
+        });
+      }
+
+      if (investigatorValues.length === 0) {
+        return res.status(409).json({
+          error:
+            "This case has no assigned investigator. Start the investigation before submitting proof.",
+        });
+      }
+
+      if (!hasActorMatch(actor, investigatorValues)) {
+        return res.status(403).json({
+          error:
+            "Only the HR user assigned to this investigation can submit or resubmit proof.",
+        });
+      }
+
+      if (!cleanActionTaken) {
+        return res.status(400).json({
+          error:
+            "Action taken is required before submitting the case for review.",
+        });
+      }
+
+      if (!cleanResolutionNotes) {
+        return res.status(400).json({
+          error:
+            "Resolution remarks are required before submitting the case for review.",
+        });
+      }
+
+      if (evidenceFiles.length === 0) {
+        return res.status(400).json({
+          error:
+            "At least one valid proof file is required before submitting the case for review.",
+        });
+      }
+    }
+
+    if (
+      actionType === WORKFLOW_ACTION.CLOSE ||
+      actionType === WORKFLOW_ACTION.RETURN
+    ) {
+      if (!isReviewerRole(actor.role)) {
+        return res.status(403).json({
+          error:
+            "Only an HR Manager or Super Admin can review submitted incident cases.",
+        });
+      }
+
+      if (existingStatus !== "For Review") {
+        return res.status(409).json({
+          error:
+            "Only a case marked For Review can be approved or returned.",
+        });
+      }
+
+      if (
+        actionType === WORKFLOW_ACTION.RETURN &&
+        !cleanResolutionNotes
+      ) {
+        return res.status(400).json({
+          error:
+            "A return comment is required before sending the case back.",
+        });
+      }
+    }
+
+    const allowedActions = new Set([
+      WORKFLOW_ACTION.START,
+      WORKFLOW_ACTION.SUBMIT_RESOLUTION,
+      WORKFLOW_ACTION.SUBMIT_INVESTIGATION,
+      WORKFLOW_ACTION.CLOSE,
+      WORKFLOW_ACTION.RETURN,
+      "UPDATE_INCIDENT",
+    ]);
+
+    if (!allowedActions.has(actionType)) {
+      return res.status(400).json({
+        error: "Unsupported incident workflow action.",
+      });
+    }
 
     const updateFields = [
       "status = ?",
@@ -1231,50 +1501,36 @@ if (
 
     const params = [
       normalizedStatus,
-      resolutionNotes || null,
-      actionTaken || null,
-      recommendation || null,
+      cleanResolutionNotes,
+      cleanActionTaken,
+      cleanRecommendation,
       actor.userId,
       actor.username,
       actor.fullName,
       actionType,
     ];
 
-    if (actionType === "START_INVESTIGATION") {
+    if (actionType === WORKFLOW_ACTION.START) {
       updateFields.push(
         "investigation_started_by_id = ?",
         "investigation_started_by_username = ?",
         "investigation_started_by_name = ?",
-        "investigation_started_at = NOW()"
+        "investigation_started_at = NOW()",
+        "reviewed_by_id = NULL",
+        "reviewed_by_username = NULL",
+        "reviewed_by_name = NULL",
+        "reviewed_at = NULL",
+        "review_decision = NULL",
+        "review_comments = NULL"
       );
 
       params.push(actor.userId, actor.username, actor.fullName);
     }
 
     if (
-      actionType === "SUBMIT_RESOLUTION" ||
-      actionType === "SUBMIT_INVESTIGATION"
+      actionType === WORKFLOW_ACTION.SUBMIT_RESOLUTION ||
+      actionType === WORKFLOW_ACTION.SUBMIT_INVESTIGATION
     ) {
-      const shouldBackfillInvestigation =
-        !existingIncident.investigation_started_at &&
-        existingIncident.last_action_type === "START_INVESTIGATION";
-
-      if (shouldBackfillInvestigation) {
-        updateFields.push(
-          "investigation_started_by_id = ?",
-          "investigation_started_by_username = ?",
-          "investigation_started_by_name = ?",
-          "investigation_started_at = COALESCE(?, updated_at, created_at, NOW())"
-        );
-
-        params.push(
-          existingIncident.last_action_by_id || actor.userId,
-          existingIncident.last_action_by_username || actor.username,
-          existingIncident.last_action_by_name || actor.fullName,
-          existingIncident.last_action_at || null
-        );
-      }
-
       updateFields.push(
         "resolution_submitted_by_id = ?",
         "resolution_submitted_by_username = ?",
@@ -1291,7 +1547,7 @@ if (
       params.push(actor.userId, actor.username, actor.fullName);
     }
 
-    if (actionType === "CLOSE_INCIDENT") {
+    if (actionType === WORKFLOW_ACTION.CLOSE) {
       updateFields.push(
         "reviewed_by_id = ?",
         "reviewed_by_username = ?",
@@ -1306,11 +1562,11 @@ if (
         actor.username,
         actor.fullName,
         "Approved",
-        resolutionNotes || "Proof reviewed and approved."
+        cleanResolutionNotes || "Proof reviewed and approved."
       );
     }
 
-    if (actionType === "RETURN_INCIDENT") {
+    if (actionType === WORKFLOW_ACTION.RETURN) {
       updateFields.push(
         "reviewed_by_id = ?",
         "reviewed_by_username = ?",
@@ -1325,7 +1581,7 @@ if (
         actor.username,
         actor.fullName,
         "Returned",
-        resolutionNotes || "Case returned for correction."
+        cleanResolutionNotes
       );
     }
 
@@ -1340,12 +1596,28 @@ if (
       params
     );
 
+    if (
+      actionType === WORKFLOW_ACTION.SUBMIT_RESOLUTION ||
+      actionType === WORKFLOW_ACTION.SUBMIT_INVESTIGATION
+    ) {
+      for (const file of evidenceFiles) {
+        await db.promise().query(
+          `
+          INSERT INTO incident_evidence
+          (incident_id, file_name, file_path)
+          VALUES (?, ?, ?)
+          `,
+          [id, file.fileName, file.filePath]
+        );
+      }
+    }
+
     await addTimelineEvent({
       incidentId: id,
       actionType,
       title: getTimelineTitle(actionType, existingIncident),
       description: getTimelineDescription(actionType, actor, {
-        comments: resolutionNotes,
+        comments: cleanResolutionNotes,
       }),
       actor,
     });
@@ -1362,7 +1634,7 @@ if (
 
     const updatedIncident = await getIncidentWithEvidence(id);
 
-    res.json({
+    return res.json({
       success: true,
       message: "Incident status updated successfully",
       incident: updatedIncident,
@@ -1370,8 +1642,11 @@ if (
   } catch (err) {
     console.error("UPDATE INCIDENT STATUS ERROR:", err);
 
-    res.status(500).json({
-      error: err.sqlMessage || err.message || "Failed to update incident status",
+    return res.status(500).json({
+      error:
+        err.sqlMessage ||
+        err.message ||
+        "Failed to update incident status",
     });
   }
 };
@@ -1387,14 +1662,14 @@ exports.deleteIncident = async (req, res) => {
 
     await db.promise().query(`DELETE FROM incidents WHERE id = ?`, [id]);
 
-    res.json({
+    return res.json({
       success: true,
       message: "Incident deleted successfully",
     });
   } catch (err) {
     console.error("DELETE INCIDENT ERROR:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: err.sqlMessage || err.message || "Failed to delete incident",
     });
   }

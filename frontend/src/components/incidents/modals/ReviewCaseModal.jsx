@@ -24,12 +24,12 @@ export default function ReviewCaseModal({
   onReject,
   showNotice,
 }) {
-  const [rejectComment, setRejectComment] = useState("");
+  const [returnComment, setReturnComment] = useState("");
   const [processingAction, setProcessingAction] = useState(null);
 
   const isProcessing = processingAction !== null;
   const isApproving = processingAction === "approve";
-  const isRejecting = processingAction === "reject";
+  const isReturning = processingAction === "return";
 
   const handleClose = useCallback(() => {
     if (isProcessing) {
@@ -39,16 +39,16 @@ export default function ReviewCaseModal({
     onClose?.();
   }, [isProcessing, onClose]);
 
-  const handleRejectCommentChange = useCallback((event) => {
-    setRejectComment(event.target.value);
+  const handleReturnCommentChange = useCallback((event) => {
+    setReturnComment(event.target.value);
   }, []);
 
-  const handleReject = useCallback(async () => {
+  const handleReturn = useCallback(async () => {
     if (isProcessing || !incident) {
       return;
     }
 
-    const cleanComment = rejectComment.trim();
+    const cleanComment = returnComment.trim();
 
     if (!cleanComment) {
       showNotice?.(
@@ -56,12 +56,11 @@ export default function ReviewCaseModal({
         "Return Comment Required",
         "Please enter a return comment before sending this case back for correction."
       );
-
       return;
     }
 
     try {
-      setProcessingAction("reject");
+      setProcessingAction("return");
 
       const success = await onReject?.(incident, cleanComment);
 
@@ -84,7 +83,7 @@ export default function ReviewCaseModal({
     incident,
     isProcessing,
     onReject,
-    rejectComment,
+    returnComment,
     showNotice,
   ]);
 
@@ -157,7 +156,7 @@ export default function ReviewCaseModal({
   return (
     <BaseModal
       onClose={handleClose}
-      title="Super Admin Case Review"
+      title="Authorized Case Review"
       subtitle={`${incidentCode} • ${employeeName}`}
       color="indigo"
       size="lg"
@@ -272,8 +271,8 @@ export default function ReviewCaseModal({
           <Field label="Return Comment if Proof is Not Enough">
             <textarea
               rows={4}
-              value={rejectComment}
-              onChange={handleRejectCommentChange}
+              value={returnComment}
+              onChange={handleReturnCommentChange}
               disabled={isProcessing}
               placeholder="Example: Proof is incomplete. Please upload the signed memo or acknowledged document."
               className="input-field resize-none disabled:cursor-not-allowed disabled:opacity-60"
@@ -292,11 +291,11 @@ export default function ReviewCaseModal({
               leftIcon={
                 <FiXCircle aria-hidden="true" />
               }
-              loading={isRejecting}
+              loading={isReturning}
               disabled={isProcessing}
-              onClick={handleReject}
+              onClick={handleReturn}
             >
-              {isRejecting
+              {isReturning
                 ? "Returning Case..."
                 : "Return Case"}
             </Button>
