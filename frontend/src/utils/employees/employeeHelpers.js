@@ -1,88 +1,63 @@
-export const REQUIRED_DOCUMENTS = [
-  "Resume",
-  "NSO/PSA",
-  "SSS (ID or E1 form)",
-  "Pag-IBIG (ID or MDRF Form)",
-  "PhilHealth (ID or MDF Form)",
-  "Diploma",
-  "Cedula",
-  "Barangay Clearance",
-  "NBI/Police Clearance",
-];
+import { DOCUMENT_OPTIONS } from "../../components/employees/employeeConstants";
 
-export const EXPIRING_DOCUMENTS = [
-  "Barangay Clearance",
-  "NBI/Police Clearance",
-];
+export const REQUIRED_DOCUMENTS = DOCUMENT_OPTIONS.map(({ name }) => name);
+
+export const EXPIRING_DOCUMENTS = DOCUMENT_OPTIONS
+  .filter(({ expirable }) => expirable)
+  .map(({ name }) => name);
 
 export const EMPLOYEE_STATUS_OPTIONS = [
-  {
-    value: "All",
-    label: "All Status",
-  },
-  {
-    value: "Deployed",
-    label: "Deployed",
-  },
-  {
-    value: "Floating / Standby",
-    label: "Floating / Standby",
-  },
-  {
-    value: "Inactive",
-    label: "Inactive",
-  },
+  { value: "All", label: "All Status" },
+  { value: "Deployed", label: "Deployed" },
+  { value: "Floating / Standby", label: "Floating / Standby" },
+  { value: "Inactive", label: "Inactive" },
 ];
 
 export const COMPLIANCE_OPTIONS = [
-  {
-    value: "All",
-    label: "All Compliance",
-  },
-  {
-    value: "Complete",
-    label: "Complete",
-  },
-  {
-    value: "Expiring Soon",
-    label: "Expiring Soon",
-  },
-  {
-    value: "Expired",
-    label: "Expired",
-  },
-  {
-    value: "Incomplete",
-    label: "Incomplete",
-  },
-  {
-    value: "No Data",
-    label: "No Data",
-  },
+  { value: "All", label: "All Compliance" },
+  { value: "Complete", label: "Complete" },
+  { value: "Expiring Soon", label: "Expiring Soon" },
+  { value: "Expired", label: "Expired" },
+  { value: "Incomplete", label: "Incomplete" },
+  { value: "No Data", label: "No Data" },
 ];
 
 export const EMPLOYEE_SORT_OPTIONS = [
-  {
-    value: "latest",
-    label: "Latest Added",
-  },
-  {
-    value: "name-asc",
-    label: "Name A-Z",
-  },
-  {
-    value: "name-desc",
-    label: "Name Z-A",
-  },
-  {
-    value: "expired-first",
-    label: "Expired First",
-  },
-  {
-    value: "expiring-first",
-    label: "Urgent Compliance First",
-  },
+  { value: "latest", label: "Latest Added" },
+  { value: "name-asc", label: "Name A-Z" },
+  { value: "name-desc", label: "Name Z-A" },
+  { value: "expired-first", label: "Expired First" },
+  { value: "expiring-first", label: "Urgent Compliance First" },
 ];
+
+const STATUS_ALIASES = {
+  deployed: "Deployed",
+  floating: "Floating / Standby",
+  standby: "Floating / Standby",
+  "floating / standby": "Floating / Standby",
+  "floating/standby": "Floating / Standby",
+  inactive: "Inactive",
+  archived: "Inactive",
+  terminated: "Inactive",
+};
+
+const COMPLIANCE_PRIORITY = {
+  Expired: 1,
+  "Expiring Soon": 2,
+  Incomplete: 3,
+  Complete: 4,
+  "No Data": 5,
+};
+
+const MILLISECONDS_PER_DAY = 86400000;
+
+function compareNames(employeeA, employeeB) {
+  return String(employeeA?.name || "").localeCompare(
+    String(employeeB?.name || ""),
+    undefined,
+    { sensitivity: "base" }
+  );
+}
 
 export function normalizeText(value) {
   return String(value || "")
@@ -93,42 +68,16 @@ export function normalizeText(value) {
 }
 
 export function normalizeEmployeeStatus(status) {
-  const normalized = String(status || "")
-    .trim()
-    .toLowerCase();
+  const originalStatus = String(status || "").trim();
+  const normalizedStatus = originalStatus.toLowerCase();
 
-  if (!normalized) {
-    return "Floating / Standby";
-  }
+  if (!normalizedStatus) return "Floating / Standby";
 
-  if (normalized === "deployed") {
-    return "Deployed";
-  }
-
-  if (
-    normalized === "floating" ||
-    normalized === "standby" ||
-    normalized === "floating / standby" ||
-    normalized === "floating/standby"
-  ) {
-    return "Floating / Standby";
-  }
-
-  if (
-    normalized === "inactive" ||
-    normalized === "archived" ||
-    normalized === "terminated"
-  ) {
-    return "Inactive";
-  }
-
-  return String(status).trim();
+  return STATUS_ALIASES[normalizedStatus] || originalStatus;
 }
 
 export function getDocumentFile(document) {
-  if (!document || typeof document !== "object") {
-    return "";
-  }
+  if (!document || typeof document !== "object") return "";
 
   return (
     document.filePath ||
@@ -141,9 +90,7 @@ export function getDocumentFile(document) {
 }
 
 export function getDocumentExpirationDate(document) {
-  if (!document || typeof document !== "object") {
-    return "";
-  }
+  if (!document || typeof document !== "object") return "";
 
   return (
     document.expirationDate ||
@@ -157,17 +104,11 @@ export function getDocumentExpirationDate(document) {
 }
 
 export function parseDate(value) {
-  if (!value) {
-    return null;
-  }
+  if (!value) return null;
 
   const parsedDate = new Date(value);
 
-  if (Number.isNaN(parsedDate.getTime())) {
-    return null;
-  }
-
-  return parsedDate;
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
 }
 
 export function startOfDay(date = new Date()) {
@@ -177,53 +118,37 @@ export function startOfDay(date = new Date()) {
   return normalizedDate;
 }
 
-export function getDaysUntilExpiration(expirationValue, referenceDate = new Date()) {
+export function getDaysUntilExpiration(
+  expirationValue,
+  referenceDate = new Date()
+) {
   const expirationDate = parseDate(expirationValue);
 
-  if (!expirationDate) {
-    return null;
-  }
+  if (!expirationDate) return null;
 
   expirationDate.setHours(0, 0, 0, 0);
 
-  const today = startOfDay(referenceDate);
-  const millisecondsPerDay = 1000 * 60 * 60 * 24;
-
   return Math.ceil(
-    (expirationDate.getTime() - today.getTime()) / millisecondsPerDay
+    (expirationDate.getTime() - startOfDay(referenceDate).getTime()) /
+      MILLISECONDS_PER_DAY
   );
 }
 
 export function getDocumentStatus(document, referenceDate = new Date()) {
-  const hasFile = Boolean(getDocumentFile(document));
-
-  if (!document || !hasFile) {
-    return "Missing";
-  }
+  if (!document || !getDocumentFile(document)) return "Missing";
 
   const documentName = String(document.name || "").trim();
 
-  if (!EXPIRING_DOCUMENTS.includes(documentName)) {
-    return "Complete";
-  }
+  if (!EXPIRING_DOCUMENTS.includes(documentName)) return "Complete";
 
-  const expirationValue = getDocumentExpirationDate(document);
   const daysUntilExpiration = getDaysUntilExpiration(
-    expirationValue,
+    getDocumentExpirationDate(document),
     referenceDate
   );
 
-  if (daysUntilExpiration === null) {
-    return "Missing Expiration";
-  }
-
-  if (daysUntilExpiration < 0) {
-    return "Expired";
-  }
-
-  if (daysUntilExpiration <= 30) {
-    return "Expiring Soon";
-  }
+  if (daysUntilExpiration === null) return "Missing Expiration";
+  if (daysUntilExpiration < 0) return "Expired";
+  if (daysUntilExpiration <= 30) return "Expiring Soon";
 
   return "Complete";
 }
@@ -234,61 +159,36 @@ export function getComplianceStatus(documents, referenceDate = new Date()) {
   }
 
   let hasMissing = false;
-  let hasExpired = false;
   let hasExpiringSoon = false;
 
-  REQUIRED_DOCUMENTS.forEach((requiredDocumentName) => {
+  for (const requiredDocumentName of REQUIRED_DOCUMENTS) {
     const document = documents.find(
       (item) =>
         String(item?.name || "").trim().toLowerCase() ===
         requiredDocumentName.toLowerCase()
     );
 
-    const documentStatus = getDocumentStatus(document, referenceDate);
+    const status = getDocumentStatus(document, referenceDate);
 
-    if (documentStatus === "Expired") {
-      hasExpired = true;
-      return;
-    }
+    if (status === "Expired") return "Expired";
 
-    if (documentStatus === "Expiring Soon") {
+    if (status === "Expiring Soon") {
       hasExpiringSoon = true;
-      return;
     }
 
-    if (
-      documentStatus === "Missing" ||
-      documentStatus === "Missing Expiration"
-    ) {
+    if (status === "Missing" || status === "Missing Expiration") {
       hasMissing = true;
     }
-  });
-
-  if (hasExpired) {
-    return "Expired";
   }
 
-  if (hasExpiringSoon) {
-    return "Expiring Soon";
-  }
-
-  if (hasMissing) {
-    return "Incomplete";
-  }
+  if (hasExpiringSoon) return "Expiring Soon";
+  if (hasMissing) return "Incomplete";
 
   return "Complete";
 }
 
 export function getCompliancePriority(status) {
-  const priorityMap = {
-    Expired: 1,
-    "Expiring Soon": 2,
-    Incomplete: 3,
-    Complete: 4,
-    "No Data": 5,
-  };
-
-  return priorityMap[status] || 6;
+  return COMPLIANCE_PRIORITY[status] || 6;
 }
 
 export function getEmployeeCreatedTime(employee) {
@@ -298,17 +198,13 @@ export function getEmployeeCreatedTime(employee) {
     employee?.dateCreated ||
     employee?.date_created;
 
-  const parsedDate = parseDate(dateValue);
-
-  return parsedDate ? parsedDate.getTime() : 0;
+  return parseDate(dateValue)?.getTime() || 0;
 }
 
 export function matchesEmployeeSearch(employee, searchValue) {
   const rawSearch = String(searchValue || "").toLowerCase().trim();
 
-  if (!rawSearch) {
-    return true;
-  }
+  if (!rawSearch) return true;
 
   const normalizedSearch = normalizeText(searchValue);
   const searchTerms = normalizedSearch
@@ -341,78 +237,57 @@ export function filterEmployees(
     includeArchived = false,
   } = {}
 ) {
-  if (!Array.isArray(employees)) {
-    return [];
-  }
+  if (!Array.isArray(employees)) return [];
 
   return employees.filter((employee) => {
-    const isArchived =
-      Boolean(employee?.archived) ||
-      normalizeEmployeeStatus(employee?.status) === "Inactive";
-
-    if (!includeArchived && isArchived) {
-      return false;
-    }
-
-    const matchesSearch = matchesEmployeeSearch(employee, search);
-
     const normalizedStatus = normalizeEmployeeStatus(employee?.status);
+
+    const isArchived =
+      Boolean(employee?.archived) || normalizedStatus === "Inactive";
+
+    if (!includeArchived && isArchived) return false;
+
     const matchesStatus =
-      status === "All" || normalizedStatus === normalizeEmployeeStatus(status);
+      status === "All" ||
+      normalizedStatus === normalizeEmployeeStatus(status);
 
     const complianceStatus = getComplianceStatus(employee?.documents);
+
     const matchesCompliance =
       compliance === "All" || complianceStatus === compliance;
 
-    return matchesSearch && matchesStatus && matchesCompliance;
+    return (
+      matchesEmployeeSearch(employee, search) &&
+      matchesStatus &&
+      matchesCompliance
+    );
   });
 }
 
 export function sortEmployees(employees, sortBy = "latest") {
-  if (!Array.isArray(employees)) {
-    return [];
-  }
+  if (!Array.isArray(employees)) return [];
 
   return [...employees].sort((employeeA, employeeB) => {
-    const nameA = String(employeeA?.name || "");
-    const nameB = String(employeeB?.name || "");
-
-    switch (sortBy) {
-      case "name-asc":
-        return nameA.localeCompare(nameB, undefined, {
-          sensitivity: "base",
-        });
-
-      case "name-desc":
-        return nameB.localeCompare(nameA, undefined, {
-          sensitivity: "base",
-        });
-
-      case "expired-first":
-      case "expiring-first": {
-        const complianceA = getComplianceStatus(employeeA?.documents);
-        const complianceB = getComplianceStatus(employeeB?.documents);
-
-        const priorityDifference =
-          getCompliancePriority(complianceA) -
-          getCompliancePriority(complianceB);
-
-        if (priorityDifference !== 0) {
-          return priorityDifference;
-        }
-
-        return nameA.localeCompare(nameB, undefined, {
-          sensitivity: "base",
-        });
-      }
-
-      case "latest":
-      default:
-        return (
-          getEmployeeCreatedTime(employeeB) -
-          getEmployeeCreatedTime(employeeA)
-        );
+    if (sortBy === "name-asc") {
+      return compareNames(employeeA, employeeB);
     }
+
+    if (sortBy === "name-desc") {
+      return compareNames(employeeB, employeeA);
+    }
+
+    if (sortBy === "expired-first" || sortBy === "expiring-first") {
+      const priorityDifference =
+        getCompliancePriority(getComplianceStatus(employeeA?.documents)) -
+        getCompliancePriority(getComplianceStatus(employeeB?.documents));
+
+      return priorityDifference || compareNames(employeeA, employeeB);
+    }
+
+    return (
+      getEmployeeCreatedTime(employeeB) -
+      getEmployeeCreatedTime(employeeA)
+    );
   });
 }
 
@@ -426,14 +301,15 @@ export function getFilteredAndSortedEmployees(
     includeArchived = false,
   } = {}
 ) {
-  const filteredEmployees = filterEmployees(employees, {
-    search,
-    status,
-    compliance,
-    includeArchived,
-  });
-
-  return sortEmployees(filteredEmployees, sortBy);
+  return sortEmployees(
+    filterEmployees(employees, {
+      search,
+      status,
+      compliance,
+      includeArchived,
+    }),
+    sortBy
+  );
 }
 
 export function generateEmployeeId(employees, prefix = "EMP") {
@@ -442,16 +318,17 @@ export function generateEmployeeId(employees, prefix = "EMP") {
   }
 
   const employeeNumbers = employees
-    .map((employee) => {
-      const rawId = String(employee?.id || "");
-      const numericValue = rawId.replace(/\D/g, "");
+    .map((employee) =>
+      Number.parseInt(
+        String(employee?.id || "").replace(/\D/g, ""),
+        10
+      )
+    )
+    .filter(Number.isFinite);
 
-      return Number.parseInt(numericValue, 10);
-    })
-    .filter((number) => Number.isFinite(number));
-
-  const nextNumber =
-    employeeNumbers.length > 0 ? Math.max(...employeeNumbers) + 1 : 1;
+  const nextNumber = employeeNumbers.length
+    ? Math.max(...employeeNumbers) + 1
+    : 1;
 
   return `${prefix}${String(nextNumber).padStart(3, "0")}`;
 }

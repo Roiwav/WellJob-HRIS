@@ -1,15 +1,16 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import axios from "axios";
 import {
   FiAlertTriangle,
   FiInfo,
   FiUser,
 } from "react-icons/fi";
-import axios from "axios";
+
+import useEmployeeForm from "../../hooks/employees/useEmployeeForm";
+import {
+  EMPLOYEE_API_URL,
+  buildEmployeeFormData,
+  getEmployeeApiError,
+} from "../../utils/employees/employeeFormHelpers";
 
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
@@ -17,31 +18,23 @@ import Dialog from "../ui/Dialog";
 import EmployeeFormFields from "./EmployeeFormFields";
 import EmployeeDocumentsSection from "./EmployeeDocumentsSection";
 import EmployeeReviewDialog from "./EmployeeReviewDialog";
-
 import {
   StatusPill,
   SummaryRow,
 } from "./EmployeeComponents";
-
 import {
-  COMPANY_OPTIONS,
   DOCUMENT_OPTIONS,
   toProperName,
 } from "./employeeConstants";
 
-import {
-  EMPLOYEE_API_URL,
-  INITIAL_EMPLOYEE_FORM_ERRORS,
-  buildEmployeeFormData,
-  calculateEmployeeFormCompletion,
-  createInitialEmployeeFormData,
-  findDuplicateEmployee,
-  getCompletedDocuments,
-  getComplianceReviewWarning,
-  getEmployeeApiError,
-  validateEmployeeDocumentFile,
-  validateEmployeeForm,
-} from "../../utils/employees/employeeFormHelpers";
+function getEmployeeId(employee) {
+  return String(
+    employee?.id ||
+      employee?.employeeId ||
+      employee?.employee_id ||
+      ""
+  );
+}
 
 export default function EditEmployeeModal({
   onClose,
@@ -49,402 +42,56 @@ export default function EditEmployeeModal({
   employees = [],
   onSaveSuccess,
 }) {
-  const employeeId = String(
-    employeeToEdit?.id ||
-      employeeToEdit?.employeeId ||
-      employeeToEdit?.employee_id ||
-      ""
-  );
-
-  const [formData, setFormData] = useState(() =>
-    createInitialEmployeeFormData(employeeToEdit)
-  );
-
-  const [errors, setErrors] = useState(() => ({
-    ...INITIAL_EMPLOYEE_FORM_ERRORS,
-    documents: {},
-  }));
-
-  const [showReview, setShowReview] = useState(false);
-  const [showDocuments, setShowDocuments] = useState(false);
-  const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
-
-  const [filteredCompanies, setFilteredCompanies] =
-    useState(COMPANY_OPTIONS);
-
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [dragTargetDocument, setDragTargetDocument] = useState("");
-
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-
-  useEffect(() => {
-    setFormData(createInitialEmployeeFormData(employeeToEdit));
-
-    setErrors({
-      ...INITIAL_EMPLOYEE_FORM_ERRORS,
-      documents: {},
-    });
-
-    setShowReview(false);
-    setShowDocuments(false);
-    setDuplicateConfirmed(false);
-    setFilteredCompanies(COMPANY_OPTIONS);
-    setShowSuggestions(false);
-    setDragTargetDocument("");
-    setIsSaving(false);
-    setSaveError("");
-  }, [employeeToEdit]);
-
-  const duplicateEmployee = useMemo(
-    () =>
-      findDuplicateEmployee({
-        employees,
-        employeeName: formData.name,
-        excludedEmployeeId: employeeId,
-      }),
-    [employeeId, employees, formData.name]
-  );
-
-  const completedDocuments = useMemo(
-    () => getCompletedDocuments(formData.documents),
-    [formData.documents]
-  );
-
-  const completion = useMemo(
-    () => calculateEmployeeFormCompletion(formData),
-    [formData]
-  );
-
-  const complianceWarning = useMemo(
-    () => getComplianceReviewWarning(formData),
-    [formData]
-  );
-
-  const remainingDocuments = Math.max(
-    DOCUMENT_OPTIONS.length - completedDocuments.length,
-    0
-  );
-
-  const clearFieldError = useCallback((fieldName) => {
-    setErrors((currentErrors) => ({
-      ...currentErrors,
-      [fieldName]: "",
-    }));
-  }, []);
-
-  const clearDocumentError = useCallback((documentName) => {
-    setErrors((currentErrors) => ({
-      ...currentErrors,
-      documents: {
-        ...currentErrors.documents,
-        [documentName]: "",
-        [`${documentName}_file`]: "",
-        general: "",
-      },
-    }));
-  }, []);
-
-  const handleChange = useCallback(
-    (event) => {
-      const { name, value } = event.target;
-
-      setSaveError("");
-
-      if (name === "status") {
-        const nextStatusIsDeployed = value === "Deployed";
-
-        setFormData((currentData) => ({
-          ...currentData,
-          status: value,
-          company: nextStatusIsDeployed
-            ? currentData.company
-            : "",
-          contractStart: nextStatusIsDeployed
-            ? currentData.contractStart
-            : "",
-        }));
-
-        setErrors((currentErrors) => ({
-          ...currentErrors,
-          company: "",
-          contractStart: "",
-        }));
-
-        setFilteredCompanies(COMPANY_OPTIONS);
-        setShowSuggestions(false);
-        return;
-      }
-
-      setFormData((currentData) => ({
-        ...currentData,
-        [name]: value,
-      }));
-
-      if (name === "name") {
-        setDuplicateConfirmed(false);
-
-        setErrors((currentErrors) => ({
-          ...currentErrors,
-          name: "",
-          duplicateConfirm: "",
-        }));
-
-        return;
-      }
-
-      if (name === "company") {
-        const normalizedValue = value.toLowerCase();
-
-        setFilteredCompanies(
-          COMPANY_OPTIONS.filter((company) =>
-            company.toLowerCase().includes(normalizedValue)
-          )
-        );
-
-        setShowSuggestions(true);
-      }
-
-      clearFieldError(name);
-    },
-    [clearFieldError]
-  );
-
-  const handleNameBlur = useCallback(() => {
-    setFormData((currentData) => ({
-      ...currentData,
-      name: toProperName(currentData.name),
-    }));
-  }, []);
-
-  const handleCompanyFocus = useCallback(() => {
-    const normalizedCompany = String(
-      formData.company || ""
-    ).toLowerCase();
-
-    setFilteredCompanies(
-      COMPANY_OPTIONS.filter((company) =>
-        company.toLowerCase().includes(normalizedCompany)
-      )
-    );
-
-    setShowSuggestions(true);
-  }, [formData.company]);
-
-  const handleCompanyBlur = useCallback(() => {
-    window.setTimeout(() => {
-      setShowSuggestions(false);
-    }, 150);
-  }, []);
-
-  const handleCompanySelect = useCallback((company) => {
-    setFormData((currentData) => ({
-      ...currentData,
-      company,
-    }));
-
-    setErrors((currentErrors) => ({
-      ...currentErrors,
-      company: "",
-    }));
-
-    setFilteredCompanies(
-      COMPANY_OPTIONS.filter((option) =>
-        option.toLowerCase().includes(company.toLowerCase())
-      )
-    );
-
-    setShowSuggestions(false);
-    setSaveError("");
-  }, []);
-
-  const handleDuplicateConfirmChange = useCallback((checked) => {
-    setDuplicateConfirmed(checked);
-
-    setErrors((currentErrors) => ({
-      ...currentErrors,
-      duplicateConfirm: "",
-    }));
-  }, []);
-
-  const handleDocumentCheck = useCallback(
-    (documentName) => {
-      setFormData((currentData) => ({
-        ...currentData,
-        documents: currentData.documents.map((document) => {
-          if (document.name !== documentName) {
-            return document;
-          }
-
-          const nextChecked = !document.checked;
-
-          return {
-            ...document,
-            checked: nextChecked,
-            expirationDate: nextChecked
-              ? document.expirationDate
-              : "",
-            file: nextChecked ? document.file : null,
-            filePath: nextChecked ? document.filePath : "",
-          };
-        }),
-      }));
-
-      clearDocumentError(documentName);
-      setSaveError("");
-    },
-    [clearDocumentError]
-  );
-
-  const handleExpirationChange = useCallback(
-    (documentName, expirationDate) => {
-      setFormData((currentData) => ({
-        ...currentData,
-        documents: currentData.documents.map((document) =>
-          document.name === documentName
-            ? {
-                ...document,
-                expirationDate,
-              }
-            : document
-        ),
-      }));
-
-      clearDocumentError(documentName);
-      setSaveError("");
-    },
-    [clearDocumentError]
-  );
-
-  const handleFileSelect = useCallback(
-    (documentName, file) => {
-      if (!file) {
-        return;
-      }
-
-      const validationError =
-        validateEmployeeDocumentFile(file);
-
-      if (validationError) {
-        setErrors((currentErrors) => ({
-          ...currentErrors,
-          documents: {
-            ...currentErrors.documents,
-            [`${documentName}_file`]: validationError,
-          },
-        }));
-
-        return;
-      }
-
-      setFormData((currentData) => ({
-        ...currentData,
-        documents: currentData.documents.map((document) =>
-          document.name === documentName
-            ? {
-                ...document,
-                checked: true,
-                file,
-                filePath: "",
-              }
-            : document
-        ),
-      }));
-
-      clearDocumentError(documentName);
-      setSaveError("");
-    },
-    [clearDocumentError]
-  );
-
-  const handleDragEnter = useCallback((event, documentName) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    setDragTargetDocument(documentName);
-  }, []);
-
-  const handleDragOver = useCallback((event, documentName) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    setDragTargetDocument(documentName);
-  }, []);
-
-  const handleDragLeave = useCallback((event) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const currentTarget = event.currentTarget;
-    const relatedTarget = event.relatedTarget;
-
-    if (
-      !relatedTarget ||
-      !currentTarget.contains(relatedTarget)
-    ) {
-      setDragTargetDocument("");
-    }
-  }, []);
-
-  const handleFileDrop = useCallback(
-    (event, documentName) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      setDragTargetDocument("");
-
-      const file = event.dataTransfer?.files?.[0];
-
-      if (!file) {
-        return;
-      }
-
-      handleFileSelect(documentName, file);
-    },
-    [handleFileSelect]
-  );
-
-  const handleSubmit = useCallback(
-    (event) => {
-      event.preventDefault();
-      setSaveError("");
-
-      const validationResult = validateEmployeeForm({
-        formData,
-        employees,
-        employeeId,
-        excludedEmployeeId: employeeId,
-        duplicateEmployee,
-        duplicateConfirmed,
-      });
-
-      setErrors(validationResult.errors);
-
-      if (!validationResult.isValid) {
-        if (
-          Object.keys(validationResult.errors.documents).length > 0
-        ) {
-          setShowDocuments(true);
-        }
-
-        return;
-      }
-
-      setShowReview(true);
-    },
-    [
-      duplicateConfirmed,
-      duplicateEmployee,
-      employeeId,
-      employees,
-      formData,
-    ]
-  );
-
-  const handleConfirmUpdate = useCallback(async () => {
-    if (isSaving || !employeeId) {
-      return;
-    }
+  const employeeId = getEmployeeId(employeeToEdit);
+
+  const {
+    formData,
+    errors,
+    showReview,
+    showDocuments,
+    duplicateConfirmed,
+    duplicateEmployee,
+    filteredCompanies,
+    showSuggestions,
+    dragTargetDocument,
+    completedDocuments,
+    completion,
+    complianceWarning,
+    remainingDocuments,
+    isSaving,
+    saveError,
+    setIsSaving,
+    setSaveError,
+    setShowReview,
+    handleChange,
+    handleNameBlur,
+    handleCompanyFocus,
+    handleCompanyBlur,
+    handleCompanySelect,
+    handleDuplicateConfirmChange,
+    handleDocumentCheck,
+    handleExpirationChange,
+    handleFileSelect,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleFileDrop,
+    handleToggleDocuments,
+    handleSubmit,
+    handleCloseReview,
+  } = useEmployeeForm({
+    initialEmployee: employeeToEdit,
+    employeeId,
+    employees,
+  });
+
+  const handleClose = () => {
+    if (isSaving || showReview) return;
+    onClose?.();
+  };
+
+  const handleConfirmUpdate = async () => {
+    if (isSaving || !employeeId) return;
 
     try {
       setIsSaving(true);
@@ -477,29 +124,7 @@ export default function EditEmployeeModal({
     } finally {
       setIsSaving(false);
     }
-  }, [
-    employeeId,
-    formData,
-    isSaving,
-    onClose,
-    onSaveSuccess,
-  ]);
-
-  const handleClose = useCallback(() => {
-    if (isSaving || showReview) {
-      return;
-    }
-
-    onClose?.();
-  }, [isSaving, onClose, showReview]);
-
-  const handleCloseReview = useCallback(() => {
-    if (isSaving) {
-      return;
-    }
-
-    setShowReview(false);
-  }, [isSaving]);
+  };
 
   return (
     <>
@@ -560,7 +185,9 @@ export default function EditEmployeeModal({
 
               <div className="mt-5 space-y-3 text-sm">
                 <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
-                  <p className="font-bold">Employee ID</p>
+                  <p className="font-bold">
+                    Employee ID
+                  </p>
 
                   <p className="mt-1 break-all text-white/75">
                     {employeeId || "-"}
@@ -568,7 +195,9 @@ export default function EditEmployeeModal({
                 </div>
 
                 <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
-                  <p className="font-bold">Complete Documents</p>
+                  <p className="font-bold">
+                    Complete Documents
+                  </p>
 
                   <p className="mt-1 text-white/75">
                     {completedDocuments.length}/{DOCUMENT_OPTIONS.length}
@@ -726,9 +355,7 @@ export default function EditEmployeeModal({
                     expanded={showDocuments}
                     disabled={isSaving}
                     dragTargetDocument={dragTargetDocument}
-                    onToggle={() =>
-                      setShowDocuments((currentValue) => !currentValue)
-                    }
+                    onToggle={handleToggleDocuments}
                     onDocumentCheck={handleDocumentCheck}
                     onExpirationChange={handleExpirationChange}
                     onFileSelect={handleFileSelect}

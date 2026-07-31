@@ -25,10 +25,6 @@ const SearchInput = forwardRef(function SearchInput(
   const inputId = id || generatedId;
   const hasValue = String(value || "").length > 0;
 
-  const handleChange = (event) => {
-    onChange?.(event);
-  };
-
   const handleClear = () => {
     if (disabled) return;
 
@@ -47,10 +43,7 @@ const SearchInput = forwardRef(function SearchInput(
 
   return (
     <div
-      className={[
-        "min-w-0",
-        containerClassName,
-      ]
+      className={["min-w-0", containerClassName]
         .filter(Boolean)
         .join(" ")}
     >
@@ -64,10 +57,7 @@ const SearchInput = forwardRef(function SearchInput(
       )}
 
       <div
-        className={[
-          "relative min-w-0",
-          className,
-        ]
+        className={["relative min-w-0", className]
           .filter(Boolean)
           .join(" ")}
       >
@@ -80,9 +70,10 @@ const SearchInput = forwardRef(function SearchInput(
           ref={ref}
           id={inputId}
           name={name}
-          type="search"
+          type="text"
+          role="searchbox"
           value={value}
-          onChange={handleChange}
+          onChange={onChange}
           placeholder={placeholder}
           disabled={disabled}
           autoComplete={autoComplete}

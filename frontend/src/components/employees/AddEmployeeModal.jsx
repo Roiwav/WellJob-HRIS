@@ -1,46 +1,31 @@
-import {
-  useCallback,
-  useMemo,
-  useState,
-} from "react";
+import axios from "axios";
 import {
   FiAlertTriangle,
   FiInfo,
   FiUser,
 } from "react-icons/fi";
-import axios from "axios";
+
+import useEmployeeForm from "../../hooks/employees/useEmployeeForm";
+import {
+  EMPLOYEE_API_URL,
+  buildEmployeeFormData,
+  getEmployeeApiError,
+} from "../../utils/employees/employeeFormHelpers";
 
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
 
-import EmployeeFormFields from "./EmployeeFormFields";
 import EmployeeDocumentsSection from "./EmployeeDocumentsSection";
+import EmployeeFormFields from "./EmployeeFormFields";
 import EmployeeReviewDialog from "./EmployeeReviewDialog";
-
 import {
   StatusPill,
   SummaryRow,
 } from "./EmployeeComponents";
-
 import {
-  COMPANY_OPTIONS,
   DOCUMENT_OPTIONS,
   toProperName,
 } from "./employeeConstants";
-
-import {
-  EMPLOYEE_API_URL,
-  INITIAL_EMPLOYEE_FORM_ERRORS,
-  buildEmployeeFormData,
-  calculateEmployeeFormCompletion,
-  createInitialEmployeeFormData,
-  findDuplicateEmployee,
-  getCompletedDocuments,
-  getComplianceReviewWarning,
-  getEmployeeApiError,
-  validateEmployeeDocumentFile,
-  validateEmployeeForm,
-} from "../../utils/employees/employeeFormHelpers";
 
 export default function AddEmployeeModal({
   onClose,
@@ -48,370 +33,57 @@ export default function AddEmployeeModal({
   employees = [],
   onSaveSuccess,
 }) {
-  const [formData, setFormData] = useState(() =>
-    createInitialEmployeeFormData()
-  );
+  const {
+    formData,
+    errors,
+    showReview,
+    showDocuments,
+    duplicateConfirmed,
+    duplicateEmployee,
+    filteredCompanies,
+    showSuggestions,
+    dragTargetDocument,
+    completedDocuments,
+    completion,
+    complianceWarning,
+    remainingDocuments,
+    isSaving,
+    saveError,
 
-  const [errors, setErrors] = useState(() => ({
-    ...INITIAL_EMPLOYEE_FORM_ERRORS,
-    documents: {},
-  }));
+    setIsSaving,
+    setSaveError,
+    setShowReview,
 
-  const [showReview, setShowReview] = useState(false);
-  const [showDocuments, setShowDocuments] = useState(false);
-  const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
+    handleChange,
+    handleNameBlur,
+    handleCompanyFocus,
+    handleCompanyBlur,
+    handleCompanySelect,
+    handleDuplicateConfirmChange,
+    handleDocumentCheck,
+    handleExpirationChange,
+    handleFileSelect,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleFileDrop,
+    handleToggleDocuments,
+    handleSubmit,
+    handleCloseReview,
+  } = useEmployeeForm({
+    employeeId: generatedId,
+    employees,
+  });
 
-  const [filteredCompanies, setFilteredCompanies] =
-    useState(COMPANY_OPTIONS);
-
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [dragTargetDocument, setDragTargetDocument] = useState("");
-
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-
-  const duplicateEmployee = useMemo(
-    () =>
-      findDuplicateEmployee({
-        employees,
-        employeeName: formData.name,
-      }),
-    [employees, formData.name]
-  );
-
-  const completedDocuments = useMemo(
-    () => getCompletedDocuments(formData.documents),
-    [formData.documents]
-  );
-
-  const completion = useMemo(
-    () => calculateEmployeeFormCompletion(formData),
-    [formData]
-  );
-
-  const complianceWarning = useMemo(
-    () => getComplianceReviewWarning(formData),
-    [formData]
-  );
-
-  const remainingDocuments = Math.max(
-    DOCUMENT_OPTIONS.length - completedDocuments.length,
-    0
-  );
-
-  const clearFieldError = useCallback((fieldName) => {
-    setErrors((currentErrors) => ({
-      ...currentErrors,
-      [fieldName]: "",
-    }));
-  }, []);
-
-  const clearDocumentError = useCallback((documentName) => {
-    setErrors((currentErrors) => ({
-      ...currentErrors,
-      documents: {
-        ...currentErrors.documents,
-        [documentName]: "",
-        [`${documentName}_file`]: "",
-        general: "",
-      },
-    }));
-  }, []);
-
-  const handleChange = useCallback(
-    (event) => {
-      const { name, value } = event.target;
-
-      setSaveError("");
-
-      if (name === "status") {
-        const isNextStatusDeployed = value === "Deployed";
-
-        setFormData((currentData) => ({
-          ...currentData,
-          status: value,
-          company: isNextStatusDeployed
-            ? currentData.company
-            : "",
-          contractStart: isNextStatusDeployed
-            ? currentData.contractStart
-            : "",
-        }));
-
-        setErrors((currentErrors) => ({
-          ...currentErrors,
-          company: "",
-          contractStart: "",
-        }));
-
-        setFilteredCompanies(COMPANY_OPTIONS);
-        setShowSuggestions(false);
-        return;
-      }
-
-      setFormData((currentData) => ({
-        ...currentData,
-        [name]: value,
-      }));
-
-      if (name === "name") {
-        setDuplicateConfirmed(false);
-
-        setErrors((currentErrors) => ({
-          ...currentErrors,
-          name: "",
-          duplicateConfirm: "",
-        }));
-
-        return;
-      }
-
-      if (name === "company") {
-        const normalizedValue = value.toLowerCase();
-
-        setFilteredCompanies(
-          COMPANY_OPTIONS.filter((company) =>
-            company.toLowerCase().includes(normalizedValue)
-          )
-        );
-
-        setShowSuggestions(true);
-      }
-
-      clearFieldError(name);
-    },
-    [clearFieldError]
-  );
-
-  const handleNameBlur = useCallback(() => {
-    setFormData((currentData) => ({
-      ...currentData,
-      name: toProperName(currentData.name),
-    }));
-  }, []);
-
-  const handleCompanyFocus = useCallback(() => {
-    const normalizedCompany = formData.company.toLowerCase();
-
-    setFilteredCompanies(
-      COMPANY_OPTIONS.filter((company) =>
-        company.toLowerCase().includes(normalizedCompany)
-      )
-    );
-
-    setShowSuggestions(true);
-  }, [formData.company]);
-
-  const handleCompanyBlur = useCallback(() => {
-    window.setTimeout(() => {
-      setShowSuggestions(false);
-    }, 150);
-  }, []);
-
-  const handleCompanySelect = useCallback((company) => {
-    setFormData((currentData) => ({
-      ...currentData,
-      company,
-    }));
-
-    setErrors((currentErrors) => ({
-      ...currentErrors,
-      company: "",
-    }));
-
-    setFilteredCompanies(
-      COMPANY_OPTIONS.filter((option) =>
-        option.toLowerCase().includes(company.toLowerCase())
-      )
-    );
-
-    setShowSuggestions(false);
-    setSaveError("");
-  }, []);
-
-  const handleDuplicateConfirmChange = useCallback((checked) => {
-    setDuplicateConfirmed(checked);
-
-    setErrors((currentErrors) => ({
-      ...currentErrors,
-      duplicateConfirm: "",
-    }));
-  }, []);
-
-  const handleDocumentCheck = useCallback(
-    (documentName) => {
-      setFormData((currentData) => ({
-        ...currentData,
-        documents: currentData.documents.map((document) => {
-          if (document.name !== documentName) {
-            return document;
-          }
-
-          const nextChecked = !document.checked;
-
-          return {
-            ...document,
-            checked: nextChecked,
-            expirationDate: nextChecked
-              ? document.expirationDate
-              : "",
-            file: nextChecked ? document.file : null,
-            filePath: nextChecked ? document.filePath : "",
-          };
-        }),
-      }));
-
-      clearDocumentError(documentName);
-      setSaveError("");
-    },
-    [clearDocumentError]
-  );
-
-  const handleExpirationChange = useCallback(
-    (documentName, expirationDate) => {
-      setFormData((currentData) => ({
-        ...currentData,
-        documents: currentData.documents.map((document) =>
-          document.name === documentName
-            ? {
-                ...document,
-                expirationDate,
-              }
-            : document
-        ),
-      }));
-
-      clearDocumentError(documentName);
-      setSaveError("");
-    },
-    [clearDocumentError]
-  );
-
-  const handleFileSelect = useCallback(
-    (documentName, file) => {
-      if (!file) {
-        return;
-      }
-
-      const validationError =
-        validateEmployeeDocumentFile(file);
-
-      if (validationError) {
-        setErrors((currentErrors) => ({
-          ...currentErrors,
-          documents: {
-            ...currentErrors.documents,
-            [`${documentName}_file`]: validationError,
-          },
-        }));
-
-        return;
-      }
-
-      setFormData((currentData) => ({
-        ...currentData,
-        documents: currentData.documents.map((document) =>
-          document.name === documentName
-            ? {
-                ...document,
-                checked: true,
-                file,
-                filePath: "",
-              }
-            : document
-        ),
-      }));
-
-      clearDocumentError(documentName);
-      setSaveError("");
-    },
-    [clearDocumentError]
-  );
-
-  const handleDragEnter = useCallback((event, documentName) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    setDragTargetDocument(documentName);
-  }, []);
-
-  const handleDragOver = useCallback((event, documentName) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    setDragTargetDocument(documentName);
-  }, []);
-
-  const handleDragLeave = useCallback((event) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const currentTarget = event.currentTarget;
-    const relatedTarget = event.relatedTarget;
-
-    if (
-      !relatedTarget ||
-      !currentTarget.contains(relatedTarget)
-    ) {
-      setDragTargetDocument("");
+  const handleClose = () => {
+    if (isSaving || showReview) {
+      return;
     }
-  }, []);
 
-  const handleFileDrop = useCallback(
-    (event, documentName) => {
-      event.preventDefault();
-      event.stopPropagation();
+    onClose?.();
+  };
 
-      setDragTargetDocument("");
-
-      const file = event.dataTransfer?.files?.[0];
-
-      if (!file) {
-        return;
-      }
-
-      handleFileSelect(documentName, file);
-    },
-    [handleFileSelect]
-  );
-
-  const handleSubmit = useCallback(
-    (event) => {
-      event.preventDefault();
-      setSaveError("");
-
-      const validationResult = validateEmployeeForm({
-        formData,
-        employees,
-        employeeId: generatedId,
-        duplicateEmployee,
-        duplicateConfirmed,
-      });
-
-      setErrors(validationResult.errors);
-
-      if (!validationResult.isValid) {
-        if (
-          Object.keys(validationResult.errors.documents).length > 0
-        ) {
-          setShowDocuments(true);
-        }
-
-        return;
-      }
-
-      setShowReview(true);
-    },
-    [
-      duplicateConfirmed,
-      duplicateEmployee,
-      employees,
-      formData,
-      generatedId,
-    ]
-  );
-
-  const handleConfirmSave = useCallback(async () => {
+  const handleConfirmSave = async () => {
     if (isSaving) {
       return;
     }
@@ -420,20 +92,34 @@ export default function AddEmployeeModal({
       setIsSaving(true);
       setSaveError("");
 
-      const requestData = buildEmployeeFormData(formData);
-      const employeeName = toProperName(formData.name);
+      const requestData =
+        buildEmployeeFormData(formData);
 
-      await axios.post(EMPLOYEE_API_URL, requestData);
+      const employeeName =
+        toProperName(formData.name);
+
+      await axios.post(
+        EMPLOYEE_API_URL,
+        requestData
+      );
 
       setShowReview(false);
 
-      if (typeof onSaveSuccess === "function") {
-        await onSaveSuccess(employeeName);
+      if (
+        typeof onSaveSuccess ===
+        "function"
+      ) {
+        await onSaveSuccess(
+          employeeName
+        );
       } else {
         onClose?.();
       }
     } catch (error) {
-      console.error("SAVE EMPLOYEE ERROR:", error);
+      console.error(
+        "SAVE EMPLOYEE ERROR:",
+        error
+      );
 
       setSaveError(
         getEmployeeApiError(
@@ -444,23 +130,7 @@ export default function AddEmployeeModal({
     } finally {
       setIsSaving(false);
     }
-  }, [formData, isSaving, onClose, onSaveSuccess]);
-
-  const handleClose = useCallback(() => {
-    if (isSaving || showReview) {
-      return;
-    }
-
-    onClose?.();
-  }, [isSaving, onClose, showReview]);
-
-  const handleCloseReview = useCallback(() => {
-    if (isSaving) {
-      return;
-    }
-
-    setShowReview(false);
-  }, [isSaving]);
+  };
 
   return (
     <>
@@ -485,7 +155,10 @@ export default function AddEmployeeModal({
             <div className="flex min-h-full flex-col">
               <div>
                 <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
-                  <FiUser size={26} aria-hidden="true" />
+                  <FiUser
+                    size={26}
+                    aria-hidden="true"
+                  />
                 </div>
 
                 <h2 className="text-2xl font-extrabold">
@@ -493,44 +166,75 @@ export default function AddEmployeeModal({
                 </h2>
 
                 <p className="mt-3 text-sm leading-6 text-white/75">
-                  Register employee information, verify duplicate names,
-                  and attach compliance documents.
+                  Register employee
+                  information, verify
+                  duplicate names, and
+                  attach compliance
+                  documents.
                 </p>
               </div>
 
               <div className="mt-8 rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
                 <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-white/75">
-                  <span>Completion</span>
-                  <span>{completion}%</span>
+                  <span>
+                    Completion
+                  </span>
+
+                  <span>
+                    {completion}%
+                  </span>
                 </div>
 
                 <div className="h-2 overflow-hidden rounded-full bg-white/15">
                   <div
                     className="h-full rounded-full bg-white transition-all duration-300"
-                    style={{ width: `${completion}%` }}
+                    style={{
+                      width: `${completion}%`,
+                    }}
                   />
                 </div>
 
-                {remainingDocuments > 0 && (
+                {remainingDocuments >
+                  0 && (
                   <p className="mt-3 text-xs text-white/70">
-                    {remainingDocuments} compliance document
-                    {remainingDocuments === 1 ? "" : "s"} remaining.
+                    {
+                      remainingDocuments
+                    }{" "}
+                    compliance document
+                    {remainingDocuments ===
+                    1
+                      ? ""
+                      : "s"}{" "}
+                    remaining.
                   </p>
                 )}
               </div>
 
               <div className="mt-5 space-y-3 text-sm">
                 <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
-                  <p className="font-bold">Employee ID</p>
+                  <p className="font-bold">
+                    Employee ID
+                  </p>
+
                   <p className="mt-1 text-white/75">
-                    {generatedId || "-"}
+                    {generatedId ||
+                      "-"}
                   </p>
                 </div>
 
                 <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
-                  <p className="font-bold">Complete Documents</p>
+                  <p className="font-bold">
+                    Complete Documents
+                  </p>
+
                   <p className="mt-1 text-white/75">
-                    {completedDocuments.length}/{DOCUMENT_OPTIONS.length}
+                    {
+                      completedDocuments.length
+                    }
+                    /
+                    {
+                      DOCUMENT_OPTIONS.length
+                    }
                   </p>
                 </div>
               </div>
@@ -548,9 +252,14 @@ export default function AddEmployeeModal({
 
                   {duplicateEmployee && (
                     <StatusPill
-                      tone={duplicateConfirmed ? "amber" : "red"}
+                      tone={
+                        duplicateConfirmed
+                          ? "amber"
+                          : "red"
+                      }
                     >
                       <FiAlertTriangle aria-hidden="true" />
+
                       {duplicateConfirmed
                         ? "Duplicate Verified"
                         : "Possible Duplicate"}
@@ -563,8 +272,9 @@ export default function AddEmployeeModal({
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Complete the employee information and review it before
-                  saving.
+                  Complete the employee
+                  information and review
+                  it before saving.
                 </p>
               </div>
 
@@ -587,22 +297,46 @@ export default function AddEmployeeModal({
                     <main className="min-w-0">
                       <EmployeeFormFields
                         mode="add"
-                        employeeId={generatedId}
-                        formData={formData}
+                        employeeId={
+                          generatedId
+                        }
+                        formData={
+                          formData
+                        }
                         errors={errors}
-                        duplicateEmployee={duplicateEmployee}
-                        duplicateConfirmed={duplicateConfirmed}
-                        filteredCompanies={filteredCompanies}
-                        showSuggestions={showSuggestions}
-                        disabled={isSaving}
-                        onChange={handleChange}
-                        onNameBlur={handleNameBlur}
+                        duplicateEmployee={
+                          duplicateEmployee
+                        }
+                        duplicateConfirmed={
+                          duplicateConfirmed
+                        }
+                        filteredCompanies={
+                          filteredCompanies
+                        }
+                        showSuggestions={
+                          showSuggestions
+                        }
+                        disabled={
+                          isSaving
+                        }
+                        onChange={
+                          handleChange
+                        }
+                        onNameBlur={
+                          handleNameBlur
+                        }
                         onDuplicateConfirmChange={
                           handleDuplicateConfirmChange
                         }
-                        onCompanyFocus={handleCompanyFocus}
-                        onCompanyBlur={handleCompanyBlur}
-                        onCompanySelect={handleCompanySelect}
+                        onCompanyFocus={
+                          handleCompanyFocus
+                        }
+                        onCompanyBlur={
+                          handleCompanyBlur
+                        }
+                        onCompanySelect={
+                          handleCompanySelect
+                        }
                       />
                     </main>
 
@@ -619,7 +353,8 @@ export default function AddEmployeeModal({
                             </h3>
 
                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                              Live preview before review.
+                              Live preview
+                              before review.
                             </p>
                           </div>
                         </div>
@@ -627,24 +362,35 @@ export default function AddEmployeeModal({
                         <div className="space-y-3 text-sm">
                           <SummaryRow
                             label="Employee ID"
-                            value={generatedId || "-"}
+                            value={
+                              generatedId ||
+                              "-"
+                            }
                           />
 
                           <SummaryRow
                             label="Full Name"
-                            value={toProperName(formData.name) || "-"}
+                            value={
+                              toProperName(
+                                formData.name
+                              ) || "-"
+                            }
                           />
 
                           <SummaryRow
                             label="Status"
-                            value={formData.status}
+                            value={
+                              formData.status
+                            }
                           />
 
                           <SummaryRow
                             label="Company"
                             value={
-                              formData.status === "Deployed"
-                                ? formData.company || "-"
+                              formData.status ===
+                              "Deployed"
+                                ? formData.company ||
+                                  "-"
                                 : "Not Assigned"
                             }
                           />
@@ -652,8 +398,10 @@ export default function AddEmployeeModal({
                           <SummaryRow
                             label="Start Date"
                             value={
-                              formData.status === "Deployed"
-                                ? formData.contractStart || "-"
+                              formData.status ===
+                              "Deployed"
+                                ? formData.contractStart ||
+                                  "-"
                                 : "Not Applicable"
                             }
                           />
@@ -672,29 +420,56 @@ export default function AddEmployeeModal({
                         </div>
 
                         <p className="leading-5">
-                          Verify possible duplicate names through
-                          supporting documents before saving.
+                          Verify possible
+                          duplicate names
+                          through supporting
+                          documents before
+                          saving.
                         </p>
                       </div>
                     </aside>
                   </div>
 
                   <EmployeeDocumentsSection
-                    documents={formData.documents}
-                    errors={errors.documents}
-                    expanded={showDocuments}
-                    disabled={isSaving}
-                    dragTargetDocument={dragTargetDocument}
-                    onToggle={() =>
-                      setShowDocuments((currentValue) => !currentValue)
+                    documents={
+                      formData.documents
                     }
-                    onDocumentCheck={handleDocumentCheck}
-                    onExpirationChange={handleExpirationChange}
-                    onFileSelect={handleFileSelect}
-                    onDragEnter={handleDragEnter}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onFileDrop={handleFileDrop}
+                    errors={
+                      errors.documents
+                    }
+                    expanded={
+                      showDocuments
+                    }
+                    disabled={
+                      isSaving
+                    }
+                    dragTargetDocument={
+                      dragTargetDocument
+                    }
+                    onToggle={
+                      handleToggleDocuments
+                    }
+                    onDocumentCheck={
+                      handleDocumentCheck
+                    }
+                    onExpirationChange={
+                      handleExpirationChange
+                    }
+                    onFileSelect={
+                      handleFileSelect
+                    }
+                    onDragEnter={
+                      handleDragEnter
+                    }
+                    onDragOver={
+                      handleDragOver
+                    }
+                    onDragLeave={
+                      handleDragLeave
+                    }
+                    onFileDrop={
+                      handleFileDrop
+                    }
                   />
                 </div>
               </div>
@@ -725,11 +500,17 @@ export default function AddEmployeeModal({
         mode="add"
         employeeId={generatedId}
         formData={formData}
-        complianceWarning={complianceWarning}
+        complianceWarning={
+          complianceWarning
+        }
         saveError={saveError}
         isSaving={isSaving}
-        onClose={handleCloseReview}
-        onConfirm={handleConfirmSave}
+        onClose={
+          handleCloseReview
+        }
+        onConfirm={
+          handleConfirmSave
+        }
       />
     </>
   );

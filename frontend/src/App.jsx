@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import axios from "axios";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 
 import MainLayout from "./layout/MainLayout";
 
-// PAGES
+// Pages
 import Dashboard from "./pages/Dashboard";
 import Employees from "./pages/Employees";
 import ArchivedEmployees from "./pages/ArchivedEmployees";
@@ -20,14 +23,27 @@ import ChangePassword from "./pages/ChangePassword";
 import SystemConfiguration from "./pages/SystemConfiguration";
 import SystemMaintenance from "./pages/SystemMaintenance";
 
-// AUDIT PAGES
+// Audit pages
 import TechnicalAuditLogs from "./pages/TechnicalAuditLogs";
 import OperationalAuditLogs from "./pages/OperationalAuditLogs";
 
-// AUTH
+// Authentication
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import { ROLES } from "./constants/roles";
+
+const AUTHENTICATED_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.HR_MANAGER,
+  ROLES.HR_STAFF,
+  ROLES.IT_SUPPORT,
+];
+
+const HR_MODULE_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.HR_MANAGER,
+  ROLES.HR_STAFF,
+];
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,7 +69,7 @@ function App() {
         return response;
       },
       (error) => {
-        if (error.response && error.response.status === 503) {
+        if (error?.response?.status === 503) {
           setIsMaintenance(true);
         }
 
@@ -77,81 +93,81 @@ function App() {
         )}
 
         <Routes>
-          {/* PUBLIC */}
+          {/* Public */}
           <Route path="/login" element={<Login />} />
 
-          {/* ALL AUTHENTICATED USERS */}
+          {/* All authenticated users */}
           <Route
             element={
-              <ProtectedRoute
-                allowedRoles={[
-                  ROLES.SUPER_ADMIN,
-                  ROLES.HR_MANAGER,
-                  ROLES.HR_STAFF,
-                  ROLES.IT_SUPPORT,
-                ]}
-              />
+              <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES} />
             }
           >
-            <Route path="/change-password" element={<ChangePassword />} />
+            <Route
+              path="/change-password"
+              element={<ChangePassword />}
+            />
           </Route>
 
-          {/* MAIN LAYOUT */}
+          {/* Main layout */}
           <Route element={<MainLayout />}>
-            {/* DASHBOARD */}
+            {/* Dashboard */}
             <Route
               element={
-                <ProtectedRoute
-                  allowedRoles={[
-                    ROLES.SUPER_ADMIN,
-                    ROLES.HR_MANAGER,
-                    ROLES.HR_STAFF,
-                    ROLES.IT_SUPPORT,
-                  ]}
-                />
+                <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES} />
               }
             >
               <Route path="/" element={<Dashboard />} />
             </Route>
 
-            {/* HR MODULES */}
+            {/* HR modules */}
             <Route
               element={
-                <ProtectedRoute
-                  allowedRoles={[
-                    ROLES.SUPER_ADMIN,
-                    ROLES.HR_MANAGER,
-                    ROLES.HR_STAFF,
-                  ]}
-                />
+                <ProtectedRoute allowedRoles={HR_MODULE_ROLES} />
               }
             >
               <Route path="/employees" element={<Employees />} />
+              <Route path="/deployments" element={<Deployments />} />
+              <Route path="/incidents" element={<Incidents />} />
+              <Route
+                path="/notifications"
+                element={<Notifications />}
+              />
+            </Route>
+
+            {/* HR Manager-only employee archive */}
+            <Route
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.HR_MANAGER]} />
+              }
+            >
               <Route
                 path="/employees/archive"
                 element={<ArchivedEmployees />}
               />
-              <Route path="/deployments" element={<Deployments />} />
-              <Route path="/incidents" element={<Incidents />} />
-              <Route path="/notifications" element={<Notifications />} />
             </Route>
 
             {/* KPI */}
             <Route
               element={
                 <ProtectedRoute
-                  allowedRoles={[ROLES.SUPER_ADMIN, ROLES.HR_MANAGER]}
+                  allowedRoles={[
+                    ROLES.SUPER_ADMIN,
+                    ROLES.HR_MANAGER,
+                  ]}
                 />
               }
             >
               <Route path="/kpi" element={<KPIReports />} />
             </Route>
 
-            {/* IT SUPPORT MODULE */}
+            {/* IT Support module */}
             <Route
-              element={<ProtectedRoute allowedRoles={[ROLES.IT_SUPPORT]} />}
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.IT_SUPPORT]} />
+              }
             >
               <Route path="/settings" element={<Settings />} />
+
               <Route
                 path="/system-maintenance"
                 element={<SystemMaintenance />}
@@ -163,11 +179,17 @@ function App() {
               />
             </Route>
 
-            {/* SUPER ADMIN MODULE */}
+            {/* Super Admin module */}
             <Route
-              element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]} />}
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]} />
+              }
             >
-              <Route path="/super-admin" element={<SuperAdminPortal />} />
+              <Route
+                path="/super-admin"
+                element={<SuperAdminPortal />}
+              />
+
               <Route
                 path="/system-configuration"
                 element={<SystemConfiguration />}
@@ -180,8 +202,11 @@ function App() {
             </Route>
           </Route>
 
-          {/* FALLBACK */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          {/* Fallback */}
+          <Route
+            path="*"
+            element={<Navigate to="/login" replace />}
+          />
         </Routes>
       </AuthProvider>
     </QueryClientProvider>

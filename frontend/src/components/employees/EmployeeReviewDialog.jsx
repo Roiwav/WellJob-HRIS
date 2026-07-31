@@ -1,13 +1,16 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-} from "react";
+import { useEffect, useMemo } from "react";
 import {
   FiAlertTriangle,
   FiCheck,
   FiFileText,
 } from "react-icons/fi";
+
+import {
+  getDocumentFileName,
+  getDocumentPreviewType,
+  getDocumentPreviewUrl,
+  getSelectedDocuments,
+} from "../../utils/employees/employeeFormHelpers";
 
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
@@ -18,18 +21,10 @@ import {
   getDocumentStatus,
   toProperName,
 } from "./employeeConstants";
-
 import {
   ReviewBox,
   StatusPill,
 } from "./EmployeeComponents";
-
-import {
-  getDocumentFileName,
-  getDocumentPreviewType,
-  getDocumentPreviewUrl,
-  getSelectedDocuments,
-} from "../../utils/employees/employeeFormHelpers";
 
 function DocumentPreview({ document }) {
   const previewUrl = useMemo(
@@ -37,19 +32,13 @@ function DocumentPreview({ document }) {
     [document]
   );
 
-  const previewType =
-    getDocumentPreviewType(document);
-
+  const previewType = getDocumentPreviewType(document);
   const fileName =
-    getDocumentFileName(document) ||
-    "Employee document";
+    getDocumentFileName(document) || "Employee document";
 
   useEffect(() => {
     return () => {
-      if (
-        previewUrl &&
-        previewUrl.startsWith("blob:")
-      ) {
+      if (previewUrl?.startsWith("blob:")) {
         URL.revokeObjectURL(previewUrl);
       }
     };
@@ -90,14 +79,8 @@ function DocumentPreview({ document }) {
       rel="noreferrer"
       className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-white/5"
     >
-      <FiFileText
-        className="shrink-0"
-        aria-hidden="true"
-      />
-
-      <span className="truncate">
-        {fileName}
-      </span>
+      <FiFileText aria-hidden="true" className="shrink-0" />
+      <span className="truncate">{fileName}</span>
     </a>
   );
 }
@@ -113,17 +96,13 @@ export default function EmployeeReviewDialog({
   onClose,
   onConfirm,
 }) {
-  const isEditMode =
-    mode === "edit";
+  const isEditMode = mode === "edit";
+  const isDeployed = formData?.status === "Deployed";
 
-  const selectedDocuments = useMemo(() => {
-    return getSelectedDocuments(
-      formData?.documents
-    );
-  }, [formData?.documents]);
-
-  const isDeployed =
-    formData?.status === "Deployed";
+  const selectedDocuments = useMemo(
+    () => getSelectedDocuments(formData?.documents),
+    [formData?.documents]
+  );
 
   const dialogTitle = isEditMode
     ? "Review Employee Update"
@@ -133,33 +112,19 @@ export default function EmployeeReviewDialog({
     ? "Verify all changes before updating the employee record."
     : "Verify all employee information before saving the new record.";
 
-  const confirmLabel = isEditMode
-    ? "Confirm Update"
-    : "Confirm Save";
+  const handleClose = () => {
+    if (!isSaving) onClose?.();
+  };
 
-  const handleClose = useCallback(() => {
-    if (isSaving) {
-      return;
-    }
+  const handleConfirm = () => {
+    if (!isSaving) onConfirm?.();
+  };
 
-    onClose?.();
-  }, [isSaving, onClose]);
-
-  const handleConfirm = useCallback(() => {
-    if (isSaving) {
-      return;
-    }
-
-    onConfirm?.();
-  }, [isSaving, onConfirm]);
-
-  if (!open) {
-    return null;
-  }
+  if (!open) return null;
 
   return (
     <Dialog
-      open={open}
+      open
       onClose={handleClose}
       title={dialogTitle}
       description={dialogDescription}
@@ -189,7 +154,7 @@ export default function EmployeeReviewDialog({
             disabled={isSaving}
             onClick={handleConfirm}
           >
-            {confirmLabel}
+            {isEditMode ? "Confirm Update" : "Confirm Save"}
           </Button>
         </div>
       }
@@ -215,8 +180,8 @@ export default function EmployeeReviewDialog({
           >
             <div className="flex gap-3">
               <FiAlertTriangle
-                className="mt-0.5 shrink-0"
                 aria-hidden="true"
+                className="mt-0.5 shrink-0"
               />
 
               <div className="min-w-0">
@@ -240,17 +205,12 @@ export default function EmployeeReviewDialog({
 
           <ReviewBox
             label="Full Name"
-            value={
-              toProperName(formData?.name) ||
-              "-"
-            }
+            value={toProperName(formData?.name) || "-"}
           />
 
           <ReviewBox
             label="Employment Status"
-            value={
-              formData?.status || "-"
-            }
+            value={formData?.status || "-"}
           />
 
           <ReviewBox
@@ -266,8 +226,7 @@ export default function EmployeeReviewDialog({
             label="Start Date"
             value={
               isDeployed
-                ? formData?.contractStart ||
-                  "-"
+                ? formData?.contractStart || "-"
                 : "Not Applicable"
             }
           />
@@ -295,82 +254,59 @@ export default function EmployeeReviewDialog({
             </div>
           </div>
 
-          {selectedDocuments.length > 0 ? (
+          {selectedDocuments.length ? (
             <div className="space-y-3">
-              {selectedDocuments.map(
-                (document) => {
-                  const masterDocument =
-                    DOCUMENT_OPTIONS.find(
-                      (item) =>
-                        item.name ===
-                        document.name
-                    );
+              {selectedDocuments.map((document) => {
+                const isExpirable = Boolean(document.expirable);
+                const documentStatus = isExpirable
+                  ? getDocumentStatus(document.expirationDate)
+                  : "Permanent";
 
-                  const isExpirable =
-                    Boolean(
-                      masterDocument?.expirable
-                    );
+                const hasMissingDate =
+                  isExpirable && !document.expirationDate;
 
-                  const documentStatus =
-                    isExpirable
-                      ? getDocumentStatus(
-                          document.expirationDate
-                        )
-                      : "Permanent";
+                const isRisky = [
+                  "Expired",
+                  "Expiring Soon",
+                ].includes(documentStatus);
 
-                  const isRisky =
-                    documentStatus ===
-                      "Expired" ||
-                    documentStatus ===
-                      "Expiring Soon";
+                return (
+                  <article
+                    key={document.name}
+                    className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 dark:border-white/10 dark:bg-slate-800"
+                  >
+                    <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+                      <div className="min-w-0">
+                        <p className="break-words font-bold text-gray-900 dark:text-white">
+                          {document.name}
+                        </p>
 
-                  const hasMissingData =
-                    isExpirable &&
-                    !document.expirationDate;
-
-                  return (
-                    <article
-                      key={document.name}
-                      className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 dark:border-white/10 dark:bg-slate-800"
-                    >
-                      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-                        <div className="min-w-0">
-                          <p className="break-words font-bold text-gray-900 dark:text-white">
-                            {document.name}
-                          </p>
-
-                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            {isExpirable
-                              ? `Expires: ${
-                                  document.expirationDate ||
-                                  "-"
-                                }`
-                              : "Permanent document"}
-                          </p>
-                        </div>
-
-                        <StatusPill
-                          tone={
-                            hasMissingData
-                              ? "red"
-                              : isRisky
-                                ? "amber"
-                                : "green"
-                          }
-                        >
-                          {hasMissingData
-                            ? "Missing Date"
-                            : documentStatus}
-                        </StatusPill>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {isExpirable
+                            ? `Expires: ${document.expirationDate || "-"}`
+                            : "Permanent document"}
+                        </p>
                       </div>
 
-                      <DocumentPreview
-                        document={document}
-                      />
-                    </article>
-                  );
-                }
-              )}
+                      <StatusPill
+                        tone={
+                          hasMissingDate
+                            ? "red"
+                            : isRisky
+                              ? "amber"
+                              : "green"
+                        }
+                      >
+                        {hasMissingDate
+                          ? "Missing Date"
+                          : documentStatus}
+                      </StatusPill>
+                    </div>
+
+                    <DocumentPreview document={document} />
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500 dark:border-white/10 dark:bg-slate-800 dark:text-gray-400">

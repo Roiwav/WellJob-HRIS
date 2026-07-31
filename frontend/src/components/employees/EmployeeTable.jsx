@@ -7,31 +7,36 @@ import {
   FiUsers,
 } from "react-icons/fi";
 
-import StatusBadge from "./StatusBadge";
-import ComplianceBadge from "./ComplianceBadge";
-
-import Button from "../ui/Button";
-import IconButton from "../ui/IconButton";
-import EmptyState from "../ui/EmptyState";
-
 import {
   getComplianceStatus as getDefaultComplianceStatus,
   getEmployeeCompany,
   getEmployeeDisplayName,
 } from "../../utils/employees/employeeHelpers";
 
+import Button from "../ui/Button";
+import EmptyState from "../ui/EmptyState";
+import IconButton from "../ui/IconButton";
+
+import ComplianceBadge from "./ComplianceBadge";
+import StatusBadge from "./StatusBadge";
+
+const COMPLIANCE_STATUS_ALIASES = {
+  Complete: "Valid",
+  "No Compliance": "No Data",
+};
+
 function normalizeComplianceStatus(status) {
-  const normalizedStatus = String(status || "").trim();
+  const value = String(status || "").trim();
+  return COMPLIANCE_STATUS_ALIASES[value] || value || "No Data";
+}
 
-  if (normalizedStatus === "Complete") {
-    return "Valid";
-  }
-
-  if (normalizedStatus === "No Compliance") {
-    return "No Data";
-  }
-
-  return normalizedStatus || "No Data";
+function getEmployeeId(employee) {
+  return (
+    employee?.id ||
+    employee?.employeeId ||
+    employee?.employee_id ||
+    "-"
+  );
 }
 
 function getEmployeeKey(employee, index) {
@@ -45,13 +50,15 @@ function getEmployeeKey(employee, index) {
 }
 
 function EmployeeEmptyState({
-  totalRecords = 0,
-  searchQuery = "",
-  hasFilters = false,
+  totalRecords,
+  searchQuery,
+  hasFilters,
   onClearSearch,
   onClearFilters,
 }) {
-  const hasSearch = Boolean(String(searchQuery || "").trim());
+  const search = String(searchQuery || "").trim();
+  const canClearSearch = typeof onClearSearch === "function";
+  const canClearFilters = typeof onClearFilters === "function";
 
   if (totalRecords === 0) {
     return (
@@ -63,19 +70,17 @@ function EmployeeEmptyState({
     );
   }
 
-  if (hasSearch) {
+  if (search) {
     return (
       <div className="space-y-4">
         <EmptyState
           icon="search"
           title="No search results"
-          description={`No employee matched “${String(
-            searchQuery
-          ).trim()}”. Check the spelling or try a different name, employee ID, company, or position.`}
+          description={`No employee matched “${search}”. Check the spelling or try a different name, employee ID, company, or position.`}
         />
 
         <div className="flex flex-wrap justify-center gap-2">
-          {typeof onClearSearch === "function" && (
+          {canClearSearch && (
             <Button
               variant="secondary"
               size="sm"
@@ -86,7 +91,7 @@ function EmployeeEmptyState({
             </Button>
           )}
 
-          {hasFilters && typeof onClearFilters === "function" && (
+          {hasFilters && canClearFilters && (
             <Button
               variant="ghost"
               size="sm"
@@ -110,7 +115,7 @@ function EmployeeEmptyState({
           description="Employee records exist, but none match the selected employment or compliance filters."
         />
 
-        {typeof onClearFilters === "function" && (
+        {canClearFilters && (
           <div className="flex justify-center">
             <Button
               variant="secondary"
@@ -150,23 +155,18 @@ export default function EmployeeTable({
   isHRManager = false,
 }) {
   const safeEmployees = Array.isArray(employees) ? employees : [];
+  const numericTotalRecords = Number(totalRecords);
 
-  const safeTotalRecords = Number.isFinite(Number(totalRecords))
-    ? Number(totalRecords)
+  const safeTotalRecords = Number.isFinite(numericTotalRecords)
+    ? numericTotalRecords
     : safeEmployees.length;
 
-  const resolveComplianceStatus = (documents) => {
-    const resolver =
-      typeof getComplianceStatus === "function"
-        ? getComplianceStatus
-        : getDefaultComplianceStatus;
+  const complianceResolver =
+    typeof getComplianceStatus === "function"
+      ? getComplianceStatus
+      : getDefaultComplianceStatus;
 
-    return normalizeComplianceStatus(resolver(documents));
-  };
-
-  const canEdit =
-    !isSuperAdmin && typeof onEdit === "function";
-
+  const canEdit = !isSuperAdmin && typeof onEdit === "function";
   const canArchive =
     isHRManager &&
     !isSuperAdmin &&
@@ -188,8 +188,7 @@ export default function EmployeeTable({
               aria-hidden="true"
               className="shrink-0 text-indigo-600 dark:text-indigo-400"
             />
-
-            <span>Employee Records</span>
+            Employee Records
           </h2>
 
           <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
@@ -224,23 +223,18 @@ export default function EmployeeTable({
                 <th scope="col" className="px-6 py-4">
                   Employee ID
                 </th>
-
                 <th scope="col" className="px-6 py-4">
                   Full Name
                 </th>
-
                 <th scope="col" className="px-6 py-4">
                   Company
                 </th>
-
                 <th scope="col" className="px-6 py-4">
                   Status
                 </th>
-
                 <th scope="col" className="px-6 py-4">
                   Compliance
                 </th>
-
                 <th scope="col" className="px-6 py-4 text-right">
                   Actions
                 </th>
@@ -249,20 +243,13 @@ export default function EmployeeTable({
 
             <tbody className="divide-y divide-gray-100 dark:divide-white/5">
               {safeEmployees.map((employee, index) => {
-                const employeeName =
-                  getEmployeeDisplayName(employee);
+                const employeeId = getEmployeeId(employee);
+                const employeeName = getEmployeeDisplayName(employee);
+                const employeeCompany = getEmployeeCompany(employee);
 
-                const employeeCompany =
-                  getEmployeeCompany(employee);
-
-                const complianceStatus =
-                  resolveComplianceStatus(employee?.documents);
-
-                const employeeId =
-                  employee?.id ||
-                  employee?.employeeId ||
-                  employee?.employee_id ||
-                  "-";
+                const complianceStatus = normalizeComplianceStatus(
+                  complianceResolver(employee?.documents)
+                );
 
                 return (
                   <tr
@@ -306,17 +293,12 @@ export default function EmployeeTable({
 
                     <td className="px-6 py-4 align-middle">
                       <StatusBadge
-                        status={
-                          employee?.status ||
-                          "Floating / Standby"
-                        }
+                        status={employee?.status || "Floating / Standby"}
                       />
                     </td>
 
                     <td className="px-6 py-4 align-middle">
-                      <ComplianceBadge
-                        status={complianceStatus}
-                      />
+                      <ComplianceBadge status={complianceStatus} />
                     </td>
 
                     <td className="px-6 py-4 align-middle">

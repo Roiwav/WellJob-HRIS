@@ -100,42 +100,48 @@ export default function Navbar({
 
   const username = user?.username || "-";
 
-  useEffect(() => {
-    const currentAlertKey = getAlertKey(popupAlert);
-    const previousAlertKey = previousPopupAlertKeyRef.current;
+useEffect(() => {
+  const currentAlertKey = getAlertKey(popupAlert);
+  const previousAlertKey = previousPopupAlertKeyRef.current;
 
-    if (!currentAlertKey) {
-      previousPopupAlertKeyRef.current = "";
-      return undefined;
-    }
+  if (!currentAlertKey) {
+    previousPopupAlertKeyRef.current = "";
+    return undefined;
+  }
 
-    previousPopupAlertKeyRef.current = currentAlertKey;
+  previousPopupAlertKeyRef.current = currentAlertKey;
 
-    if (currentAlertKey === previousAlertKey || openNotifications) {
-      return undefined;
-    }
+  if (currentAlertKey === previousAlertKey || openNotifications) {
+    return undefined;
+  }
 
+  let secondFrame;
+
+  const firstFrame = window.requestAnimationFrame(() => {
     setAnimateNotificationBell(false);
 
-    const firstFrame = window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        setAnimateNotificationBell(true);
-      });
+    secondFrame = window.requestAnimationFrame(() => {
+      setAnimateNotificationBell(true);
     });
+  });
 
-    if (bellAnimationTimerRef.current) {
-      window.clearTimeout(bellAnimationTimerRef.current);
+  if (bellAnimationTimerRef.current) {
+    window.clearTimeout(bellAnimationTimerRef.current);
+  }
+
+  bellAnimationTimerRef.current = window.setTimeout(() => {
+    setAnimateNotificationBell(false);
+    bellAnimationTimerRef.current = null;
+  }, 2600);
+
+  return () => {
+    window.cancelAnimationFrame(firstFrame);
+
+    if (secondFrame) {
+      window.cancelAnimationFrame(secondFrame);
     }
-
-    bellAnimationTimerRef.current = window.setTimeout(() => {
-      setAnimateNotificationBell(false);
-      bellAnimationTimerRef.current = null;
-    }, 2600);
-
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-    };
-  }, [popupAlert, openNotifications]);
+  };
+}, [popupAlert, openNotifications]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {

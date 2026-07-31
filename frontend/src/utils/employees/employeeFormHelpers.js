@@ -8,6 +8,15 @@ import {
 export const EMPLOYEE_API_URL =
   "http://localhost:5000/api/employees";
 
+export const ALLOWED_DOCUMENT_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "application/pdf",
+];
+
+export const MAX_DOCUMENT_SIZE =
+  5 * 1024 * 1024;
+
 export const INITIAL_EMPLOYEE_FORM_ERRORS = {
   name: "",
   company: "",
@@ -17,13 +26,34 @@ export const INITIAL_EMPLOYEE_FORM_ERRORS = {
   documents: {},
 };
 
-export const ALLOWED_DOCUMENT_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "application/pdf",
-];
+function isFile(value) {
+  return (
+    typeof File !== "undefined" &&
+    value instanceof File
+  );
+}
 
-export const MAX_DOCUMENT_SIZE = 5 * 1024 * 1024;
+function isBlob(value) {
+  return (
+    typeof Blob !== "undefined" &&
+    value instanceof Blob
+  );
+}
+
+function getEmployeeId(employee) {
+  return String(
+    employee?.id ||
+      employee?.employeeId ||
+      employee?.employee_id ||
+      ""
+  );
+}
+
+function normalizeEmployeeId(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
 
 export function getEmployeeApiError(
   error,
@@ -31,6 +61,13 @@ export function getEmployeeApiError(
 ) {
   if (error?.response?.status === 503) {
     return "System is currently under maintenance. Please try again later.";
+  }
+
+  if (
+    error?.code === "ECONNABORTED" ||
+    error?.name === "AbortError"
+  ) {
+    return "The server took too long to respond. Please try again.";
   }
 
   return (
@@ -41,7 +78,9 @@ export function getEmployeeApiError(
   );
 }
 
-export function parseEmployeeDocuments(documents) {
+export function parseEmployeeDocuments(
+  documents
+) {
   if (Array.isArray(documents)) {
     return documents;
   }
@@ -51,18 +90,22 @@ export function parseEmployeeDocuments(documents) {
   }
 
   try {
-    const parsedDocuments = JSON.parse(documents);
-
-    return Array.isArray(parsedDocuments)
-      ? parsedDocuments
+    const parsed = JSON.parse(documents);
+    return Array.isArray(parsed)
+      ? parsed
       : [];
   } catch {
     return [];
   }
 }
 
-export function getExistingDocumentPath(document) {
-  if (!document || typeof document !== "object") {
+export function getExistingDocumentPath(
+  document
+) {
+  if (
+    !document ||
+    typeof document !== "object"
+  ) {
     return "";
   }
 
@@ -76,8 +119,13 @@ export function getExistingDocumentPath(document) {
   );
 }
 
-export function getDocumentExpirationValue(document) {
-  if (!document || typeof document !== "object") {
+export function getDocumentExpirationValue(
+  document
+) {
+  if (
+    !document ||
+    typeof document !== "object"
+  ) {
     return "";
   }
 
@@ -104,53 +152,74 @@ export function normalizeDateInput(value) {
   }
 
   const year = parsedDate.getFullYear();
-  const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
-  const day = String(parsedDate.getDate()).padStart(2, "0");
+  const month = String(
+    parsedDate.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    parsedDate.getDate()
+  ).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
 
-export function createEmployeeDocuments(existingDocuments = []) {
-  const safeDocuments = parseEmployeeDocuments(existingDocuments);
-
-  return DOCUMENT_OPTIONS.map((documentOption) => {
-    const matchedDocument = safeDocuments.find(
-      (document) =>
-        String(document?.name || "")
-          .trim()
-          .toLowerCase() ===
-        documentOption.name.toLowerCase()
+export function createEmployeeDocuments(
+  existingDocuments = []
+) {
+  const currentDocuments =
+    parseEmployeeDocuments(
+      existingDocuments
     );
 
-    const existingFilePath =
-      getExistingDocumentPath(matchedDocument);
+  return DOCUMENT_OPTIONS.map(
+    (option) => {
+      const matchedDocument =
+        currentDocuments.find(
+          (document) =>
+            normalizeName(
+              document?.name
+            ) ===
+            normalizeName(option.name)
+        );
 
-    return {
-      name: documentOption.name,
-      expirable: documentOption.expirable,
-      checked: Boolean(matchedDocument),
-      expirationDate: normalizeDateInput(
-        getDocumentExpirationValue(matchedDocument)
-      ),
-      filePath: existingFilePath,
-      file: null,
-    };
-  });
+      return {
+        name: option.name,
+        expirable: option.expirable,
+        checked: Boolean(
+          matchedDocument
+        ),
+        expirationDate:
+          normalizeDateInput(
+            getDocumentExpirationValue(
+              matchedDocument
+            )
+          ),
+        filePath:
+          getExistingDocumentPath(
+            matchedDocument
+          ),
+        file: null,
+      };
+    }
+  );
 }
 
-export function createInitialEmployeeFormData(employee = null) {
+export function createInitialEmployeeFormData(
+  employee = null
+) {
   if (!employee) {
     return {
       name: "",
       status: "Deployed",
       company: "",
       contractStart: "",
-      documents: createEmployeeDocuments([]),
+      documents:
+        createEmployeeDocuments(),
     };
   }
 
   const status =
-    employee?.status === "Floating / Standby"
+    employee?.status ===
+    "Floating / Standby"
       ? "Floating / Standby"
       : "Deployed";
 
@@ -160,11 +229,16 @@ export function createInitialEmployeeFormData(employee = null) {
       employee?.fullName ||
       employee?.fullname ||
       "",
+
     status,
+
     company:
       status === "Deployed"
-        ? String(employee?.company || "")
+        ? String(
+            employee?.company || ""
+          )
         : "",
+
     contractStart:
       status === "Deployed"
         ? normalizeDateInput(
@@ -174,16 +248,26 @@ export function createInitialEmployeeFormData(employee = null) {
               employee?.deployment_start
           )
         : "",
-    documents: createEmployeeDocuments(employee?.documents),
+
+    documents:
+      createEmployeeDocuments(
+        employee?.documents
+      ),
   };
 }
 
-export function validateEmployeeDocumentFile(file) {
+export function validateEmployeeDocumentFile(
+  file
+) {
   if (!file) {
     return "";
   }
 
-  if (!ALLOWED_DOCUMENT_TYPES.includes(file.type)) {
+  if (
+    !ALLOWED_DOCUMENT_TYPES.includes(
+      file.type
+    )
+  ) {
     return "Only PNG, JPEG, and PDF files are allowed.";
   }
 
@@ -194,35 +278,33 @@ export function validateEmployeeDocumentFile(file) {
   return "";
 }
 
-export function hasDocumentFile(document) {
+export function hasDocumentFile(
+  document
+) {
   return Boolean(
-    document?.file instanceof File ||
+    isFile(document?.file) ||
       document?.filePath ||
       document?.file_path ||
       document?.url
   );
 }
 
-export function isDocumentComplete(document) {
-  if (!document?.checked) {
-    return false;
-  }
-
-  if (!hasDocumentFile(document)) {
-    return false;
-  }
-
-  if (
-    document.expirable &&
-    !document.expirationDate
-  ) {
-    return false;
-  }
-
-  return true;
+export function isDocumentComplete(
+  document
+) {
+  return Boolean(
+    document?.checked &&
+      hasDocumentFile(document) &&
+      (
+        !document.expirable ||
+        document.expirationDate
+      )
+  );
 }
 
-export function getSelectedDocuments(documents = []) {
+export function getSelectedDocuments(
+  documents = []
+) {
   if (!Array.isArray(documents)) {
     return [];
   }
@@ -232,12 +314,16 @@ export function getSelectedDocuments(documents = []) {
   );
 }
 
-export function getCompletedDocuments(documents = []) {
+export function getCompletedDocuments(
+  documents = []
+) {
   if (!Array.isArray(documents)) {
     return [];
   }
 
-  return documents.filter(isDocumentComplete);
+  return documents.filter(
+    isDocumentComplete
+  );
 }
 
 export function findDuplicateEmployee({
@@ -245,7 +331,13 @@ export function findDuplicateEmployee({
   employeeName = "",
   excludedEmployeeId = "",
 }) {
-  const normalizedInput = normalizeName(employeeName);
+  const normalizedInput =
+    normalizeName(employeeName);
+
+  const excludedId =
+    normalizeEmployeeId(
+      excludedEmployeeId
+    );
 
   if (!normalizedInput) {
     return null;
@@ -253,23 +345,22 @@ export function findDuplicateEmployee({
 
   return (
     employees.find((employee) => {
-      const employeeId = String(
-        employee?.id ||
-          employee?.employeeId ||
-          employee?.employee_id ||
-          ""
-      );
+      const employeeId =
+        normalizeEmployeeId(
+          getEmployeeId(employee)
+        );
 
       if (
-        excludedEmployeeId &&
-        employeeId === String(excludedEmployeeId)
+        excludedId &&
+        employeeId === excludedId
       ) {
         return false;
       }
 
       return (
-        normalizeName(employee?.name) ===
-        normalizedInput
+        normalizeName(
+          employee?.name
+        ) === normalizedInput
       );
     }) || null
   );
@@ -280,35 +371,32 @@ export function employeeIdExists({
   employeeId = "",
   excludedEmployeeId = "",
 }) {
-  const normalizedEmployeeId = String(employeeId)
-    .trim()
-    .toLowerCase();
+  const targetId =
+    normalizeEmployeeId(employeeId);
 
-  if (!normalizedEmployeeId) {
+  const excludedId =
+    normalizeEmployeeId(
+      excludedEmployeeId
+    );
+
+  if (!targetId) {
     return false;
   }
 
   return employees.some((employee) => {
-    const currentEmployeeId = String(
-      employee?.id ||
-        employee?.employeeId ||
-        employee?.employee_id ||
-        ""
-    )
-      .trim()
-      .toLowerCase();
+    const currentId =
+      normalizeEmployeeId(
+        getEmployeeId(employee)
+      );
 
     if (
-      excludedEmployeeId &&
-      currentEmployeeId ===
-        String(excludedEmployeeId)
-          .trim()
-          .toLowerCase()
+      excludedId &&
+      currentId === excludedId
     ) {
       return false;
     }
 
-    return currentEmployeeId === normalizedEmployeeId;
+    return currentId === targetId;
   });
 }
 
@@ -320,43 +408,51 @@ export function validateEmployeeForm({
   duplicateEmployee = null,
   duplicateConfirmed = false,
 }) {
-  const nextErrors = {
+  const errors = {
     ...INITIAL_EMPLOYEE_FORM_ERRORS,
     documents: {},
   };
 
-  const trimmedName = String(formData?.name || "")
+  const name = String(
+    formData?.name || ""
+  )
     .trim()
     .replace(/\s+/g, " ");
 
-  const trimmedCompany = String(
+  const company = String(
     formData?.company || ""
   ).trim();
 
   const isDeployed =
     formData?.status === "Deployed";
 
-  if (!trimmedName) {
-    nextErrors.name = "Full name is required.";
+  if (!name) {
+    errors.name =
+      "Full name is required.";
   } else if (
-    !/^[A-Za-zÑñ\s.'-]+$/.test(trimmedName)
+    !/^[A-Za-zÑñ\s.'-]+$/.test(name)
   ) {
-    nextErrors.name =
+    errors.name =
       "Full name may only contain letters, spaces, apostrophes, periods, and hyphens.";
   } else if (
-    trimmedName.split(" ").filter(Boolean).length < 2
+    name
+      .split(" ")
+      .filter(Boolean).length < 2
   ) {
-    nextErrors.name =
+    errors.name =
       "Please enter the employee's first name and last name.";
   }
 
-  if (isDeployed && !trimmedCompany) {
-    nextErrors.company =
+  if (isDeployed && !company) {
+    errors.company =
       "Company assignment is required for deployed employees.";
   }
 
-  if (isDeployed && !formData?.contractStart) {
-    nextErrors.contractStart =
+  if (
+    isDeployed &&
+    !formData?.contractStart
+  ) {
+    errors.contractStart =
       "Deployment start date is required for deployed employees.";
   }
 
@@ -368,7 +464,7 @@ export function validateEmployeeForm({
       excludedEmployeeId,
     })
   ) {
-    nextErrors.duplicateId =
+    errors.duplicateId =
       "This employee ID already exists.";
   }
 
@@ -376,13 +472,16 @@ export function validateEmployeeForm({
     duplicateEmployee &&
     !duplicateConfirmed
   ) {
-    nextErrors.duplicateConfirm =
+    errors.duplicateConfirm =
       "Verify the supporting documents and confirm that this is a different employee.";
   }
 
-  const documents = Array.isArray(formData?.documents)
-    ? formData.documents
-    : [];
+  const documents =
+    Array.isArray(
+      formData?.documents
+    )
+      ? formData.documents
+      : [];
 
   documents.forEach((document) => {
     if (!document?.checked) {
@@ -390,7 +489,7 @@ export function validateEmployeeForm({
     }
 
     if (!hasDocumentFile(document)) {
-      nextErrors.documents[
+      errors.documents[
         `${document.name}_file`
       ] = "Proof file is required.";
     }
@@ -399,7 +498,9 @@ export function validateEmployeeForm({
       document.expirable &&
       !document.expirationDate
     ) {
-      nextErrors.documents[document.name] =
+      errors.documents[
+        document.name
+      ] =
         "Expiration date is required.";
     }
   });
@@ -412,42 +513,58 @@ export function validateEmployeeForm({
     completedDocuments.length <
       MIN_DEPLOYED_DOCUMENTS
   ) {
-    nextErrors.documents.general =
+    errors.documents.general =
       `At least ${MIN_DEPLOYED_DOCUMENTS} complete compliance documents are required for deployed employees.`;
   }
 
-  const hasDocumentErrors = Object.values(
-    nextErrors.documents
-  ).some(Boolean);
+  const hasDocumentErrors =
+    Object.values(
+      errors.documents
+    ).some(Boolean);
 
-  const isValid = !(
-    nextErrors.name ||
-    nextErrors.company ||
-    nextErrors.contractStart ||
-    nextErrors.duplicateId ||
-    nextErrors.duplicateConfirm ||
-    hasDocumentErrors
-  );
+  const isValid = ![
+    errors.name,
+    errors.company,
+    errors.contractStart,
+    errors.duplicateId,
+    errors.duplicateConfirm,
+    hasDocumentErrors,
+  ].some(Boolean);
 
   return {
     isValid,
-    errors: nextErrors,
+    errors,
   };
 }
 
-export function calculateEmployeeFormCompletion(formData) {
-  const documents = Array.isArray(formData?.documents)
-    ? formData.documents
-    : [];
+export function calculateEmployeeFormCompletion(
+  formData
+) {
+  const documents =
+    Array.isArray(
+      formData?.documents
+    )
+      ? formData.documents
+      : [];
 
-  const completedDocuments =
-    getCompletedDocuments(documents);
+  const completedCount =
+    getCompletedDocuments(
+      documents
+    ).length;
 
-  const totalDocuments = DOCUMENT_OPTIONS.length;
+  const totalDocuments =
+    DOCUMENT_OPTIONS.length;
+
+  const isDeployed =
+    formData?.status === "Deployed";
 
   let score = 0;
 
-  if (String(formData?.name || "").trim()) {
+  if (
+    String(
+      formData?.name || ""
+    ).trim()
+  ) {
     score += 25;
   }
 
@@ -455,12 +572,11 @@ export function calculateEmployeeFormCompletion(formData) {
     score += 10;
   }
 
-  const isDeployed =
-    formData?.status === "Deployed";
-
   if (
     !isDeployed ||
-    String(formData?.company || "").trim()
+    String(
+      formData?.company || ""
+    ).trim()
   ) {
     score += 15;
   }
@@ -474,61 +590,81 @@ export function calculateEmployeeFormCompletion(formData) {
 
   if (totalDocuments > 0) {
     score +=
-      (completedDocuments.length /
-        totalDocuments) *
-      40;
+      (
+        completedCount /
+        totalDocuments
+      ) * 40;
   }
 
-  return Math.min(Math.round(score), 100);
+  return Math.min(
+    Math.round(score),
+    100
+  );
 }
 
-export function getComplianceReviewWarning(formData) {
-  const documents = Array.isArray(formData?.documents)
-    ? formData.documents
-    : [];
+export function getComplianceReviewWarning(
+  formData
+) {
+  const documents =
+    Array.isArray(
+      formData?.documents
+    )
+      ? formData.documents
+      : [];
 
-  const completedDocuments =
-    getCompletedDocuments(documents);
+  const completedCount =
+    getCompletedDocuments(
+      documents
+    ).length;
 
   if (
-    formData?.status === "Deployed" &&
-    completedDocuments.length <
+    formData?.status ===
+      "Deployed" &&
+    completedCount <
       MIN_DEPLOYED_DOCUMENTS
   ) {
-    return `Only ${completedDocuments.length}/${DOCUMENT_OPTIONS.length} documents are complete. A minimum of ${MIN_DEPLOYED_DOCUMENTS} complete documents is required for deployed employees.`;
+    return `Only ${completedCount}/${DOCUMENT_OPTIONS.length} documents are complete. A minimum of ${MIN_DEPLOYED_DOCUMENTS} complete documents is required for deployed employees.`;
   }
 
   if (
-    completedDocuments.length <
+    completedCount <
     DOCUMENT_OPTIONS.length
   ) {
-    return `Compliance is incomplete. ${completedDocuments.length}/${DOCUMENT_OPTIONS.length} documents are complete.`;
+    return `Compliance is incomplete. ${completedCount}/${DOCUMENT_OPTIONS.length} documents are complete.`;
   }
 
   return "";
 }
 
-export function buildEmployeeFormData(formData) {
-  const requestData = new FormData();
+export function buildEmployeeFormData(
+  formData
+) {
+  const requestData =
+    new FormData();
 
   const isDeployed =
     formData?.status === "Deployed";
 
   requestData.append(
     "name",
-    toProperName(formData?.name)
+    toProperName(
+      formData?.name
+    )
   );
 
   requestData.append(
     "company",
     isDeployed
-      ? String(formData?.company || "").trim()
+      ? String(
+          formData?.company || ""
+        ).trim()
       : ""
   );
 
   requestData.append(
     "status",
-    formData?.status || "Floating / Standby"
+    formData?.status ||
+      "Floating / Standby"
   );
 
   requestData.append(
@@ -538,120 +674,140 @@ export function buildEmployeeFormData(formData) {
       : ""
   );
 
-  const selectedDocuments = getSelectedDocuments(
+  getSelectedDocuments(
     formData?.documents
-  );
-
-  selectedDocuments.forEach((document, index) => {
-    requestData.append(
-      `documents[${index}][name]`,
-      document.name
-    );
-
-    requestData.append(
-      `documents[${index}][expirationDate]`,
-      document.expirationDate || ""
-    );
-
-    if (document.file instanceof File) {
+  ).forEach(
+    (document, index) => {
       requestData.append(
-        `documents[${index}]`,
-        document.file
+        `documents[${index}][name]`,
+        document.name
       );
-    } else if (document.filePath) {
+
       requestData.append(
-        `documents[${index}][filePath]`,
+        `documents[${index}][expirationDate]`,
+        document.expirationDate ||
+          ""
+      );
+
+      if (isFile(document.file)) {
+        requestData.append(
+          `documents[${index}]`,
+          document.file
+        );
+      } else if (
         document.filePath
-      );
+      ) {
+        requestData.append(
+          `documents[${index}][filePath]`,
+          document.filePath
+        );
+      }
     }
-  });
+  );
 
   return requestData;
 }
 
-export function getDocumentPreviewUrl(document) {
+export function getDocumentPreviewUrl(
+  document
+) {
   if (!document) {
     return "";
   }
 
   if (
-    document.file instanceof File ||
-    document.file instanceof Blob
+    isFile(document.file) ||
+    isBlob(document.file)
   ) {
-    return URL.createObjectURL(document.file);
+    return URL.createObjectURL(
+      document.file
+    );
   }
 
   const filePath =
-    document.filePath ||
-    document.file_path ||
-    document.url ||
-    "";
+    getExistingDocumentPath(
+      document
+    );
 
   if (!filePath) {
     return "";
   }
 
   if (
-    filePath.startsWith("http://") ||
-    filePath.startsWith("https://") ||
-    filePath.startsWith("blob:") ||
-    filePath.startsWith("data:")
+    /^(https?:|blob:|data:)/i.test(
+      filePath
+    )
   ) {
     return filePath;
   }
 
-  const separator = filePath.startsWith("/")
-    ? ""
-    : "/";
+  const separator =
+    filePath.startsWith("/")
+      ? ""
+      : "/";
 
   return `http://localhost:5000${separator}${filePath}`;
 }
 
-export function getDocumentFileName(document) {
-  if (document?.file instanceof File) {
+export function getDocumentFileName(
+  document
+) {
+  if (isFile(document?.file)) {
     return document.file.name;
   }
 
   const filePath =
-    document?.filePath ||
-    document?.file_path ||
-    document?.url ||
-    "";
+    getExistingDocumentPath(
+      document
+    );
 
   if (!filePath) {
     return "";
   }
 
   return (
-    filePath.split("/").pop()?.split("?")[0] ||
+    filePath
+      .replace(/\\/g, "/")
+      .split("/")
+      .pop()
+      ?.split("?")[0] ||
     "Existing document"
   );
 }
 
-export function getDocumentPreviewType(document) {
-  if (document?.file instanceof File) {
-    if (document.file.type.startsWith("image/")) {
+export function getDocumentPreviewType(
+  document
+) {
+  if (isFile(document?.file)) {
+    if (
+      document.file.type.startsWith(
+        "image/"
+      )
+    ) {
       return "image";
     }
 
-    if (document.file.type === "application/pdf") {
+    if (
+      document.file.type ===
+      "application/pdf"
+    ) {
       return "pdf";
     }
 
     return "file";
   }
 
-  const filePath = String(
-    document?.filePath ||
-      document?.file_path ||
-      document?.url ||
-      ""
-  )
-    .toLowerCase()
-    .split("?")[0];
+  const filePath =
+    getExistingDocumentPath(
+      document
+    )
+      .toLowerCase()
+      .split("?")[0];
 
   if (
-    /\.(png|jpe?g|gif|webp|bmp)$/.test(filePath)
+    /\.(png|jpe?g|gif|webp|bmp)$/.test(
+      filePath
+    )
   ) {
     return "image";
   }

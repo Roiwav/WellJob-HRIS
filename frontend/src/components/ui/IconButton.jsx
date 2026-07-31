@@ -35,6 +35,7 @@ function LoadingSpinner() {
 const IconButton = forwardRef(function IconButton(
   {
     icon,
+    children,
     label,
     type = "button",
     variant = "secondary",
@@ -49,8 +50,12 @@ const IconButton = forwardRef(function IconButton(
   ref
 ) {
   const isDisabled = disabled || loading;
-  const variantClass = VARIANT_CLASSES[variant] || VARIANT_CLASSES.secondary;
-  const sizeClass = SIZE_CLASSES[size] || SIZE_CLASSES.md;
+  const variantClass =
+    VARIANT_CLASSES[variant] || VARIANT_CLASSES.secondary;
+  const sizeClass =
+    SIZE_CLASSES[size] || SIZE_CLASSES.md;
+
+  const buttonIcon = icon || children;
 
   const handleClick = (event) => {
     if (isDisabled) {
@@ -77,6 +82,7 @@ const IconButton = forwardRef(function IconButton(
         "dark:focus-visible:ring-offset-slate-950",
         "disabled:cursor-not-allowed disabled:opacity-60",
         "active:scale-[0.96]",
+        "[&>svg]:h-[1em] [&>svg]:w-[1em] [&>svg]:shrink-0",
         variantClass,
         sizeClass,
         className,
@@ -85,7 +91,7 @@ const IconButton = forwardRef(function IconButton(
         .join(" ")}
       {...props}
     >
-      {loading ? <LoadingSpinner /> : icon}
+      {loading ? <LoadingSpinner /> : buttonIcon}
     </button>
   );
 });

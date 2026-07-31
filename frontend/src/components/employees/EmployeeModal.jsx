@@ -12,67 +12,126 @@ import {
   FiX,
 } from "react-icons/fi";
 
+import {
+  getDaysUntilExpiration,
+  normalizeEmployeeStatus,
+  normalizeText,
+} from "../../utils/employees/employeeHelpers";
+import {
+  parseEmployeeDocuments,
+} from "../../utils/employees/employeeFormHelpers";
+
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
 import IconButton from "../ui/IconButton";
 
-const API_BASE = "http://localhost:5000";
-const INCIDENT_API_URL = `${API_BASE}/api/incidents`;
+import {
+  DOCUMENT_OPTIONS,
+  getDocumentStatus as getExpirationStatus,
+} from "./employeeConstants";
 
-const EXPIRABLE_DOCUMENTS = [
-  "Barangay Clearance",
-  "NBI/Police Clearance",
-];
+const API_BASE_URL = "http://localhost:5000";
+const INCIDENT_API_URL = `${API_BASE_URL}/api/incidents`;
 
-function isExpirableDocument(docName) {
-  return EXPIRABLE_DOCUMENTS.includes(docName);
-}
+const EXPIRABLE_DOCUMENT_NAMES = new Set(
+  DOCUMENT_OPTIONS.filter(({ expirable }) => expirable).map(({ name }) => name)
+);
 
-function normalizeText(value) {
-  return String(value || "").trim().toLowerCase();
-}
+const OPEN_INCIDENT_STATUSES = new Set([
+  "Open",
+  "Investigating",
+  "For Review",
+]);
 
-function parseDocuments(documents) {
-  if (typeof documents === "string") {
-    try {
-      const parsed = JSON.parse(documents);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
+const SEVERITY_WEIGHTS = {
+  Critical: 5,
+  Major: 3,
+  Minor: 1,
+};
 
-  return Array.isArray(documents) ? documents : [];
+const STATUS_CLASSES = {
+  Valid:
+    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+  "Expiring Soon":
+    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+  Expired:
+    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+  "No Data":
+    "border border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
+  Incomplete:
+    "border border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/20 dark:text-orange-300",
+  Inactive:
+    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300",
+  Deployed:
+    "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
+  "Floating / Standby":
+    "border border-purple-200 bg-purple-100 text-purple-700 dark:border-purple-500/30 dark:bg-purple-500/20 dark:text-purple-300",
+  Open:
+    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+  Investigating:
+    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+  "For Review":
+    "border border-indigo-200 bg-indigo-100 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/20 dark:text-indigo-300",
+  Closed:
+    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+};
+
+const RISK_CLASSES = {
+  "High Risk":
+    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+  Repeat:
+    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+  Monitor:
+    "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
+  "Low Risk":
+    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+};
+
+const KPI_CLASSES = {
+  "Critical Concern":
+    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+  "Needs Improvement":
+    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+  "Minor Concern":
+    "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
+  "Good Standing":
+    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+};
+
+const RECOMMENDATION_CLASSES = {
+  Retain:
+    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+  "Monitor Employee":
+    "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
+  "Final Warning":
+    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+  "Suspension Review":
+    "border border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/20 dark:text-orange-300",
+  "Termination Review":
+    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+};
+
+function getClassName(classes, value, fallback) {
+  return classes[value] || classes[fallback];
 }
 
 function formatIncidentId(id) {
   if (!id) return "-";
 
   const value = String(id);
+  if (value.startsWith("INC-")) return value;
 
-  if (value.startsWith("INC-")) {
-    return value;
-  }
-
-  const numeric = Number(value);
-
-  if (Number.isNaN(numeric)) {
-    return value;
-  }
-
-  return `INC-${String(numeric).padStart(4, "0")}`;
+  const numericValue = Number(value);
+  return Number.isNaN(numericValue)
+    ? value
+    : `INC-${String(numericValue).padStart(4, "0")}`;
 }
 
-function formatDate(dateString) {
-  if (!dateString) {
-    return "Not Set";
-  }
+function formatDate(value) {
+  if (!value) return "Not Set";
 
-  const date = new Date(dateString);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Invalid date";
-  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Invalid date";
 
   return date.toLocaleDateString("en-PH", {
     year: "numeric",
@@ -81,377 +140,109 @@ function formatDate(dateString) {
   });
 }
 
-function normalizeStatus(status) {
-  const value = normalizeText(status);
+function normalizeIncidentStatus(status) {
+  const value = String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, " ");
 
-  if (value === "resolved" || value === "closed") {
-    return "Closed";
-  }
-
-  if (value === "for_review" || value === "for review") {
-    return "For Review";
-  }
-
-  if (value === "investigating") {
-    return "Investigating";
-  }
+  if (value === "resolved" || value === "closed") return "Closed";
+  if (value === "for review") return "For Review";
+  if (value === "investigating") return "Investigating";
 
   return "Open";
 }
 
-function getDocumentStatus(doc) {
-  if (!doc) {
-    return "No Data";
-  }
-
-  const hasFile = Boolean(
-    doc.file ||
-      doc.filePath ||
-      doc.file_path
-  );
-
-  const isExpirable = isExpirableDocument(doc.name);
-
-  if (!hasFile) {
-    return "No Data";
-  }
-
-  if (!isExpirable) {
-    return "Valid";
-  }
-
-  const expirationDate =
-    doc.expirationDate ||
-    doc.expiration_date;
-
-  if (!expirationDate) {
-    return "No Data";
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const expiration = new Date(expirationDate);
-  expiration.setHours(0, 0, 0, 0);
-
-  if (Number.isNaN(expiration.getTime())) {
-    return "No Data";
-  }
-
-  const differenceInDays = Math.ceil(
-    (expiration.getTime() - today.getTime()) /
-      (1000 * 60 * 60 * 24)
-  );
-
-  if (differenceInDays < 0) {
-    return "Expired";
-  }
-
-  if (differenceInDays <= 30) {
-    return "Expiring Soon";
-  }
-
-  return "Valid";
-}
-
 function getDaysLabel(expirationDate) {
-  if (!expirationDate) {
-    return "No expiration date recorded";
+  const daysRemaining = getDaysUntilExpiration(expirationDate);
+
+  if (daysRemaining === null) {
+    return expirationDate
+      ? "Invalid expiration date"
+      : "No expiration date recorded";
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const expiration = new Date(expirationDate);
-  expiration.setHours(0, 0, 0, 0);
-
-  if (Number.isNaN(expiration.getTime())) {
-    return "Invalid expiration date";
+  if (daysRemaining < 0) {
+    const elapsedDays = Math.abs(daysRemaining);
+    return `Expired ${elapsedDays} day${elapsedDays === 1 ? "" : "s"} ago`;
   }
 
-  const differenceInDays = Math.ceil(
-    (expiration.getTime() - today.getTime()) /
-      (1000 * 60 * 60 * 24)
-  );
+  if (daysRemaining === 0) return "Expires today";
 
-  if (differenceInDays < 0) {
-    const elapsedDays = Math.abs(differenceInDays);
-
-    return `Expired ${elapsedDays} day${
-      elapsedDays === 1 ? "" : "s"
-    } ago`;
-  }
-
-  if (differenceInDays === 0) {
-    return "Expires today";
-  }
-
-  return `Expires in ${differenceInDays} day${
-    differenceInDays === 1 ? "" : "s"
-  }`;
-}
-
-function getStatusClasses(status) {
-  const styles = {
-    Valid:
-      "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
-
-    "Expiring Soon":
-      "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
-    Expired:
-      "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
-
-    "No Data":
-      "border border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
-
-    Incomplete:
-      "border border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/20 dark:text-orange-300",
-
-    Inactive:
-      "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300",
-
-    Deployed:
-      "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
-
-    "Floating / Standby":
-      "border border-purple-200 bg-purple-100 text-purple-700 dark:border-purple-500/30 dark:bg-purple-500/20 dark:text-purple-300",
-
-    Open:
-      "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
-
-    Investigating:
-      "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
-    "For Review":
-      "border border-indigo-200 bg-indigo-100 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/20 dark:text-indigo-300",
-
-    Closed:
-      "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
-  };
-
-  return styles[status] || styles["No Data"];
+  return `Expires in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"}`;
 }
 
 function getOverallCompliance(documents) {
-  if (!documents || documents.length === 0) {
-    return "No Data";
-  }
+  if (!documents.length) return "No Data";
 
-  const statuses = documents.map(
-    (document) => document.status
-  );
+  const statuses = documents.map(({ status }) => status);
 
-  if (statuses.includes("Expired")) {
-    return "Expired";
-  }
-
-  if (statuses.includes("Expiring Soon")) {
-    return "Expiring Soon";
-  }
-
-  if (statuses.includes("No Data")) {
-    return "Incomplete";
-  }
-
-  if (
-    statuses.every(
-      (status) => status === "Valid"
-    )
-  ) {
-    return "Valid";
-  }
+  if (statuses.includes("Expired")) return "Expired";
+  if (statuses.includes("Expiring Soon")) return "Expiring Soon";
+  if (statuses.includes("No Data")) return "Incomplete";
+  if (statuses.every((status) => status === "Valid")) return "Valid";
 
   return "Incomplete";
 }
 
-function getSeverityWeight(severity) {
-  if (severity === "Critical") {
-    return 5;
-  }
-
-  if (severity === "Major") {
-    return 3;
-  }
-
-  if (severity === "Minor") {
-    return 1;
-  }
-
-  return 0;
-}
-
-function getKPILevel(
-  severityScore,
-  totalIncidents
-) {
-  if (severityScore >= 8) {
-    return "Critical Concern";
-  }
-
-  if (severityScore >= 4) {
-    return "Needs Improvement";
-  }
-
-  if (totalIncidents >= 1) {
-    return "Minor Concern";
-  }
+function getKPILevel(severityScore, totalIncidents) {
+  if (severityScore >= 8) return "Critical Concern";
+  if (severityScore >= 4) return "Needs Improvement";
+  if (totalIncidents >= 1) return "Minor Concern";
 
   return "Good Standing";
 }
 
-function getRiskLevel({
-  kpiLevel,
-  totalIncidents,
-  criticalIncidents,
-}) {
-  if (
-    criticalIncidents >= 1 ||
-    kpiLevel === "Critical Concern"
-  ) {
+function getRiskLevel({ kpiLevel, totalIncidents, criticalIncidents }) {
+  if (criticalIncidents >= 1 || kpiLevel === "Critical Concern") {
     return "High Risk";
   }
 
-  if (kpiLevel === "Needs Improvement") {
-    return "Repeat";
-  }
-
-  if (
-    kpiLevel === "Minor Concern" ||
-    totalIncidents >= 1
-  ) {
-    return "Monitor";
-  }
+  if (kpiLevel === "Needs Improvement") return "Repeat";
+  if (kpiLevel === "Minor Concern" || totalIncidents >= 1) return "Monitor";
 
   return "Low Risk";
 }
 
-function getRiskClasses(level) {
-  const styles = {
-    "High Risk":
-      "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
-
-    Repeat:
-      "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
-    Monitor:
-      "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
-
-    "Low Risk":
-      "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
-  };
-
-  return styles[level] || styles["Low Risk"];
-}
-
-function getKPIClasses(level) {
-  const styles = {
-    "Critical Concern":
-      "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
-
-    "Needs Improvement":
-      "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
-    "Minor Concern":
-      "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
-
-    "Good Standing":
-      "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
-  };
-
-  return styles[level] || styles["Good Standing"];
-}
-
-function getRecommendation({
+function getRecommendationDecision({
   totalIncidents,
   criticalIncidents,
   riskLevel,
 }) {
   if (criticalIncidents >= 2) {
-    return "Termination Review";
+    return {
+      recommendation: "Termination Review",
+      reason: `Employee has ${criticalIncidents} critical incident(s), requiring termination review.`,
+    };
   }
 
-  if (
-    criticalIncidents >= 1 ||
-    riskLevel === "High Risk"
-  ) {
-    return "Suspension Review";
+  if (criticalIncidents >= 1 || riskLevel === "High Risk") {
+    return {
+      recommendation: "Suspension Review",
+      reason:
+        "Employee has critical or high-risk incident records requiring suspension review.",
+    };
   }
 
-  if (
-    totalIncidents >= 3 ||
-    riskLevel === "Repeat"
-  ) {
-    return "Final Warning";
+  if (totalIncidents >= 3 || riskLevel === "Repeat") {
+    return {
+      recommendation: "Final Warning",
+      reason:
+        "Employee has repeated violations and should receive final warning.",
+    };
   }
 
-  if (
-    totalIncidents >= 1 ||
-    riskLevel === "Monitor"
-  ) {
-    return "Monitor Employee";
+  if (totalIncidents >= 1 || riskLevel === "Monitor") {
+    return {
+      recommendation: "Monitor Employee",
+      reason: "Employee has recorded violation(s) and should be monitored.",
+    };
   }
 
-  return "Retain";
-}
-
-function getRecommendationReason({
-  totalIncidents,
-  criticalIncidents,
-  riskLevel,
-}) {
-  if (criticalIncidents >= 2) {
-    return `Employee has ${criticalIncidents} critical incident(s), requiring termination review.`;
-  }
-
-  if (
-    criticalIncidents >= 1 ||
-    riskLevel === "High Risk"
-  ) {
-    return "Employee has critical or high-risk incident records requiring suspension review.";
-  }
-
-  if (
-    totalIncidents >= 3 ||
-    riskLevel === "Repeat"
-  ) {
-    return "Employee has repeated violations and should receive final warning.";
-  }
-
-  if (
-    totalIncidents >= 1 ||
-    riskLevel === "Monitor"
-  ) {
-    return "Employee has recorded violation(s) and should be monitored.";
-  }
-
-  return "Employee has no recorded violation and may be retained.";
-}
-
-function getRecommendationClasses(
-  recommendation
-) {
-  const styles = {
-    Retain:
-      "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
-
-    "Monitor Employee":
-      "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
-
-    "Final Warning":
-      "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
-    "Suspension Review":
-      "border border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/20 dark:text-orange-300",
-
-    "Termination Review":
-      "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+  return {
+    recommendation: "Retain",
+    reason: "Employee has no recorded violation and may be retained.",
   };
-
-  return (
-    styles[recommendation] ||
-    styles.Retain
-  );
 }
 
 function getIncidentTimestamp(incident) {
@@ -465,54 +256,47 @@ function getIncidentTimestamp(incident) {
     incident?.created_at ||
     "";
 
-  const timestamp = new Date(
-    dateValue
-  ).getTime();
+  const timestamp = new Date(dateValue).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
 
-  return Number.isNaN(timestamp)
-    ? 0
-    : timestamp;
+function getEmployeeId(employee) {
+  return String(
+    employee?.id || employee?.employeeId || employee?.employee_id || ""
+  );
+}
+
+function getEmployeeName(employee) {
+  return (
+    employee?.name ||
+    employee?.fullName ||
+    employee?.full_name ||
+    "Employee"
+  );
 }
 
 function isSameEmployee(employee, incident) {
-  const employeeId = String(
-    employee?.id ||
-      employee?.employeeId ||
-      employee?.employee_id ||
-      ""
-  );
-
-  const employeeName = normalizeText(
-    employee?.name ||
-      employee?.full_name ||
-      employee?.fullName ||
-      ""
-  );
+  const employeeId = getEmployeeId(employee);
+  const employeeName = normalizeText(getEmployeeName(employee));
 
   const incidentEmployeeId = String(
-    incident?.employeeId ||
-      incident?.employee_id ||
-      incident?.empId ||
+    incident?.employeeId || incident?.employee_id || incident?.empId || ""
+  );
+
+  const incidentEmployeeName = normalizeText(
+    incident?.employee ||
+      incident?.employeeName ||
+      incident?.employee_name ||
       ""
   );
 
-  const incidentEmployeeName =
-    normalizeText(
-      incident?.employee ||
-        incident?.employeeName ||
-        incident?.employee_name ||
-        ""
-    );
-
   return (
-    (Boolean(employeeId) &&
-      employeeId === incidentEmployeeId) ||
-    (Boolean(employeeName) &&
-      employeeName === incidentEmployeeName)
+    (Boolean(employeeId) && employeeId === incidentEmployeeId) ||
+    (Boolean(employeeName) && employeeName === incidentEmployeeName)
   );
 }
 
-function normalizeIncident(incident) {
+function normalizeIncident(incident = {}) {
   const date =
     incident.reportedAt ||
     incident.reported_at ||
@@ -531,54 +315,28 @@ function normalizeIncident(incident) {
 
   return {
     ...incident,
-
     id: incident.id,
-
-    displayId: formatIncidentId(
-      incident.id
-    ),
-
+    displayId: formatIncidentId(incident.id),
     employeeId:
       incident.employeeId ||
       incident.employee_id ||
       incident.empId ||
       incident.employeeID ||
       "",
-
     employee:
       incident.employee ||
       incident.employeeName ||
       incident.employee_name ||
       "Unknown Employee",
-
     violation,
     violationType: violation,
-
-    severity:
-      incident.severity || "Minor",
-
-    status: normalizeStatus(
-      incident.status
-    ),
-
+    severity: incident.severity || "Minor",
+    status: normalizeIncidentStatus(incident.status),
     date,
-
-    reportedAt:
-      incident.reportedAt ||
-      incident.reported_at ||
-      date,
-
-    createdAt:
-      incident.createdAt ||
-      incident.created_at ||
-      date,
-
-    description:
-      incident.description || "",
-
-    recommendation:
-      incident.recommendation || "",
-
+    reportedAt: incident.reportedAt || incident.reported_at || date,
+    createdAt: incident.createdAt || incident.created_at || date,
+    description: incident.description || "",
+    recommendation: incident.recommendation || "",
     sanction:
       incident.sanction ||
       incident.actionTaken ||
@@ -587,132 +345,104 @@ function normalizeIncident(incident) {
   };
 }
 
-function buildDocumentFile(document) {
-  if (document.file?.url) {
-    return document.file;
-  }
+function buildDocumentFile(document = {}) {
+  if (document.file?.url) return document.file;
 
-  const filePath =
+  const rawPath =
     document.filePath ||
     document.file_path ||
-    "";
+    document.url ||
+    (typeof document.file === "string" ? document.file : "");
 
-  if (!filePath) {
-    return null;
-  }
+  if (!rawPath) return null;
 
-  const normalizedPath =
-    filePath.replace(/\\/g, "/");
-
-  const url = normalizedPath.startsWith(
-    "http"
-  )
+  const normalizedPath = String(rawPath).replace(/\\/g, "/");
+  const url = /^(https?:|blob:|data:)/i.test(normalizedPath)
     ? normalizedPath
-    : `${API_BASE}/${normalizedPath}`;
+    : `${API_BASE_URL}${normalizedPath.startsWith("/") ? "" : "/"}${normalizedPath}`;
 
-  const lowerPath =
-    normalizedPath.toLowerCase();
+  const cleanPath = normalizedPath.toLowerCase().split("?")[0];
 
   return {
     url,
-
     name:
       document.fileName ||
       document.file_name ||
+      normalizedPath.split("/").pop()?.split("?")[0] ||
       document.name ||
       "Uploaded file",
-
-    type: lowerPath.endsWith(".pdf")
-      ? "application/pdf"
-      : "image/*",
+    type: cleanPath.endsWith(".pdf") ? "application/pdf" : "image/*",
   };
 }
 
-function getEmployeeStatus(employee) {
+function normalizeDocument(document = {}) {
+  const expirationDate =
+    document.expirationDate || document.expiration_date || "";
+
+  const file = buildDocumentFile(document);
+  const expirable = EXPIRABLE_DOCUMENT_NAMES.has(document.name);
+
+  return {
+    ...document,
+    expirationDate,
+    file,
+    expirable,
+    status: !file
+      ? "No Data"
+      : expirable
+        ? getExpirationStatus(expirationDate)
+        : "Valid",
+  };
+}
+
+function getEmployeeInitials(name) {
   return (
-    employee?.status ||
-    "Floating / Standby"
+    String(name || "")
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "E"
   );
 }
 
-function getEmployeeName(employee) {
-  return (
-    employee?.name ||
-    employee?.fullName ||
-    employee?.full_name ||
-    "Employee"
-  );
+function getSeverityKPILevel(severity) {
+  if (severity === "Critical") return "Critical Concern";
+  if (severity === "Major") return "Needs Improvement";
+  return "Minor Concern";
 }
 
-function getEmployeeId(employee) {
-  return String(
-    employee?.id ||
-      employee?.employeeId ||
-      employee?.employee_id ||
-      ""
-  );
-}
+export default function EmployeeModal({ employee, onClose }) {
+  const [previewFile, setPreviewFile] = useState(null);
+  const [employeeIncidents, setEmployeeIncidents] = useState([]);
+  const [incidentLoading, setIncidentLoading] = useState(false);
+  const [incidentError, setIncidentError] = useState("");
 
-export default function EmployeeModal({
-  employee,
-  onClose,
-}) {
-  const [previewFile, setPreviewFile] =
-    useState(null);
-
-  const [
-    employeeIncidents,
-    setEmployeeIncidents,
-  ] = useState([]);
-
-  const [
-    incidentLoading,
-    setIncidentLoading,
-  ] = useState(false);
-
-  const [
-    incidentError,
-    setIncidentError,
-  ] = useState("");
-
-  const employeeName =
-    getEmployeeName(employee);
-
-  const employeeId =
-    getEmployeeId(employee);
-
-  const employeeStatus =
-    getEmployeeStatus(employee);
+  const employeeName = getEmployeeName(employee);
+  const employeeId = getEmployeeId(employee);
+  const employeeStatus = normalizeEmployeeStatus(employee?.status);
 
   useEffect(() => {
     if (!employee) {
+      setPreviewFile(null);
       setEmployeeIncidents([]);
       setIncidentError("");
       setIncidentLoading(false);
-      setPreviewFile(null);
       return undefined;
     }
 
-    let isMounted = true;
-    const abortController =
-      new AbortController();
+    const controller = new AbortController();
 
-    async function fetchEmployeeIncidents() {
+    async function loadEmployeeIncidents() {
       try {
         setIncidentLoading(true);
         setIncidentError("");
 
-        const response = await fetch(
-          INCIDENT_API_URL,
-          {
-            signal:
-              abortController.signal,
-          }
-        );
+        const response = await fetch(INCIDENT_API_URL, {
+          signal: controller.signal,
+        });
 
-        const data = await response
-          .json()
-          .catch(() => []);
+        const data = await response.json().catch(() => []);
 
         if (!response.ok) {
           throw new Error(
@@ -722,301 +452,154 @@ export default function EmployeeModal({
           );
         }
 
-        const normalized = Array.isArray(data)
-          ? data.map(normalizeIncident)
+        if (controller.signal.aborted) return;
+
+        const incidents = Array.isArray(data)
+          ? data
+              .map(normalizeIncident)
+              .filter((incident) => isSameEmployee(employee, incident))
           : [];
 
-        const matched = normalized.filter(
-          (incident) =>
-            isSameEmployee(
-              employee,
-              incident
-            )
-        );
-
-        if (isMounted) {
-          setEmployeeIncidents(matched);
-        }
+        setEmployeeIncidents(incidents);
       } catch (error) {
-        if (
-          error?.name === "AbortError"
-        ) {
-          return;
-        }
+        if (error?.name === "AbortError") return;
 
-        console.error(
-          "Employee incidents backend fetch failed:",
-          error
-        );
+        console.error("Employee incidents backend fetch failed:", error);
 
-        if (isMounted) {
+        if (!controller.signal.aborted) {
           setIncidentError(
             "Unable to load latest incidents from backend."
           );
-
           setEmployeeIncidents([]);
         }
       } finally {
-        if (isMounted) {
+        if (!controller.signal.aborted) {
           setIncidentLoading(false);
         }
       }
     }
 
-    fetchEmployeeIncidents();
+    void loadEmployeeIncidents();
 
-    return () => {
-      isMounted = false;
-      abortController.abort();
-    };
+    return () => controller.abort();
   }, [employee]);
 
-  const normalizedDocuments = useMemo(
-    () =>
-      parseDocuments(
-        employee?.documents
-      ).map((document) => {
-        const expirationDate =
-          document.expirationDate ||
-          document.expiration_date ||
-          "";
-
-        const file =
-          buildDocumentFile(document);
-
-        return {
-          ...document,
-          expirationDate,
-          file,
-
-          expirable:
-            isExpirableDocument(
-              document.name
-            ),
-
-          status: getDocumentStatus({
-            ...document,
-            expirationDate,
-            file,
-          }),
-        };
-      }),
-    [employee]
-  );
-
-  const overallCompliance =
-    useMemo(
-      () =>
-        getOverallCompliance(
-          normalizedDocuments
-        ),
-      [normalizedDocuments]
+  const documentSummary = useMemo(() => {
+    const documents = parseEmployeeDocuments(employee?.documents).map(
+      normalizeDocument
     );
 
-  const expiringDocuments =
-    useMemo(
-      () =>
-        normalizedDocuments.filter(
-          (document) =>
-            document.status ===
-            "Expiring Soon"
-        ),
-      [normalizedDocuments]
-    );
+    return documents.reduce(
+      (summary, document) => {
+        summary.documents.push(document);
 
-  const expiredDocuments =
-    useMemo(
-      () =>
-        normalizedDocuments.filter(
-          (document) =>
-            document.status ===
-            "Expired"
-        ),
-      [normalizedDocuments]
-    );
+        if (document.status === "Expired") {
+          summary.expired.push(document);
+        } else if (document.status === "Expiring Soon") {
+          summary.expiringSoon.push(document);
+        } else if (document.status === "No Data") {
+          summary.noData.push(document);
+        }
 
-  const noDataDocuments =
-    useMemo(
-      () =>
-        normalizedDocuments.filter(
-          (document) =>
-            document.status ===
-            "No Data"
-        ),
-      [normalizedDocuments]
+        return summary;
+      },
+      {
+        documents: [],
+        expired: [],
+        expiringSoon: [],
+        noData: [],
+      }
     );
+  }, [employee?.documents]);
 
   const incidentSummary = useMemo(() => {
-    const total =
-      employeeIncidents.length;
+    return employeeIncidents.reduce(
+      (summary, incident) => {
+        summary.total += 1;
+        summary.severityScore += SEVERITY_WEIGHTS[incident.severity] || 0;
 
-    const open =
-      employeeIncidents.filter(
-        (incident) =>
-          [
-            "Open",
-            "Investigating",
-            "For Review",
-          ].includes(incident.status)
-      ).length;
+        if (OPEN_INCIDENT_STATUSES.has(incident.status)) {
+          summary.open += 1;
+        }
 
-    const closed =
-      employeeIncidents.filter(
-        (incident) =>
-          incident.status === "Closed"
-      ).length;
+        if (incident.status === "Closed") {
+          summary.closed += 1;
+        }
 
-    const critical =
-      employeeIncidents.filter(
-        (incident) =>
-          incident.severity ===
-          "Critical"
-      ).length;
+        if (incident.severity === "Critical") {
+          summary.critical += 1;
+        }
 
-    const severityScore =
-      employeeIncidents.reduce(
-        (sum, incident) =>
-          sum +
-          getSeverityWeight(
-            incident.severity
-          ),
-        0
-      );
-
-    return {
-      total,
-      open,
-      closed,
-      critical,
-      severityScore,
-    };
+        return summary;
+      },
+      {
+        total: 0,
+        open: 0,
+        closed: 0,
+        critical: 0,
+        severityScore: 0,
+      }
+    );
   }, [employeeIncidents]);
 
-  const kpiLevel = useMemo(
-    () =>
-      getKPILevel(
-        incidentSummary.severityScore,
-        incidentSummary.total
-      ),
-    [
+  const decisionSupport = useMemo(() => {
+    const kpiLevel = getKPILevel(
       incidentSummary.severityScore,
-      incidentSummary.total,
-    ]
-  );
+      incidentSummary.total
+    );
 
-  const riskLevel = useMemo(
-    () =>
-      getRiskLevel({
-        kpiLevel,
-
-        totalIncidents:
-          incidentSummary.total,
-
-        criticalIncidents:
-          incidentSummary.critical,
-      }),
-    [
-      incidentSummary.critical,
-      incidentSummary.total,
+    const riskLevel = getRiskLevel({
       kpiLevel,
-    ]
-  );
+      totalIncidents: incidentSummary.total,
+      criticalIncidents: incidentSummary.critical,
+    });
 
-  const recommendation = useMemo(
-    () =>
-      getRecommendation({
-        totalIncidents:
-          incidentSummary.total,
-
-        criticalIncidents:
-          incidentSummary.critical,
-
+    return {
+      kpiLevel,
+      riskLevel,
+      ...getRecommendationDecision({
+        totalIncidents: incidentSummary.total,
+        criticalIncidents: incidentSummary.critical,
         riskLevel,
       }),
-    [
-      incidentSummary.critical,
-      incidentSummary.total,
-      riskLevel,
-    ]
-  );
-
-  const recommendationReason = useMemo(
-    () =>
-      getRecommendationReason({
-        totalIncidents:
-          incidentSummary.total,
-
-        criticalIncidents:
-          incidentSummary.critical,
-
-        riskLevel,
-      }),
-    [
-      incidentSummary.critical,
-      incidentSummary.total,
-      riskLevel,
-    ]
-  );
+    };
+  }, [incidentSummary]);
 
   const recentIncidents = useMemo(
     () =>
       [...employeeIncidents]
         .sort(
           (first, second) =>
-            getIncidentTimestamp(
-              second
-            ) -
-            getIncidentTimestamp(
-              first
-            )
+            getIncidentTimestamp(second) - getIncidentTimestamp(first)
         )
         .slice(0, 5),
     [employeeIncidents]
   );
 
-  if (!employee) {
-    return null;
-  }
+  if (!employee) return null;
+
+  const { documents, expired, expiringSoon, noData } = documentSummary;
+  const { kpiLevel, riskLevel, recommendation, reason } = decisionSupport;
+  const overallCompliance = getOverallCompliance(documents);
 
   const hasAttentionNeeded =
-    expiredDocuments.length > 0 ||
-    expiringDocuments.length > 0 ||
-    noDataDocuments.length > 0;
+    expired.length > 0 || expiringSoon.length > 0 || noData.length > 0;
 
   const companyDisplay =
-    employeeStatus ===
-      "Floating / Standby" ||
-    employeeStatus === "Inactive"
+    employeeStatus === "Floating / Standby" || employeeStatus === "Inactive"
       ? "Not Assigned"
-      : employee.company ||
-        "Not Assigned";
+      : employee.company || "Not Assigned";
 
-  const employeeInitials =
-    employeeName
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) =>
-        part[0]?.toUpperCase()
-      )
-      .join("") || "E";
-
-  const handleClosePreview = () => {
-    setPreviewFile(null);
-  };
+  const employeeInitials = getEmployeeInitials(employeeName);
 
   const handleCloseEmployee = () => {
-    if (previewFile) {
-      return;
-    }
-
-    onClose?.();
+    if (!previewFile) onClose?.();
   };
 
   return (
     <>
       <Dialog
-        open={Boolean(employee) && !previewFile}
+        open={!previewFile}
         onClose={handleCloseEmployee}
         title={`${employeeName} employee record`}
         description="View employee profile, compliance condition, incident history, and system recommendation."
@@ -1047,80 +630,62 @@ export default function EmployeeModal({
                       {employeeId || "-"}
                     </span>
 
-                    <span
-                      className={[
-                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                        getStatusClasses(
-                          employeeStatus === "Inactive"
-                            ? "Inactive"
-                            : employeeStatus
-                        ),
-                      ].join(" ")}
-                    >
-                      {employeeStatus ===
-                        "Inactive" && (
-                        <FiShield
-                          className="text-sm"
-                          aria-hidden="true"
-                        />
+                    <StatusPill
+                      className={getClassName(
+                        STATUS_CLASSES,
+                        employeeStatus,
+                        "No Data"
                       )}
-
+                      icon={
+                        employeeStatus === "Inactive" ? (
+                          <FiShield aria-hidden="true" />
+                        ) : null
+                      }
+                    >
                       {employeeStatus}
-                    </span>
+                    </StatusPill>
 
-                    <span
-                      className={[
-                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                        getStatusClasses(
+                    <StatusPill
+                      className={getClassName(
+                        STATUS_CLASSES,
+                        overallCompliance,
+                        "No Data"
+                      )}
+                      icon={
+                        ["Expired", "Expiring Soon"].includes(
                           overallCompliance
-                        ),
-                      ].join(" ")}
+                        ) ? (
+                          <FiAlertTriangle aria-hidden="true" />
+                        ) : null
+                      }
                     >
-                      {[
-                        "Expired",
-                        "Expiring Soon",
-                      ].includes(
-                        overallCompliance
-                      ) && (
-                        <FiAlertTriangle
-                          className="text-sm"
-                          aria-hidden="true"
-                        />
+                      Overall Compliance: {overallCompliance}
+                    </StatusPill>
+
+                    <StatusPill
+                      className={getClassName(
+                        RISK_CLASSES,
+                        riskLevel,
+                        "Low Risk"
                       )}
-
-                      Overall Compliance:{" "}
-                      {overallCompliance}
-                    </span>
-
-                    <span
-                      className={[
-                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                        getRiskClasses(
-                          riskLevel
-                        ),
-                      ].join(" ")}
+                      icon={
+                        riskLevel === "High Risk" ? (
+                          <FiAlertTriangle aria-hidden="true" />
+                        ) : null
+                      }
                     >
-                      {riskLevel ===
-                        "High Risk" && (
-                        <FiAlertTriangle
-                          className="text-sm"
-                          aria-hidden="true"
-                        />
-                      )}
-
                       Risk: {riskLevel}
-                    </span>
+                    </StatusPill>
 
-                    <span
-                      className={[
-                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                        getKPIClasses(
-                          kpiLevel
-                        ),
-                      ].join(" ")}
+                    <StatusPill
+                      className={getClassName(
+                        KPI_CLASSES,
+                        kpiLevel,
+                        "Good Standing"
+                      )}
                     >
                       KPI: {kpiLevel}
-                    </span>
+                    </StatusPill>
                   </div>
                 </div>
               </div>
@@ -1139,7 +704,10 @@ export default function EmployeeModal({
 
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-5 text-gray-900 dark:text-white sm:px-6 sm:py-6 lg:px-8">
             {incidentError && (
-              <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              <div
+                role="alert"
+                className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+              >
                 {incidentError}
               </div>
             )}
@@ -1148,56 +716,38 @@ export default function EmployeeModal({
               <div
                 className={[
                   "rounded-2xl border p-5",
-                  expiredDocuments.length > 0
+                  expired.length
                     ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
                     : "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
                 ].join(" ")}
               >
                 <div className="flex items-start gap-3">
                   <FiAlertTriangle
-                    className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300"
-                    size={18}
                     aria-hidden="true"
+                    size={18}
+                    className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300"
                   />
 
                   <div>
                     <p className="font-semibold text-amber-700 dark:text-amber-300">
-                      Compliance Attention
-                      Needed
+                      Compliance Attention Needed
                     </p>
 
                     <div className="mt-1 space-y-1 text-sm text-amber-700/90 dark:text-amber-200">
-                      {expiredDocuments.length >
-                        0 && (
+                      {expired.length > 0 && (
+                        <p>{expired.length} document(s) already expired.</p>
+                      )}
+
+                      {expiringSoon.length > 0 && (
                         <p>
-                          {
-                            expiredDocuments.length
-                          }{" "}
-                          document(s) already
-                          expired.
+                          {expiringSoon.length} document(s) expiring soon.
                         </p>
                       )}
 
-                      {expiringDocuments.length >
-                        0 && (
+                      {noData.length > 0 && (
                         <p>
-                          {
-                            expiringDocuments.length
-                          }{" "}
-                          document(s) expiring
-                          soon.
-                        </p>
-                      )}
-
-                      {noDataDocuments.length >
-                        0 && (
-                        <p>
-                          {
-                            noDataDocuments.length
-                          }{" "}
-                          document(s) missing
-                          proof or expiration
-                          data.
+                          {noData.length} document(s) missing proof or
+                          expiration data.
                         </p>
                       )}
                     </div>
@@ -1207,40 +757,23 @@ export default function EmployeeModal({
             )}
 
             <section>
-              <SectionTitle>
-                Basic Information
-              </SectionTitle>
+              <SectionTitle>Basic Information</SectionTitle>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <InfoBox
-                  icon={
-                    <FiUser
-                      size={16}
-                      aria-hidden="true"
-                    />
-                  }
+                  icon={<FiUser size={16} aria-hidden="true" />}
                   label="Employee Name"
                   value={employeeName}
                 />
 
                 <InfoBox
-                  icon={
-                    <FiShield
-                      size={16}
-                      aria-hidden="true"
-                    />
-                  }
+                  icon={<FiShield size={16} aria-hidden="true" />}
                   label="Employee ID"
                   value={employeeId}
                 />
 
                 <InfoBox
-                  icon={
-                    <FiBriefcase
-                      size={16}
-                      aria-hidden="true"
-                    />
-                  }
+                  icon={<FiBriefcase size={16} aria-hidden="true" />}
                   label="Company Assignment"
                   value={companyDisplay}
                 />
@@ -1248,73 +781,56 @@ export default function EmployeeModal({
             </section>
 
             <section>
-              <SectionTitle>
-                Employment Status
-              </SectionTitle>
+              <SectionTitle>Employment Status</SectionTitle>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <BadgeBox
                   label="Current Status"
                   value={employeeStatus}
-                  className={getStatusClasses(
-                    employeeStatus ===
-                      "Inactive"
-                      ? "Inactive"
-                      : employeeStatus
+                  className={getClassName(
+                    STATUS_CLASSES,
+                    employeeStatus,
+                    "No Data"
                   )}
                 />
 
                 <BadgeBox
                   label="Compliance Summary"
                   value={overallCompliance}
-                  className={getStatusClasses(
-                    overallCompliance
+                  className={getClassName(
+                    STATUS_CLASSES,
+                    overallCompliance,
+                    "No Data"
                   )}
                 />
               </div>
             </section>
 
             <section>
-              <SectionTitle>
-                Incident and KPI Summary
-              </SectionTitle>
+              <SectionTitle>Incident and KPI Summary</SectionTitle>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <StatBox
                   label="Total Incidents"
-                  value={
-                    incidentLoading
-                      ? "..."
-                      : incidentSummary.total
-                  }
+                  value={incidentLoading ? "..." : incidentSummary.total}
                 />
 
                 <StatBox
                   label="Open Cases"
-                  value={
-                    incidentLoading
-                      ? "..."
-                      : incidentSummary.open
-                  }
+                  value={incidentLoading ? "..." : incidentSummary.open}
                   valueClassName="text-red-500"
                 />
 
                 <StatBox
                   label="Closed Cases"
-                  value={
-                    incidentLoading
-                      ? "..."
-                      : incidentSummary.closed
-                  }
+                  value={incidentLoading ? "..." : incidentSummary.closed}
                   valueClassName="text-green-500"
                 />
 
                 <StatBox
                   label="Severity Score"
                   value={
-                    incidentLoading
-                      ? "..."
-                      : incidentSummary.severityScore
+                    incidentLoading ? "..." : incidentSummary.severityScore
                   }
                   valueClassName="text-indigo-500"
                 />
@@ -1324,367 +840,268 @@ export default function EmployeeModal({
                     Risk Level
                   </p>
 
-                  <span
-                    className={[
-                      "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                      getRiskClasses(
-                        riskLevel
-                      ),
-                    ].join(" ")}
-                  >
-                    {riskLevel ===
-                      "High Risk" && (
-                      <FiAlertTriangle
-                        className="text-sm"
-                        aria-hidden="true"
-                      />
+                  <StatusPill
+                    className={getClassName(
+                      RISK_CLASSES,
+                      riskLevel,
+                      "Low Risk"
                     )}
-
+                    icon={
+                      riskLevel === "High Risk" ? (
+                        <FiAlertTriangle aria-hidden="true" />
+                      ) : null
+                    }
+                  >
                     {riskLevel}
-                  </span>
+                  </StatusPill>
                 </div>
               </div>
             </section>
 
             <section>
-              <SectionTitle>
-                System Recommendation
-              </SectionTitle>
+              <SectionTitle>System Recommendation</SectionTitle>
 
               <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <span
-                      className={[
-                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                        getRecommendationClasses(
-                          recommendation
-                        ),
-                      ].join(" ")}
+                    <StatusPill
+                      className={getClassName(
+                        RECOMMENDATION_CLASSES,
+                        recommendation,
+                        "Retain"
+                      )}
                     >
                       {recommendation}
-                    </span>
+                    </StatusPill>
 
                     <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                      {
-                        recommendationReason
-                      }
+                      {reason}
                     </p>
                   </div>
 
-                  <span
-                    className={[
-                      "inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold",
-                      getKPIClasses(
-                        kpiLevel
-                      ),
-                    ].join(" ")}
+                  <StatusPill
+                    className={getClassName(
+                      KPI_CLASSES,
+                      kpiLevel,
+                      "Good Standing"
+                    )}
                   >
                     KPI Level: {kpiLevel}
-                  </span>
+                  </StatusPill>
                 </div>
               </div>
             </section>
 
             <section>
-              <SectionTitle>
-                Recent Incident History
-              </SectionTitle>
+              <SectionTitle>Recent Incident History</SectionTitle>
 
               {incidentLoading ? (
                 <EmptyBox text="Loading incident history from backend..." />
-              ) : recentIncidents.length ===
-                0 ? (
+              ) : recentIncidents.length === 0 ? (
                 <EmptyBox text="No incident history found for this employee." />
               ) : (
                 <div className="space-y-3">
-                  {recentIncidents.map(
-                    (incident, index) => (
-                      <div
-                        key={`${incident.id}-${index}`}
-                        className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40"
-                      >
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                          <div>
-                            <p className="font-semibold text-gray-900 dark:text-white">
-                              {incident.violation ||
-                                "No violation type"}
-                            </p>
+                  {recentIncidents.map((incident, index) => (
+                    <div
+                      key={`${incident.id}-${index}`}
+                      className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40"
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="font-semibold text-gray-900 dark:text-white">
+                            {incident.violation || "No violation type"}
+                          </p>
 
-                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                              {
-                                incident.displayId
-                              }{" "}
-                              •{" "}
-                              {formatDate(
-                                incident.reportedAt ||
-                                  incident.date
-                              )}
-                            </p>
-                          </div>
-
-                          <div className="flex flex-wrap gap-2">
-                            <span
-                              className={[
-                                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                                getStatusClasses(
-                                  incident.status
-                                ),
-                              ].join(" ")}
-                            >
-                              {incident.status ||
-                                "Open"}
-                            </span>
-
-                            <span
-                              className={[
-                                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                                getKPIClasses(
-                                  incident.severity ===
-                                    "Critical"
-                                    ? "Critical Concern"
-                                    : incident.severity ===
-                                        "Major"
-                                      ? "Needs Improvement"
-                                      : "Minor Concern"
-                                ),
-                              ].join(" ")}
-                            >
-                              {incident.severity ||
-                                "Minor"}
-                            </span>
-                          </div>
+                          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            {incident.displayId} •{" "}
+                            {formatDate(incident.reportedAt || incident.date)}
+                          </p>
                         </div>
 
-                        {incident.description && (
-                          <p className="mt-3 text-sm leading-6 text-gray-700 dark:text-gray-300">
-                            {
-                              incident.description
-                            }
-                          </p>
-                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <StatusPill
+                            className={getClassName(
+                              STATUS_CLASSES,
+                              incident.status,
+                              "Open"
+                            )}
+                          >
+                            {incident.status || "Open"}
+                          </StatusPill>
 
-                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
-                          <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                            Disciplinary Action
-                          </p>
-
-                          <p className="mt-2 font-bold text-slate-800 dark:text-slate-100">
-                            Sanction:{" "}
-                            {incident.sanction ||
-                              "For HR Review"}
-                          </p>
+                          <StatusPill
+                            className={getClassName(
+                              KPI_CLASSES,
+                              getSeverityKPILevel(incident.severity),
+                              "Minor Concern"
+                            )}
+                          >
+                            {incident.severity || "Minor"}
+                          </StatusPill>
                         </div>
                       </div>
-                    )
-                  )}
+
+                      {incident.description && (
+                        <p className="mt-3 text-sm leading-6 text-gray-700 dark:text-gray-300">
+                          {incident.description}
+                        </p>
+                      )}
+
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                          Disciplinary Action
+                        </p>
+
+                        <p className="mt-2 font-bold text-slate-800 dark:text-slate-100">
+                          Sanction: {incident.sanction || "For HR Review"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>
 
             <section>
-              <SectionTitle>
-                Compliance Documents
-              </SectionTitle>
+              <SectionTitle>Compliance Documents</SectionTitle>
 
               <div className="space-y-4">
-                {normalizedDocuments.length ===
-                0 ? (
+                {documents.length === 0 ? (
                   <EmptyBox text="No compliance documents found for this employee." />
                 ) : (
-                  normalizedDocuments.map(
-                    (document) => {
-                      const isExpired =
-                        document.status ===
-                        "Expired";
+                  documents.map((document) => {
+                    const isExpired = document.status === "Expired";
+                    const isExpiringSoon =
+                      document.status === "Expiring Soon";
+                    const isNoData = document.status === "No Data";
 
-                      const isExpiringSoon =
-                        document.status ===
-                        "Expiring Soon";
-
-                      const isNoData =
-                        document.status ===
-                        "No Data";
-
-                      const isExpirable =
-                        document.expirable;
-
-                      return (
-                        <div
-                          key={document.name}
-                          className={[
-                            "rounded-2xl border p-5",
-                            isExpired
-                              ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
-                              : isExpiringSoon
-                                ? "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
-                                : isNoData
-                                  ? "border-orange-300 bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10"
-                                  : "border-gray-200 bg-white dark:border-white/10 dark:bg-slate-900/40",
-                          ].join(" ")}
-                        >
-                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                            <div className="flex items-start gap-3">
-                              <div
-                                className={[
-                                  "mt-1",
-                                  isExpired
-                                    ? "text-red-500"
-                                    : isExpiringSoon
-                                      ? "text-amber-500"
-                                      : isNoData
-                                        ? "text-orange-500"
-                                        : "text-indigo-500",
-                                ].join(" ")}
-                              >
-                                <FiFileText
-                                  size={18}
-                                  aria-hidden="true"
-                                />
-                              </div>
-
-                              <div>
-                                <p className="text-base font-semibold text-gray-900 dark:text-white">
-                                  {
-                                    document.name
-                                  }
-                                </p>
-
-                                <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
-                                  {isExpirable ? (
-                                    <>
-                                      <div className="flex items-center gap-2">
-                                        <FiCalendar
-                                          size={
-                                            14
-                                          }
-                                          aria-hidden="true"
-                                        />
-
-                                        <span>
-                                          Expiration
-                                          Date:{" "}
-                                          {document.expirationDate
-                                            ? formatDate(
-                                                document.expirationDate
-                                              )
-                                            : "Not Set"}
-                                        </span>
-                                      </div>
-
-                                      <div className="flex items-center gap-2">
-                                        <FiClock
-                                          size={
-                                            14
-                                          }
-                                          aria-hidden="true"
-                                        />
-
-                                        <span>
-                                          {getDaysLabel(
-                                            document.expirationDate
-                                          )}
-                                        </span>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                                      Permanent
-                                      compliance
-                                      document
-                                    </p>
-                                  )}
-
-                                  {!document.file && (
-                                    <p className="text-sm font-medium text-orange-600 dark:text-orange-300">
-                                      No uploaded
-                                      file found
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
+                    return (
+                      <div
+                        key={document.name}
+                        className={[
+                          "rounded-2xl border p-5",
+                          isExpired
+                            ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
+                            : isExpiringSoon
+                              ? "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
+                              : isNoData
+                                ? "border-orange-300 bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10"
+                                : "border-gray-200 bg-white dark:border-white/10 dark:bg-slate-900/40",
+                        ].join(" ")}
+                      >
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="flex items-start gap-3">
+                            <div
+                              className={[
+                                "mt-1",
+                                isExpired
+                                  ? "text-red-500"
+                                  : isExpiringSoon
+                                    ? "text-amber-500"
+                                    : isNoData
+                                      ? "text-orange-500"
+                                      : "text-indigo-500",
+                              ].join(" ")}
+                            >
+                              <FiFileText size={18} aria-hidden="true" />
                             </div>
 
-                            <div className="flex flex-col items-start gap-2 lg:items-end">
-                              {document.file && (
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() =>
-                                    setPreviewFile(
-                                      document.file
-                                    )
-                                  }
-                                >
-                                  <FiEye
-                                    aria-hidden="true"
-                                  />
-                                  View File
-                                </Button>
-                              )}
+                            <div>
+                              <p className="text-base font-semibold text-gray-900 dark:text-white">
+                                {document.name}
+                              </p>
 
-                              <span
-                                className={[
-                                  "inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                                  getStatusClasses(
-                                    document.status
-                                  ),
-                                ].join(" ")}
-                              >
-                                {(isExpired ||
-                                  isExpiringSoon ||
-                                  isNoData) && (
-                                  <FiAlertTriangle
-                                    className="text-sm"
-                                    aria-hidden="true"
-                                  />
+                              <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                                {document.expirable ? (
+                                  <>
+                                    <div className="flex items-center gap-2">
+                                      <FiCalendar size={14} aria-hidden="true" />
+                                      <span>
+                                        Expiration Date:{" "}
+                                        {document.expirationDate
+                                          ? formatDate(document.expirationDate)
+                                          : "Not Set"}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      <FiClock size={14} aria-hidden="true" />
+                                      <span>
+                                        {getDaysLabel(
+                                          document.expirationDate
+                                        )}
+                                      </span>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                                    Permanent compliance document
+                                  </p>
                                 )}
 
-                                {
-                                  document.status
-                                }
-                              </span>
-
-                              {document.status ===
-                                "Valid" && (
-                                <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-300">
-                                  <FiCheckCircle
-                                    size={14}
-                                    aria-hidden="true"
-                                  />
-
-                                  Document verified
-                                </span>
-                              )}
+                                {!document.file && (
+                                  <p className="text-sm font-medium text-orange-600 dark:text-orange-300">
+                                    No uploaded file found
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           </div>
+
+                          <div className="flex flex-col items-start gap-2 lg:items-end">
+                            {document.file && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                leftIcon={<FiEye aria-hidden="true" />}
+                                onClick={() => setPreviewFile(document.file)}
+                              >
+                                View File
+                              </Button>
+                            )}
+
+                            <StatusPill
+                              className={getClassName(
+                                STATUS_CLASSES,
+                                document.status,
+                                "No Data"
+                              )}
+                              icon={
+                                isExpired || isExpiringSoon || isNoData ? (
+                                  <FiAlertTriangle aria-hidden="true" />
+                                ) : null
+                              }
+                            >
+                              {document.status}
+                            </StatusPill>
+
+                            {document.status === "Valid" && (
+                              <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-300">
+                                <FiCheckCircle size={14} aria-hidden="true" />
+                                Document verified
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      );
-                    }
-                  )
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </section>
           </div>
 
           <footer className="flex shrink-0 justify-end border-t border-gray-200 bg-white px-4 py-4 dark:border-white/10 dark:bg-slate-900 sm:px-6 lg:px-8">
-            <Button
-              onClick={handleCloseEmployee}
-            >
-              Close
-            </Button>
+            <Button onClick={handleCloseEmployee}>Close</Button>
           </footer>
         </div>
       </Dialog>
 
       <Dialog
         open={Boolean(previewFile)}
-        onClose={handleClosePreview}
+        onClose={() => setPreviewFile(null)}
         title="File Preview"
-        description={
-          previewFile?.name ||
-          "Uploaded compliance document"
-        }
+        description={previewFile?.name || "Uploaded compliance document"}
         size="xl"
         height="xl"
         tone="neutral"
@@ -1693,41 +1110,45 @@ export default function EmployeeModal({
         scrollBody={false}
         bodyClassName="min-h-0 flex-1 p-4"
         footer={
-          <Button
-            variant="secondary"
-            onClick={handleClosePreview}
-          >
+          <Button variant="secondary" onClick={() => setPreviewFile(null)}>
             Close Preview
           </Button>
         }
       >
         <div className="flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl bg-gray-50 dark:bg-slate-950/50">
-          {previewFile?.type?.startsWith(
-            "image/"
-          ) ||
-          previewFile?.type ===
-            "image/*" ? (
+          {previewFile?.type?.startsWith("image/") ||
+          previewFile?.type === "image/*" ? (
             <img
               src={previewFile.url}
-              alt={
-                previewFile.name ||
-                "Uploaded file preview"
-              }
+              alt={previewFile.name || "Uploaded file preview"}
               className="max-h-full max-w-full object-contain"
             />
           ) : (
             <iframe
               src={previewFile?.url}
-              title={
-                previewFile?.name ||
-                "Uploaded file preview"
-              }
+              title={previewFile?.name || "Uploaded file preview"}
               className="h-full min-h-[60vh] w-full rounded-lg border border-gray-200 dark:border-white/10"
             />
           )}
         </div>
       </Dialog>
     </>
+  );
+}
+
+function StatusPill({ children, className, icon = null }) {
+  return (
+    <span
+      className={[
+        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {icon}
+      {children}
+    </span>
   );
 }
 
@@ -1739,49 +1160,24 @@ function SectionTitle({ children }) {
   );
 }
 
-function InfoBox({
-  icon,
-  label,
-  value,
-}) {
+function InfoBox({ icon, label, value }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
       <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
         {icon}
-
-        <span className="text-sm">
-          {label}
-        </span>
+        <span className="text-sm">{label}</span>
       </div>
 
-      <p className="text-base font-semibold">
-        {value || "-"}
-      </p>
+      <p className="text-base font-semibold">{value || "-"}</p>
     </div>
   );
 }
 
-function BadgeBox({
-  label,
-  value,
-  className,
-}) {
+function BadgeBox({ label, value, className }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-        {label}
-      </p>
-
-      <span
-        className={[
-          "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-          className,
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        {value}
-      </span>
+      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">{label}</p>
+      <StatusPill className={className}>{value}</StatusPill>
     </div>
   );
 }
@@ -1793,16 +1189,8 @@ function StatBox({
 }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-        {label}
-      </p>
-
-      <p
-        className={[
-          "text-2xl font-bold",
-          valueClassName,
-        ].join(" ")}
-      >
+      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">{label}</p>
+      <p className={["text-2xl font-bold", valueClassName].join(" ")}>
         {value}
       </p>
     </div>
@@ -1812,9 +1200,7 @@ function StatBox({
 function EmptyBox({ text }) {
   return (
     <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-      <p className="text-sm text-gray-500 dark:text-gray-400">
-        {text}
-      </p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">{text}</p>
     </div>
   );
 }

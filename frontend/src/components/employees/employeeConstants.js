@@ -23,76 +23,57 @@ export const DOCUMENT_OPTIONS = [
 
 export const MIN_DEPLOYED_DOCUMENTS = 5;
 
+const ROMAN_NUMERALS = new Set([
+  "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x",
+]);
+
+const NAME_SUFFIXES = {
+  jr: "Jr",
+  "jr.": "Jr.",
+  sr: "Sr",
+  "sr.": "Sr.",
+};
+
 export function normalizeName(value) {
   return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-// UPDATED: Smart Name Capitalization for Suffixes and Roman Numerals
-export function toProperName(name) {
-  if (!name) return "";
-
-  // Listahan ng mga suffix na may special rules
-  const romanNumerals = ["ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
-  const standardSuffixes = ["jr", "jr.", "sr", "sr."];
-
-  return String(name)
+export function toProperName(value) {
+  return String(value || "")
     .trim()
-    .replace(/\s+/g, " ") // Tanggalin ang sobrang spaces
+    .replace(/\s+/g, " ")
     .split(" ")
+    .filter(Boolean)
     .map((word) => {
       const lowerWord = word.toLowerCase();
 
-      // 1. Kung Roman Numeral, gawing ALL CAPS (ex. III, IV)
-      if (romanNumerals.includes(lowerWord)) {
-        return word.toUpperCase();
-      }
+      if (ROMAN_NUMERALS.has(lowerWord)) return lowerWord.toUpperCase();
+      if (NAME_SUFFIXES[lowerWord]) return NAME_SUFFIXES[lowerWord];
 
-      // 2. Kung Jr. o Sr., gawing Title Case (ex. Jr., Sr.)
-      if (standardSuffixes.includes(lowerWord)) {
-        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-      }
-
-      // 3. Normal na pangalan (Title Case)
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      return lowerWord.replace(
+        /(^|[-'’])([a-zñ])/g,
+        (_, separator, letter) => `${separator}${letter.toUpperCase()}`
+      );
     })
     .join(" ");
-}
-
-export function createDefaultDocuments(existingDocs = []) {
-  return DOCUMENT_OPTIONS.map((doc) => {
-    const matched = existingDocs.find((d) => d.name === doc.name);
-
-    return {
-      name: doc.name,
-      expirable: doc.expirable,
-      checked: !!matched,
-      expirationDate: matched?.expirationDate || "",
-      filePath: matched?.filePath || null,
-      file: matched?.filePath
-        ? {
-            url: `http://localhost:5000/${matched.filePath}`,
-            name: matched.name,
-            type: matched.filePath.endsWith(".pdf") ? "application/pdf" : "image/*",
-          }
-        : null,
-    };
-  });
 }
 
 export function getDocumentStatus(expirationDate) {
   if (!expirationDate) return "No Data";
 
   const today = new Date();
+  const expiration = new Date(expirationDate);
+
+  if (Number.isNaN(expiration.getTime())) return "No Data";
+
   today.setHours(0, 0, 0, 0);
+  expiration.setHours(0, 0, 0, 0);
 
-  const exp = new Date(expirationDate);
-  exp.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.ceil(
-    (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  const daysRemaining = Math.ceil(
+    (expiration.getTime() - today.getTime()) / 86400000
   );
 
-  if (diffDays < 0) return "Expired";
-  if (diffDays <= 30) return "Expiring Soon";
+  if (daysRemaining < 0) return "Expired";
+  if (daysRemaining <= 30) return "Expiring Soon";
   return "Valid";
 }
