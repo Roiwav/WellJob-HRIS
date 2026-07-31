@@ -297,3 +297,41 @@
     scrollbar-gutter: stable;
   }
 }
+
+@keyframes notification-bell-new {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+
+  20% {
+    transform: rotate(-12deg) scale(1.08);
+  }
+
+  40% {
+    transform: rotate(12deg) scale(1.12);
+  }
+
+  60% {
+    transform: rotate(-8deg) scale(1.08);
+  }
+
+  80% {
+    transform: rotate(8deg) scale(1.04);
+  }
+}
+
+.notification-bell-new {
+  animation:
+    notification-bell-new
+    0.75s
+    ease-in-out
+    3;
+  transform-origin: 50% 15%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-bell-new {
+    animation: none;
+  }
+}

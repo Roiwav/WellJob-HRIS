@@ -4,10 +4,8 @@ import {
   FiCheckCircle,
   FiClock,
   FiEye,
-  FiFilter,
   FiInbox,
   FiSearch,
-  FiTrash2,
 } from "react-icons/fi";
 
 import {
@@ -36,7 +34,7 @@ function StatusBadge({ status }) {
     "For Review":
       "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300 dark:border-indigo-500/30",
     "Active Pattern":
-      "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/30",
+      "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30",
     Closed:
       "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30",
   };
@@ -65,13 +63,10 @@ function SmallCount({
       "border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-900",
     indigo:
       "border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/15",
-    rose:
-      "border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15",
+    red:
+      "border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/15",
     amber:
       "border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15",
-    sky: "border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/15",
-    purple:
-      "border-purple-500/30 bg-purple-500/10 text-purple-300 hover:bg-purple-500/15",
   };
 
   const Component = onClick ? "button" : "div";
@@ -98,7 +93,11 @@ function SmallCount({
   );
 }
 
-function AlertMobileCard({ item, onViewAlert, onMarkRead, onDismissAlert }) {
+function AlertMobileCard({
+  item,
+  onViewAlert,
+  onMarkRead,
+}) {
   const styles = getAlertPriorityClasses(item.priority);
 
   return (
@@ -113,7 +112,7 @@ function AlertMobileCard({ item, onViewAlert, onMarkRead, onDismissAlert }) {
         <div
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${styles.icon}`}
         >
-          {item.priority === "High" ? <FiAlertTriangle /> : <FiCheckCircle />}
+          {item.priority === "High" ? <FiAlertTriangle aria-hidden="true" /> : <FiCheckCircle aria-hidden="true" />}
         </div>
 
         <div className="min-w-0 flex-1">
@@ -153,19 +152,8 @@ function AlertMobileCard({ item, onViewAlert, onMarkRead, onDismissAlert }) {
                 onClick={() => onMarkRead?.(item.alertKey)}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
               >
-                <FiCheckCircle />
+                <FiCheckCircle aria-hidden="true" />
                 Read
-              </button>
-            )}
-
-            {!item.isDismissed && (
-              <button
-                type="button"
-                onClick={() => onDismissAlert?.(item)}
-                className="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:border-rose-800 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
-              >
-                <FiTrash2 />
-                Dismiss
               </button>
             )}
 
@@ -174,7 +162,7 @@ function AlertMobileCard({ item, onViewAlert, onMarkRead, onDismissAlert }) {
               onClick={() => onViewAlert?.(item)}
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700"
             >
-              <FiEye />
+              <FiEye aria-hidden="true" />
               View
             </button>
           </div>
@@ -192,15 +180,15 @@ export default function NotificationTable({
     high: 0,
     medium: 0,
     low: 0,
-    dismissed: 0,
   },
   activeFilter = "ALL",
   onFilterChange,
+  caseStatusFilter = "ALL",
+  onCaseStatusFilterChange,
   search = "",
   onSearchChange,
   onViewAlert,
   onMarkRead,
-  onDismissAlert,
 }) {
   const safeCounts = {
     active: Number(counts?.active || 0),
@@ -208,7 +196,6 @@ export default function NotificationTable({
     high: Number(counts?.high || 0),
     medium: Number(counts?.medium || 0),
     low: Number(counts?.low || 0),
-    dismissed: Number(counts?.dismissed || 0),
   };
 
   const handleCounterFilter = (filter) => {
@@ -228,7 +215,7 @@ export default function NotificationTable({
   return (
     <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
       <div className="border-b border-gray-200 px-5 py-5 dark:border-white/10">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
           <div>
             <h2 className="text-base font-black text-gray-900 dark:text-white">
               Smart Alert Feed
@@ -240,12 +227,12 @@ export default function NotificationTable({
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
             <SmallCount
               label="Active"
               value={safeCounts.active}
               tone="slate"
-              icon={<FiBell />}
+              icon={<FiBell aria-hidden="true" />}
               active={activeFilter === "ALL"}
               onClick={() => handleCounterFilter("ALL")}
             />
@@ -254,7 +241,7 @@ export default function NotificationTable({
               label="Unread"
               value={safeCounts.unread}
               tone="indigo"
-              icon={<FiBell />}
+              icon={<FiBell aria-hidden="true" />}
               active={activeFilter === "UNREAD"}
               onClick={() => handleCounterFilter("UNREAD")}
             />
@@ -262,8 +249,8 @@ export default function NotificationTable({
             <SmallCount
               label="High"
               value={safeCounts.high}
-              tone="rose"
-              icon={<FiAlertTriangle />}
+              tone="red"
+              icon={<FiAlertTriangle aria-hidden="true" />}
               active={activeFilter === "HIGH"}
               onClick={() => handleCounterFilter("HIGH")}
             />
@@ -272,7 +259,7 @@ export default function NotificationTable({
               label="Medium"
               value={safeCounts.medium}
               tone="amber"
-              icon={<FiClock />}
+              icon={<FiClock aria-hidden="true" />}
               active={activeFilter === "MEDIUM"}
               onClick={() => handleCounterFilter("MEDIUM")}
             />
@@ -280,20 +267,12 @@ export default function NotificationTable({
             <SmallCount
               label="Low"
               value={safeCounts.low}
-              tone="sky"
-              icon={<FiCheckCircle />}
+              tone="indigo"
+              icon={<FiCheckCircle aria-hidden="true" />}
               active={activeFilter === "LOW"}
               onClick={() => handleCounterFilter("LOW")}
             />
 
-            <SmallCount
-              label="Dismissed"
-              value={safeCounts.dismissed}
-              tone="purple"
-              icon={<FiFilter />}
-              active={activeFilter === "DISMISSED"}
-              onClick={() => handleCounterFilter("DISMISSED")}
-            />
           </div>
         </div>
 
@@ -311,16 +290,18 @@ export default function NotificationTable({
           </div>
 
           <select
-            value={activeFilter}
-            onChange={(event) => onFilterChange?.(event.target.value)}
+            value={caseStatusFilter}
+            onChange={(event) =>
+              onCaseStatusFilterChange?.(event.target.value)
+            }
             className="h-11 rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+            aria-label="Filter smart alerts by case status"
           >
-            <option value="ALL">All Active Alerts</option>
-            <option value="UNREAD">Unread Alerts</option>
-            <option value="HIGH">High Priority</option>
-            <option value="MEDIUM">Medium Priority</option>
-            <option value="LOW">Low Priority</option>
-            <option value="DISMISSED">Dismissed Alerts</option>
+            <option value="ALL">All Case Statuses</option>
+            <option value="Open">Open</option>
+            <option value="Investigating">Investigating</option>
+            <option value="For Review">For Review</option>
+            <option value="Closed">Closed</option>
           </select>
         </div>
       </div>
@@ -347,7 +328,6 @@ export default function NotificationTable({
               item={item}
               onViewAlert={onViewAlert}
               onMarkRead={onMarkRead}
-              onDismissAlert={onDismissAlert}
             />
           ))
         )}
@@ -443,19 +423,8 @@ export default function NotificationTable({
                           onClick={() => onMarkRead?.(item.alertKey)}
                           className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                         >
-                          <FiCheckCircle />
+                          <FiCheckCircle aria-hidden="true" />
                           Read
-                        </button>
-                      )}
-
-                      {!item.isDismissed && (
-                        <button
-                          type="button"
-                          onClick={() => onDismissAlert?.(item)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:border-rose-800 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
-                        >
-                          <FiTrash2 />
-                          Dismiss
                         </button>
                       )}
 
@@ -464,7 +433,7 @@ export default function NotificationTable({
                         onClick={() => onViewAlert?.(item)}
                         className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700"
                       >
-                        <FiEye />
+                        <FiEye aria-hidden="true" />
                         View
                       </button>
                     </div>
