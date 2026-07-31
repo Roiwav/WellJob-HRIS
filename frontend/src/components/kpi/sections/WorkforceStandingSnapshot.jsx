@@ -21,72 +21,128 @@ function getInitials(name) {
 }
 
 function getPriorityEmployees(employees = []) {
-  return [...employees]
-    .filter((emp) => {
+  const safeEmployees = Array.isArray(employees) ? employees : [];
+
+  return [...safeEmployees]
+    .filter((employee) => {
       return (
-        emp.riskLevel === "High Risk" ||
-        emp.riskLevel === "Repeat" ||
-        Number(emp.criticalIncidentCount || 0) > 0 ||
-        Number(emp.violationCount || 0) >= 3
+        employee?.riskLevel === "High Risk" ||
+        employee?.riskLevel === "Repeat" ||
+        Number(employee?.criticalIncidentCount || 0) > 0 ||
+        Number(employee?.violationCount || 0) >= 3
       );
     })
-    .sort((a, b) => {
-      const severityDiff =
-        Number(b.severityScore || 0) - Number(a.severityScore || 0);
+    .sort((firstEmployee, secondEmployee) => {
+      const severityDifference =
+        Number(secondEmployee?.severityScore || 0) -
+        Number(firstEmployee?.severityScore || 0);
 
-      if (severityDiff !== 0) return severityDiff;
+      if (severityDifference !== 0) {
+        return severityDifference;
+      }
 
-      return Number(b.violationCount || 0) - Number(a.violationCount || 0);
+      return (
+        Number(secondEmployee?.violationCount || 0) -
+        Number(firstEmployee?.violationCount || 0)
+      );
     })
     .slice(0, 3);
 }
 
-function StandingMetric({ icon, label, value, helper, tone = "slate" }) {
+function getPriorityEmployeeStyle(employee) {
+  const isHighRisk =
+    employee?.riskLevel === "High Risk" ||
+    Number(employee?.criticalIncidentCount || 0) > 0;
+
+  if (isHighRisk) {
+    return {
+      avatar:
+        "bg-red-500/10 text-red-300",
+      badge:
+        "border-red-500/30 bg-red-500/10 text-red-300",
+    };
+  }
+
+  return {
+    avatar:
+      "bg-amber-500/10 text-amber-300",
+    badge:
+      "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  };
+}
+
+function StandingMetric({
+  icon,
+  label,
+  value,
+  helper,
+  tone = "slate",
+}) {
   const tones = {
     emerald: {
-      card: "border-emerald-500/20 bg-emerald-500/[0.08]",
+      card:
+        "border-emerald-500/20 bg-emerald-500/[0.08]",
       text: "text-emerald-300",
-      icon: "bg-emerald-500/10 text-emerald-300",
+      icon:
+        "bg-emerald-500/10 text-emerald-300",
     },
+
     amber: {
-      card: "border-amber-500/20 bg-amber-500/[0.08]",
+      card:
+        "border-amber-500/20 bg-amber-500/[0.08]",
       text: "text-amber-300",
-      icon: "bg-amber-500/10 text-amber-300",
+      icon:
+        "bg-amber-500/10 text-amber-300",
     },
-    rose: {
-      card: "border-rose-500/20 bg-rose-500/[0.08]",
-      text: "text-rose-300",
-      icon: "bg-rose-500/10 text-rose-300",
+
+    red: {
+      card:
+        "border-red-500/20 bg-red-500/[0.08]",
+      text: "text-red-300",
+      icon:
+        "bg-red-500/10 text-red-300",
     },
+
     indigo: {
-      card: "border-indigo-500/20 bg-indigo-500/[0.08]",
+      card:
+        "border-indigo-500/20 bg-indigo-500/[0.08]",
       text: "text-indigo-300",
-      icon: "bg-indigo-500/10 text-indigo-300",
+      icon:
+        "bg-indigo-500/10 text-indigo-300",
     },
+
     slate: {
-      card: "border-slate-800 bg-slate-950/30",
+      card:
+        "border-slate-800 bg-slate-950/30",
       text: "text-slate-200",
-      icon: "bg-slate-800 text-slate-300",
+      icon:
+        "bg-slate-800 text-slate-300",
     },
   };
 
-  const style = tones[tone] || tones.slate;
+  const style =
+    tones[tone] || tones.slate;
 
   return (
-    <article className={`rounded-2xl border px-4 py-3 ${style.card}`}>
+    <article
+      className={`rounded-2xl border px-4 py-3 ${style.card}`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-[10px] font-black uppercase tracking-wide text-slate-400">
             {label}
           </p>
 
-          <p className={`mt-1 text-2xl font-black leading-none ${style.text}`}>
+          <p
+            className={`mt-1 text-2xl font-black leading-none ${style.text}`}
+          >
             {value}
           </p>
         </div>
 
         <div
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm ${style.icon}`}
+          aria-hidden="true"
         >
           {icon}
         </div>
@@ -99,43 +155,64 @@ function StandingMetric({ icon, label, value, helper, tone = "slate" }) {
   );
 }
 
-function PriorityEmployeeRow({ employee }) {
+function PriorityEmployeeRow({
+  employee,
+}) {
+  const priorityStyle =
+    getPriorityEmployeeStyle(employee);
+
   return (
     <article className="rounded-2xl border border-slate-800 bg-slate-950/35 px-4 py-3">
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-500/10 text-xs font-black text-rose-300">
-          {getInitials(employee.name)}
+        <div
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-black ${priorityStyle.avatar}`}
+        >
+          {getInitials(employee?.name)}
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-black text-white">
-                {employee.name || "Unknown Employee"}
+                {employee?.name ||
+                  "Unknown Employee"}
               </p>
 
               <p className="mt-0.5 truncate text-xs text-slate-500">
-                ID: {formatEmployeeId(employee.id)} •{" "}
-                {employee.company || "Unassigned"}
+                ID:{" "}
+                {formatEmployeeId(
+                  employee?.id
+                )}{" "}
+                •{" "}
+                {employee?.company ||
+                  "Unassigned"}
               </p>
             </div>
 
-            <span className="shrink-0 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[10px] font-black text-rose-300">
-              {employee.riskLevel || "For Review"}
+            <span
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black ${priorityStyle.badge}`}
+            >
+              {employee?.riskLevel ||
+                "For Review"}
             </span>
           </div>
 
           <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-slate-300">
             <span className="rounded-lg bg-slate-900 px-2.5 py-1">
-              Vio. {employee.violationCount || 0}
+              Vio.{" "}
+              {employee?.violationCount ||
+                0}
             </span>
 
             <span className="rounded-lg bg-slate-900 px-2.5 py-1">
-              Severity {employee.severityScore || 0}
+              Severity{" "}
+              {employee?.severityScore ||
+                0}
             </span>
 
             <span className="rounded-lg bg-slate-900 px-2.5 py-1">
-              {employee.suggestedHRAction || "Review"}
+              {employee?.suggestedHRAction ||
+                "Review"}
             </span>
           </div>
         </div>
@@ -151,23 +228,64 @@ export default function WorkforceStandingSnapshot({
   highRiskEmployees = 0,
   pendingRecommendationCount = 0,
 }) {
-  const priorityEmployees = getPriorityEmployees(employees);
+  const priorityEmployees =
+    getPriorityEmployees(employees);
+
+  const safeTotalEmployees =
+    Math.max(
+      0,
+      Number(totalEmployees || 0)
+    );
+
+  const safeGoodStandingEmployees =
+    Math.max(
+      0,
+      Number(
+        goodStandingEmployees || 0
+      )
+    );
+
+  const safeHighRiskEmployees =
+    Math.max(
+      0,
+      Number(highRiskEmployees || 0)
+    );
+
+  const safePendingRecommendationCount =
+    Math.max(
+      0,
+      Number(
+        pendingRecommendationCount || 0
+      )
+    );
 
   const stablePercentage =
-    totalEmployees > 0
-      ? Math.round((goodStandingEmployees / totalEmployees) * 100)
+    safeTotalEmployees > 0
+      ? Math.round(
+          (safeGoodStandingEmployees /
+            safeTotalEmployees) *
+            100
+        )
       : 0;
 
   const reviewPercentage =
-    totalEmployees > 0
-      ? Math.round((pendingRecommendationCount / totalEmployees) * 100)
+    safeTotalEmployees > 0
+      ? Math.round(
+          (safePendingRecommendationCount /
+            safeTotalEmployees) *
+            100
+        )
       : 0;
 
   return (
     <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm">
       <div className="mb-4 flex flex-col gap-1">
         <h2 className="flex items-center gap-2 text-base font-black text-white">
-          <FiUsers className="text-indigo-300" />
+          <FiUsers
+            className="text-indigo-300"
+            aria-hidden="true"
+          />
+
           Employee Standing Overview
         </h2>
 
@@ -180,7 +298,9 @@ export default function WorkforceStandingSnapshot({
         <StandingMetric
           icon={<FiCheckCircle />}
           label="Good Standing"
-          value={goodStandingEmployees}
+          value={
+            safeGoodStandingEmployees
+          }
           helper={`${stablePercentage}% stable records`}
           tone="emerald"
         />
@@ -188,7 +308,9 @@ export default function WorkforceStandingSnapshot({
         <StandingMetric
           icon={<FiTarget />}
           label="Needs Review"
-          value={pendingRecommendationCount}
+          value={
+            safePendingRecommendationCount
+          }
           helper={`${reviewPercentage}% pending validation`}
           tone="amber"
         />
@@ -196,15 +318,15 @@ export default function WorkforceStandingSnapshot({
         <StandingMetric
           icon={<FiAlertTriangle />}
           label="High Risk"
-          value={highRiskEmployees}
+          value={safeHighRiskEmployees}
           helper="Priority monitoring cases"
-          tone="rose"
+          tone="red"
         />
 
         <StandingMetric
           icon={<FiShield />}
           label="Monitored"
-          value={totalEmployees}
+          value={safeTotalEmployees}
           helper="Active KPI records"
           tone="indigo"
         />
@@ -215,7 +337,11 @@ export default function WorkforceStandingSnapshot({
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h3 className="flex items-center gap-2 text-sm font-black text-white">
-                <FiZap className="text-rose-300" />
+                <FiZap
+                  className="text-red-300"
+                  aria-hidden="true"
+                />
+
                 Priority Attention
               </h3>
 
@@ -225,45 +351,65 @@ export default function WorkforceStandingSnapshot({
             </div>
 
             <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[10px] font-black text-slate-300">
-              Top {priorityEmployees.length}
+              Top{" "}
+              {
+                priorityEmployees.length
+              }
             </span>
           </div>
 
-          {priorityEmployees.length === 0 ? (
+          {priorityEmployees.length ===
+          0 ? (
             <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-300">
               <p className="text-sm font-black">
-                No priority attention detected.
+                No priority attention
+                detected.
               </p>
 
               <p className="mt-1 text-xs leading-5 opacity-80">
-                Current records do not show high-risk employee cases.
+                Current records do not
+                show high-risk employee
+                cases.
               </p>
             </div>
           ) : (
             <div className="space-y-2.5">
-              {priorityEmployees.map((employee) => (
-                <PriorityEmployeeRow
-                  key={employee.id || employee.employeeId || employee.name}
-                  employee={employee}
-                />
-              ))}
+              {priorityEmployees.map(
+                (employee) => (
+                  <PriorityEmployeeRow
+                    key={
+                      employee?.id ||
+                      employee?.employeeId ||
+                      employee?.name
+                    }
+                    employee={employee}
+                  />
+                )
+              )}
             </div>
           )}
         </div>
 
         <aside className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
           <h3 className="flex items-center gap-2 text-sm font-black text-white">
-            <FiCheckCircle className="text-emerald-300" />
+            <FiCheckCircle
+              className="text-emerald-300"
+              aria-hidden="true"
+            />
+
             Stable Workforce
           </h3>
 
           <div className="mt-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4">
             <p className="text-3xl font-black text-emerald-300">
-              {goodStandingEmployees}
+              {
+                safeGoodStandingEmployees
+              }
             </p>
 
             <p className="mt-2 text-xs font-bold leading-5 text-emerald-200">
-              employees have no recorded negative KPI pattern.
+              employees have no recorded
+              negative KPI pattern.
             </p>
           </div>
 
@@ -273,8 +419,11 @@ export default function WorkforceStandingSnapshot({
             </p>
 
             <p className="mt-2 text-xs leading-5 text-slate-400">
-              Detailed employee records are available in Employee Intelligence.
-              Pending validation is handled in Recommendation Review.
+              Detailed employee records
+              are available in Employee
+              Intelligence. Pending
+              validation is handled in
+              Recommendation Review.
             </p>
           </div>
         </aside>

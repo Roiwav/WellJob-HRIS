@@ -1,12 +1,33 @@
-import ViolationTrendChart from "../../dashboard/charts/ViolationTrendChart";
 import ComplianceTrendChart from "../../dashboard/charts/ComplianceTrendChart";
 import UtilizationTrendChart from "../../dashboard/charts/UtilizationTrendChart";
+import ViolationTrendChart from "../../dashboard/charts/ViolationTrendChart";
+
+function normalizeTrendData(data) {
+  return Array.isArray(data)
+    ? data
+    : [];
+}
 
 export default function AnalyticsTrendsSection({
-  violationTrend,
-  complianceTrend,
-  utilizationTrend,
+  violationTrend = [],
+  complianceTrend = [],
+  utilizationTrend = [],
 }) {
+  const safeViolationTrend =
+    normalizeTrendData(
+      violationTrend
+    );
+
+  const safeComplianceTrend =
+    normalizeTrendData(
+      complianceTrend
+    );
+
+  const safeUtilizationTrend =
+    normalizeTrendData(
+      utilizationTrend
+    );
+
   return (
     <section className="space-y-4">
       <div>
@@ -21,9 +42,17 @@ export default function AnalyticsTrendsSection({
       </div>
 
       <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3 [&>*]:min-w-0">
-        <ViolationTrendChart data={violationTrend} />
-        <ComplianceTrendChart data={complianceTrend} />
-        <UtilizationTrendChart data={utilizationTrend} />
+        <ViolationTrendChart
+          data={safeViolationTrend}
+        />
+
+        <ComplianceTrendChart
+          data={safeComplianceTrend}
+        />
+
+        <UtilizationTrendChart
+          data={safeUtilizationTrend}
+        />
       </div>
     </section>
   );

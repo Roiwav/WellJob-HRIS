@@ -222,12 +222,12 @@ function DecisionModal({
           aria-hidden="true"
         />
       ),
-      tone: "danger",
+      tone: "warning",
       panelClassName:
-        "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300",
+        "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300",
       buttonLabel:
         "Reject Recommendation",
-      buttonVariant: "danger",
+      buttonVariant: "warning",
       decisionType: "Rejected",
     },
   };
@@ -542,7 +542,7 @@ function DecisionModal({
           {isRejectMissingNotes && (
             <div
               role="alert"
-              className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300"
+              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300"
             >
               Rejection requires HR
               notes for
@@ -553,7 +553,7 @@ function DecisionModal({
           {createDecisionMutation.isError && (
             <div
               role="alert"
-              className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300"
+              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300"
             >
               {createDecisionMutation
                 .error?.message ||
@@ -797,7 +797,7 @@ export default function RecommendationReviewSection({
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-2xl bg-indigo-50 px-4 py-3 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:ring-indigo-800/70">
+              <div className="rounded-2xl bg-amber-50 px-4 py-3 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800/70">
                 <p className="text-[11px] font-extrabold uppercase">
                   Pending
                 </p>
@@ -1064,7 +1064,7 @@ export default function RecommendationReviewSection({
 
                         <Button
                           type="button"
-                          variant="danger"
+                          variant="warning"
                           size="sm"
                           leftIcon={
                             <FiXCircle
