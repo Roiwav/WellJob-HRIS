@@ -59,6 +59,25 @@ const monthList = [
   "Dec",
 ];
 
+
+const FORECAST_RANGES = [
+  "weekly",
+  "monthly",
+  "yearly",
+];
+
+
+const INSIGHT_CARD_TONES = {
+  indigo:
+    "from-indigo-50 to-white dark:from-indigo-950/30 dark:to-slate-900",
+  red:
+    "from-red-50 to-white dark:from-red-950/30 dark:to-slate-900",
+  amber:
+    "from-amber-50 to-white dark:from-amber-950/30 dark:to-slate-900",
+  emerald:
+    "from-emerald-50 to-white dark:from-emerald-950/30 dark:to-slate-900",
+};
+
 function emitDataUpdated(
   action = "DASHBOARD_UPDATED"
 ) {
@@ -908,6 +927,310 @@ function buildCaseAgingDistribution(
   }));
 }
 
+function InsightCard({
+  title,
+  value,
+  tone = "indigo",
+}) {
+  return (
+    <article
+      className={[
+        "rounded-2xl border border-slate-200 bg-gradient-to-br p-5 shadow-sm dark:border-white/10",
+        INSIGHT_CARD_TONES[tone] ||
+          INSIGHT_CARD_TONES.indigo,
+      ].join(" ")}
+    >
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {title}
+      </p>
+
+      <h3 className="mt-2 text-xl font-extrabold text-slate-900 dark:text-white">
+        {value}
+      </h3>
+    </article>
+  );
+}
+
+function PredictiveInsightsPanel({
+  predictions = {
+    weekly: [],
+    monthly: [],
+    yearly: [],
+  },
+}) {
+  const [
+    forecastRange,
+    setForecastRange,
+  ] = useState("weekly");
+
+  const [
+    selectedCategory,
+    setSelectedCategory,
+  ] = useState(
+    "All Categories"
+  );
+
+  const categories = [
+    "All Categories",
+    "I. ABSENCES AND TARDINESS",
+    "II. DISORDERLY CONDUCT AND MISBEHAVIOR",
+    "III. INSUBORDINATION / DISOBEDIENCE",
+    "IV. NEGLECT OF DUTY",
+    "V. BETRAYAL OF TRUST / DISHONESTY",
+    "VI. HEALTH, SAFETY, SECURITY, AND SANITATION",
+    "VII. SEXUAL HARASSMENT",
+    "VIII. HABITUAL VIOLATIONS",
+  ];
+
+  const basePredictions =
+    useMemo(() => {
+      return Array.isArray(
+        predictions?.[
+          forecastRange
+        ]
+      )
+        ? predictions[
+            forecastRange
+          ]
+        : [];
+    }, [
+      predictions,
+      forecastRange,
+    ]);
+
+  const activePredictions =
+    useMemo(() => {
+      return basePredictions.filter(
+        (prediction) =>
+          selectedCategory ===
+            "All Categories" ||
+          prediction.category ===
+            selectedCategory
+      );
+    }, [
+      basePredictions,
+      selectedCategory,
+    ]);
+
+  return (
+    <section
+      aria-labelledby="forecasting-panel-title"
+      className="rounded-3xl border border-indigo-200 bg-gradient-to-b from-indigo-50/40 to-white p-6 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/20 dark:to-slate-900"
+    >
+      <div className="mb-6 flex flex-col items-start justify-between gap-5 xl:flex-row xl:items-center">
+        <div className="flex items-center gap-4">
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 dark:shadow-none"
+            aria-hidden="true"
+          >
+            <FiTrendingUp size={24} />
+          </div>
+
+          <div>
+            <h2
+              id="forecasting-panel-title"
+              className="text-lg font-extrabold text-slate-900 dark:text-white"
+            >
+              System Forecasting &amp;
+              Next Steps
+            </h2>
+
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Run-rate predictive
+              analysis based on current
+              workforce data.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <select
+            aria-label="Filter forecasts by violation category"
+            value={
+              selectedCategory
+            }
+            onChange={(event) =>
+              setSelectedCategory(
+                event.target.value
+              )
+            }
+            className="h-10 cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+          >
+            {categories.map(
+              (category) => (
+                <option
+                  key={category}
+                  value={category}
+                >
+                  {category}
+                </option>
+              )
+            )}
+          </select>
+
+          <div
+            className="flex shrink-0 rounded-xl bg-indigo-100/60 p-1 dark:bg-slate-800/80"
+            role="group"
+            aria-label="Forecast range"
+          >
+            {FORECAST_RANGES.map(
+              (range) => {
+                const isActive =
+                  forecastRange ===
+                  range;
+
+                return (
+                  <button
+                    key={range}
+                    type="button"
+                    aria-pressed={
+                      isActive
+                    }
+                    onClick={() =>
+                      setForecastRange(
+                        range
+                      )
+                    }
+                    className={[
+                      "min-h-10 rounded-lg px-5 py-2 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+                      isActive
+                        ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white"
+                        : "text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-white",
+                    ].join(" ")}
+                  >
+                    {range
+                      .charAt(0)
+                      .toUpperCase() +
+                      range.slice(1)}
+                  </button>
+                );
+              }
+            )}
+          </div>
+        </div>
+      </div>
+
+      {activePredictions.length ===
+      0 ? (
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/50 px-5 py-12 text-center dark:border-white/10 dark:bg-slate-950/30">
+          <div
+            className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"
+            aria-hidden="true"
+          >
+            <FiBarChart2
+              className="text-slate-400"
+              size={20}
+            />
+          </div>
+
+          <p className="text-base font-bold text-slate-700 dark:text-slate-300">
+            No operational trend
+            detected.
+          </p>
+
+          <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
+            The system has not reached
+            the percentage threshold to
+            trigger a forecast for this
+            category and period.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {activePredictions.map(
+            (
+              prediction,
+              index
+            ) => {
+              const rawAction =
+                String(
+                  prediction?.action ||
+                    ""
+                );
+
+              const isForecast =
+                rawAction.includes(
+                  "Forecast:"
+                );
+
+              const actionText =
+                rawAction.replace(
+                  "Forecast: ",
+                  ""
+                );
+
+              const caseCount =
+                Number(
+                  prediction?.count
+                ) || 0;
+
+              return (
+                <article
+                  key={
+                    prediction?.id ||
+                    `${prediction?.category || "prediction"}-${index}`
+                  }
+                  className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
+                >
+                  <div>
+                    <div className="mb-4 flex items-start justify-between gap-2">
+                      <div className="flex flex-col">
+                        <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
+                          {prediction?.percentage ||
+                            "0%"}
+                        </span>
+
+                        <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                          Affected Workforce
+                        </span>
+                      </div>
+
+                      <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                        {caseCount}{" "}
+                        {caseCount === 1
+                          ? "Case"
+                          : "Cases"}
+                      </span>
+                    </div>
+
+                    <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
+                      {prediction?.category ||
+                        "Uncategorized"}
+                    </h4>
+
+                    <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
+                      {prediction?.title ||
+                        "Operational Notice"}
+                    </h3>
+                  </div>
+
+                  <div className="mt-5">
+                    <div
+                      className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50"
+                      aria-hidden="true"
+                    />
+
+                    <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
+                      {isForecast && (
+                        <span className="font-extrabold text-indigo-600 dark:text-indigo-400">
+                          Forecast:{" "}
+                        </span>
+                      )}
+
+                      {actionText ||
+                        "No suggested action available."}
+                    </p>
+                  </div>
+                </article>
+              );
+            }
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
 
@@ -932,8 +1255,10 @@ export default function Dashboard() {
     setSelectedMonth,
   ] = useState(0);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
   const [
     refreshing,
@@ -1031,11 +1356,9 @@ export default function Dashboard() {
           getSharedRequest(
             EMPLOYEE_API_URL
           ),
-
           getSharedRequest(
             INCIDENT_API_URL
           ),
-
           getSharedRequest(
             DEPLOYMENT_API_URL
           ),
@@ -1137,7 +1460,6 @@ export default function Dashboard() {
             : deployedEmployees.map(
                 (employee) => ({
                   ...employee,
-
                   date:
                     getDeploymentTrendDate(
                       employee
@@ -1154,7 +1476,6 @@ export default function Dashboard() {
                     record
                   )
                 ),
-
               employees: 1,
             }))
             .filter(
@@ -1170,7 +1491,6 @@ export default function Dashboard() {
                     incident
                   )
                 ),
-
               incidents: 1,
             }))
             .filter(
@@ -1377,21 +1697,8 @@ export default function Dashboard() {
     ]);
 
   const isCurrentYear =
-    selectedYear === currentYear;
-
-  useEffect(() => {
-    if (
-      isCurrentYear &&
-      Number(selectedMonth) >
-        currentMonth
-    ) {
-      setSelectedMonth(0);
-    }
-  }, [
-    isCurrentYear,
-    selectedMonth,
-    currentMonth,
-  ]);
+    selectedYear ===
+    currentYear;
 
   const availableYears =
     useMemo(() => {
@@ -1457,41 +1764,55 @@ export default function Dashboard() {
       currentMonth,
     ]);
 
-  const handleYearChange = (
-    event
-  ) => {
-    const nextYear =
-      event.target.value;
+  const handleYearChange =
+    useCallback(
+      (event) => {
+        const nextYear =
+          event.target.value;
 
-    setSelectedYear(nextYear);
+        const nextMonth =
+          nextYear ===
+            currentYear &&
+          Number(selectedMonth) >
+            currentMonth
+            ? 0
+            : selectedMonth;
 
-    if (
-      nextYear === currentYear &&
-      Number(selectedMonth) >
-        currentMonth
-    ) {
-      setSelectedMonth(0);
-    }
-  };
-
-  const handleMonthChange = (
-    event
-  ) => {
-    const nextMonth = Number(
-      event.target.value
+        setSelectedYear(nextYear);
+        setSelectedMonth(nextMonth);
+      },
+      [
+        currentYear,
+        currentMonth,
+        selectedMonth,
+      ]
     );
 
-    if (
-      selectedYear ===
-        currentYear &&
-      nextMonth > currentMonth
-    ) {
-      setSelectedMonth(0);
-      return;
-    }
+  const handleMonthChange =
+    useCallback(
+      (event) => {
+        const nextMonth =
+          Number(
+            event.target.value
+          );
 
-    setSelectedMonth(nextMonth);
-  };
+        if (
+          selectedYear ===
+            currentYear &&
+          nextMonth > currentMonth
+        ) {
+          setSelectedMonth(0);
+          return;
+        }
+
+        setSelectedMonth(nextMonth);
+      },
+      [
+        selectedYear,
+        currentYear,
+        currentMonth,
+      ]
+    );
 
   const workforceTrend =
     useMemo(
@@ -1840,10 +2161,29 @@ export default function Dashboard() {
       ]
     );
 
+  const handleCloseDrilldown =
+    useCallback(() => {
+      setActiveDrilldown(null);
+    }, []);
+
+  const handleCloseEmployeeModal =
+    useCallback(() => {
+      setEditingEmployee(null);
+    }, []);
+
   const handleRowClick =
     useCallback(
       (row) => {
-        if (!row.employeeId) {
+        const employeeId =
+          row?.employeeId ??
+          row?.employee_id;
+
+        if (
+          employeeId === null ||
+          employeeId === undefined ||
+          String(employeeId).trim() ===
+            ""
+        ) {
           return;
         }
 
@@ -1853,15 +2193,11 @@ export default function Dashboard() {
               String(
                 employee.id
               ) ===
-                String(
-                  row.employeeId
-                ) ||
+                String(employeeId) ||
               String(
                 employee.employeeId
               ) ===
-                String(
-                  row.employeeId
-                )
+                String(employeeId)
           );
 
         if (targetEmployee) {
@@ -1877,12 +2213,28 @@ export default function Dashboard() {
       [data.rawEmployees]
     );
 
+  const handleEmployeeSaveSuccess =
+    useCallback(async () => {
+      setEditingEmployee(null);
+
+      await loadData({
+        silent: true,
+        showError: false,
+      });
+
+      emitDataUpdated(
+        "DASHBOARD_EMPLOYEE_EDIT"
+      );
+    }, [loadData]);
+
   const totalIncidentsForYear =
     useMemo(
       () =>
         incidentTrend.reduce(
           (sum, item) =>
-            sum + item.value,
+            sum +
+            (Number(item?.value) ||
+              0),
           0
         ),
       [incidentTrend]
@@ -1899,13 +2251,17 @@ export default function Dashboard() {
         return "N/A";
       }
 
-      const highest = [
-        ...workforceTrend,
-      ].sort(
-        (first, second) =>
-          second.value -
-          first.value
-      )[0];
+      const highest =
+        workforceTrend.reduce(
+          (currentHighest, item) =>
+            Number(item?.value) >
+            Number(
+              currentHighest?.value
+            )
+              ? item
+              : currentHighest,
+          workforceTrend[0]
+        );
 
       return highest?.value
         ? `${highest.label} (${highest.value})`
@@ -1920,13 +2276,17 @@ export default function Dashboard() {
         return "N/A";
       }
 
-      const highest = [
-        ...incidentTrend,
-      ].sort(
-        (first, second) =>
-          second.value -
-          first.value
-      )[0];
+      const highest =
+        incidentTrend.reduce(
+          (currentHighest, item) =>
+            Number(item?.value) >
+            Number(
+              currentHighest?.value
+            )
+              ? item
+              : currentHighest,
+          incidentTrend[0]
+        );
 
       return highest?.value
         ? `${highest.label} (${highest.value})`
@@ -1941,13 +2301,17 @@ export default function Dashboard() {
         return "N/A";
       }
 
-      const highest = [
-        ...filteredSeverity,
-      ].sort(
-        (first, second) =>
-          second.value -
-          first.value
-      )[0];
+      const highest =
+        filteredSeverity.reduce(
+          (currentHighest, item) =>
+            Number(item?.value) >
+            Number(
+              currentHighest?.value
+            )
+              ? item
+              : currentHighest,
+          filteredSeverity[0]
+        );
 
       return highest?.value
         ? highest.name
@@ -2064,10 +2428,13 @@ export default function Dashboard() {
         },
       });
 
+      const firstTableFinalY =
+        doc.lastAutoTable?.finalY ||
+        52;
+
       autoTable(doc, {
         startY:
-          doc.lastAutoTable
-            .finalY + 10,
+          firstTableFinalY + 10,
 
         head: [
           [
@@ -2083,10 +2450,16 @@ export default function Dashboard() {
           0
             ? executiveActions.map(
                 (action) => [
-                  action.priority,
-                  action.type,
-                  action.recommendation,
-                  action.basis ||
+                  action?.priority ||
+                    "-",
+
+                  action?.type ||
+                    "-",
+
+                  action?.recommendation ||
+                    "-",
+
+                  action?.basis ||
                     "-",
                 ]
               )
@@ -2132,10 +2505,13 @@ export default function Dashboard() {
         },
       });
 
+      const secondTableFinalY =
+        doc.lastAutoTable?.finalY ||
+        firstTableFinalY + 10;
+
       autoTable(doc, {
         startY:
-          doc.lastAutoTable
-            .finalY + 10,
+          secondTableFinalY + 10,
 
         head: [
           [
@@ -2165,7 +2541,8 @@ export default function Dashboard() {
               month,
               deployment?.value ??
                 0,
-              incident?.value ?? 0,
+              incident?.value ??
+                0,
             ];
           }
         ),
@@ -2201,7 +2578,11 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex h-[70vh] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex h-[70vh] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 text-center text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+      >
         <FiRefreshCw
           className="animate-spin text-2xl text-indigo-500"
           aria-hidden="true"
@@ -2239,7 +2620,7 @@ export default function Dashboard() {
                 refreshing ||
                 isLoadingRef.current
               }
-              className="w-fit rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20"
+              className="w-fit rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20"
             >
               Try Again
             </button>
@@ -2247,7 +2628,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <section
+        aria-labelledby="dashboard-page-title"
+        className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900"
+      >
         <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-slate-900 px-6 py-6 text-white">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
@@ -2259,7 +2643,10 @@ export default function Dashboard() {
                 Executive Overview
               </div>
 
-              <h1 className="text-3xl font-extrabold tracking-tight">
+              <h1
+                id="dashboard-page-title"
+                className="text-3xl font-extrabold tracking-tight"
+              >
                 Workforce Dashboard
               </h1>
 
@@ -2288,13 +2675,14 @@ export default function Dashboard() {
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <select
+                aria-label="Filter dashboard by month"
                 value={
                   selectedMonth
                 }
                 onChange={
                   handleMonthChange
                 }
-                className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50"
+                className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50 focus-visible:ring-2 focus-visible:ring-white/60"
               >
                 <option
                   className="text-slate-900"
@@ -2324,13 +2712,14 @@ export default function Dashboard() {
               </select>
 
               <select
+                aria-label="Filter dashboard by year"
                 value={
                   selectedYear
                 }
                 onChange={
                   handleYearChange
                 }
-                className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50"
+                className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white outline-none backdrop-blur focus:border-white/50 focus-visible:ring-2 focus-visible:ring-white/60"
               >
                 {availableYears.map(
                   (year) => (
@@ -2354,7 +2743,7 @@ export default function Dashboard() {
                   refreshing ||
                   isLoadingRef.current
                 }
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <FiRefreshCw
                   className={
@@ -2380,7 +2769,7 @@ export default function Dashboard() {
                   onClick={
                     handleExportPDF
                   }
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-600"
                 >
                   <FiDownload
                     aria-hidden="true"
@@ -2413,9 +2802,6 @@ export default function Dashboard() {
 
       <ExecutiveActionItems
         actions={executiveActions}
-        onOpenDrilldown={
-          handleOpenDrilldown
-        }
       />
 
       <ExecutiveInsightTabs
@@ -2433,7 +2819,10 @@ export default function Dashboard() {
         }
       />
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="Dashboard highlights"
+        className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
+      >
         <InsightCard
           title="Peak Deployment Month"
           value={
@@ -2505,8 +2894,8 @@ export default function Dashboard() {
 
       <DashboardDrilldownModal
         detail={activeDrilldown}
-        onClose={() =>
-          setActiveDrilldown(null)
+        onClose={
+          handleCloseDrilldown
         }
         onRowClick={
           handleRowClick
@@ -2521,308 +2910,14 @@ export default function Dashboard() {
           employees={
             data.rawEmployees
           }
-          onClose={() =>
-            setEditingEmployee(
-              null
-            )
+          onClose={
+            handleCloseEmployeeModal
           }
-          onSaveSuccess={async () => {
-            setEditingEmployee(
-              null
-            );
-
-            await loadData({
-              silent: true,
-              showError: false,
-            });
-
-            emitDataUpdated(
-              "DASHBOARD_EMPLOYEE_EDIT"
-            );
-          }}
+          onSaveSuccess={
+            handleEmployeeSaveSuccess
+          }
         />
       )}
     </div>
-  );
-}
-
-function InsightCard({
-  title,
-  value,
-  tone = "indigo",
-}) {
-  const tones = {
-    indigo:
-      "from-indigo-50 to-white dark:from-indigo-950/30 dark:to-slate-900",
-
-    red:
-      "from-red-50 to-white dark:from-red-950/30 dark:to-slate-900",
-
-    amber:
-      "from-amber-50 to-white dark:from-amber-950/30 dark:to-slate-900",
-
-    emerald:
-      "from-emerald-50 to-white dark:from-emerald-950/30 dark:to-slate-900",
-  };
-
-  return (
-    <div
-      className={[
-        "rounded-2xl border border-slate-200 bg-gradient-to-br p-5 shadow-sm dark:border-white/10",
-        tones[tone] ||
-          tones.indigo,
-      ].join(" ")}
-    >
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        {title}
-      </p>
-
-      <h3 className="mt-2 text-xl font-extrabold text-slate-900 dark:text-white">
-        {value}
-      </h3>
-    </div>
-  );
-}
-
-function PredictiveInsightsPanel({
-  predictions = {
-    weekly: [],
-    monthly: [],
-    yearly: [],
-  },
-}) {
-  const [
-    forecastRange,
-    setForecastRange,
-  ] = useState("weekly");
-
-  const [
-    selectedCategory,
-    setSelectedCategory,
-  ] = useState(
-    "All Categories"
-  );
-
-  const categories = [
-    "All Categories",
-    "I. ABSENCES AND TARDINESS",
-    "II. DISORDERLY CONDUCT AND MISBEHAVIOR",
-    "III. INSUBORDINATION / DISOBEDIENCE",
-    "IV. NEGLECT OF DUTY",
-    "V. BETRAYAL OF TRUST / DISHONESTY",
-    "VI. HEALTH, SAFETY, SECURITY, AND SANITATION",
-    "VII. SEXUAL HARASSMENT",
-    "VIII. HABITUAL VIOLATIONS",
-  ];
-
-  const basePredictions =
-    Array.isArray(
-      predictions?.[
-        forecastRange
-      ]
-    )
-      ? predictions[
-          forecastRange
-        ]
-      : [];
-
-  const activePredictions =
-    basePredictions.filter(
-      (prediction) =>
-        selectedCategory ===
-          "All Categories" ||
-        prediction.category ===
-          selectedCategory
-    );
-
-  return (
-    <section className="rounded-3xl border border-indigo-200 bg-gradient-to-b from-indigo-50/40 to-white p-6 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/20 dark:to-slate-900">
-      <div className="mb-6 flex flex-col items-start justify-between gap-5 xl:flex-row xl:items-center">
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 dark:shadow-none">
-            <FiTrendingUp
-              size={24}
-              aria-hidden="true"
-            />
-          </div>
-
-          <div>
-            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-              System Forecasting &
-              Next Steps
-            </h2>
-
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Run-rate predictive
-              analysis based on current
-              workforce data.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <select
-            value={
-              selectedCategory
-            }
-            onChange={(event) =>
-              setSelectedCategory(
-                event.target.value
-              )
-            }
-            className="h-10 cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          >
-            {categories.map(
-              (category) => (
-                <option
-                  key={category}
-                  value={category}
-                >
-                  {category}
-                </option>
-              )
-            )}
-          </select>
-
-          <div className="flex shrink-0 rounded-xl bg-indigo-100/60 p-1 dark:bg-slate-800/80">
-            {[
-              "weekly",
-              "monthly",
-              "yearly",
-            ].map((range) => (
-              <button
-                key={range}
-                type="button"
-                onClick={() =>
-                  setForecastRange(
-                    range
-                  )
-                }
-                className={[
-                  "rounded-lg px-5 py-2 text-xs font-bold transition-all",
-
-                  forecastRange ===
-                  range
-                    ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white"
-                    : "text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-white",
-                ].join(" ")}
-              >
-                {range
-                  .charAt(0)
-                  .toUpperCase() +
-                  range.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {activePredictions.length ===
-      0 ? (
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/50 py-12 text-center dark:border-white/10 dark:bg-slate-950/30">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-            <FiBarChart2
-              className="text-slate-400"
-              size={20}
-              aria-hidden="true"
-            />
-          </div>
-
-          <p className="text-base font-bold text-slate-700 dark:text-slate-300">
-            No operational trend
-            detected.
-          </p>
-
-          <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-            The system has not reached
-            the percentage threshold to
-            trigger a forecast for this
-            category and period.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {activePredictions.map(
-            (
-              prediction,
-              index
-            ) => {
-              const isForecast =
-                String(
-                  prediction.action ||
-                    ""
-                ).includes(
-                  "Forecast:"
-                );
-
-              const actionText =
-                String(
-                  prediction.action ||
-                    ""
-                ).replace(
-                  "Forecast: ",
-                  ""
-                );
-
-              return (
-                <div
-                  key={
-                    prediction.id ||
-                    `${prediction.category}-${index}`
-                  }
-                  className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
-                >
-                  <div>
-                    <div className="mb-4 flex items-start justify-between gap-2">
-                      <div className="flex flex-col">
-                        <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
-                          {prediction.percentage ||
-                            "0%"}
-                        </span>
-
-                        <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                          Affected Workforce
-                        </span>
-                      </div>
-
-                      <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                        {prediction.count ||
-                          0}{" "}
-                        Cases
-                      </span>
-                    </div>
-
-                    <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
-                      {prediction.category ||
-                        "Uncategorized"}
-                    </h4>
-
-                    <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
-                      {prediction.title ||
-                        "Operational Notice"}
-                    </h3>
-                  </div>
-
-                  <div className="mt-5">
-                    <div className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50" />
-
-                    <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
-                      {isForecast && (
-                        <span className="font-extrabold text-indigo-600 dark:text-indigo-400">
-                          Forecast:{" "}
-                        </span>
-                      )}
-
-                      {actionText ||
-                        "No suggested action available."}
-                    </p>
-                  </div>
-                </div>
-              );
-            }
-          )}
-        </div>
-      )}
-    </section>
   );
 }
