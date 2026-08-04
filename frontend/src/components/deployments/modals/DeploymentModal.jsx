@@ -9,8 +9,6 @@ import {
   FiX,
 } from "react-icons/fi";
 
-import { useAuth } from "../../../context/useAuth";
-
 import Button from "../../ui/Button";
 import Dialog from "../../ui/Dialog";
 import IconButton from "../../ui/IconButton";
@@ -19,49 +17,95 @@ import {
   formatLongDisplayDate,
   getDeploymentTimelineInfo,
   getStatusBadgeClass,
+  normalizeDeploymentStatus,
 } from "../../../utils/deployments/deploymentHelpers";
 
 import { DeploymentInfoCard } from "../shared/DeploymentModalUI";
 
+const STATUS_MESSAGES = {
+  Active: {
+    icon: FiCheckCircle,
+    className: "text-green-600 dark:text-green-300",
+    message: "Deployment is active and ongoing",
+  },
+  Completed: {
+    icon: FiCheckCircle,
+    className: "text-blue-600 dark:text-blue-300",
+    message: "Deployment has been completed",
+  },
+  Cancelled: {
+    icon: FiAlertTriangle,
+    className: "text-red-600 dark:text-red-300",
+    message: "Deployment has been cancelled",
+  },
+  Pending: {
+    icon: FiAlertTriangle,
+    className: "text-amber-600 dark:text-amber-300",
+    message: "Deployment is awaiting action",
+  },
+};
+
+function getEmployeeInitials(employeeName) {
+  return (
+    String(employeeName || "D")
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "D"
+  );
+}
+
+function DeploymentStatusMessage({ status }) {
+  const config = STATUS_MESSAGES[status];
+
+  if (!config) {
+    return null;
+  }
+
+  const StatusIcon = config.icon;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 text-xs ${config.className}`}
+    >
+      <StatusIcon size={14} aria-hidden="true" />
+      {config.message}
+    </span>
+  );
+}
+
 export default function DeploymentModal({
   deployment,
   close,
-  mode,
 }) {
-  const { user } = useAuth();
-
-  const isSuperAdmin =
-    user?.role === "SUPER_ADMIN";
-
   if (!deployment) {
     return null;
   }
 
-  const form = deployment;
+  const status = normalizeDeploymentStatus(
+    deployment.status
+  );
 
-  const isEdit =
-    mode === "edit" && !isSuperAdmin;
+  const employeeName =
+    deployment.employee || "Deployment";
 
-  const isAttention =
-    form.status === "Cancelled" ||
-    form.status === "Pending";
+  const employeeId =
+    deployment.employeeId ||
+    deployment.employee_id ||
+    deployment.id ||
+    "-";
 
   const employeeInitials =
-    String(form.employee || "D")
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) =>
-        part[0]?.toUpperCase()
-      )
-      .join("") || "D";
+    getEmployeeInitials(employeeName);
 
   const deploymentStartDate =
-    form.contractStart || form.start;
+    deployment.contractStart ||
+    deployment.start;
 
   const separationDate =
-    form.separationDate ||
-    form.contractEnd;
+    deployment.separationDate ||
+    deployment.contractEnd;
 
   const timelineInfo =
     getDeploymentTimelineInfo(
@@ -69,15 +113,19 @@ export default function DeploymentModal({
       separationDate
     );
 
+  const isAttention =
+    status === "Cancelled" ||
+    status === "Pending";
+
   const handleClose = () => {
     close?.();
   };
 
   return (
     <Dialog
-      open={Boolean(deployment)}
+      open
       onClose={handleClose}
-      title={`${form.employee || "Deployment"} deployment record`}
+      title={`${employeeName} deployment record`}
       description="View deployment assignment, timeline, employment status, and separation details."
       size="xl"
       height="xl"
@@ -98,35 +146,32 @@ export default function DeploymentModal({
 
               <div className="min-w-0">
                 <h2 className="truncate text-2xl font-bold text-gray-900 dark:text-white">
-                  {form.employee || "Deployment"}
+                  {employeeName}
                 </h2>
 
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-200">
-                    {form.id || "-"}
+                    {employeeId}
                   </span>
 
                   <span
                     className={[
                       "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                      getStatusBadgeClass(
-                        form.status
-                      ),
+                      getStatusBadgeClass(status),
                     ].join(" ")}
                   >
-                    {form.status ===
-                      "Cancelled" && (
+                    {status === "Cancelled" && (
                       <FiAlertTriangle
                         className="text-sm"
                         aria-hidden="true"
                       />
                     )}
 
-                    {form.status || "-"}
+                    {status}
                   </span>
 
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300">
-                    {form.employmentType ||
+                    {deployment.employmentType ||
                       "Permanent"}
                   </span>
                 </div>
@@ -146,11 +191,11 @@ export default function DeploymentModal({
         </header>
 
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-5 text-gray-900 dark:text-white sm:px-6 sm:py-6 lg:px-8">
-          {isAttention && !isEdit && (
+          {isAttention && (
             <div
               className={[
                 "rounded-2xl border p-5",
-                form.status === "Cancelled"
+                status === "Cancelled"
                   ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
                   : "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
               ].join(" ")}
@@ -168,8 +213,7 @@ export default function DeploymentModal({
                   </p>
 
                   <p className="mt-1 text-sm">
-                    {form.status ===
-                    "Cancelled"
+                    {status === "Cancelled"
                       ? "This deployment has been cancelled and is no longer active."
                       : "This deployment is pending further action."}
                   </p>
@@ -192,7 +236,7 @@ export default function DeploymentModal({
                   />
                 }
                 label="Employee"
-                value={form.employee}
+                value={employeeName}
               />
 
               <DeploymentInfoCard
@@ -203,7 +247,7 @@ export default function DeploymentModal({
                   />
                 }
                 label="Company"
-                value={form.company}
+                value={deployment.company}
               />
 
               <DeploymentInfoCard
@@ -214,7 +258,7 @@ export default function DeploymentModal({
                   />
                 }
                 label="Location"
-                value={form.location}
+                value={deployment.location}
               />
             </div>
           </section>
@@ -247,7 +291,8 @@ export default function DeploymentModal({
                 }
                 label="Separation Date"
                 value={
-                  separationDate
+                  separationDate &&
+                  separationDate !== "-"
                     ? formatLongDisplayDate(
                         separationDate
                       )
@@ -257,10 +302,8 @@ export default function DeploymentModal({
             </div>
 
             <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-              <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                <span className="text-sm">
-                  Timeline Summary
-                </span>
+              <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                Timeline Summary
               </div>
 
               <p className="text-base font-medium">
@@ -290,59 +333,15 @@ export default function DeploymentModal({
                 <span
                   className={[
                     "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                    getStatusBadgeClass(
-                      form.status
-                    ),
+                    getStatusBadgeClass(status),
                   ].join(" ")}
                 >
-                  {form.status || "-"}
+                  {status}
                 </span>
 
-                {form.status === "Active" && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-300">
-                    <FiCheckCircle
-                      size={14}
-                      aria-hidden="true"
-                    />
-
-                    Deployment is active and ongoing
-                  </span>
-                )}
-
-                {form.status ===
-                  "Completed" && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-300">
-                    <FiCheckCircle
-                      size={14}
-                      aria-hidden="true"
-                    />
-
-                    Deployment has been completed
-                  </span>
-                )}
-
-                {form.status ===
-                  "Cancelled" && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-red-600 dark:text-red-300">
-                    <FiAlertTriangle
-                      size={14}
-                      aria-hidden="true"
-                    />
-
-                    Deployment has been cancelled
-                  </span>
-                )}
-
-                {form.status === "Pending" && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-300">
-                    <FiAlertTriangle
-                      size={14}
-                      aria-hidden="true"
-                    />
-
-                    Deployment is awaiting action
-                  </span>
-                )}
+                <DeploymentStatusMessage
+                  status={status}
+                />
               </div>
             </div>
           </section>
