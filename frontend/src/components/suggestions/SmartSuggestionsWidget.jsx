@@ -214,7 +214,7 @@ export default function SmartSuggestionsWidget() {
 
   const { canView, suggestions, summary, isLoading, isFetching, error, refresh } =
     useSmartSuggestions(user, {
-      pollInterval: 15000,
+      pollInterval: 60000,
     });
 
   const sortedSuggestions = useMemo(() => {

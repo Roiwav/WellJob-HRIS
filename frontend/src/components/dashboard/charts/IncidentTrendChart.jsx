@@ -212,6 +212,10 @@ export default function IncidentTrendChart({
           <ResponsiveContainer
             width="100%"
             height="100%"
+            initialDimension={{
+              width: 1,
+              height: 300,
+            }}
           >
             <BarChart
               data={chartData}

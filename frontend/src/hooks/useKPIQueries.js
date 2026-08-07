@@ -17,7 +17,11 @@ const EMPLOYEE_API_URL =
 const INCIDENT_API_URL =
   `${API_BASE}/incidents`;
 
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS =
+  60 * 1000;
+
+const DEFAULT_STALE_TIME_MS =
+  5 * 60 * 1000;
 
 export const KPI_QUERY_KEYS = {
   all: ["kpi"],
@@ -32,7 +36,7 @@ async function requestJson(
     new AbortController();
 
   const timeoutId =
-    window.setTimeout(() => {
+    globalThis.setTimeout(() => {
       controller.abort();
     }, REQUEST_TIMEOUT_MS);
 
@@ -40,6 +44,7 @@ async function requestJson(
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
+
       headers: {
         Accept: "application/json",
         ...(options.headers || {}),
@@ -70,14 +75,19 @@ async function requestJson(
 
     throw error;
   } finally {
-    window.clearTimeout(timeoutId);
+    globalThis.clearTimeout(
+      timeoutId
+    );
   }
 }
 
-function isArchivedEmployee(employee) {
+function isArchivedEmployee(
+  employee
+) {
   return (
     employee?.archived === true ||
-    Number(employee?.archived) === 1
+    Number(employee?.archived) ===
+      1
   );
 }
 
@@ -85,9 +95,9 @@ function normalizeBackendEmployee(
   employee = {}
 ) {
   const employeeId =
-    employee.id ||
-    employee.employeeId ||
-    employee.employee_id ||
+    employee?.id ||
+    employee?.employeeId ||
+    employee?.employee_id ||
     "";
 
   return {
@@ -97,42 +107,44 @@ function normalizeBackendEmployee(
     employeeId,
 
     name:
-      employee.name ||
-      employee.full_name ||
-      employee.fullName ||
+      employee?.name ||
+      employee?.full_name ||
+      employee?.fullName ||
       "Unknown Employee",
 
     company:
-      employee.company ||
-      employee.clientCompany ||
-      employee.client_company ||
+      employee?.company ||
+      employee?.clientCompany ||
+      employee?.client_company ||
       "Unassigned",
 
     status:
-      employee.status ||
+      employee?.status ||
       "Unknown",
 
     employmentType:
-      employee.employmentType ||
-      employee.employment_type ||
+      employee?.employmentType ||
+      employee?.employment_type ||
       "",
 
     contractStart:
-      employee.contractStart ||
-      employee.contract_start ||
+      employee?.contractStart ||
+      employee?.contract_start ||
       null,
 
     contractEnd:
-      employee.contractEnd ||
-      employee.contract_end ||
+      employee?.contractEnd ||
+      employee?.contract_end ||
       null,
 
     archived:
-      isArchivedEmployee(employee),
+      isArchivedEmployee(
+        employee
+      ),
 
     documents:
       Array.isArray(
-        employee.documents
+        employee?.documents
       )
         ? employee.documents
         : [],
@@ -143,93 +155,94 @@ function normalizeBackendIncident(
   incident = {}
 ) {
   const employeeId =
-    incident.employeeId ||
-    incident.employee_id ||
-    incident.empId ||
-    incident.employeeID ||
+    incident?.employeeId ||
+    incident?.employee_id ||
+    incident?.empId ||
+    incident?.employeeID ||
     "";
 
   const violation =
-    incident.violation ||
-    incident.violationType ||
-    incident.violation_type ||
+    incident?.violation ||
+    incident?.violationType ||
+    incident?.violation_type ||
     "No violation type";
 
   const date =
-    incident.reportedAt ||
-    incident.reported_at ||
-    incident.date ||
-    incident.incidentDate ||
-    incident.incident_date ||
-    incident.createdAt ||
-    incident.created_at ||
+    incident?.reportedAt ||
+    incident?.reported_at ||
+    incident?.date ||
+    incident?.incidentDate ||
+    incident?.incident_date ||
+    incident?.createdAt ||
+    incident?.created_at ||
     new Date().toISOString();
 
   return {
     ...incident,
 
-    id: incident.id,
+    id: incident?.id,
 
     employeeId,
     employee_id: employeeId,
 
     employee:
-      incident.employee ||
-      incident.employeeName ||
-      incident.employee_name ||
+      incident?.employee ||
+      incident?.employeeName ||
+      incident?.employee_name ||
       "Unknown Employee",
 
     employeeName:
-      incident.employeeName ||
-      incident.employee ||
-      incident.employee_name ||
+      incident?.employeeName ||
+      incident?.employee ||
+      incident?.employee_name ||
       "Unknown Employee",
 
     company:
-      incident.company ||
+      incident?.company ||
       "",
 
     violation,
     violationType: violation,
 
     severity:
-      incident.severity ||
+      incident?.severity ||
       "Minor",
 
     status:
       normalizeStatus(
-        incident.status || "Open"
+        incident?.status ||
+          "Open"
       ),
 
     date,
 
     incidentDate:
-      incident.incidentDate ||
-      incident.incident_date ||
+      incident?.incidentDate ||
+      incident?.incident_date ||
       date,
 
     reportedAt:
-      incident.reportedAt ||
-      incident.reported_at ||
+      incident?.reportedAt ||
+      incident?.reported_at ||
       date,
 
     createdAt:
-      incident.createdAt ||
-      incident.created_at ||
+      incident?.createdAt ||
+      incident?.created_at ||
       date,
 
     recommendation:
-      incident.recommendation ||
+      incident?.recommendation ||
       "",
 
     sanction:
-      incident.sanction ||
-      incident.actionTaken ||
-      incident.action_taken ||
+      incident?.sanction ||
+      incident?.actionTaken ||
+      incident?.action_taken ||
       "",
 
     description:
-      incident.description ||
+      incident?.description ||
       "",
   };
 }
@@ -242,6 +255,7 @@ export async function fetchKPIBackendData() {
     requestJson(
       EMPLOYEE_API_URL
     ),
+
     requestJson(
       INCIDENT_API_URL
     ),
@@ -250,6 +264,7 @@ export async function fetchKPIBackendData() {
   const employeesRaw =
     Array.isArray(employeeData)
       ? employeeData
+          .filter(Boolean)
           .map(
             normalizeBackendEmployee
           )
@@ -261,9 +276,11 @@ export async function fetchKPIBackendData() {
 
   const normalizedIncidents =
     Array.isArray(incidentData)
-      ? incidentData.map(
-          normalizeBackendIncident
-        )
+      ? incidentData
+          .filter(Boolean)
+          .map(
+            normalizeBackendIncident
+          )
       : [];
 
   const incidentsRaw =
@@ -297,29 +314,18 @@ export function useKPIDataQuery(
     queryFn:
       fetchKPIBackendData,
 
-    refetchInterval:
-      options.refetchInterval ??
-      10000,
+    refetchInterval: false,
 
     staleTime:
-      options.staleTime ??
-      15000,
+      DEFAULT_STALE_TIME_MS,
 
     refetchOnWindowFocus:
-      true,
+      false,
 
     refetchOnReconnect:
       true,
 
-    retry: 1,
-
-    retryDelay:
-      (attemptIndex) =>
-        Math.min(
-          1000 *
-            2 ** attemptIndex,
-          5000
-        ),
+    retry: 0,
 
     ...options,
   });
@@ -329,10 +335,9 @@ export function useInvalidateKPIQueries() {
   const queryClient =
     useQueryClient();
 
-  return () => {
+  return () =>
     queryClient.invalidateQueries({
       queryKey:
         KPI_QUERY_KEYS.all,
     });
-  };
 }

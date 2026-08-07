@@ -50,38 +50,86 @@ import {
   useKPIDecisionHistoryQuery,
 } from "../hooks/useKPIDecisionQueries";
 
+const AUTO_REFRESH_INTERVAL_MS =
+  false;
+
 const TABS = [
   {
     id: "overview",
     label: "Overview",
     description: "Executive KPI summary",
-    icon: FiActivity,
   },
   {
     id: "intelligence",
     label: "Employee Intelligence",
     description: "KPI risk table",
-    icon: FiShield,
   },
   {
     id: "review",
     label: "Recommendation Review",
     description: "HR validation queue",
-    icon: FiTarget,
   },
   {
     id: "history",
     label: "Decision History",
     description: "Recorded HR actions",
-    icon: FiClock,
   },
   {
     id: "analytics",
     label: "Analytics",
     description: "Trend visualization",
-    icon: FiBarChart2,
   },
 ];
+
+function KPIReportTabIcon({
+  tabId,
+  size = 17,
+}) {
+  switch (tabId) {
+    case "overview":
+      return (
+        <FiActivity
+          size={size}
+          aria-hidden="true"
+        />
+      );
+
+    case "intelligence":
+      return (
+        <FiShield
+          size={size}
+          aria-hidden="true"
+        />
+      );
+
+    case "review":
+      return (
+        <FiTarget
+          size={size}
+          aria-hidden="true"
+        />
+      );
+
+    case "history":
+      return (
+        <FiClock
+          size={size}
+          aria-hidden="true"
+        />
+      );
+
+    case "analytics":
+      return (
+        <FiBarChart2
+          size={size}
+          aria-hidden="true"
+        />
+      );
+
+    default:
+      return null;
+  }
+}
 
 function isPendingForReview(
   employee,
@@ -166,29 +214,33 @@ export default function KPIReports() {
     setSuccessMessage,
   ] = useState("");
 
+  const [
+    isManualRefreshing,
+    setIsManualRefreshing,
+  ] = useState(false);
+
   const {
     data: kpiData,
     isLoading: isKpiLoading,
-    isFetching: isKpiFetching,
     error: kpiError,
     refetch: refetchKPIData,
   } = useKPIDataQuery({
-    refetchInterval: 10000,
+    refetchInterval:
+      AUTO_REFRESH_INTERVAL_MS,
   });
 
   const {
     data: decisionHistoryData,
     isLoading:
       isDecisionHistoryLoading,
-    isFetching:
-      isDecisionHistoryFetching,
     error:
       decisionHistoryError,
     refetch:
       refetchDecisionHistory,
   } =
     useKPIDecisionHistoryQuery({
-      refetchInterval: 10000,
+      refetchInterval:
+        AUTO_REFRESH_INTERVAL_MS,
     });
 
   const employeesRawSource =
@@ -448,10 +500,6 @@ export default function KPIReports() {
     isKpiLoading ||
     isDecisionHistoryLoading;
 
-  const isFetching =
-    isKpiFetching ||
-    isDecisionHistoryFetching;
-
   const pageError =
     refreshError ||
     getErrorMessage(
@@ -468,10 +516,11 @@ export default function KPIReports() {
 
   const handleRefreshData =
     async () => {
-      if (isFetching) {
+      if (isManualRefreshing) {
         return;
       }
 
+      setIsManualRefreshing(true);
       setRefreshError("");
       setSuccessMessage("");
 
@@ -518,6 +567,8 @@ export default function KPIReports() {
             "Unable to refresh KPI data."
           )
         );
+      } finally {
+        setIsManualRefreshing(false);
       }
     };
 
@@ -596,7 +647,10 @@ export default function KPIReports() {
             : "Review workforce performance, risk intelligence, recommendations, decision history, and KPI trends."
         }
         icon={
-          <FiBarChart2 size={22} />
+          <FiBarChart2
+            size={22}
+            aria-hidden="true"
+          />
         }
         actions={
           <>
@@ -607,16 +661,18 @@ export default function KPIReports() {
                 <FiRefreshCw
                   aria-hidden="true"
                   className={
-                    isFetching
+                    isManualRefreshing
                       ? "animate-spin"
                       : ""
                   }
                 />
               }
-              loading={isFetching}
+              loading={
+                isManualRefreshing
+              }
               disabled={
                 isLoading ||
-                isFetching
+                isManualRefreshing
               }
               onClick={
                 handleRefreshData
@@ -640,7 +696,6 @@ export default function KPIReports() {
                 }
                 disabled={
                   isLoading ||
-                  isFetching ||
                   employees.length === 0
                 }
                 onClick={
@@ -670,9 +725,15 @@ export default function KPIReports() {
           compact
           title="KPI data error"
           message={pageError}
-          retryLabel="Reload KPI data"
+          retryLabel={
+            isManualRefreshing
+              ? "Reloading KPI data..."
+              : "Reload KPI data"
+          }
           onRetry={
-            handleRefreshData
+            isManualRefreshing
+              ? undefined
+              : handleRefreshData
           }
         />
       )}
@@ -684,8 +745,6 @@ export default function KPIReports() {
           className="flex gap-2 overflow-x-auto pb-1"
         >
           {TABS.map((tab) => {
-            const Icon = tab.icon;
-
             const isActive =
               activeTab === tab.id;
 
@@ -702,10 +761,8 @@ export default function KPIReports() {
                 aria-selected={
                   isActive
                 }
-                disabled={
-                  isLoading ||
-                  isFetching
-                }
+                aria-controls={`kpi-panel-${tab.id}`}
+                disabled={isLoading}
                 onClick={() =>
                   setActiveTab(tab.id)
                 }
@@ -722,9 +779,8 @@ export default function KPIReports() {
                       : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
                   }`}
                 >
-                  <Icon
-                    size={17}
-                    aria-hidden="true"
+                  <KPIReportTabIcon
+                    tabId={tab.id}
                   />
                 </span>
 
@@ -777,12 +833,12 @@ export default function KPIReports() {
             title="No KPI employee data"
             description="KPI reports will appear after active employee records are available from the backend."
             secondaryActionLabel={
-              isFetching
+              isManualRefreshing
                 ? "Reloading KPI data..."
                 : "Reload KPI data"
             }
             onSecondaryAction={
-              isFetching
+              isManualRefreshing
                 ? undefined
                 : handleRefreshData
             }
@@ -790,6 +846,7 @@ export default function KPIReports() {
         </section>
       ) : (
         <div
+          id={`kpi-panel-${activeTab}`}
           role="tabpanel"
           className="space-y-6"
         >

@@ -1,43 +1,164 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-function countBy(employees = [], key, fallback = "Unspecified") {
-  return employees.reduce((acc, emp) => {
-    const value = emp?.[key] || fallback;
-    acc[value] = (acc[value] || 0) + 1;
-    return acc;
-  }, {});
+function getSafeArray(value) {
+  return Array.isArray(value)
+    ? value.filter(Boolean)
+    : [];
 }
 
-function toSummaryRows(summary = {}, total = 0) {
-  const entries = Object.entries(summary);
+function getSafeNumber(
+  value,
+  fallback = 0
+) {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : fallback;
+}
+
+function countBy(
+  employees = [],
+  key,
+  fallback = "Unspecified"
+) {
+  const safeEmployees =
+    getSafeArray(employees);
+
+  return safeEmployees.reduce(
+    (accumulator, employee) => {
+      const value =
+        employee?.[key] ||
+        fallback;
+
+      accumulator[value] =
+        (accumulator[value] || 0) +
+        1;
+
+      return accumulator;
+    },
+    {}
+  );
+}
+
+function toSummaryRows(
+  summary = {},
+  total = 0
+) {
+  const safeTotal = Math.max(
+    0,
+    getSafeNumber(total)
+  );
+
+  const entries =
+    Object.entries(
+      summary || {}
+    );
 
   if (entries.length === 0) {
-    return [["No data available", 0, "0%"]];
+    return [
+      [
+        "No data available",
+        0,
+        "0%",
+      ],
+    ];
   }
 
   return entries
-    .sort((a, b) => b[1] - a[1])
-    .map(([label, count]) => [
-      label,
-      count,
-      total > 0 ? `${Math.round((count / total) * 100)}%` : "0%",
-    ]);
+    .sort(
+      (
+        firstEntry,
+        secondEntry
+      ) =>
+        getSafeNumber(
+          secondEntry[1]
+        ) -
+        getSafeNumber(
+          firstEntry[1]
+        )
+    )
+    .map(
+      ([label, count]) => {
+        const safeCount =
+          Math.max(
+            0,
+            getSafeNumber(count)
+          );
+
+        return [
+          label,
+          safeCount,
+          safeTotal > 0
+            ? `${Math.round(
+                (safeCount /
+                  safeTotal) *
+                  100
+              )}%`
+            : "0%",
+        ];
+      }
+    );
 }
 
-function getTotal(employees = [], key) {
-  return employees.reduce((sum, emp) => sum + Number(emp?.[key] || 0), 0);
+function getTotal(
+  employees = [],
+  key
+) {
+  const safeEmployees =
+    getSafeArray(employees);
+
+  return safeEmployees.reduce(
+    (sum, employee) =>
+      sum +
+      getSafeNumber(
+        employee?.[key]
+      ),
+    0
+  );
 }
 
-function addSectionTitle(doc, title, y) {
+function addSectionTitle(
+  doc,
+  title,
+  y
+) {
   doc.setFontSize(12);
-  doc.setFont(undefined, "bold");
+  doc.setFont(
+    undefined,
+    "bold"
+  );
+
   doc.text(title, 14, y);
-  doc.setFont(undefined, "normal");
+
+  doc.setFont(
+    undefined,
+    "normal"
+  );
 }
 
-function getNextY(doc, spacing = 10) {
-  return (doc.lastAutoTable?.finalY || 40) + spacing;
+function getNextY(
+  doc,
+  spacing = 10
+) {
+  return (
+    (doc.lastAutoTable?.finalY ||
+      40) + spacing
+  );
+}
+
+function getPageBottomLimit(
+  doc,
+  marginBottom = 20
+) {
+  const pageHeight =
+    doc.internal.pageSize.getHeight();
+
+  return (
+    pageHeight -
+    marginBottom
+  );
 }
 
 export function exportKPIReportPDF({
@@ -51,171 +172,566 @@ export function exportKPIReportPDF({
   criticalAlerts = [],
   employees = [],
 }) {
+  const safeEmployees =
+    getSafeArray(employees);
+
+  const safeCriticalAlerts =
+    getSafeArray(
+      criticalAlerts
+    );
+
+  const safeTotalEmployees =
+    Math.max(
+      0,
+      getSafeNumber(
+        totalEmployees
+      )
+    );
+
+  const safeDeployedEmployees =
+    Math.max(
+      0,
+      getSafeNumber(
+        deployedEmployees
+      )
+    );
+
+  const safeComplianceRate =
+    Math.max(
+      0,
+      getSafeNumber(
+        complianceRate
+      )
+    );
+
+  const safeRepeatOffenders =
+    Math.max(
+      0,
+      getSafeNumber(
+        repeatOffenders
+      )
+    );
+
+  const safeHighRiskEmployees =
+    Math.max(
+      0,
+      getSafeNumber(
+        highRiskEmployees
+      )
+    );
+
+  const safeGoodStandingEmployees =
+    Math.max(
+      0,
+      getSafeNumber(
+        goodStandingEmployees
+      )
+    );
+
   const doc = new jsPDF();
 
-  const generatedBy = user?.name || user?.username || "System User";
-  const generatedOn = new Date().toLocaleString();
+  const generatedBy =
+    user?.name ||
+    user?.username ||
+    "System User";
 
-  const totalViolations = getTotal(employees, "violationCount");
-  const totalSeverityScore = getTotal(employees, "severityScore");
-  const totalCriticalCases = getTotal(employees, "criticalIncidentCount");
-  const totalOpenCases = getTotal(employees, "openIncidentCount");
+  const generatedOn =
+    new Date().toLocaleString(
+      "en-PH"
+    );
 
-  const kpiLevelSummary = countBy(employees, "kpiLevel", "Unspecified KPI");
-  const riskLevelSummary = countBy(employees, "riskLevel", "Unspecified Risk");
-  const severitySummary = countBy(
-    employees,
-    "severityLabel",
-    "Unspecified Severity"
-  );
-  const confidenceSummary = countBy(
-    employees,
-    "decisionConfidence",
-    "Unspecified Confidence"
-  );
-  const suggestedActionSummary = countBy(
-    employees,
-    "suggestedHRAction",
-    "Unspecified Suggested Action"
-  );
-  const recommendationSummary = countBy(
-    employees,
-    "recommendation",
-    "Unspecified Recommendation"
-  );
+  const totalViolations =
+    getTotal(
+      safeEmployees,
+      "violationCount"
+    );
+
+  const totalSeverityScore =
+    getTotal(
+      safeEmployees,
+      "severityScore"
+    );
+
+  const totalCriticalCases =
+    getTotal(
+      safeEmployees,
+      "criticalIncidentCount"
+    );
+
+  const totalOpenCases =
+    getTotal(
+      safeEmployees,
+      "openIncidentCount"
+    );
+
+  const kpiLevelSummary =
+    countBy(
+      safeEmployees,
+      "kpiLevel",
+      "Unspecified KPI"
+    );
+
+  const riskLevelSummary =
+    countBy(
+      safeEmployees,
+      "riskLevel",
+      "Unspecified Risk"
+    );
+
+  const severitySummary =
+    countBy(
+      safeEmployees,
+      "severityLabel",
+      "Unspecified Severity"
+    );
+
+  const confidenceSummary =
+    countBy(
+      safeEmployees,
+      "decisionConfidence",
+      "Unspecified Confidence"
+    );
+
+  const suggestedActionSummary =
+    countBy(
+      safeEmployees,
+      "suggestedHRAction",
+      "Unspecified Suggested Action"
+    );
+
+  const recommendationSummary =
+    countBy(
+      safeEmployees,
+      "recommendation",
+      "Unspecified Recommendation"
+    );
 
   doc.setFontSize(16);
-  doc.setFont(undefined, "bold");
-  doc.text("Welljob Solutions KPI Report", 14, 15);
+  doc.setFont(
+    undefined,
+    "bold"
+  );
+
+  doc.text(
+    "Welljob Solutions KPI Report",
+    14,
+    15
+  );
 
   doc.setFontSize(10);
-  doc.setFont(undefined, "normal");
-  doc.text(`Generated by: ${generatedBy}`, 14, 22);
-  doc.text(`Generated on: ${generatedOn}`, 14, 28);
+  doc.setFont(
+    undefined,
+    "normal"
+  );
+
+  doc.text(
+    `Generated by: ${generatedBy}`,
+    14,
+    22
+  );
+
+  doc.text(
+    `Generated on: ${generatedOn}`,
+    14,
+    28
+  );
 
   doc.setFontSize(9);
   doc.setTextColor(90);
+
   doc.text(
     "This report summarizes workforce KPI indicators without displaying individual employee names.",
     14,
     34
   );
+
   doc.setTextColor(0);
 
-  addSectionTitle(doc, "KPI Summary", 42);
+  addSectionTitle(
+    doc,
+    "KPI Summary",
+    42
+  );
 
   autoTable(doc, {
     startY: 46,
-    head: [["Metric", "Value"]],
-    body: [
-      ["Total Active Employees", totalEmployees],
-      ["Currently Deployed Employees", deployedEmployees],
-      ["Compliance Rate", `${complianceRate}%`],
-      ["Good Standing Employees", goodStandingEmployees],
-      ["Repeat Offenders", repeatOffenders],
-      ["High Risk Employees", highRiskEmployees],
-      ["Total Recorded Violations", totalViolations],
-      ["Total Severity Score", totalSeverityScore],
-      ["Total Critical Cases", totalCriticalCases],
-      ["Total Open / Active Cases", totalOpenCases],
+
+    head: [
+      [
+        "Metric",
+        "Value",
+      ],
     ],
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [22, 163, 74] },
+
+    body: [
+      [
+        "Total Active Employees",
+        safeTotalEmployees,
+      ],
+      [
+        "Currently Deployed Employees",
+        safeDeployedEmployees,
+      ],
+      [
+        "Compliance Rate",
+        `${safeComplianceRate}%`,
+      ],
+      [
+        "Good Standing Employees",
+        safeGoodStandingEmployees,
+      ],
+      [
+        "Repeat Offenders",
+        safeRepeatOffenders,
+      ],
+      [
+        "High Risk Employees",
+        safeHighRiskEmployees,
+      ],
+      [
+        "Total Recorded Violations",
+        totalViolations,
+      ],
+      [
+        "Total Severity Score",
+        totalSeverityScore,
+      ],
+      [
+        "Total Critical Cases",
+        totalCriticalCases,
+      ],
+      [
+        "Total Open / Active Cases",
+        totalOpenCases,
+      ],
+    ],
+
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+
+    headStyles: {
+      fillColor: [
+        22,
+        163,
+        74,
+      ],
+    },
   });
 
-  addSectionTitle(doc, "Critical Alerts", getNextY(doc));
+  addSectionTitle(
+    doc,
+    "Critical Alerts",
+    getNextY(doc)
+  );
 
   autoTable(doc, {
-    startY: getNextY(doc, 4),
-    head: [["Level", "Alert"]],
+    startY:
+      getNextY(doc, 4),
+
+    head: [
+      [
+        "Level",
+        "Alert",
+      ],
+    ],
+
     body:
-      criticalAlerts.length > 0
-        ? criticalAlerts.map((alert) => [alert.level, alert.text])
-        : [["None", "No critical alerts available"]],
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [239, 68, 68] },
+      safeCriticalAlerts.length >
+      0
+        ? safeCriticalAlerts.map(
+            (alert) => [
+              alert?.level ||
+                "Unknown",
+
+              alert?.text ||
+                "No alert details available",
+            ]
+          )
+        : [
+            [
+              "None",
+              "No critical alerts available",
+            ],
+          ],
+
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+
+    headStyles: {
+      fillColor: [
+        239,
+        68,
+        68,
+      ],
+    },
   });
 
-  addSectionTitle(doc, "KPI Level Distribution", getNextY(doc));
+  addSectionTitle(
+    doc,
+    "KPI Level Distribution",
+    getNextY(doc)
+  );
 
   autoTable(doc, {
-    startY: getNextY(doc, 4),
-    head: [["KPI Level", "Employees", "Percentage"]],
-    body: toSummaryRows(kpiLevelSummary, totalEmployees),
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [37, 99, 235] },
+    startY:
+      getNextY(doc, 4),
+
+    head: [
+      [
+        "KPI Level",
+        "Employees",
+        "Percentage",
+      ],
+    ],
+
+    body: toSummaryRows(
+      kpiLevelSummary,
+      safeTotalEmployees
+    ),
+
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+
+    headStyles: {
+      fillColor: [
+        37,
+        99,
+        235,
+      ],
+    },
   });
 
-  addSectionTitle(doc, "Risk Level Distribution", getNextY(doc));
+  addSectionTitle(
+    doc,
+    "Risk Level Distribution",
+    getNextY(doc)
+  );
 
   autoTable(doc, {
-    startY: getNextY(doc, 4),
-    head: [["Risk Level", "Employees", "Percentage"]],
-    body: toSummaryRows(riskLevelSummary, totalEmployees),
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [99, 102, 241] },
+    startY:
+      getNextY(doc, 4),
+
+    head: [
+      [
+        "Risk Level",
+        "Employees",
+        "Percentage",
+      ],
+    ],
+
+    body: toSummaryRows(
+      riskLevelSummary,
+      safeTotalEmployees
+    ),
+
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+
+    headStyles: {
+      fillColor: [
+        99,
+        102,
+        241,
+      ],
+    },
   });
 
-  addSectionTitle(doc, "Severity Distribution", getNextY(doc));
+  addSectionTitle(
+    doc,
+    "Severity Distribution",
+    getNextY(doc)
+  );
 
   autoTable(doc, {
-    startY: getNextY(doc, 4),
-    head: [["Severity Level", "Employees", "Percentage"]],
-    body: toSummaryRows(severitySummary, totalEmployees),
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [245, 158, 11] },
+    startY:
+      getNextY(doc, 4),
+
+    head: [
+      [
+        "Severity Level",
+        "Employees",
+        "Percentage",
+      ],
+    ],
+
+    body: toSummaryRows(
+      severitySummary,
+      safeTotalEmployees
+    ),
+
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+
+    headStyles: {
+      fillColor: [
+        245,
+        158,
+        11,
+      ],
+    },
   });
 
-  addSectionTitle(doc, "Decision Confidence Summary", getNextY(doc));
+  addSectionTitle(
+    doc,
+    "Decision Confidence Summary",
+    getNextY(doc)
+  );
 
   autoTable(doc, {
-    startY: getNextY(doc, 4),
-    head: [["Decision Confidence", "Employees", "Percentage"]],
-    body: toSummaryRows(confidenceSummary, totalEmployees),
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [124, 58, 237] },
+    startY:
+      getNextY(doc, 4),
+
+    head: [
+      [
+        "Decision Confidence",
+        "Employees",
+        "Percentage",
+      ],
+    ],
+
+    body: toSummaryRows(
+      confidenceSummary,
+      safeTotalEmployees
+    ),
+
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+
+    headStyles: {
+      fillColor: [
+        124,
+        58,
+        237,
+      ],
+    },
   });
 
-  addSectionTitle(doc, "Suggested HR Action Summary", getNextY(doc));
+  addSectionTitle(
+    doc,
+    "Suggested HR Action Summary",
+    getNextY(doc)
+  );
 
   autoTable(doc, {
-    startY: getNextY(doc, 4),
-    head: [["Suggested HR Action", "Employees", "Percentage"]],
-    body: toSummaryRows(suggestedActionSummary, totalEmployees),
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [14, 165, 233] },
+    startY:
+      getNextY(doc, 4),
+
+    head: [
+      [
+        "Suggested HR Action",
+        "Employees",
+        "Percentage",
+      ],
+    ],
+
+    body: toSummaryRows(
+      suggestedActionSummary,
+      safeTotalEmployees
+    ),
+
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+
+    headStyles: {
+      fillColor: [
+        14,
+        165,
+        233,
+      ],
+    },
   });
 
-  addSectionTitle(doc, "System Recommendation Summary", getNextY(doc));
+  addSectionTitle(
+    doc,
+    "System Recommendation Summary",
+    getNextY(doc)
+  );
 
   autoTable(doc, {
-    startY: getNextY(doc, 4),
-    head: [["System Recommendation", "Employees", "Percentage"]],
-    body: toSummaryRows(recommendationSummary, totalEmployees),
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [16, 185, 129] },
+    startY:
+      getNextY(doc, 4),
+
+    head: [
+      [
+        "System Recommendation",
+        "Employees",
+        "Percentage",
+      ],
+    ],
+
+    body: toSummaryRows(
+      recommendationSummary,
+      safeTotalEmployees
+    ),
+
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+
+    headStyles: {
+      fillColor: [
+        16,
+        185,
+        129,
+      ],
+    },
   });
 
-  const finalY = getNextY(doc, 8);
+  const reminderText =
+    "Decision-support reminder: System-generated KPI outputs are intended to assist HR review and do not replace final HR judgment.";
 
-  if (finalY > 265) {
+  const finalY =
+    getNextY(doc, 8);
+
+  const pageBottomLimit =
+    getPageBottomLimit(doc);
+
+  if (
+    finalY > pageBottomLimit
+  ) {
     doc.addPage();
+
     doc.setFontSize(9);
     doc.setTextColor(90);
+
     doc.text(
-      "Decision-support reminder: System-generated KPI outputs are intended to assist HR review and do not replace final HR judgment.",
+      reminderText,
       14,
-      20
+      20,
+      {
+        maxWidth: 180,
+      }
     );
   } else {
     doc.setFontSize(9);
     doc.setTextColor(90);
+
     doc.text(
-      "Decision-support reminder: System-generated KPI outputs are intended to assist HR review and do not replace final HR judgment.",
+      reminderText,
       14,
-      finalY
+      finalY,
+      {
+        maxWidth: 180,
+      }
     );
   }
 
-  doc.save("Welljob_KPI_Report.pdf");
+  doc.save(
+    "Welljob_KPI_Report.pdf"
+  );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   canViewSmartSuggestions,
   getSmartSuggestionUserKey,
@@ -21,7 +21,8 @@ export default function useSmartSuggestions(user, options = {}) {
   const role = user?.role || "USER";
   const userKey = useMemo(() => getSmartSuggestionUserKey(user), [user]);
   const canView = canViewSmartSuggestions(role);
-  const pollInterval = options.pollInterval ?? 15000;
+  const pollInterval = options.pollInterval ?? 60000;
+  const requestInFlightRef = useRef(false);
 
   const [suggestions, setSuggestions] = useState([]);
   const [latestSuggestions, setLatestSuggestions] = useState([]);
@@ -40,6 +41,10 @@ export default function useSmartSuggestions(user, options = {}) {
         setIsFetching(false);
         return;
       }
+
+      if (requestInFlightRef.current) return;
+
+      requestInFlightRef.current = true;
 
       try {
         if (!silent) setIsLoading(true);
@@ -66,6 +71,7 @@ export default function useSmartSuggestions(user, options = {}) {
         setSuggestions([]);
         setLatestSuggestions([]);
       } finally {
+        requestInFlightRef.current = false;
         setIsLoading(false);
         setIsFetching(false);
       }
@@ -128,19 +134,14 @@ export default function useSmartSuggestions(user, options = {}) {
     fetchSuggestions();
 
     const handleDataUpdated = () => fetchSuggestions({ silent: true });
-    const handleWindowFocus = () => fetchSuggestions({ silent: true });
-
     const intervalId = window.setInterval(
       () => fetchSuggestions({ silent: true }),
       pollInterval
     );
 
     window.addEventListener("dataUpdated", handleDataUpdated);
-    window.addEventListener("focus", handleWindowFocus);
-
     return () => {
       window.removeEventListener("dataUpdated", handleDataUpdated);
-      window.removeEventListener("focus", handleWindowFocus);
       window.clearInterval(intervalId);
     };
   }, [fetchSuggestions, pollInterval]);

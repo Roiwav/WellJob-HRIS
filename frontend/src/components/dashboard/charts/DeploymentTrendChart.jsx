@@ -232,6 +232,10 @@ export default function DeploymentTrendChart({
           <ResponsiveContainer
             width="100%"
             height="100%"
+            initialDimension={{
+              width: 1,
+              height: 350,
+            }}
           >
             <LineChart
               data={chartData}

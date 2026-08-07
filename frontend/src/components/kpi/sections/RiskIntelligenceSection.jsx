@@ -49,13 +49,19 @@ export default function RiskIntelligenceSection({
       : [];
 
   return (
-    <section className="min-w-0 space-y-4">
+    <section
+      className="min-w-0 space-y-4"
+      aria-labelledby="risk-intelligence-title"
+    >
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <h2
+          id="risk-intelligence-title"
+          className="text-lg font-semibold text-gray-900 dark:text-white"
+        >
           KPI Standing and HR Action Intelligence
         </h2>
 
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
           Provides employee-level KPI standing, risk evaluation, recommended HR
           actions, and decision reasons for workforce monitoring.
         </p>

@@ -82,7 +82,7 @@ export default function Navbar({
     dismissAlert,
     clearReadAlerts,
   } = useSmartNotifications(user, {
-    pollInterval: 10000,
+    pollInterval: 60000,
   });
 
   const roleConfig = useMemo(

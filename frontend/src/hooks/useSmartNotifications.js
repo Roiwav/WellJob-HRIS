@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -100,7 +101,10 @@ export default function useSmartNotifications(
 
   const pollInterval =
     options.pollInterval ??
-    10000;
+    60000;
+
+  const requestInFlightRef =
+    useRef(false);
 
   const [alerts, setAlerts] =
     useState([]);
@@ -231,6 +235,12 @@ export default function useSmartNotifications(
         return;
       }
 
+      if (requestInFlightRef.current) {
+        return;
+      }
+
+      requestInFlightRef.current = true;
+
       try {
         if (!silent) {
           setIsLoading(true);
@@ -319,6 +329,7 @@ export default function useSmartNotifications(
             "Unable to load smart alerts."
         );
       } finally {
+        requestInFlightRef.current = false;
         setIsLoading(false);
         setIsFetching(false);
       }
@@ -762,12 +773,6 @@ export default function useSmartNotifications(
           silent: true,
         });
 
-    const handleWindowFocus =
-      () =>
-        fetchAlerts({
-          silent: true,
-        });
-
     const intervalId =
       window.setInterval(
         () =>
@@ -782,20 +787,10 @@ export default function useSmartNotifications(
       handleDataUpdated
     );
 
-    window.addEventListener(
-      "focus",
-      handleWindowFocus
-    );
-
     return () => {
       window.removeEventListener(
         "dataUpdated",
         handleDataUpdated
-      );
-
-      window.removeEventListener(
-        "focus",
-        handleWindowFocus
       );
 
       window.clearInterval(

@@ -10,7 +10,11 @@ const API_BASE =
 const DECISION_HISTORY_API =
   `${API_BASE}/kpi/decision-history`;
 
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS =
+  60 * 1000;
+
+const DEFAULT_STALE_TIME_MS =
+  5 * 60 * 1000;
 
 export const KPI_DECISION_QUERY_KEYS = {
   all: ["kpi-decisions"],
@@ -28,14 +32,16 @@ async function requestJson(
     new AbortController();
 
   const timeoutId =
-    window.setTimeout(() => {
+    globalThis.setTimeout(() => {
       controller.abort();
     }, REQUEST_TIMEOUT_MS);
 
   try {
     const response = await fetch(url, {
       ...options,
+
       signal: controller.signal,
+
       headers: {
         Accept: "application/json",
         "Content-Type":
@@ -68,7 +74,9 @@ async function requestJson(
 
     throw error;
   } finally {
-    window.clearTimeout(timeoutId);
+    globalThis.clearTimeout(
+      timeoutId
+    );
   }
 }
 
@@ -84,29 +92,18 @@ export function useKPIDecisionHistoryQuery(
         DECISION_HISTORY_API
       ),
 
-    refetchInterval:
-      options.refetchInterval ??
-      10000,
+    refetchInterval: false,
 
     staleTime:
-      options.staleTime ??
-      15000,
+      DEFAULT_STALE_TIME_MS,
 
     refetchOnWindowFocus:
-      true,
+      false,
 
     refetchOnReconnect:
       true,
 
-    retry: 1,
-
-    retryDelay:
-      (attemptIndex) =>
-        Math.min(
-          1000 *
-            2 ** attemptIndex,
-          5000
-        ),
+    retry: 0,
 
     ...options,
   });
@@ -122,6 +119,7 @@ export function useCreateKPIDecisionMutation() {
         DECISION_HISTORY_API,
         {
           method: "POST",
+
           body:
             JSON.stringify(
               payload

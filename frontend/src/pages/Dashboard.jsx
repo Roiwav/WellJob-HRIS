@@ -39,7 +39,7 @@ const INCIDENT_API_URL = `${API_BASE}/incidents`;
 const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
 
 const DATA_EVENT_SOURCE = "dashboard-page";
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 45 * 1000;
 const DATA_UPDATE_DEBOUNCE_MS = 300;
 
 const activeRequests = new Map();
@@ -1364,23 +1364,46 @@ export default function Dashboard() {
           ),
         ]);
 
+        const requestErrors = [
+          getRejectedReason(
+            employeeResult,
+            "Employee data failed to load."
+          ),
+
+          getRejectedReason(
+            incidentResult,
+            "Incident data failed to load."
+          ),
+
+          getRejectedReason(
+            deploymentResult,
+            "Deployment data failed to load."
+          ),
+        ].filter(Boolean);
+
+        if (requestErrors.length > 0) {
+          if (
+            showError &&
+            isMountedRef.current
+          ) {
+            setFetchError(
+              `Some dashboard data could not be loaded: ${requestErrors.join(
+                " "
+              )}`
+            );
+          }
+
+          return false;
+        }
+
         const employeeData =
-          employeeResult.status ===
-          "fulfilled"
-            ? employeeResult.value
-            : [];
+          employeeResult.value;
 
         const incidentData =
-          incidentResult.status ===
-          "fulfilled"
-            ? incidentResult.value
-            : [];
+          incidentResult.value;
 
         const deploymentData =
-          deploymentResult.status ===
-          "fulfilled"
-            ? deploymentResult.value
-            : [];
+          deploymentResult.value;
 
         const employeesRaw =
           Array.isArray(employeeData)
@@ -1547,38 +1570,7 @@ export default function Dashboard() {
           formatLastUpdated()
         );
 
-        const requestErrors = [
-          getRejectedReason(
-            employeeResult,
-            "Employee data failed to load."
-          ),
-
-          getRejectedReason(
-            incidentResult,
-            "Incident data failed to load."
-          ),
-
-          getRejectedReason(
-            deploymentResult,
-            "Deployment data failed to load."
-          ),
-        ].filter(Boolean);
-
-        if (
-          showError &&
-          requestErrors.length > 0
-        ) {
-          setFetchError(
-            `Some dashboard data could not be loaded: ${requestErrors.join(
-              " "
-            )}`
-          );
-        }
-
-        return (
-          requestErrors.length <
-          3
-        );
+        return true;
       } catch (error) {
         console.error(
           "Dashboard backend fetch error:",
@@ -2594,7 +2586,7 @@ export default function Dashboard() {
 
         <p className="text-xs text-slate-400">
           Requests automatically stop
-          after 15 seconds if the server
+          after 45 seconds if the server
           does not respond.
         </p>
       </div>

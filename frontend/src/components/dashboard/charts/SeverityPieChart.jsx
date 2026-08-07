@@ -32,16 +32,21 @@ function normalizeSeverityData(data) {
 
       return {
         ...item,
+
         name:
           String(
             item?.name ||
               `Severity ${index + 1}`
           ).trim() ||
           `Severity ${index + 1}`,
+
         value: Number.isFinite(
           numericValue
         )
-          ? Math.max(0, numericValue)
+          ? Math.max(
+              0,
+              numericValue
+            )
           : 0,
       };
     });
@@ -49,7 +54,7 @@ function normalizeSeverityData(data) {
 
 function EmptyChartState() {
   return (
-    <div className="flex h-[300px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center dark:border-slate-700 dark:bg-slate-950/40">
+    <div className="flex h-[300px] w-full items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-6 text-center dark:border-slate-700 dark:bg-slate-900/40">
       <div>
         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
           No severity data available
@@ -83,15 +88,9 @@ export default function SeverityPieChart({
     totalIncidents > 0;
 
   return (
-    <section
-      aria-labelledby="incident-severity-title"
-      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-    >
-      <div className="mb-5">
-        <h3
-          id="incident-severity-title"
-          className="text-lg font-semibold text-slate-900 dark:text-white"
-        >
+    <section className="min-w-0">
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
           Incident Severity
         </h3>
 
@@ -111,11 +110,15 @@ export default function SeverityPieChart({
               ? ""
               : "s"
           }.`}
-          className="h-[300px] w-full"
+          className="h-[300px] min-w-0 w-full"
         >
           <ResponsiveContainer
             width="100%"
             height="100%"
+            initialDimension={{
+              width: 1,
+              height: CHART_HEIGHT,
+            }}
           >
             <PieChart>
               <Pie

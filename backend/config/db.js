@@ -1,16 +1,23 @@
 const mysql = require("mysql2");
 
-const db = mysql.createConnection({
+const db = mysql.createPool({
   host: "100.119.171.111",
   user: "remoteuser",
   password: "",
   database: "welljob_db",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
 });
 
-db.connect((err) => {
-  if (err) console.error("DB Error:", err);
-  else console.log("MySQL Connected");
+db.getConnection((err, connection) => {
+  if (err) {
+    console.error("DB Error:", err);
+    return;
+  }
+
+  console.log("MySQL Connected");
+  connection.release();
 });
 
 module.exports = db;
-

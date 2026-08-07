@@ -62,15 +62,22 @@ const extractDocumentsFromReq = (req) => {
       expDate = req.body[`documents[${i}][expirationDate]`];
     }
 
-    const file = req.files?.find((f) => f.fieldname === `documents[${i}]`);
-    const filePath = file ? `documents/employees/${file.filename}` : null;
+    const file = req.files?.find(
+      (item) => item.fieldname === `documents[${i}]`
+    );
+
+    const filePath = file
+      ? `documents/employees/${file.filename}`
+      : null;
 
     if (docName || file) {
       documents.push({
-        name: toNullable(docName) || (file ? file.originalname : "Unknown"),
+        name:
+          toNullable(docName) ||
+          (file ? file.originalname : "Unknown"),
         expirationDate: toNullableDate(expDate),
         filePath,
-        hasNewFile: !!file,
+        hasNewFile: Boolean(file),
       });
     }
   }
@@ -83,16 +90,18 @@ exports.createEmployee = async (req, res) => {
 
   try {
     const { name, company, status, contractStart } = req.body;
-
     const actor = getActor(req);
 
     const finalName = toNullable(name);
     const finalStatus = toNullable(status) || "Deployed";
-    const finalCompany = finalStatus === "Deployed" ? toNullable(company) : null;
+    const finalCompany =
+      finalStatus === "Deployed" ? toNullable(company) : null;
     const finalContractStart = toNullableDate(contractStart);
 
     if (!finalName) {
-      return res.status(400).json({ error: "Employee name is required." });
+      return res.status(400).json({
+        error: "Employee name is required.",
+      });
     }
 
     if (finalStatus === "Deployed" && !finalCompany) {
@@ -121,7 +130,12 @@ exports.createEmployee = async (req, res) => {
         (employee_id, name, expiration_date, file_path)
         VALUES (?, ?, ?, ?)
         `,
-        [employeeId, doc.name, doc.expirationDate, doc.filePath]
+        [
+          employeeId,
+          doc.name,
+          doc.expirationDate,
+          doc.filePath,
+        ]
       );
     }
 
@@ -135,7 +149,7 @@ exports.createEmployee = async (req, res) => {
       description: `${actor.fullName} added employee record for ${finalName}.`,
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Employee created successfully.",
       id: employeeId,
@@ -143,44 +157,70 @@ exports.createEmployee = async (req, res) => {
   } catch (err) {
     console.error("CREATE EMPLOYEE ERROR:", err);
 
-    res.status(500).json({
-      error: err.sqlMessage || err.message || "Create employee error",
+    return res.status(500).json({
+      error:
+        err.sqlMessage ||
+        err.message ||
+        "Create employee error",
     });
   }
 };
 
 exports.getEmployees = async (req, res) => {
   try {
-    const [employees] = await db.promise().query(`
-      SELECT *
-      FROM employees
-      ORDER BY created_at DESC
-    `);
+    const [employeeResult, documentResult] = await Promise.all([
+      db.promise().query(`
+        SELECT *
+        FROM employees
+        ORDER BY created_at DESC
+      `),
 
-    const [documents] = await db.promise().query(`
-      SELECT *
-      FROM employee_documents
-      ORDER BY id ASC
-    `);
+      db.promise().query(`
+        SELECT
+          id,
+          employee_id,
+          name,
+          expiration_date,
+          file_path
+        FROM employee_documents
+        ORDER BY id ASC
+      `),
+    ]);
 
-    const result = employees.map((emp) => ({
-      ...emp,
-      documents: documents
-        .filter((doc) => Number(doc.employee_id) === Number(emp.id))
-        .map((doc) => ({
-          id: doc.id,
-          name: doc.name,
-          expirationDate: doc.expiration_date,
-          filePath: doc.file_path,
-        })),
+    const [employees] = employeeResult;
+    const [documents] = documentResult;
+
+    const documentsByEmployeeId = documents.reduce((map, doc) => {
+      const employeeId = Number(doc.employee_id);
+      const employeeDocuments = map.get(employeeId) || [];
+
+      employeeDocuments.push({
+        id: doc.id,
+        name: doc.name,
+        expirationDate: doc.expiration_date,
+        filePath: doc.file_path,
+      });
+
+      map.set(employeeId, employeeDocuments);
+
+      return map;
+    }, new Map());
+
+    const result = employees.map((employee) => ({
+      ...employee,
+      documents:
+        documentsByEmployeeId.get(Number(employee.id)) || [],
     }));
 
-    res.json(result);
+    return res.json(result);
   } catch (err) {
     console.error("FETCH EMPLOYEES ERROR:", err);
 
-    res.status(500).json({
-      error: err.sqlMessage || err.message || "Fetch employees error",
+    return res.status(500).json({
+      error:
+        err.sqlMessage ||
+        err.message ||
+        "Fetch employees error",
     });
   }
 };
@@ -191,16 +231,18 @@ exports.updateEmployee = async (req, res) => {
 
   try {
     const { name, company, status, contractStart } = req.body;
-
     const actor = getActor(req);
 
     const finalName = toNullable(name);
     const finalStatus = toNullable(status) || "Deployed";
-    const finalCompany = finalStatus === "Deployed" ? toNullable(company) : null;
+    const finalCompany =
+      finalStatus === "Deployed" ? toNullable(company) : null;
     const finalContractStart = toNullableDate(contractStart);
 
     if (!finalName) {
-      return res.status(400).json({ error: "Employee name is required." });
+      return res.status(400).json({
+        error: "Employee name is required.",
+      });
     }
 
     if (finalStatus === "Deployed" && !finalCompany) {
@@ -219,26 +261,45 @@ exports.updateEmployee = async (req, res) => {
         contractStart = ?
       WHERE id = ?
       `,
-      [finalName, finalCompany, finalStatus, finalContractStart, id]
+      [
+        finalName,
+        finalCompany,
+        finalStatus,
+        finalContractStart,
+        id,
+      ]
     );
 
     const [existingDocs] = await connection.query(
-      `SELECT * FROM employee_documents WHERE employee_id = ?`,
+      `
+      SELECT
+        id,
+        name,
+        file_path
+      FROM employee_documents
+      WHERE employee_id = ?
+      `,
       [id]
     );
 
     const frontendDocs = extractDocumentsFromReq(req);
 
     for (const doc of frontendDocs) {
-      const existing = existingDocs.find((item) => item.name === doc.name);
+      const existing = existingDocs.find(
+        (item) => item.name === doc.name
+      );
 
       if (existing) {
-        const finalPath = doc.hasNewFile ? doc.filePath : existing.file_path;
+        const finalPath = doc.hasNewFile
+          ? doc.filePath
+          : existing.file_path;
 
         await connection.query(
           `
           UPDATE employee_documents
-          SET expiration_date = ?, file_path = ?
+          SET
+            expiration_date = ?,
+            file_path = ?
           WHERE id = ?
           `,
           [doc.expirationDate, finalPath, existing.id]
@@ -250,7 +311,12 @@ exports.updateEmployee = async (req, res) => {
           (employee_id, name, expiration_date, file_path)
           VALUES (?, ?, ?, ?)
           `,
-          [id, doc.name, doc.expirationDate, doc.filePath]
+          [
+            id,
+            doc.name,
+            doc.expirationDate,
+            doc.filePath,
+          ]
         );
       }
     }
@@ -261,9 +327,13 @@ exports.updateEmployee = async (req, res) => {
       );
 
       if (!stillChecked) {
-        await connection.query(`DELETE FROM employee_documents WHERE id = ?`, [
-          existing.id,
-        ]);
+        await connection.query(
+          `
+          DELETE FROM employee_documents
+          WHERE id = ?
+          `,
+          [existing.id]
+        );
       }
     }
 
@@ -277,48 +347,54 @@ exports.updateEmployee = async (req, res) => {
       description: `${actor.fullName} updated employee record for ${finalName}.`,
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: "Employee updated successfully.",
     });
   } catch (err) {
     console.error("UPDATE EMPLOYEE ERROR:", err);
 
-    res.status(500).json({
-      error: err.sqlMessage || err.message || "Update employee error",
+    return res.status(500).json({
+      error:
+        err.sqlMessage ||
+        err.message ||
+        "Update employee error",
     });
   }
 };
 
-// BAGONG FUNCTION PARA SA INLINE EDITING NG CONTRACT END
 const CONTRACT_END_REASON_RULES = {
   "Completed Contract": {
     employeeStatus: "Floating / Standby",
     deploymentStatus: "Completed",
   },
+
   "End of Assignment / Pulled Out by Client": {
     employeeStatus: "Floating / Standby",
     deploymentStatus: "Completed",
   },
+
   "Transferred / Reassigned": {
     employeeStatus: "Floating / Standby",
     deploymentStatus: "Completed",
   },
+
   Resigned: {
     employeeStatus: "Inactive",
     deploymentStatus: "Cancelled",
   },
+
   AWOL: {
     employeeStatus: "Inactive",
     deploymentStatus: "Cancelled",
   },
+
   Terminated: {
     employeeStatus: "Inactive",
     deploymentStatus: "Cancelled",
   },
 };
 
-// BAGONG FUNCTION PARA SA CONTRACT END WITH REASON
 exports.updateContractEnd = async (req, res) => {
   try {
     const { id } = req.params;
@@ -341,7 +417,8 @@ exports.updateContractEnd = async (req, res) => {
       });
     }
 
-    const reasonRule = CONTRACT_END_REASON_RULES[finalReason];
+    const reasonRule =
+      CONTRACT_END_REASON_RULES[finalReason];
 
     if (!reasonRule) {
       return res.status(400).json({
@@ -349,10 +426,17 @@ exports.updateContractEnd = async (req, res) => {
       });
     }
 
-    const [employeeRows] = await db.promise().query(
-      `SELECT * FROM employees WHERE id = ? LIMIT 1`,
-      [id]
-    );
+    const [employeeRows] = await db
+      .promise()
+      .query(
+        `
+        SELECT name
+        FROM employees
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [id]
+      );
 
     if (employeeRows.length === 0) {
       return res.status(404).json({
@@ -360,7 +444,8 @@ exports.updateContractEnd = async (req, res) => {
       });
     }
 
-    const employeeName = employeeRows[0]?.name || "Unknown Employee";
+    const employeeName =
+      employeeRows[0]?.name || "Unknown Employee";
 
     await db.promise().query(
       `
@@ -392,7 +477,7 @@ exports.updateContractEnd = async (req, res) => {
       description: `${actor.fullName} ended deployment contract for ${employeeName}. Reason: ${finalReason}.`,
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: "Deployment contract ended successfully.",
       employeeId: id,
@@ -406,9 +491,11 @@ exports.updateContractEnd = async (req, res) => {
   } catch (err) {
     console.error("UPDATE CONTRACT END ERROR:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error:
-        err.sqlMessage || err.message || "Failed to update contract end date.",
+        err.sqlMessage ||
+        err.message ||
+        "Failed to update contract end date.",
     });
   }
 };
@@ -417,11 +504,18 @@ exports.archiveEmployee = async (req, res) => {
   try {
     const { id } = req.params;
     const actor = getActor(req);
-    const employeeName = await getEmployeeNameById(id);
 
-    await db.promise().query(`UPDATE employees SET archived = 1 WHERE id = ?`, [
-      id,
-    ]);
+    const employeeName =
+      await getEmployeeNameById(id);
+
+    await db.promise().query(
+      `
+      UPDATE employees
+      SET archived = 1
+      WHERE id = ?
+      `,
+      [id]
+    );
 
     await logAudit({
       userId: actor.userId,
@@ -433,15 +527,18 @@ exports.archiveEmployee = async (req, res) => {
       description: `${actor.fullName} archived employee record for ${employeeName}.`,
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: "Employee archived successfully.",
     });
   } catch (err) {
     console.error("ARCHIVE EMPLOYEE ERROR:", err);
 
-    res.status(500).json({
-      error: err.sqlMessage || err.message || "Archive employee error",
+    return res.status(500).json({
+      error:
+        err.sqlMessage ||
+        err.message ||
+        "Archive employee error",
     });
   }
 };
@@ -450,11 +547,18 @@ exports.restoreEmployee = async (req, res) => {
   try {
     const { id } = req.params;
     const actor = getActor(req);
-    const employeeName = await getEmployeeNameById(id);
 
-    await db.promise().query(`UPDATE employees SET archived = 0 WHERE id = ?`, [
-      id,
-    ]);
+    const employeeName =
+      await getEmployeeNameById(id);
+
+    await db.promise().query(
+      `
+      UPDATE employees
+      SET archived = 0
+      WHERE id = ?
+      `,
+      [id]
+    );
 
     await logAudit({
       userId: actor.userId,
@@ -466,15 +570,18 @@ exports.restoreEmployee = async (req, res) => {
       description: `${actor.fullName} restored employee record for ${employeeName}.`,
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: "Employee restored successfully.",
     });
   } catch (err) {
     console.error("RESTORE EMPLOYEE ERROR:", err);
 
-    res.status(500).json({
-      error: err.sqlMessage || err.message || "Restore employee error",
+    return res.status(500).json({
+      error:
+        err.sqlMessage ||
+        err.message ||
+        "Restore employee error",
     });
   }
 };
@@ -483,13 +590,27 @@ exports.deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
     const actor = getActor(req);
-    const employeeName = await getEmployeeNameById(id);
+
+    const employeeName =
+      await getEmployeeNameById(id);
 
     await db
       .promise()
-      .query(`DELETE FROM employee_documents WHERE employee_id = ?`, [id]);
+      .query(
+        `
+        DELETE FROM employee_documents
+        WHERE employee_id = ?
+        `,
+        [id]
+      );
 
-    await db.promise().query(`DELETE FROM employees WHERE id = ?`, [id]);
+    await db.promise().query(
+      `
+      DELETE FROM employees
+      WHERE id = ?
+      `,
+      [id]
+    );
 
     await logAudit({
       userId: actor.userId,
@@ -501,15 +622,18 @@ exports.deleteEmployee = async (req, res) => {
       description: `${actor.fullName} permanently deleted employee record for ${employeeName}.`,
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: "Employee permanently deleted.",
     });
   } catch (err) {
     console.error("DELETE EMPLOYEE ERROR:", err);
 
-    res.status(500).json({
-      error: err.sqlMessage || err.message || "Delete employee error",
+    return res.status(500).json({
+      error:
+        err.sqlMessage ||
+        err.message ||
+        "Delete employee error",
     });
   }
 };

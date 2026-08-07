@@ -391,7 +391,10 @@ function DecisionModal({
             ].join(" ")}
           >
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-lg dark:bg-slate-950/30">
+              <div
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-lg dark:bg-slate-950/30"
+                aria-hidden="true"
+              >
                 {config.icon}
               </div>
 
@@ -411,7 +414,10 @@ function DecisionModal({
 
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-extrabold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-extrabold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
+                aria-hidden="true"
+              >
                 {getInitials(
                   employee.name
                 )}
@@ -600,6 +606,13 @@ export default function RecommendationReviewSection({
     setSelectedReview,
   ] = useState(null);
 
+  const safeEmployees =
+    useMemo(() => {
+      return Array.isArray(employees)
+        ? employees
+        : [];
+    }, [employees]);
+
   const {
     data:
       decisionHistoryData,
@@ -636,7 +649,7 @@ export default function RecommendationReviewSection({
 
   const allPendingEmployees =
     useMemo(() => {
-      return employees
+      return safeEmployees
         .filter(
           isPendingRecommendation
         )
@@ -686,7 +699,7 @@ export default function RecommendationReviewSection({
         );
     }, [
       decidedEmployeeIds,
-      employees,
+      safeEmployees,
     ]);
 
   const pendingEmployees =
@@ -771,11 +784,18 @@ export default function RecommendationReviewSection({
 
   return (
     <>
-      <section className="space-y-5">
+      <section
+        className="space-y-5"
+        aria-labelledby="recommendation-review-title"
+        aria-busy={isHistoryLoading}
+      >
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="flex items-center gap-2 text-xl font-extrabold text-slate-900 dark:text-white">
+              <h2
+                id="recommendation-review-title"
+                className="flex items-center gap-2 text-xl font-extrabold text-slate-900 dark:text-white"
+              >
                 <FiShield
                   className="text-indigo-600 dark:text-indigo-300"
                   aria-hidden="true"
@@ -845,8 +865,7 @@ export default function RecommendationReviewSection({
                   size="sm"
                   disabled={
                     !hasSearch ||
-                    isHistoryLoading ||
-                    isHistoryFetching
+                    isHistoryLoading
                   }
                   onClick={() =>
                     setSearch("")
@@ -863,8 +882,7 @@ export default function RecommendationReviewSection({
                   placeholder="Search employee, ID, company, action, confidence, or risk..."
                   value={search}
                   disabled={
-                    isHistoryLoading ||
-                    isHistoryFetching
+                    isHistoryLoading
                   }
                   onChange={(event) =>
                     setSearch(
@@ -947,12 +965,19 @@ export default function RecommendationReviewSection({
 
                 return (
                   <article
-                    key={employee.id}
+                    key={
+                      employee.id ||
+                      employee.employeeId ||
+                      employee.name
+                    }
                     className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-900"
                   >
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="flex min-w-0 items-start gap-4">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-extrabold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                        <div
+                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-extrabold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
+                          aria-hidden="true"
+                        >
                           {getInitials(
                             employee.name
                           )}
@@ -1027,9 +1052,6 @@ export default function RecommendationReviewSection({
                               aria-hidden="true"
                             />
                           }
-                          disabled={
-                            isHistoryFetching
-                          }
                           onClick={() =>
                             setSelectedReview({
                               employee,
@@ -1049,9 +1071,6 @@ export default function RecommendationReviewSection({
                               aria-hidden="true"
                             />
                           }
-                          disabled={
-                            isHistoryFetching
-                          }
                           onClick={() =>
                             setSelectedReview({
                               employee,
@@ -1070,9 +1089,6 @@ export default function RecommendationReviewSection({
                             <FiXCircle
                               aria-hidden="true"
                             />
-                          }
-                          disabled={
-                            isHistoryFetching
                           }
                           onClick={() =>
                             setSelectedReview({
@@ -1131,6 +1147,7 @@ export default function RecommendationReviewSection({
           !isHistoryLoading && (
             <div
               role="status"
+              aria-live="polite"
               className="flex items-center justify-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400"
             >
               <FiRefreshCw

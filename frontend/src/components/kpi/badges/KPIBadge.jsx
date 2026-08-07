@@ -5,8 +5,36 @@ import {
   FiTrendingUp,
 } from "react-icons/fi";
 
+const KPI_STYLES = {
+  "Critical Concern": {
+    label: "Critical Concern",
+    className:
+      "border-red-200 bg-red-50 text-red-700 dark:border-red-800/70 dark:bg-red-950/30 dark:text-red-300",
+  },
+
+  "Needs Improvement": {
+    label: "Needs Improvement",
+    className:
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-300",
+  },
+
+  "Minor Concern": {
+    label: "Minor Concern",
+    className:
+      "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800/70 dark:bg-indigo-950/30 dark:text-indigo-300",
+  },
+
+  "Good Standing": {
+    label: "Good Standing",
+    className:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/70 dark:bg-emerald-950/30 dark:text-emerald-300",
+  },
+};
+
 function normalizeLevel(level) {
-  const normalized = String(level || "")
+  const normalized = String(
+    level || ""
+  )
     .trim()
     .toLowerCase()
     .replace(/[_-]+/g, " ")
@@ -48,10 +76,7 @@ function normalizeLevel(level) {
 }
 
 function getKPIExplanation(level) {
-  const normalized =
-    normalizeLevel(level);
-
-  switch (normalized) {
+  switch (level) {
     case "Critical Concern":
       return "Critical Concern means the employee has serious incident severity points or critical cases that require priority HR review.";
 
@@ -69,35 +94,45 @@ function getKPIExplanation(level) {
   }
 }
 
-const KPI_STYLES = {
-  "Critical Concern": {
-    label: "Critical Concern",
-    icon: FiAlertTriangle,
-    className:
-      "border-red-200 bg-red-50 text-red-700 dark:border-red-800/70 dark:bg-red-950/30 dark:text-red-300",
-  },
+function KPILevelIcon({
+  level,
+  size = 12,
+}) {
+  switch (level) {
+    case "Critical Concern":
+      return (
+        <FiAlertTriangle
+          size={size}
+          aria-hidden="true"
+        />
+      );
 
-  "Needs Improvement": {
-    label: "Needs Improvement",
-    icon: FiTrendingUp,
-    className:
-      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-300",
-  },
+    case "Needs Improvement":
+      return (
+        <FiTrendingUp
+          size={size}
+          aria-hidden="true"
+        />
+      );
 
-  "Minor Concern": {
-    label: "Minor Concern",
-    icon: FiEye,
-    className:
-      "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800/70 dark:bg-indigo-950/30 dark:text-indigo-300",
-  },
+    case "Minor Concern":
+      return (
+        <FiEye
+          size={size}
+          aria-hidden="true"
+        />
+      );
 
-  "Good Standing": {
-    label: "Good Standing",
-    icon: FiCheckCircle,
-    className:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/70 dark:bg-emerald-950/30 dark:text-emerald-300",
-  },
-};
+    case "Good Standing":
+    default:
+      return (
+        <FiCheckCircle
+          size={size}
+          aria-hidden="true"
+        />
+      );
+  }
+}
 
 export default function KPIBadge({
   level,
@@ -111,8 +146,6 @@ export default function KPIBadge({
       "Good Standing"
     ];
 
-  const Icon = current.icon;
-
   return (
     <span
       className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-bold ${current.className}`}
@@ -122,9 +155,8 @@ export default function KPIBadge({
         normalized
       )}`}
     >
-      <Icon
-        size={12}
-        aria-hidden="true"
+      <KPILevelIcon
+        level={normalized}
       />
 
       {current.label}
