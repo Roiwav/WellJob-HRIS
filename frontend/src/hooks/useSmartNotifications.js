@@ -103,6 +103,9 @@ export default function useSmartNotifications(
     options.pollInterval ??
     60000;
 
+  const hasPolling =
+    Number(pollInterval) > 0;
+
   const requestInFlightRef =
     useRef(false);
 
@@ -354,11 +357,14 @@ export default function useSmartNotifications(
 
         const normalizedKey =
           String(alertKey);
-          
-          setPopupAlert((currentPopup) =>
-          getAlertKey(currentPopup) === normalizedKey
-            ? null
-            : currentPopup
+
+        setPopupAlert(
+          (currentPopup) =>
+            getAlertKey(
+              currentPopup
+            ) === normalizedKey
+              ? null
+              : currentPopup
         );
 
         setAlerts(
@@ -773,14 +779,18 @@ export default function useSmartNotifications(
           silent: true,
         });
 
-    const intervalId =
-      window.setInterval(
-        () =>
-          fetchAlerts({
-            silent: true,
-          }),
-        pollInterval
-      );
+    let intervalId = null;
+
+    if (hasPolling) {
+      intervalId =
+        window.setInterval(
+          () =>
+            fetchAlerts({
+              silent: true,
+            }),
+          Number(pollInterval)
+        );
+    }
 
     window.addEventListener(
       "dataUpdated",
@@ -793,12 +803,15 @@ export default function useSmartNotifications(
         handleDataUpdated
       );
 
-      window.clearInterval(
-        intervalId
-      );
+      if (intervalId !== null) {
+        window.clearInterval(
+          intervalId
+        );
+      }
     };
   }, [
     fetchAlerts,
+    hasPolling,
     pollInterval,
   ]);
 

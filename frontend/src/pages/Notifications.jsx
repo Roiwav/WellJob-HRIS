@@ -69,7 +69,10 @@ function normalizeCaseStatus(status) {
   return "Open";
 }
 
-function getUniqueIncidentKey(alert, index) {
+function getUniqueIncidentKey(
+  alert,
+  index
+) {
   return String(
     alert?.incidentId ||
       alert?.incident_id ||
@@ -82,7 +85,9 @@ function getUniqueIncidentKey(alert, index) {
 
 function isActiveCase(alert) {
   return ACTIVE_CASE_STATUSES.has(
-    normalizeCaseStatus(alert?.status)
+    normalizeCaseStatus(
+      alert?.status
+    )
   );
 }
 
@@ -92,110 +97,156 @@ function filterAlerts(
   caseStatusFilter,
   search
 ) {
-  let filtered = Array.isArray(alerts)
-    ? [...alerts]
-    : [];
+  let filtered =
+    Array.isArray(alerts)
+      ? [...alerts]
+      : [];
 
   if (activeFilter === "ALL") {
-    filtered = filtered.filter(isActiveCase);
+    filtered =
+      filtered.filter(
+        isActiveCase
+      );
   }
 
   if (activeFilter === "UNREAD") {
-    filtered = filtered.filter(
-      (alert) =>
-        isActiveCase(alert) &&
-        !alert?.isRead
-    );
+    filtered =
+      filtered.filter(
+        (alert) =>
+          isActiveCase(alert) &&
+          !alert?.isRead
+      );
   }
 
   if (activeFilter === "HIGH") {
-    filtered = filtered.filter(
-      (alert) =>
-        isActiveCase(alert) &&
-        alert?.priority === "High"
-    );
+    filtered =
+      filtered.filter(
+        (alert) =>
+          isActiveCase(alert) &&
+          alert?.priority ===
+            "High"
+      );
   }
 
   if (activeFilter === "MEDIUM") {
-    filtered = filtered.filter(
-      (alert) =>
-        isActiveCase(alert) &&
-        alert?.priority === "Medium"
-    );
+    filtered =
+      filtered.filter(
+        (alert) =>
+          isActiveCase(alert) &&
+          alert?.priority ===
+            "Medium"
+      );
   }
 
   if (activeFilter === "LOW") {
-    filtered = filtered.filter(
-      (alert) =>
-        isActiveCase(alert) &&
-        alert?.priority === "Low"
-    );
+    filtered =
+      filtered.filter(
+        (alert) =>
+          isActiveCase(alert) &&
+          alert?.priority ===
+            "Low"
+      );
   }
 
-  if (caseStatusFilter !== "ALL") {
-    filtered = filtered.filter(
-      (alert) =>
-        normalizeCaseStatus(alert?.status) ===
-        caseStatusFilter
-    );
+  if (
+    caseStatusFilter !== "ALL"
+  ) {
+    filtered =
+      filtered.filter(
+        (alert) =>
+          normalizeCaseStatus(
+            alert?.status
+          ) ===
+          caseStatusFilter
+      );
   }
 
   if (search.trim()) {
-    const keyword = normalizeText(search);
+    const keyword =
+      normalizeText(search);
 
-    filtered = filtered.filter((alert) =>
-      [
-        alert?.title,
-        alert?.message,
-        alert?.employee,
-        alert?.violation,
-        alert?.priority,
-        normalizeCaseStatus(alert?.status),
-        alert?.reason,
-        alert?.recommendedAction,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(keyword)
-    );
+    filtered =
+      filtered.filter(
+        (alert) =>
+          [
+            alert?.title,
+            alert?.message,
+            alert?.employee,
+            alert?.violation,
+            alert?.priority,
+            normalizeCaseStatus(
+              alert?.status
+            ),
+            alert?.reason,
+            alert?.recommendedAction,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(keyword)
+      );
   }
 
   return filtered;
 }
 
-function buildAlertCounts(alerts = []) {
-  const safeAlerts = Array.isArray(alerts)
-    ? alerts
-    : [];
+function buildAlertCounts(
+  alerts = []
+) {
+  const safeAlerts =
+    Array.isArray(alerts)
+      ? alerts
+      : [];
 
-  const activeAlerts = safeAlerts.filter(
-    isActiveCase
-  );
+  const activeAlerts =
+    safeAlerts.filter(
+      isActiveCase
+    );
 
-  const uniqueActiveCases = new Set(
-    activeAlerts.map(getUniqueIncidentKey)
-  );
+  const uniqueActiveCases =
+    new Set(
+      activeAlerts.map(
+        getUniqueIncidentKey
+      )
+    );
 
   return {
-    active: uniqueActiveCases.size,
-    unread: activeAlerts.filter(
-      (alert) => !alert?.isRead
-    ).length,
-    high: activeAlerts.filter(
-      (alert) => alert?.priority === "High"
-    ).length,
-    medium: activeAlerts.filter(
-      (alert) => alert?.priority === "Medium"
-    ).length,
-    low: activeAlerts.filter(
-      (alert) => alert?.priority === "Low"
-    ).length,
+    active:
+      uniqueActiveCases.size,
+
+    unread:
+      activeAlerts.filter(
+        (alert) =>
+          !alert?.isRead
+      ).length,
+
+    high:
+      activeAlerts.filter(
+        (alert) =>
+          alert?.priority ===
+          "High"
+      ).length,
+
+    medium:
+      activeAlerts.filter(
+        (alert) =>
+          alert?.priority ===
+          "Medium"
+      ).length,
+
+    low:
+      activeAlerts.filter(
+        (alert) =>
+          alert?.priority ===
+          "Low"
+      ).length,
   };
 }
 
 export default function Notifications() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+
+  const navigate =
+    useNavigate();
 
   const [
     activeFilter,
@@ -207,8 +258,10 @@ export default function Notifications() {
     setCaseStatusFilter,
   ] = useState("ALL");
 
-  const [search, setSearch] =
-    useState("");
+  const [
+    search,
+    setSearch,
+  ] = useState("");
 
   const {
     alerts,
@@ -218,104 +271,129 @@ export default function Notifications() {
     refresh,
     markAlertAsRead,
     markAllAsRead,
-  } = useSmartNotifications(user, {
-    pollInterval: 10000,
-  });
+  } = useSmartNotifications(
+    user,
+    {
+      pollInterval: 0,
+    }
+  );
 
   const counts = useMemo(
-    () => buildAlertCounts(alerts),
+    () =>
+      buildAlertCounts(
+        alerts
+      ),
     [alerts]
   );
 
-  const visibleAlerts = useMemo(() => {
-    return filterAlerts(
+  const visibleAlerts =
+    useMemo(() => {
+      return filterAlerts(
+        alerts,
+        activeFilter,
+        caseStatusFilter,
+        search
+      );
+    }, [
       alerts,
       activeFilter,
       caseStatusFilter,
-      search
-    );
-  }, [
-    alerts,
-    activeFilter,
-    caseStatusFilter,
-    search,
-  ]);
+      search,
+    ]);
 
-  const handleRefresh = async () => {
-    try {
-      await refresh();
-    } catch (refreshError) {
-      console.error(
-        "Failed to refresh smart alerts:",
+  const handleRefresh =
+    async () => {
+      try {
+        await refresh();
+      } catch (
         refreshError
-      );
-    }
-  };
+      ) {
+        console.error(
+          "Failed to refresh smart alerts:",
+          refreshError
+        );
+      }
+    };
 
-  const handleViewAlert = async (alert) => {
-    if (!alert) {
-      return;
-    }
+  const handleViewAlert =
+    async (alert) => {
+      if (!alert) {
+        return;
+      }
 
-    if (
-      alert.route === "/incidents" &&
-      alert.incidentId
-    ) {
-      navigate("/incidents", {
-        state: {
-          incidentId: alert.incidentId,
-        },
-      });
-    } else {
-      navigate(
-        alert.route ||
-          "/notifications"
-      );
-    }
+      if (
+        alert.route ===
+          "/incidents" &&
+        alert.incidentId
+      ) {
+        navigate(
+          "/incidents",
+          {
+            state: {
+              incidentId:
+                alert.incidentId,
+            },
+          }
+        );
+      } else {
+        navigate(
+          alert.route ||
+            "/notifications"
+        );
+      }
 
-    try {
-      await markAlertAsRead(
-        alert.alertKey
-      );
-    } catch (readError) {
-      console.error(
-        "Failed to mark smart alert as read:",
-        readError
-      );
-    }
-  };
+      try {
+        await markAlertAsRead(
+          alert.alertKey
+        );
+      } catch (readError) {
+        console.error(
+          "Failed to mark smart alert as read:",
+          readError
+        );
+      }
+    };
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-blue-600 to-slate-900 p-6 text-white lg:p-8">
-          <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
-          <div className="absolute -bottom-20 left-1/3 h-52 w-52 rounded-full bg-indigo-300/20 blur-3xl" />
-
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-700 text-white shadow-sm">
+        <div className="relative overflow-hidden px-6 py-7 sm:px-8">
           <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-white/90">
-                <FiShield aria-hidden="true" />
+                <FiShield
+                  aria-hidden="true"
+                />
+
                 Smart Monitoring
               </div>
 
               <h1 className="flex items-center gap-3 text-3xl font-black tracking-tight">
                 <span className="rounded-2xl bg-white/15 p-3">
-                  <FiBell aria-hidden="true" />
+                  <FiBell
+                    aria-hidden="true"
+                  />
                 </span>
+
                 Smart Alerts Center
               </h1>
 
               <p className="mt-3 max-w-3xl text-sm leading-7 text-white/80">
-                {getPageSubtitle(user?.role)}
+                {getPageSubtitle(
+                  user?.role
+                )}
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={handleRefresh}
-                disabled={isFetching}
+                onClick={
+                  handleRefresh
+                }
+                disabled={
+                  isFetching
+                }
                 className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <FiRefreshCw
@@ -326,6 +404,7 @@ export default function Notifications() {
                   }
                   aria-hidden="true"
                 />
+
                 {isFetching
                   ? "Syncing..."
                   : "Sync Alerts"}
@@ -333,14 +412,21 @@ export default function Notifications() {
 
               <button
                 type="button"
-                onClick={markAllAsRead}
+                onClick={
+                  markAllAsRead
+                }
                 disabled={
-                  alerts.length === 0 ||
-                  counts.unread === 0
+                  alerts.length ===
+                    0 ||
+                  counts.unread ===
+                    0
                 }
                 className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-indigo-700 shadow-sm transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <FiCheckCircle aria-hidden="true" />
+                <FiCheckCircle
+                  aria-hidden="true"
+                />
+
                 Mark All Read
               </button>
             </div>
@@ -366,10 +452,16 @@ export default function Notifications() {
         </div>
       ) : (
         <NotificationTable
-          notifications={visibleAlerts}
+          notifications={
+            visibleAlerts
+          }
           counts={counts}
-          activeFilter={activeFilter}
-          onFilterChange={setActiveFilter}
+          activeFilter={
+            activeFilter
+          }
+          onFilterChange={
+            setActiveFilter
+          }
           caseStatusFilter={
             caseStatusFilter
           }
@@ -377,9 +469,15 @@ export default function Notifications() {
             setCaseStatusFilter
           }
           search={search}
-          onSearchChange={setSearch}
-          onViewAlert={handleViewAlert}
-          onMarkRead={markAlertAsRead}
+          onSearchChange={
+            setSearch
+          }
+          onViewAlert={
+            handleViewAlert
+          }
+          onMarkRead={
+            markAlertAsRead
+          }
         />
       )}
     </div>
