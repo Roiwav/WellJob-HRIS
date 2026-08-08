@@ -222,53 +222,53 @@ async function getUserNameMap() {
       `SELECT * FROM ${userTable}`
     );
 
-rows.forEach((user) => {
-  const profile = {
-    name:
-      user.full_name ||
-      user.fullName ||
-      user.fullname ||
-      user.display_name ||
-      user.displayName ||
-      user.name ||
-      user.username ||
-      "Unknown User",
+  rows.forEach((user) => {
+    const profile = {
+      name:
+        user.full_name ||
+        user.fullName ||
+        user.fullname ||
+        user.display_name ||
+        user.displayName ||
+        user.name ||
+        user.username ||
+        "Unknown User",
 
-    username:
-      user.username ||
-      user.email ||
-      "",
+      username:
+        user.username ||
+        user.email ||
+        "",
 
-   role:
-  user.role ||
-  user.user_role ||
-  user.userRole
-    ? normalizeRole(
+      role:
         user.role ||
         user.user_role ||
         user.userRole
-      )
-    : "",
-  };
+          ? normalizeRole(
+              user.role ||
+                user.user_role ||
+                user.userRole
+            )
+          : "",
+    };
 
-  [
-    user.id,
-    user.user_id,
-    user.userId,
-    user.employee_id,
-    user.employeeId,
-    user.username,
-    user.email,
-    user.name,
-    user.full_name,
-    user.fullName,
-    user.fullname,
-    user.display_name,
-    user.displayName,
-  ].forEach((value) => {
-    addAlias(map, value, profile);
+    [
+      user.id,
+      user.user_id,
+      user.userId,
+      user.employee_id,
+      user.employeeId,
+      user.username,
+      user.email,
+      user.name,
+      user.full_name,
+      user.fullName,
+      user.fullname,
+      user.display_name,
+      user.displayName,
+    ].forEach((value) => {
+      addAlias(map, value, profile);
+    });
   });
-});
 
   return map;
 }
@@ -484,40 +484,40 @@ function normalizeIncident(
     "";
 
   const reporterProfile = resolvePersonProfile(
-  reportedByRaw,
-  userNameMap,
-  "Unknown Reporter"
-);
+    reportedByRaw,
+    userNameMap,
+    "Unknown Reporter"
+  );
 
-const lastActorProfile = resolvePersonProfile(
-  lastActionByRaw,
-  userNameMap,
-  ""
-);
+  const lastActorProfile = resolvePersonProfile(
+    lastActionByRaw,
+    userNameMap,
+    ""
+  );
 
-const investigatorProfile = resolvePersonProfile(
-  investigationByRaw,
-  userNameMap,
-  ""
-);
+  const investigatorProfile = resolvePersonProfile(
+    investigationByRaw,
+    userNameMap,
+    ""
+  );
 
-const submitterProfile = resolvePersonProfile(
-  resolutionByRaw,
-  userNameMap,
-  ""
-);
+  const submitterProfile = resolvePersonProfile(
+    resolutionByRaw,
+    userNameMap,
+    ""
+  );
 
-const reviewerProfile = resolvePersonProfile(
-  reviewedByRaw,
-  userNameMap,
-  ""
-);
+  const reviewerProfile = resolvePersonProfile(
+    reviewedByRaw,
+    userNameMap,
+    ""
+  );
 
-const reportedByName = reporterProfile.name;
-const lastActionByName = lastActorProfile.name;
-const investigationStartedByName = investigatorProfile.name;
-const resolutionSubmittedByName = submitterProfile.name;
-const reviewedByName = reviewerProfile.name;
+  const reportedByName = reporterProfile.name;
+  const lastActionByName = lastActorProfile.name;
+  const investigationStartedByName = investigatorProfile.name;
+  const resolutionSubmittedByName = submitterProfile.name;
+  const reviewedByName = reviewerProfile.name;
 
   return {
     ...incident,
@@ -553,6 +553,7 @@ const reviewedByName = reviewerProfile.name;
       ),
 
     reportedByRaw,
+
     reported_by_raw:
       reportedByRaw,
 
@@ -561,20 +562,24 @@ const reviewedByName = reviewerProfile.name;
 
     reportedByName,
 
-reportedByUsername:
-  reporterProfile.username || null,
+    reportedByUsername:
+      reporterProfile.username ||
+      null,
 
-reported_by_username:
-  reporterProfile.username || null,
+    reported_by_username:
+      reporterProfile.username ||
+      null,
 
-reportedByRole:
-  reporterProfile.role || null,
+    reportedByRole:
+      reporterProfile.role ||
+      null,
 
-reported_by_role:
-  reporterProfile.role || null,
+    reported_by_role:
+      reporterProfile.role ||
+      null,
 
-reporterName:
-  reportedByName,
+    reporterName:
+      reportedByName,
 
     reported_by:
       reportedByName,
@@ -668,11 +673,13 @@ reporterName:
       investigationStartedByName ||
       null,
 
-      investigationStartedByRole:
-  investigatorProfile.role || null,
+    investigationStartedByRole:
+      investigatorProfile.role ||
+      null,
 
-investigation_started_by_role:
-  investigatorProfile.role || null,
+    investigation_started_by_role:
+      investigatorProfile.role ||
+      null,
 
     investigationStartedAt:
       incident.investigation_started_at ||
@@ -706,11 +713,13 @@ investigation_started_by_role:
       resolutionSubmittedByName ||
       null,
 
-      resolutionSubmittedByRole:
-  submitterProfile.role || null,
+    resolutionSubmittedByRole:
+      submitterProfile.role ||
+      null,
 
-resolution_submitted_by_role:
-  submitterProfile.role || null,
+    resolution_submitted_by_role:
+      submitterProfile.role ||
+      null,
 
     resolutionSubmittedAt:
       incident.resolution_submitted_at ||
@@ -744,11 +753,13 @@ resolution_submitted_by_role:
       reviewedByName ||
       null,
 
-      reviewedByRole:
-  reviewerProfile.role || null,
+    reviewedByRole:
+      reviewerProfile.role ||
+      null,
 
-reviewed_by_role:
-  reviewerProfile.role || null,
+    reviewed_by_role:
+      reviewerProfile.role ||
+      null,
 
     reviewedAt:
       incident.reviewed_at ||
@@ -1343,24 +1354,24 @@ function buildIncidentAlert(
       "-",
 
     reportedByName:
-  incident.reportedByName ||
-  incident.reporterName ||
-  "-",
+      incident.reportedByName ||
+      incident.reporterName ||
+      "-",
 
-reportedByUsername:
-  incident.reportedByUsername ||
-  incident.reported_by_username ||
-  "",
+    reportedByUsername:
+      incident.reportedByUsername ||
+      incident.reported_by_username ||
+      "",
 
-reportedByRole:
-  incident.reportedByRole ||
-  incident.reported_by_role ||
-  "",
+    reportedByRole:
+      incident.reportedByRole ||
+      incident.reported_by_role ||
+      "",
 
-reporterName:
-  incident.reportedByName ||
-  incident.reporterName ||
-  "-",
+    reporterName:
+      incident.reportedByName ||
+      incident.reporterName ||
+      "-",
 
     investigationBy:
       incident.investigationStartedByName ||
@@ -1372,16 +1383,16 @@ reporterName:
       incident.investigation_started_by_name ||
       "-",
 
-      investigationStartedByUsername:
-  incident.investigationStartedByUsername ||
-  incident.investigation_started_by_username ||
-  "",
+    investigationStartedByUsername:
+      incident.investigationStartedByUsername ||
+      incident.investigation_started_by_username ||
+      "",
 
-investigationStartedByRole:
-  incident.investigationStartedByRole ||
-  incident.investigation_started_by_role ||
-  "",
-  
+    investigationStartedByRole:
+      incident.investigationStartedByRole ||
+      incident.investigation_started_by_role ||
+      "",
+
     submittedBy:
       incident.resolutionSubmittedByName ||
       incident.resolution_submitted_by_name ||
@@ -1609,39 +1620,44 @@ function buildEmployeePatternAlerts(
 }
 
 async function fetchBaseData() {
-  const userNameMap =
-    await getUserNameMap();
+  const [
+    userNameMap,
+    [employees],
+    [incidents],
+  ] = await Promise.all([
+    getUserNameMap(),
 
-  const [employees] = await db
-    .promise()
-    .query(`
-      SELECT
-        id,
-        name,
-        company,
-        status,
-        archived
-      FROM employees
-    `);
+    db
+      .promise()
+      .query(`
+        SELECT
+          id,
+          name,
+          company,
+          status,
+          archived
+        FROM employees
+      `),
 
-  const [incidents] = await db
-    .promise()
-    .query(`
-      SELECT
-        i.*,
-        e.name AS employeeNameFromEmployee,
-        e.company AS employeeCompany,
-        e.status AS employeeStatus
-      FROM incidents i
-      LEFT JOIN employees e
-        ON e.id = i.employee_id
-      ORDER BY
-        COALESCE(
-          i.updated_at,
-          i.created_at,
-          i.incident_date
-        ) DESC
-    `);
+    db
+      .promise()
+      .query(`
+        SELECT
+          i.*,
+          e.name AS employeeNameFromEmployee,
+          e.company AS employeeCompany,
+          e.status AS employeeStatus
+        FROM incidents i
+        LEFT JOIN employees e
+          ON e.id = i.employee_id
+        ORDER BY
+          COALESCE(
+            i.updated_at,
+            i.created_at,
+            i.incident_date
+          ) DESC
+      `),
+  ]);
 
   return {
     employees:
@@ -1746,7 +1762,12 @@ async function getAlertStates({
     .promise()
     .query(
       `
-      SELECT *
+      SELECT
+        alert_key,
+        is_read,
+        is_dismissed,
+        read_at,
+        dismissed_at
       FROM smart_alert_states
       WHERE
         user_key = ?
@@ -1842,14 +1863,17 @@ async function upsertAlertState({
   alertKey,
   isRead,
   isDismissed,
+  skipTableCheck = false,
 }) {
-  const hasTable =
-    await tableExists(
-      "smart_alert_states"
-    );
+  if (!skipTableCheck) {
+    const hasTable =
+      await tableExists(
+        "smart_alert_states"
+      );
 
-  if (!hasTable) {
-    return;
+    if (!hasTable) {
+      return;
+    }
   }
 
   await db
@@ -1948,10 +1972,19 @@ exports.getSmartAlerts = async (
       });
     }
 
-    const {
-      employees,
-      incidents,
-    } = await fetchBaseData();
+    const [
+      {
+        employees,
+        incidents,
+      },
+      stateMap,
+    ] = await Promise.all([
+      fetchBaseData(),
+      getAlertStates({
+        userKey,
+        role,
+      }),
+    ]);
 
     const alerts =
       buildSmartAlerts({
@@ -1959,12 +1992,6 @@ exports.getSmartAlerts = async (
         incidents,
         role,
         currentUserAliases,
-      });
-
-    const stateMap =
-      await getAlertStates({
-        userKey,
-        role,
       });
 
     const alertsWithState =
@@ -2170,18 +2197,28 @@ exports.markAllSmartAlertsRead = async (
         ? req.body.alertKeys
         : [];
 
-    await Promise.all(
-      alertKeys.map(
-        (alertKey) =>
-          upsertAlertState({
-            userKey,
-            role,
-            alertKey,
-            isRead: true,
-            isDismissed: false,
-          })
-      )
-    );
+    if (alertKeys.length > 0) {
+      const hasTable =
+        await tableExists(
+          "smart_alert_states"
+        );
+
+      if (hasTable) {
+        await Promise.all(
+          alertKeys.map(
+            (alertKey) =>
+              upsertAlertState({
+                userKey,
+                role,
+                alertKey,
+                isRead: true,
+                isDismissed: false,
+                skipTableCheck: true,
+              })
+          )
+        );
+      }
+    }
 
     return res.json({
       success: true,

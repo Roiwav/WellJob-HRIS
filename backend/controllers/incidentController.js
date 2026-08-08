@@ -258,8 +258,13 @@ async function getTimelineByIncidentId(incidentId) {
   return rows.map(serializeTimelineItem);
 }
 
-async function getTimelineByIncidentIds(incidentIds = []) {
-  await ensureIncidentTimelineTable();
+async function getTimelineByIncidentIds(
+  incidentIds = [],
+  { ensureTable = true } = {}
+) {
+  if (ensureTable) {
+    await ensureIncidentTimelineTable();
+  }
 
   if (!incidentIds.length) return new Map();
 
@@ -566,17 +571,18 @@ async function getIncidentWithEvidence(id) {
 
   if (rows.length === 0) return null;
 
-  const [evidence] = await db.promise().query(
-    `
-    SELECT *
-    FROM incident_evidence
-    WHERE incident_id = ?
-    ORDER BY created_at DESC, id DESC
-    `,
-    [id]
-  );
-
-  const timelineEvents = await getTimelineByIncidentId(id);
+  const [[evidence], timelineEvents] = await Promise.all([
+    db.promise().query(
+      `
+      SELECT *
+      FROM incident_evidence
+      WHERE incident_id = ?
+      ORDER BY created_at DESC, id DESC
+      `,
+      [id]
+    ),
+    getTimelineByIncidentId(id),
+  ]);
 
   return serializeIncident(rows[0], evidence, timelineEvents);
 }
@@ -770,15 +776,18 @@ exports.getIncidents = async (req, res) => {
 
     const incidentIds = incidents.map((incident) => incident.id);
 
-    const [evidence] = await db.promise().query(
-      `
-      SELECT *
-      FROM incident_evidence
-      WHERE incident_id IN (?)
-      ORDER BY created_at DESC, id DESC
-      `,
-      [incidentIds]
-    );
+    const [[evidence], timelineMap] = await Promise.all([
+      db.promise().query(
+        `
+        SELECT *
+        FROM incident_evidence
+        WHERE incident_id IN (?)
+        ORDER BY created_at DESC, id DESC
+        `,
+        [incidentIds]
+      ),
+      getTimelineByIncidentIds(incidentIds, { ensureTable: false }),
+    ]);
 
     const evidenceMap = evidence.reduce((map, item) => {
       const key = String(item.incident_id);
@@ -790,8 +799,6 @@ exports.getIncidents = async (req, res) => {
       map[key].push(item);
       return map;
     }, {});
-
-    const timelineMap = await getTimelineByIncidentIds(incidentIds);
 
     const result = incidents.map((incident) => {
       const incidentEvidence = evidenceMap[String(incident.id)] || [];
@@ -865,27 +872,38 @@ exports.getIncidentsByEmployee = async (req, res) => {
 
     const incidentIds = incidents.map((incident) => incident.id);
 
-    const [evidence] = await db.promise().query(
-      `
-      SELECT *
-      FROM incident_evidence
-      WHERE incident_id IN (?)
-      ORDER BY created_at DESC, id DESC
-      `,
-      [incidentIds]
-    );
+    const [[evidence], timelineMap] = await Promise.all([
+      db.promise().query(
+        `
+        SELECT *
+        FROM incident_evidence
+        WHERE incident_id IN (?)
+        ORDER BY created_at DESC, id DESC
+        `,
+        [incidentIds]
+      ),
+      getTimelineByIncidentIds(incidentIds, { ensureTable: false }),
+    ]);
 
-    const timelineMap = await getTimelineByIncidentIds(incidentIds);
+    const evidenceMap = evidence.reduce((map, item) => {
+      const key = String(item.incident_id);
+
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+
+      map.get(key).push(item);
+      return map;
+    }, new Map());
 
     const result = incidents.map((incident) => {
-      const incidentEvidence = evidence.filter(
-        (item) => Number(item.incident_id) === Number(incident.id)
-      );
+      const incidentKey = String(incident.id);
+      const incidentEvidence = evidenceMap.get(incidentKey) || [];
 
       return serializeIncident(
         incident,
         incidentEvidence,
-        timelineMap.get(String(incident.id)) || []
+        timelineMap.get(incidentKey) || []
       );
     });
 
