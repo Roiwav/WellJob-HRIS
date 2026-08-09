@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import {
+  Navigate,
+  Route,
+  Routes,
+} from "react-router-dom";
 import axios from "axios";
 import {
   QueryClient,
@@ -53,6 +57,7 @@ const queryClient = new QueryClient({
       refetchOnReconnect: true,
       retry: 1,
     },
+
     mutations: {
       retry: 0,
     },
@@ -60,152 +65,260 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  const [isMaintenance, setIsMaintenance] = useState(false);
+  const [
+    isMaintenance,
+    setIsMaintenance,
+  ] = useState(false);
 
   useEffect(() => {
-    const interceptor = axios.interceptors.response.use(
-      (response) => {
-        setIsMaintenance(false);
-        return response;
-      },
-      (error) => {
-        if (error?.response?.status === 503) {
-          setIsMaintenance(true);
-        }
+    const interceptor =
+      axios.interceptors.response.use(
+        (response) => {
+          setIsMaintenance(false);
 
-        return Promise.reject(error);
-      }
-    );
+          return response;
+        },
+        (error) => {
+          if (
+            error?.response?.status ===
+            503
+          ) {
+            setIsMaintenance(true);
+          }
+
+          return Promise.reject(error);
+        }
+      );
 
     return () => {
-      axios.interceptors.response.eject(interceptor);
+      axios.interceptors.response.eject(
+        interceptor
+      );
     };
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider
+      client={queryClient}
+    >
       <AuthProvider>
         {isMaintenance && (
-          <div className="fixed left-1/2 top-4 z-[9999] w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-800 shadow-lg dark:border-amber-900/60 dark:bg-amber-950 dark:text-amber-200">
-            System maintenance is currently active. Some actions may be
-            temporarily unavailable.
+          <div
+            role="alert"
+            className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+          >
+            System maintenance is
+            currently active. Some
+            actions may be temporarily
+            unavailable.
           </div>
         )}
 
         <Routes>
           {/* Public */}
-          <Route path="/login" element={<Login />} />
+          <Route
+            path="/login"
+            element={<Login />}
+          />
 
           {/* All authenticated users */}
           <Route
             element={
-              <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES} />
+              <ProtectedRoute
+                allowedRoles={
+                  AUTHENTICATED_ROLES
+                }
+              />
             }
           >
+            {/* Password change intentionally remains outside MainLayout */}
             <Route
               path="/change-password"
-              element={<ChangePassword />}
+              element={
+                <ChangePassword />
+              }
             />
-          </Route>
 
-          {/* Main layout */}
-          <Route element={<MainLayout />}>
-            {/* Dashboard */}
+            {/*
+             * Protected application shell.
+             * Navbar, Sidebar, and global widgets
+             * mount only after authentication
+             * succeeds.
+             */}
             <Route
               element={
-                <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES} />
+                <MainLayout />
               }
             >
-              <Route path="/" element={<Dashboard />} />
-            </Route>
-
-            {/* HR modules */}
-            <Route
-              element={
-                <ProtectedRoute allowedRoles={HR_MODULE_ROLES} />
-              }
-            >
-              <Route path="/employees" element={<Employees />} />
-              <Route path="/deployments" element={<Deployments />} />
-              <Route path="/incidents" element={<Incidents />} />
+              {/* Dashboard */}
               <Route
-                path="/notifications"
-                element={<Notifications />}
-              />
-            </Route>
-
-            {/* HR Manager-only employee archive */}
-            <Route
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.HR_MANAGER]} />
-              }
-            >
-              <Route
-                path="/employees/archive"
-                element={<ArchivedEmployees />}
-              />
-            </Route>
-
-            {/* KPI */}
-            <Route
-              element={
-                <ProtectedRoute
-                  allowedRoles={[
-                    ROLES.SUPER_ADMIN,
-                    ROLES.HR_MANAGER,
-                  ]}
+                element={
+                  <ProtectedRoute
+                    allowedRoles={
+                      AUTHENTICATED_ROLES
+                    }
+                  />
+                }
+              >
+                <Route
+                  path="/"
+                  element={
+                    <Dashboard />
+                  }
                 />
-              }
-            >
-              <Route path="/kpi" element={<KPIReports />} />
-            </Route>
+              </Route>
 
-            {/* IT Support module */}
-            <Route
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.IT_SUPPORT]} />
-              }
-            >
-              <Route path="/settings" element={<Settings />} />
-
+              {/* HR modules */}
               <Route
-                path="/system-maintenance"
-                element={<SystemMaintenance />}
-              />
+                element={
+                  <ProtectedRoute
+                    allowedRoles={
+                      HR_MODULE_ROLES
+                    }
+                  />
+                }
+              >
+                <Route
+                  path="/employees"
+                  element={
+                    <Employees />
+                  }
+                />
 
-              <Route
-                path="/technical-audit-logs"
-                element={<TechnicalAuditLogs />}
-              />
-            </Route>
+                <Route
+                  path="/deployments"
+                  element={
+                    <Deployments />
+                  }
+                />
 
-            {/* Super Admin module */}
-            <Route
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]} />
-              }
-            >
-              <Route
-                path="/super-admin"
-                element={<SuperAdminPortal />}
-              />
+                <Route
+                  path="/incidents"
+                  element={
+                    <Incidents />
+                  }
+                />
 
-              <Route
-                path="/system-configuration"
-                element={<SystemConfiguration />}
-              />
+                <Route
+                  path="/notifications"
+                  element={
+                    <Notifications />
+                  }
+                />
+              </Route>
 
+              {/* HR Manager-only employee archive */}
               <Route
-                path="/operational-audit-logs"
-                element={<OperationalAuditLogs />}
-              />
+                element={
+                  <ProtectedRoute
+                    allowedRoles={[
+                      ROLES.HR_MANAGER,
+                    ]}
+                  />
+                }
+              >
+                <Route
+                  path="/employees/archive"
+                  element={
+                    <ArchivedEmployees />
+                  }
+                />
+              </Route>
+
+              {/* KPI */}
+              <Route
+                element={
+                  <ProtectedRoute
+                    allowedRoles={[
+                      ROLES.SUPER_ADMIN,
+                      ROLES.HR_MANAGER,
+                    ]}
+                  />
+                }
+              >
+                <Route
+                  path="/kpi"
+                  element={
+                    <KPIReports />
+                  }
+                />
+              </Route>
+
+              {/* IT Support module */}
+              <Route
+                element={
+                  <ProtectedRoute
+                    allowedRoles={[
+                      ROLES.IT_SUPPORT,
+                    ]}
+                  />
+                }
+              >
+                <Route
+                  path="/settings"
+                  element={
+                    <Settings />
+                  }
+                />
+
+                <Route
+                  path="/system-maintenance"
+                  element={
+                    <SystemMaintenance />
+                  }
+                />
+
+                <Route
+                  path="/technical-audit-logs"
+                  element={
+                    <TechnicalAuditLogs />
+                  }
+                />
+              </Route>
+
+              {/* Super Admin module */}
+              <Route
+                element={
+                  <ProtectedRoute
+                    allowedRoles={[
+                      ROLES.SUPER_ADMIN,
+                    ]}
+                  />
+                }
+              >
+                <Route
+                  path="/super-admin"
+                  element={
+                    <SuperAdminPortal />
+                  }
+                />
+
+                <Route
+                  path="/system-configuration"
+                  element={
+                    <SystemConfiguration />
+                  }
+                />
+
+                <Route
+                  path="/operational-audit-logs"
+                  element={
+                    <OperationalAuditLogs />
+                  }
+                />
+              </Route>
             </Route>
           </Route>
 
           {/* Fallback */}
           <Route
             path="*"
-            element={<Navigate to="/login" replace />}
+            element={
+              <Navigate
+                to="/login"
+                replace
+              />
+            }
           />
         </Routes>
       </AuthProvider>

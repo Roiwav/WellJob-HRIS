@@ -1386,11 +1386,6 @@ export default function Incidents() {
       handleDataUpdated
     );
 
-    window.addEventListener(
-      "focus",
-      refreshSilently
-    );
-
     return () => {
       if (refreshTimer) {
         clearTimeout(
@@ -1401,11 +1396,6 @@ export default function Incidents() {
       window.removeEventListener(
         "dataUpdated",
         handleDataUpdated
-      );
-
-      window.removeEventListener(
-        "focus",
-        refreshSilently
       );
     };
   }, [fetchPageData]);

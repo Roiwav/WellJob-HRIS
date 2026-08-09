@@ -20,6 +20,45 @@ const EMPTY_SUMMARY = {
   low: 0,
 };
 
+const SMART_ALERT_REFRESH_DOMAINS =
+  new Set([
+    "incident",
+    "incidents",
+    "employee",
+    "employees",
+    "deployment",
+    "deployments",
+    "dashboard",
+  ]);
+
+function normalizeDataDomain(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function shouldRefreshForDataUpdated(
+  event
+) {
+  const domain =
+    normalizeDataDomain(
+      event?.detail?.domain
+    );
+
+  /*
+   * Preserve compatibility with
+   * older dataUpdated events that
+   * do not include a domain.
+   */
+  if (!domain) {
+    return true;
+  }
+
+  return SMART_ALERT_REFRESH_DOMAINS.has(
+    domain
+  );
+}
+
 function getDisplayName(user) {
   return (
     user?.full_name ||
@@ -148,22 +187,25 @@ export default function useSmartNotifications(
   const [
     clearedAlertKeys,
     setClearedAlertKeys,
-  ] = useState(() => new Set());
+  ] = useState(
+    () => new Set()
+  );
 
   const [error, setError] =
     useState("");
 
-  const visibleAlerts = useMemo(
-    () =>
-      filterClearedAlerts(
+  const visibleAlerts =
+    useMemo(
+      () =>
+        filterClearedAlerts(
+          alerts,
+          clearedAlertKeys
+        ),
+      [
         alerts,
-        clearedAlertKeys
-      ),
-    [
-      alerts,
-      clearedAlertKeys,
-    ]
-  );
+        clearedAlertKeys,
+      ]
+    );
 
   const visibleLatestAlerts =
     useMemo(
@@ -178,41 +220,42 @@ export default function useSmartNotifications(
       ]
     );
 
-  const readAlerts = useMemo(() => {
-    const combinedAlerts = [
-      ...visibleAlerts,
-      ...visibleLatestAlerts,
-    ];
+  const readAlerts =
+    useMemo(() => {
+      const combinedAlerts = [
+        ...visibleAlerts,
+        ...visibleLatestAlerts,
+      ];
 
-    const uniqueReadAlerts =
-      new Map();
+      const uniqueReadAlerts =
+        new Map();
 
-    combinedAlerts.forEach(
-      (alert) => {
-        const alertKey =
-          getAlertKey(alert);
+      combinedAlerts.forEach(
+        (alert) => {
+          const alertKey =
+            getAlertKey(alert);
 
-        if (
-          !alertKey ||
-          !isReadAlert(alert)
-        ) {
-          return;
+          if (
+            !alertKey ||
+            !isReadAlert(alert)
+          ) {
+            return;
+          }
+
+          uniqueReadAlerts.set(
+            alertKey,
+            alert
+          );
         }
+      );
 
-        uniqueReadAlerts.set(
-          alertKey,
-          alert
-        );
-      }
-    );
-
-    return Array.from(
-      uniqueReadAlerts.values()
-    );
-  }, [
-    visibleAlerts,
-    visibleLatestAlerts,
-  ]);
+      return Array.from(
+        uniqueReadAlerts.values()
+      );
+    }, [
+      visibleAlerts,
+      visibleLatestAlerts,
+    ]);
 
   const readAlertCount =
     readAlerts.length;
@@ -220,130 +263,150 @@ export default function useSmartNotifications(
   const hasReadAlerts =
     readAlertCount > 0;
 
-  const fetchAlerts = useCallback(
-    async ({
-      silent = false,
-    } = {}) => {
-      if (!canView) {
-        setAlerts([]);
-        setLatestAlerts([]);
-        setPopupAlert(null);
-        setSummary(
-          EMPTY_SUMMARY
-        );
-        setUnreadCount(0);
-        setIsLoading(false);
-        setIsFetching(false);
-        setError("");
-        return;
-      }
+  const fetchAlerts =
+    useCallback(
+      async ({
+        silent = false,
+      } = {}) => {
+        if (!canView) {
+          setAlerts([]);
+          setLatestAlerts([]);
+          setPopupAlert(null);
 
-      if (requestInFlightRef.current) {
-        return;
-      }
+          setSummary(
+            EMPTY_SUMMARY
+          );
 
-      requestInFlightRef.current = true;
+          setUnreadCount(0);
+          setIsLoading(false);
+          setIsFetching(false);
+          setError("");
 
-      try {
-        if (!silent) {
-          setIsLoading(true);
+          return;
         }
 
-        setIsFetching(true);
-        setError("");
+        if (
+          requestInFlightRef.current
+        ) {
+          return;
+        }
 
-        const displayName =
-          getDisplayName(user);
+        requestInFlightRef.current =
+          true;
 
-        const userId = String(
-          getUserId(user)
-        );
+        try {
+          if (!silent) {
+            setIsLoading(true);
+          }
 
-        const query =
-          new URLSearchParams({
-            userKey,
-            role,
-            userId,
-            id: userId,
-            username: String(
-              user?.username || ""
-            ),
-            userName:
-              displayName,
-            fullName:
-              displayName,
-            full_name:
-              displayName,
-            name: displayName,
-          }).toString();
+          setIsFetching(true);
+          setError("");
 
-        const data =
-          await requestSmartAlertJson(
-            `/smart-alerts?${query}`
+          const displayName =
+            getDisplayName(user);
+
+          const userId =
+            String(
+              getUserId(user)
+            );
+
+          const query =
+            new URLSearchParams({
+              userKey,
+              role,
+              userId,
+              id: userId,
+
+              username:
+                String(
+                  user?.username ||
+                    ""
+                ),
+
+              userName:
+                displayName,
+
+              fullName:
+                displayName,
+
+              full_name:
+                displayName,
+
+              name:
+                displayName,
+            }).toString();
+
+          const data =
+            await requestSmartAlertJson(
+              `/smart-alerts?${query}`
+            );
+
+          const nextAlerts =
+            normalizeAlerts(
+              data?.alerts
+            );
+
+          const nextLatestAlerts =
+            normalizeAlerts(
+              data?.latestAlerts
+            );
+
+          setAlerts(
+            nextAlerts
           );
 
-        const nextAlerts =
-          normalizeAlerts(
-            data?.alerts
+          setLatestAlerts(
+            nextLatestAlerts
           );
 
-        const nextLatestAlerts =
-          normalizeAlerts(
-            data?.latestAlerts
+          const nextPopupAlert =
+            data?.popupAlert ||
+            null;
+
+          setPopupAlert(
+            nextPopupAlert
           );
 
-        setAlerts(nextAlerts);
+          setSummary({
+            ...EMPTY_SUMMARY,
+            ...(data?.summary ||
+              {}),
+          });
 
-        setLatestAlerts(
-          nextLatestAlerts
-        );
-
-        const nextPopupAlert =
-          data?.popupAlert ||
-          null;
-
-        setPopupAlert(
-          nextPopupAlert
-        );
-
-        setSummary({
-          ...EMPTY_SUMMARY,
-          ...(data?.summary ||
-            {}),
-        });
-
-        setUnreadCount(
-          Math.max(
-            0,
-            Number(
-              data?.unreadCount ||
-                0
+          setUnreadCount(
+            Math.max(
+              0,
+              Number(
+                data?.unreadCount ||
+                  0
+              )
             )
-          )
-        );
-      } catch (err) {
-        console.error(
-          "Smart notification fetch error:",
-          err
-        );
+          );
+        } catch (err) {
+          console.error(
+            "Smart notification fetch error:",
+            err
+          );
 
-        setError(
-          err?.message ||
-            "Unable to load smart alerts."
-        );
-      } finally {
-        requestInFlightRef.current = false;
-        setIsLoading(false);
-        setIsFetching(false);
-      }
-    },
-    [
-      canView,
-      role,
-      user,
-      userKey,
-    ]
-  );
+          setError(
+            err?.message ||
+              "Unable to load smart alerts."
+          );
+        } finally {
+          requestInFlightRef.current =
+            false;
+
+          setIsLoading(false);
+          setIsFetching(false);
+        }
+      },
+      [
+        canView,
+        role,
+        user,
+        userKey,
+      ]
+    );
 
   const markAlertAsRead =
     useCallback(
@@ -377,7 +440,8 @@ export default function useSmartNotifications(
                 normalizedKey
                   ? {
                       ...alert,
-                      isRead: true,
+                      isRead:
+                        true,
                     }
                   : alert
             )
@@ -395,7 +459,8 @@ export default function useSmartNotifications(
                 normalizedKey
                   ? {
                       ...alert,
-                      isRead: true,
+                      isRead:
+                        true,
                     }
                   : alert
             )
@@ -405,7 +470,8 @@ export default function useSmartNotifications(
           (currentCount) =>
             Math.max(
               0,
-              currentCount - 1
+              currentCount -
+                1
             )
         );
 
@@ -413,12 +479,15 @@ export default function useSmartNotifications(
           "/smart-alerts/read",
           {
             method: "POST",
-            body: JSON.stringify({
-              userKey,
-              role,
-              alertKey:
-                normalizedKey,
-            }),
+
+            body:
+              JSON.stringify({
+                userKey,
+                role,
+
+                alertKey:
+                  normalizedKey,
+              }),
           }
         );
 
@@ -504,19 +573,25 @@ export default function useSmartNotifications(
           await requestSmartAlertJson(
             "/smart-alerts/dismiss",
             {
-              method: "POST",
-              body: JSON.stringify(
-                {
-                  userKey,
-                  role,
-                  alertKey:
-                    normalizedKey,
-                }
-              ),
+              method:
+                "POST",
+
+              body:
+                JSON.stringify(
+                  {
+                    userKey,
+                    role,
+
+                    alertKey:
+                      normalizedKey,
+                  }
+                ),
             }
           );
 
-          if (refreshAfter) {
+          if (
+            refreshAfter
+          ) {
             await fetchAlerts({
               silent: true,
             });
@@ -639,14 +714,17 @@ export default function useSmartNotifications(
               requestSmartAlertJson(
                 "/smart-alerts/dismiss",
                 {
-                  method: "POST",
-                  body: JSON.stringify(
-                    {
-                      userKey,
-                      role,
-                      alertKey,
-                    }
-                  ),
+                  method:
+                    "POST",
+
+                  body:
+                    JSON.stringify(
+                      {
+                        userKey,
+                        role,
+                        alertKey,
+                      }
+                    ),
                 }
               )
           )
@@ -718,7 +796,8 @@ export default function useSmartNotifications(
           .filter(Boolean);
 
       if (
-        alertKeys.length === 0
+        alertKeys.length ===
+        0
       ) {
         return;
       }
@@ -751,11 +830,13 @@ export default function useSmartNotifications(
         "/smart-alerts/read-all",
         {
           method: "POST",
-          body: JSON.stringify({
-            userKey,
-            role,
-            alertKeys,
-          }),
+
+          body:
+            JSON.stringify({
+              userKey,
+              role,
+              alertKeys,
+            }),
         }
       );
 
@@ -774,10 +855,19 @@ export default function useSmartNotifications(
     fetchAlerts();
 
     const handleDataUpdated =
-      () =>
+      (event) => {
+        if (
+          !shouldRefreshForDataUpdated(
+            event
+          )
+        ) {
+          return;
+        }
+
         fetchAlerts({
           silent: true,
         });
+      };
 
     let intervalId = null;
 
@@ -788,7 +878,9 @@ export default function useSmartNotifications(
             fetchAlerts({
               silent: true,
             }),
-          Number(pollInterval)
+          Number(
+            pollInterval
+          )
         );
     }
 
@@ -803,7 +895,9 @@ export default function useSmartNotifications(
         handleDataUpdated
       );
 
-      if (intervalId !== null) {
+      if (
+        intervalId !== null
+      ) {
         window.clearInterval(
           intervalId
         );
@@ -817,10 +911,13 @@ export default function useSmartNotifications(
 
   return {
     canView,
+
     alerts:
       visibleAlerts,
+
     latestAlerts:
       visibleLatestAlerts,
+
     popupAlert:
       popupAlert &&
       !clearedAlertKeys.has(
@@ -830,6 +927,7 @@ export default function useSmartNotifications(
       )
         ? popupAlert
         : null,
+
     summary,
     unreadCount,
     readAlertCount,
@@ -838,7 +936,10 @@ export default function useSmartNotifications(
     isFetching,
     isClearingRead,
     error,
-    refresh: fetchAlerts,
+
+    refresh:
+      fetchAlerts,
+
     markAlertAsRead,
     dismissAlert,
     clearReadAlerts,
