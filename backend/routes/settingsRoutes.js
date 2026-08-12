@@ -1,47 +1,126 @@
 // routes/settingsRoutes.js
+
 const express = require("express");
+
 const router = express.Router();
 
-// Siguraduhing tama ang path ng iyong database connection file
-const db = require("../config/db"); // O palitan ng tamang path gaya ng "../config/db"
+const db = require("../config/db");
 
-// API para i-update ang Maintenance Mode status
-router.post("/settings/toggle-maintenance", async (req, res) => {
-    const { status } = req.body; 
+const {
+  verifyToken,
+} = require("../middleware/authMiddleware");
 
+const {
+  authorizeRoles,
+} = require("../middleware/roleMiddleware");
+
+/*
+ * GET CURRENT MAINTENANCE STATUS
+ *
+ * IT_SUPPORT only.
+ *
+ * The route remains reachable while maintenance mode
+ * is active, but the requester must still have a valid
+ * authenticated IT_SUPPORT account.
+ */
+router.get(
+  "/settings/maintenance-status",
+  verifyToken,
+  authorizeRoles("IT_SUPPORT"),
+  async (req, res) => {
     try {
-        const updateQuery = "UPDATE system_settings SET setting_value = ? WHERE setting_name = 'maintenance_mode'";
-        
-        // --- FIX: Ginamit natin ang .promise().query() ---
-        await db.promise().query(updateQuery, [status]);
+      const [rows] =
+        await db.promise().query(
+          `
+          SELECT setting_value
+          FROM system_settings
+          WHERE setting_name = 'maintenance_mode'
+          LIMIT 1
+          `
+        );
 
-        res.status(200).json({ 
-            message: "System Maintenance Mode successfully updated!", 
-            isMaintenanceOn: status 
+      if (rows.length === 0) {
+        return res.status(404).json({
+          error: "Setting not found",
         });
-    } catch (error) {
-        console.error("Database error:", error);
-        res.status(500).json({ error: "May error sa pag-update ng database." });
-    }
-});
+      }
 
-// API para i-fetch ang current status (para pag-load ng page, tama ang button)
-router.get("/settings/maintenance-status", async (req, res) => {
-    try {
-        // --- FIX: Ginamit natin ang .promise().query() ---
-        const [rows] = await db.promise().query("SELECT setting_value FROM system_settings WHERE setting_name = 'maintenance_mode'");
-        
-        if (rows.length > 0) {
-            // I-convert sa boolean incase 1 o 0 ang ibalik ng MySQL
-            const isMaintenance = rows[0].setting_value === 1 || rows[0].setting_value === true;
-            res.status(200).json({ isMaintenanceOn: isMaintenance });
-        } else {
-            res.status(404).json({ error: "Setting not found" });
-        }
+      const settingValue =
+        rows[0].setting_value;
+
+      const isMaintenanceOn =
+        settingValue === 1 ||
+        settingValue === true ||
+        String(settingValue) === "1";
+
+      return res.status(200).json({
+        isMaintenanceOn,
+      });
     } catch (error) {
-        console.error("Database error:", error);
-        res.status(500).json({ error: "Failed to fetch status." });
+      console.error(
+        "Maintenance status database error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "Failed to fetch maintenance status.",
+      });
     }
-});
+  }
+);
+
+/*
+ * TOGGLE MAINTENANCE MODE
+ *
+ * Sensitive technical control.
+ * IT_SUPPORT only.
+ *
+ * Authorization comes from req.user.
+ * Request body values are used only as setting data,
+ * never as authority.
+ */
+router.post(
+  "/settings/toggle-maintenance",
+  verifyToken,
+  authorizeRoles("IT_SUPPORT"),
+  async (req, res) => {
+    const { status } = req.body || {};
+
+    if (typeof status !== "boolean") {
+      return res.status(400).json({
+        error:
+          "Maintenance status must be true or false.",
+      });
+    }
+
+    try {
+      await db.promise().query(
+        `
+        UPDATE system_settings
+        SET setting_value = ?
+        WHERE setting_name = 'maintenance_mode'
+        `,
+        [status ? 1 : 0]
+      );
+
+      return res.status(200).json({
+        message:
+          "System Maintenance Mode successfully updated!",
+        isMaintenanceOn: status,
+      });
+    } catch (error) {
+      console.error(
+        "Maintenance toggle database error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "Failed to update maintenance mode.",
+      });
+    }
+  }
+);
 
 module.exports = router;

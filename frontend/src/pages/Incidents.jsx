@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import {
   FiPlus,
   FiRefreshCw,
@@ -10,6 +19,8 @@ import Button from "../components/ui/Button";
 import ErrorState from "../components/ui/ErrorState";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
+
+import authenticatedFetch from "../utils/authenticatedFetch";
 
 import AddIncidentModal from "../components/incidents/modals/AddIncidentModal";
 import ViewIncidentModal from "../components/incidents/modals/ViewIncidentModal";
@@ -24,117 +35,228 @@ import {
   normalizeStatus,
   normalizeIncidentWithRules,
 } from "../utils/incidents/incidentHelpers";
-import { normalizeEvidenceFiles } from "../utils/incidents/evidenceFiles";
 
-const API_BASE = "http://localhost:5000/api";
-const EMPLOYEE_API_URL = `${API_BASE}/employees`;
-const INCIDENT_API_URL = `${API_BASE}/incidents`;
-const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
-const AUDIT_API_URL = `${API_BASE}/audit-logs`;
-const DATA_EVENT_SOURCE = "incidents-page";
-const REQUEST_TIMEOUT_MS = 15000;
-const PASSIVE_REFRESH_DEBOUNCE_MS = 150;
+import {
+  normalizeEvidenceFiles,
+} from "../utils/incidents/evidenceFiles";
 
-const INCIDENT_PAGE_DATA_DOMAINS = new Set([
-  "incident",
-  "incidents",
-  "employee",
-  "employees",
-  "deployment",
-  "deployments",
-  "dashboard",
-]);
+const API_BASE =
+  "http://localhost:5000/api";
 
-function emitDataUpdated(action = "INCIDENTS_UPDATED") {
+const EMPLOYEE_API_URL =
+  `${API_BASE}/employees`;
+
+const INCIDENT_API_URL =
+  `${API_BASE}/incidents`;
+
+const DEPLOYMENT_API_URL =
+  `${API_BASE}/deployments`;
+
+const DATA_EVENT_SOURCE =
+  "incidents-page";
+
+const REQUEST_TIMEOUT_MS =
+  15000;
+
+const PASSIVE_REFRESH_DEBOUNCE_MS =
+  150;
+
+const INCIDENT_PAGE_DATA_DOMAINS =
+  new Set([
+    "incident",
+    "incidents",
+    "employee",
+    "employees",
+    "deployment",
+    "deployments",
+    "dashboard",
+  ]);
+
+function emitDataUpdated(
+  action = "INCIDENTS_UPDATED"
+) {
   window.dispatchEvent(
-    new CustomEvent("dataUpdated", {
-      detail: {
-        source: DATA_EVENT_SOURCE,
-        domain: "incidents",
-        action,
-        at: Date.now(),
-      },
-    })
+    new CustomEvent(
+      "dataUpdated",
+      {
+        detail: {
+          source:
+            DATA_EVENT_SOURCE,
+
+          domain:
+            "incidents",
+
+          action,
+
+          at:
+            Date.now(),
+        },
+      }
+    )
   );
 }
 
-function normalizeDataDomain(value) {
-  return String(value || "")
+function normalizeDataDomain(
+  value
+) {
+  return String(
+    value || ""
+  )
     .trim()
     .toLowerCase();
 }
 
-function shouldRefreshForDataUpdated(event) {
-  const domain = normalizeDataDomain(
-    event?.detail?.domain
-  );
+function shouldRefreshForDataUpdated(
+  event
+) {
+  const domain =
+    normalizeDataDomain(
+      event?.detail?.domain
+    );
 
   if (!domain) {
     return true;
   }
 
-  return INCIDENT_PAGE_DATA_DOMAINS.has(
-    domain
+  return (
+    INCIDENT_PAGE_DATA_DOMAINS.has(
+      domain
+    )
   );
 }
 
-function formatIncidentCode(id) {
-  if (!id) return "-";
+function formatIncidentCode(
+  id
+) {
+  if (!id) {
+    return "-";
+  }
 
-  const value = String(id);
+  const value =
+    String(id);
 
-  if (value.startsWith("INC-")) return value;
+  if (
+    value.startsWith(
+      "INC-"
+    )
+  ) {
+    return value;
+  }
 
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) return value;
+  const numeric =
+    Number(value);
 
-  return `INC-${String(numeric).padStart(4, "0")}`;
+  if (
+    Number.isNaN(
+      numeric
+    )
+  ) {
+    return value;
+  }
+
+  return `INC-${String(
+    numeric
+  ).padStart(
+    4,
+    "0"
+  )}`;
 }
 
-function normalizeId(value) {
-  return String(value || "").trim();
+function normalizeId(
+  value
+) {
+  return String(
+    value || ""
+  ).trim();
 }
 
-function normalizeName(value) {
-  return String(value || "")
+function normalizeName(
+  value
+) {
+  return String(
+    value || ""
+  )
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ");
+    .replace(
+      /[^a-z0-9\s]/g,
+      ""
+    )
+    .replace(
+      /\s+/g,
+      " "
+    );
 }
 
-function normalizeRole(value) {
-  const role = String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, "_");
+function normalizeRole(
+  value
+) {
+  const role =
+    String(
+      value || ""
+    )
+      .trim()
+      .toUpperCase()
+      .replace(
+        /[\s-]+/g,
+        "_"
+      );
 
-  if (["SUPERADMIN", "SUPER_ADMIN", "ADMIN"].includes(role)) {
+  if (
+    [
+      "SUPERADMIN",
+      "SUPER_ADMIN",
+      "ADMIN",
+    ].includes(
+      role
+    )
+  ) {
     return "SUPER_ADMIN";
   }
 
-  if (["HRMANAGER", "HR_MANAGER"].includes(role)) {
+  if (
+    [
+      "HRMANAGER",
+      "HR_MANAGER",
+    ].includes(
+      role
+    )
+  ) {
     return "HR_MANAGER";
   }
 
-  if (["HRSTAFF", "HR_STAFF"].includes(role)) {
+  if (
+    [
+      "HRSTAFF",
+      "HR_STAFF",
+    ].includes(
+      role
+    )
+  ) {
     return "HR_STAFF";
   }
 
   return role;
 }
 
-function normalizeTimelineEvent(event = {}) {
+function normalizeTimelineEvent(
+  event = {}
+) {
   const createdAt =
     event.createdAt ||
     event.created_at ||
     event.date ||
-    new Date().toISOString();
+    new Date()
+      .toISOString();
 
   return {
     id:
       event.id ||
-      `${event.actionType || event.action_type || "event"}-${createdAt}`,
+      `${
+        event.actionType ||
+        event.action_type ||
+        "event"
+      }-${createdAt}`,
 
     incidentId:
       event.incidentId ||
@@ -205,12 +327,17 @@ function normalizeTimelineEvent(event = {}) {
       "",
 
     createdAt,
-    created_at: createdAt,
+
+    created_at:
+      createdAt,
   };
 }
 
-function normalizeBackendIncident(incident = {}) {
-  const incidentId = incident.id;
+function normalizeBackendIncident(
+  incident = {}
+) {
+  const incidentId =
+    incident.id;
 
   const reportedBy =
     incident.reportedByName ||
@@ -234,25 +361,26 @@ function normalizeBackendIncident(incident = {}) {
     incident.reviewed_at ||
     null;
 
-  const timelineEvents = Array.isArray(
-    incident.timelineEvents
-  )
-    ? incident.timelineEvents.map(
-        normalizeTimelineEvent
-      )
-    : Array.isArray(
-        incident.timeline_events
-      )
-    ? incident.timeline_events.map(
-        normalizeTimelineEvent
-      )
-    : Array.isArray(
-        incident.timeline
-      )
-    ? incident.timeline.map(
-        normalizeTimelineEvent
-      )
-    : [];
+  const timelineEvents =
+    Array.isArray(
+      incident.timelineEvents
+    )
+      ? incident.timelineEvents.map(
+          normalizeTimelineEvent
+        )
+      : Array.isArray(
+          incident.timeline_events
+        )
+        ? incident.timeline_events.map(
+            normalizeTimelineEvent
+          )
+        : Array.isArray(
+            incident.timeline
+          )
+          ? incident.timeline.map(
+              normalizeTimelineEvent
+            )
+          : [];
 
   const investigation =
     investigationStartedAt
@@ -358,7 +486,8 @@ function normalizeBackendIncident(incident = {}) {
   return {
     ...incident,
 
-    id: incidentId,
+    id:
+      incidentId,
 
     displayId:
       formatIncidentCode(
@@ -415,7 +544,8 @@ function normalizeBackendIncident(incident = {}) {
       incident.incident_date ||
       incident.createdAt ||
       incident.created_at ||
-      new Date().toISOString(),
+      new Date()
+        .toISOString(),
 
     incidentDate:
       incident.incidentDate ||
@@ -423,7 +553,8 @@ function normalizeBackendIncident(incident = {}) {
       incident.incident_date ||
       incident.createdAt ||
       incident.created_at ||
-      new Date().toISOString(),
+      new Date()
+        .toISOString(),
 
     reportedAt:
       incident.reportedAt ||
@@ -431,14 +562,18 @@ function normalizeBackendIncident(incident = {}) {
       incident.createdAt ||
       incident.created_at ||
       incident.date ||
-      new Date().toISOString(),
+      new Date()
+        .toISOString(),
 
     reportedBy,
+
     reportedByName:
       reportedBy,
 
     investigation,
+
     resolution,
+
     review,
 
     investigationStartedAt,
@@ -447,11 +582,13 @@ function normalizeBackendIncident(incident = {}) {
       investigationStartedAt,
 
     investigationStartedByName:
-      investigation?.startedByName ||
+      investigation
+        ?.startedByName ||
       "",
 
     investigation_started_by_name:
-      investigation?.startedByName ||
+      investigation
+        ?.startedByName ||
       "",
 
     resolutionSubmittedAt,
@@ -460,11 +597,13 @@ function normalizeBackendIncident(incident = {}) {
       resolutionSubmittedAt,
 
     resolutionSubmittedByName:
-      resolution?.submittedByName ||
+      resolution
+        ?.submittedByName ||
       "",
 
     resolution_submitted_by_name:
-      resolution?.submittedByName ||
+      resolution
+        ?.submittedByName ||
       "",
 
     reviewedAt,
@@ -473,11 +612,13 @@ function normalizeBackendIncident(incident = {}) {
       reviewedAt,
 
     reviewedByName:
-      review?.reviewedByName ||
+      review
+        ?.reviewedByName ||
       "",
 
     reviewed_by_name:
-      review?.reviewedByName ||
+      review
+        ?.reviewedByName ||
       "",
 
     reviewDecision:
@@ -623,21 +764,26 @@ function normalizeBackendDeployment(
 function isActiveDeploymentRecord(
   deployment
 ) {
-  const status = String(
-    deployment?.status ||
-      deployment?.deploymentStatus ||
-      deployment?.deployment_status ||
+  const status =
+    String(
+      deployment?.status ||
+      deployment
+        ?.deploymentStatus ||
+      deployment
+        ?.deployment_status ||
       ""
-  )
-    .trim()
-    .toLowerCase();
+    )
+      .trim()
+      .toLowerCase();
 
   return [
     "active",
     "deployed",
     "active deployed",
     "ongoing",
-  ].includes(status);
+  ].includes(
+    status
+  );
 }
 
 function buildIncidentList(
@@ -665,33 +811,43 @@ async function requestJson(
     new AbortController();
 
   const timeoutId =
-    window.setTimeout(() => {
-      controller.abort();
-    }, REQUEST_TIMEOUT_MS);
+    window.setTimeout(
+      () => {
+        controller.abort();
+      },
+      REQUEST_TIMEOUT_MS
+    );
 
   try {
     const response =
-      await fetch(url, {
-        ...options,
+      await authenticatedFetch(
+        url,
+        {
+          ...options,
 
-        signal:
-          controller.signal,
+          signal:
+            controller.signal,
 
-        headers: {
-          Accept:
-            "application/json",
+          headers: {
+            Accept:
+              "application/json",
 
-          ...(options.headers ||
-            {}),
-        },
-      });
+            ...(options.headers ||
+              {}),
+          },
+        }
+      );
 
     const data =
       await response
         .json()
-        .catch(() => null);
+        .catch(
+          () => null
+        );
 
-    if (!response.ok) {
+    if (
+      !response.ok
+    ) {
       throw new Error(
         data?.error ||
           data?.message ||
@@ -719,16 +875,19 @@ async function requestJson(
 }
 
 export default function Incidents() {
-  const { user } =
-    useAuth();
+  const {
+    user,
+  } = useAuth();
 
   const currentUser =
-    getUserIdentity(user);
+    getUserIdentity(
+      user
+    );
 
   const currentRole =
     normalizeRole(
       user?.role ||
-        currentUser?.role
+      currentUser?.role
     );
 
   const isSuperAdmin =
@@ -772,86 +931,104 @@ export default function Incidents() {
   const [
     employees,
     setEmployees,
-  ] = useState([]);
+  ] =
+    useState([]);
 
   const [
     incidents,
     setIncidents,
-  ] = useState([]);
+  ] =
+    useState([]);
 
   const [
     deploymentRecords,
     setDeploymentRecords,
-  ] = useState([]);
+  ] =
+    useState([]);
 
   const [
     isLoading,
     setIsLoading,
-  ] = useState(true);
+  ] =
+    useState(true);
 
   const [
     isRefreshing,
     setIsRefreshing,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     fetchError,
     setFetchError,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     openAddModal,
     setOpenAddModal,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     selectedIncident,
     setSelectedIncident,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const [
     startReviewIncident,
     setStartReviewIncident,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const [
     confirmStartIncident,
     setConfirmStartIncident,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const [
     resolutionIncident,
     setResolutionIncident,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const [
     reviewIncident,
     setReviewIncident,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const [
     search,
     setSearch,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     caseTab,
     setCaseTab,
-  ] = useState(
-    isAuthorizedReviewer
-      ? "FOR_REVIEW"
-      : "ACTIVE"
-  );
+  ] =
+    useState(
+      isAuthorizedReviewer
+        ? "FOR_REVIEW"
+        : "ACTIVE"
+    );
 
   const [
     severityFilter,
     setSeverityFilter,
-  ] = useState("ALL");
+  ] =
+    useState(
+      "ALL"
+    );
 
   const [
     notice,
     setNotice,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const showNotice =
     useCallback(
@@ -876,281 +1053,269 @@ export default function Incidents() {
     );
 
   const activeDeployments =
-    useMemo(() => {
-      return deploymentRecords.filter(
-        isActiveDeploymentRecord
-      );
-    }, [
-      deploymentRecords,
-    ]);
-
-  const activeEmployees =
-    useMemo(() => {
-      const activeDeploymentEmployeeIds =
-        new Set(
-          activeDeployments
-            .map(
-              (deployment) =>
-                normalizeId(
-                  deployment.employeeId
-                )
-            )
-            .filter(Boolean)
+    useMemo(
+      () => {
+        return deploymentRecords.filter(
+          isActiveDeploymentRecord
         );
-
-      const activeDeploymentEmployeeNames =
-        new Set(
-          activeDeployments
-            .map(
-              (deployment) =>
-                normalizeName(
-                  deployment.employee ||
-                    deployment.employeeName
-                )
-            )
-            .filter(Boolean)
-        );
-
-      return employees.filter(
-        (emp) => {
-          const employeeId =
-            normalizeId(
-              emp.id ||
-                emp.employeeId ||
-                emp.employee_id
-            );
-
-          const employeeName =
-            normalizeName(
-              emp.name ||
-                emp.full_name ||
-                emp.fullName
-            );
-
-          const isArchived =
-            emp.archived ===
-              true ||
-            Number(
-              emp.archived
-            ) === 1;
-
-          if (isArchived) {
-            return false;
-          }
-
-          return (
-            (!!employeeId &&
-              activeDeploymentEmployeeIds.has(
-                employeeId
-              )) ||
-            (!!employeeName &&
-              activeDeploymentEmployeeNames.has(
-                employeeName
-              ))
-          );
-        }
-      );
-    }, [
-      employees,
-      activeDeployments,
-    ]);
-
-  const deployments =
-    useMemo(() => {
-      return activeDeployments.map(
-        (deployment) => {
-          const deploymentEmployeeId =
-            normalizeId(
-              deployment.employeeId
-            );
-
-          const deploymentEmployeeName =
-            normalizeName(
-              deployment.employee ||
-                deployment.employeeName
-            );
-
-          const employeeRecord =
-            employees.find(
-              (emp) => {
-                const employeeId =
-                  normalizeId(
-                    emp.id ||
-                      emp.employeeId ||
-                      emp.employee_id
-                  );
-
-                const employeeName =
-                  normalizeName(
-                    emp.name ||
-                      emp.full_name ||
-                      emp.fullName
-                  );
-
-                return (
-                  (!!deploymentEmployeeId &&
-                    employeeId ===
-                      deploymentEmployeeId) ||
-                  (!!deploymentEmployeeName &&
-                    employeeName ===
-                      deploymentEmployeeName)
-                );
-              }
-            );
-
-          const employeeName =
-            employeeRecord?.name ||
-            employeeRecord?.full_name ||
-            employeeRecord?.fullName ||
-            deployment.employee ||
-            deployment.employeeName ||
-            "Unknown Employee";
-
-          return {
-            ...deployment,
-
-            id:
-              deployment.deploymentId ||
-              deployment.id ||
-              deploymentEmployeeId,
-
-            employeeId:
-              deploymentEmployeeId ||
-              normalizeId(
-                employeeRecord?.id ||
-                  employeeRecord?.employeeId
-              ),
-
-            employee:
-              employeeName,
-
-            employeeName,
-
-            company:
-              deployment.company ||
-              deployment.clientCompany ||
-              deployment.client_company ||
-              employeeRecord?.company ||
-              "-",
-
-            status:
-              deployment.status ||
-              "Active",
-
-            deploymentStatus:
-              deployment.deploymentStatus ||
-              deployment.status ||
-              "Active",
-          };
-        }
-      );
-    }, [
-      activeDeployments,
-      employees,
-    ]);
-
-  const incidentCaseCounts =
-    useMemo(() => {
-      return incidents.reduce(
-        (
-          counts,
-          incident
-        ) => {
-          const status =
-            normalizeStatus(
-              incident.status
-            );
-
-          counts.ALL += 1;
-
-          if (
-            [
-              "Open",
-              "Investigating",
-            ].includes(status)
-          ) {
-            counts.ACTIVE += 1;
-          }
-
-          if (
-            status ===
-            "For Review"
-          ) {
-            counts.FOR_REVIEW +=
-              1;
-          }
-
-          if (
-            status ===
-            "Closed"
-          ) {
-            counts.CLOSED += 1;
-          }
-
-          return counts;
-        },
-        {
-          ALL: 0,
-          ACTIVE: 0,
-          FOR_REVIEW: 0,
-          CLOSED: 0,
-        }
-      );
-    }, [incidents]);
-
-  const createOperationalLog =
-    useCallback(
-      async (
-        action,
-        description
-      ) => {
-        try {
-          await fetch(
-            AUDIT_API_URL,
-            {
-              method:
-                "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-
-              body:
-                JSON.stringify(
-                  {
-                    userId:
-                      user?.userId ||
-                      user?.id,
-
-                    username:
-                      user?.username,
-
-                    fullName:
-                      actorFullName,
-
-                    role:
-                      user?.role,
-
-                    category:
-                      "OPERATIONAL",
-
-                    action,
-                    description,
-                  }
-                ),
-            }
-          );
-        } catch (error) {
-          console.error(
-            "Audit log failed:",
-            error
-          );
-        }
       },
       [
-        user,
-        actorFullName,
+        deploymentRecords,
+      ]
+    );
+
+  const activeEmployees =
+    useMemo(
+      () => {
+        const activeDeploymentEmployeeIds =
+          new Set(
+            activeDeployments
+              .map(
+                (
+                  deployment
+                ) =>
+                  normalizeId(
+                    deployment.employeeId
+                  )
+              )
+              .filter(
+                Boolean
+              )
+          );
+
+        const activeDeploymentEmployeeNames =
+          new Set(
+            activeDeployments
+              .map(
+                (
+                  deployment
+                ) =>
+                  normalizeName(
+                    deployment.employee ||
+                    deployment.employeeName
+                  )
+              )
+              .filter(
+                Boolean
+              )
+          );
+
+        return employees.filter(
+          (
+            emp
+          ) => {
+            const employeeId =
+              normalizeId(
+                emp.id ||
+                emp.employeeId ||
+                emp.employee_id
+              );
+
+            const employeeName =
+              normalizeName(
+                emp.name ||
+                emp.full_name ||
+                emp.fullName
+              );
+
+            const isArchived =
+              emp.archived ===
+                true ||
+              Number(
+                emp.archived
+              ) === 1;
+
+            if (
+              isArchived
+            ) {
+              return false;
+            }
+
+            return (
+              (
+                !!employeeId &&
+                activeDeploymentEmployeeIds.has(
+                  employeeId
+                )
+              ) ||
+              (
+                !!employeeName &&
+                activeDeploymentEmployeeNames.has(
+                  employeeName
+                )
+              )
+            );
+          }
+        );
+      },
+      [
+        employees,
+        activeDeployments,
+      ]
+    );
+
+  const deployments =
+    useMemo(
+      () => {
+        return activeDeployments.map(
+          (
+            deployment
+          ) => {
+            const deploymentEmployeeId =
+              normalizeId(
+                deployment.employeeId
+              );
+
+            const deploymentEmployeeName =
+              normalizeName(
+                deployment.employee ||
+                deployment.employeeName
+              );
+
+            const employeeRecord =
+              employees.find(
+                (
+                  emp
+                ) => {
+                  const employeeId =
+                    normalizeId(
+                      emp.id ||
+                      emp.employeeId ||
+                      emp.employee_id
+                    );
+
+                  const employeeName =
+                    normalizeName(
+                      emp.name ||
+                      emp.full_name ||
+                      emp.fullName
+                    );
+
+                  return (
+                    (
+                      !!deploymentEmployeeId &&
+                      employeeId ===
+                        deploymentEmployeeId
+                    ) ||
+                    (
+                      !!deploymentEmployeeName &&
+                      employeeName ===
+                        deploymentEmployeeName
+                    )
+                  );
+                }
+              );
+
+            const employeeName =
+              employeeRecord?.name ||
+              employeeRecord?.full_name ||
+              employeeRecord?.fullName ||
+              deployment.employee ||
+              deployment.employeeName ||
+              "Unknown Employee";
+
+            return {
+              ...deployment,
+
+              id:
+                deployment.deploymentId ||
+                deployment.id ||
+                deploymentEmployeeId,
+
+              employeeId:
+                deploymentEmployeeId ||
+                normalizeId(
+                  employeeRecord?.id ||
+                  employeeRecord
+                    ?.employeeId
+                ),
+
+              employee:
+                employeeName,
+
+              employeeName,
+
+              company:
+                deployment.company ||
+                deployment.clientCompany ||
+                deployment.client_company ||
+                employeeRecord?.company ||
+                "-",
+
+              status:
+                deployment.status ||
+                "Active",
+
+              deploymentStatus:
+                deployment.deploymentStatus ||
+                deployment.status ||
+                "Active",
+            };
+          }
+        );
+      },
+      [
+        activeDeployments,
+        employees,
+      ]
+    );
+
+  const incidentCaseCounts =
+    useMemo(
+      () => {
+        return incidents.reduce(
+          (
+            counts,
+            incident
+          ) => {
+            const status =
+              normalizeStatus(
+                incident.status
+              );
+
+            counts.ALL +=
+              1;
+
+            if (
+              [
+                "Open",
+                "Investigating",
+              ].includes(
+                status
+              )
+            ) {
+              counts.ACTIVE +=
+                1;
+            }
+
+            if (
+              status ===
+              "For Review"
+            ) {
+              counts.FOR_REVIEW +=
+                1;
+            }
+
+            if (
+              status ===
+              "Closed"
+            ) {
+              counts.CLOSED +=
+                1;
+            }
+
+            return counts;
+          },
+          {
+            ALL: 0,
+            ACTIVE: 0,
+            FOR_REVIEW: 0,
+            CLOSED: 0,
+          }
+        );
+      },
+      [
+        incidents,
       ]
     );
 
@@ -1164,14 +1329,16 @@ export default function Incidents() {
       } = {}) => {
         if (
           passive &&
-          activePageRequestsRef.current >
+          activePageRequestsRef
+            .current >
             0
         ) {
           return false;
         }
 
         const requestId =
-          fetchRequestIdRef.current +
+          fetchRequestIdRef
+            .current +
           1;
 
         fetchRequestIdRef.current =
@@ -1186,7 +1353,9 @@ export default function Incidents() {
             !showRefreshing &&
             isMountedRef.current
           ) {
-            setIsLoading(true);
+            setIsLoading(
+              true
+            );
           }
 
           if (
@@ -1202,26 +1371,29 @@ export default function Incidents() {
             showError &&
             isMountedRef.current
           ) {
-            setFetchError("");
+            setFetchError(
+              ""
+            );
           }
 
           const [
             employeeData,
             incidentData,
             deploymentData,
-          ] = await Promise.all([
-            requestJson(
-              EMPLOYEE_API_URL
-            ),
+          ] =
+            await Promise.all([
+              requestJson(
+                EMPLOYEE_API_URL
+              ),
 
-            requestJson(
-              INCIDENT_API_URL
-            ),
+              requestJson(
+                INCIDENT_API_URL
+              ),
 
-            requestJson(
-              DEPLOYMENT_API_URL
-            ),
-          ]);
+              requestJson(
+                DEPLOYMENT_API_URL
+              ),
+            ]);
 
           if (
             !isMountedRef.current ||
@@ -1280,7 +1452,7 @@ export default function Incidents() {
           ) {
             setFetchError(
               error?.message ||
-                "Unable to load employee, deployment, and incident records."
+              "Unable to load employee, deployment, and incident records."
             );
           }
 
@@ -1289,7 +1461,8 @@ export default function Incidents() {
           activePageRequestsRef.current =
             Math.max(
               0,
-              activePageRequestsRef.current -
+              activePageRequestsRef
+                .current -
                 1
             );
 
@@ -1298,7 +1471,9 @@ export default function Incidents() {
             requestId ===
               fetchRequestIdRef.current
           ) {
-            if (!silent) {
+            if (
+              !silent
+            ) {
               setIsLoading(
                 false
               );
@@ -1317,223 +1492,263 @@ export default function Incidents() {
       []
     );
 
-  useEffect(() => {
-    isMountedRef.current =
-      true;
-
-    return () => {
+  useEffect(
+    () => {
       isMountedRef.current =
-        false;
+        true;
 
-      fetchRequestIdRef.current +=
-        1;
-    };
-  }, []);
+      return () => {
+        isMountedRef.current =
+          false;
 
-  useEffect(() => {
-    fetchPageData();
-  }, [fetchPageData]);
+        fetchRequestIdRef.current +=
+          1;
+      };
+    },
+    []
+  );
 
-  useEffect(() => {
-    let refreshTimer =
-      null;
+  useEffect(
+    () => {
+      fetchPageData();
+    },
+    [
+      fetchPageData,
+    ]
+  );
 
-    const refreshSilently =
-      () => {
-        if (refreshTimer) {
+  useEffect(
+    () => {
+      let refreshTimer =
+        null;
+
+      const refreshSilently =
+        () => {
+          if (
+            refreshTimer
+          ) {
+            clearTimeout(
+              refreshTimer
+            );
+          }
+
+          refreshTimer =
+            setTimeout(
+              () => {
+                fetchPageData({
+                  silent:
+                    true,
+
+                  showError:
+                    false,
+
+                  passive:
+                    true,
+                });
+              },
+              PASSIVE_REFRESH_DEBOUNCE_MS
+            );
+        };
+
+      const handleDataUpdated =
+        (
+          event
+        ) => {
+          if (
+            event?.detail
+              ?.source ===
+            DATA_EVENT_SOURCE
+          ) {
+            return;
+          }
+
+          if (
+            !shouldRefreshForDataUpdated(
+              event
+            )
+          ) {
+            return;
+          }
+
+          refreshSilently();
+        };
+
+      window.addEventListener(
+        "dataUpdated",
+        handleDataUpdated
+      );
+
+      return () => {
+        if (
+          refreshTimer
+        ) {
           clearTimeout(
             refreshTimer
           );
         }
 
-        refreshTimer =
-          setTimeout(() => {
-            fetchPageData({
-              silent: true,
-              showError:
-                false,
-              passive:
-                true,
-            });
-          },
-          PASSIVE_REFRESH_DEBOUNCE_MS
+        window.removeEventListener(
+          "dataUpdated",
+          handleDataUpdated
         );
       };
+    },
+    [
+      fetchPageData,
+    ]
+  );
 
-    const handleDataUpdated =
-      (event) => {
-        if (
-          event?.detail
-            ?.source ===
-          DATA_EVENT_SOURCE
-        ) {
-          return;
-        }
-
-        if (
-          !shouldRefreshForDataUpdated(
-            event
-          )
-        ) {
-          return;
-        }
-
-        refreshSilently();
-      };
-
-    window.addEventListener(
-      "dataUpdated",
-      handleDataUpdated
-    );
-
-    return () => {
-      if (refreshTimer) {
-        clearTimeout(
-          refreshTimer
-        );
+  useEffect(
+    () => {
+      if (
+        !location.state
+          ?.incidentId ||
+        incidents.length ===
+          0
+      ) {
+        return;
       }
 
-      window.removeEventListener(
-        "dataUpdated",
-        handleDataUpdated
-      );
-    };
-  }, [fetchPageData]);
+      const targetId =
+        String(
+          location.state
+            .incidentId
+        );
 
-  useEffect(() => {
-    if (
-      !location.state
-        ?.incidentId ||
-      incidents.length === 0
-    ) {
-      return;
-    }
-
-    const targetId =
-      String(
-        location.state
-          .incidentId
-      );
-
-    const requestedAction =
-      String(
-        location.state.action ||
+      const requestedAction =
+        String(
+          location.state
+            .action ||
           "view"
-      )
-        .trim()
-        .toLowerCase();
+        )
+          .trim()
+          .toLowerCase();
 
-    const foundIncident =
-      incidents.find(
-        (incident) =>
-          String(
-            incident.id
-          ) === targetId ||
-          String(
-            incident.displayId
-          ) === targetId
-      );
+      const foundIncident =
+        incidents.find(
+          (
+            incident
+          ) =>
+            String(
+              incident.id
+            ) ===
+              targetId ||
+            String(
+              incident.displayId
+            ) ===
+              targetId
+        );
 
-    if (!foundIncident) {
-      navigate(
-        location.pathname,
-        {
-          replace: true,
-          state: {},
-        }
-      );
+      if (
+        !foundIncident
+      ) {
+        navigate(
+          location.pathname,
+          {
+            replace:
+              true,
 
-      return;
-    }
+            state:
+              {},
+          }
+        );
 
-    const currentStatus =
-      normalizeStatus(
-        foundIncident.status
-      );
+        return;
+      }
 
-    setSelectedIncident(
-      null
-    );
+      const currentStatus =
+        normalizeStatus(
+          foundIncident.status
+        );
 
-    setStartReviewIncident(
-      null
-    );
-
-    setConfirmStartIncident(
-      null
-    );
-
-    setResolutionIncident(
-      null
-    );
-
-    setReviewIncident(
-      null
-    );
-
-    if (
-      requestedAction ===
-        "review" &&
-      currentStatus ===
-        "For Review" &&
-      isAuthorizedReviewer
-    ) {
-      setCaseTab(
-        "FOR_REVIEW"
-      );
-
-      setReviewIncident(
-        foundIncident
-      );
-    } else if (
-      requestedAction ===
-        "submit-resolution" &&
-      currentStatus ===
-        "Investigating" &&
-      !isSuperAdmin
-    ) {
-      setCaseTab(
-        "ACTIVE"
-      );
-
-      setResolutionIncident(
-        foundIncident
-      );
-    } else if (
-      requestedAction ===
-        "start-investigation" &&
-      currentStatus ===
-        "Open" &&
-      !isSuperAdmin
-    ) {
-      setCaseTab(
-        "ACTIVE"
+      setSelectedIncident(
+        null
       );
 
       setStartReviewIncident(
-        foundIncident
+        null
       );
-    } else {
-      setSelectedIncident(
-        foundIncident
-      );
-    }
 
-    navigate(
-      location.pathname,
-      {
-        replace: true,
-        state: {},
+      setConfirmStartIncident(
+        null
+      );
+
+      setResolutionIncident(
+        null
+      );
+
+      setReviewIncident(
+        null
+      );
+
+      if (
+        requestedAction ===
+          "review" &&
+        currentStatus ===
+          "For Review" &&
+        isAuthorizedReviewer
+      ) {
+        setCaseTab(
+          "FOR_REVIEW"
+        );
+
+        setReviewIncident(
+          foundIncident
+        );
+      } else if (
+        requestedAction ===
+          "submit-resolution" &&
+        currentStatus ===
+          "Investigating" &&
+        !isSuperAdmin
+      ) {
+        setCaseTab(
+          "ACTIVE"
+        );
+
+        setResolutionIncident(
+          foundIncident
+        );
+      } else if (
+        requestedAction ===
+          "start-investigation" &&
+        currentStatus ===
+          "Open" &&
+        !isSuperAdmin
+      ) {
+        setCaseTab(
+          "ACTIVE"
+        );
+
+        setStartReviewIncident(
+          foundIncident
+        );
+      } else {
+        setSelectedIncident(
+          foundIncident
+        );
       }
-    );
-  }, [
-    incidents,
-    isAuthorizedReviewer,
-    isSuperAdmin,
-    location.pathname,
-    location.state,
-    navigate,
-  ]);
+
+      navigate(
+        location.pathname,
+        {
+          replace:
+            true,
+
+          state:
+            {},
+        }
+      );
+    },
+    [
+      incidents,
+      isAuthorizedReviewer,
+      isSuperAdmin,
+      location.pathname,
+      location.state,
+      navigate,
+    ]
+  );
 
   const syncModalIncident =
     useCallback(
@@ -1541,21 +1756,29 @@ export default function Incidents() {
         updatedIncident
       ) => {
         const updateIfSelected =
-          (setter) => {
+          (
+            setter
+          ) => {
             setter(
-              (current) => {
-                if (!current) {
+              (
+                current
+              ) => {
+                if (
+                  !current
+                ) {
                   return current;
                 }
 
-                return String(
-                  current.id
-                ) ===
+                return (
+                  String(
+                    current.id
+                  ) ===
                   String(
                     updatedIncident.id
                   )
-                  ? updatedIncident
-                  : current;
+                    ? updatedIncident
+                    : current
+                );
               }
             );
           };
@@ -1589,10 +1812,14 @@ export default function Incidents() {
         updatedIncident
       ) => {
         setIncidents(
-          (prev) => {
+          (
+            prev
+          ) => {
             const nextRaw =
               prev.map(
-                (incident) =>
+                (
+                  incident
+                ) =>
                   String(
                     incident.id
                   ) ===
@@ -1604,7 +1831,9 @@ export default function Incidents() {
               );
 
             return nextRaw.map(
-              (incident) =>
+              (
+                incident
+              ) =>
                 normalizeIncidentWithRules(
                   incident,
                   nextRaw
@@ -1617,7 +1846,9 @@ export default function Incidents() {
           updatedIncident
         );
       },
-      [syncModalIncident]
+      [
+        syncModalIncident,
+      ]
     );
 
   const patchIncidentStatus =
@@ -1627,7 +1858,6 @@ export default function Incidents() {
         updatedIncident,
         payload,
         auditAction,
-        auditDescription,
         successTitle,
         successMessage,
         formData,
@@ -1635,7 +1865,8 @@ export default function Incidents() {
         if (
           normalizeStatus(
             incident.status
-          ) === "Closed"
+          ) ===
+          "Closed"
         ) {
           showNotice(
             "error",
@@ -1705,14 +1936,12 @@ export default function Incidents() {
             backendUpdatedIncident
           );
 
-          await createOperationalLog(
-            auditAction,
-            auditDescription
-          );
-
           await fetchPageData({
-            silent: true,
-            showError: false,
+            silent:
+              true,
+
+            showError:
+              false,
           });
 
           emitDataUpdated(
@@ -1744,7 +1973,6 @@ export default function Incidents() {
       },
       [
         actorFullName,
-        createOperationalLog,
         fetchPageData,
         incidents,
         showNotice,
@@ -1760,13 +1988,17 @@ export default function Incidents() {
     async (
       newIncident
     ) => {
-      if (isSuperAdmin) {
+      if (
+        isSuperAdmin
+      ) {
         return false;
       }
 
       const activeDeploymentForEmployee =
         deployments.find(
-          (deployment) => {
+          (
+            deployment
+          ) => {
             const deploymentEmployeeId =
               normalizeId(
                 deployment.employeeId
@@ -1799,7 +2031,9 @@ export default function Incidents() {
 
       const totalEmployeeCases =
         incidents.filter(
-          (inc) =>
+          (
+            inc
+          ) =>
             String(
               inc.employeeId
             ) ===
@@ -1808,26 +2042,25 @@ export default function Incidents() {
             )
         ).length;
 
-      const escalatedIncident =
-        {
-          ...newIncident,
+      const escalatedIncident = {
+        ...newIncident,
 
-          company:
-            activeDeploymentForEmployee.company ||
-            newIncident.company ||
-            "",
+        company:
+          activeDeploymentForEmployee.company ||
+          newIncident.company ||
+          "",
 
-          severity:
-            totalEmployeeCases >=
-              4 &&
-            newIncident.severity !==
-              "Critical"
-              ? "Critical"
-              : newIncident.severity,
+        severity:
+          totalEmployeeCases >=
+            4 &&
+          newIncident.severity !==
+            "Critical"
+            ? "Critical"
+            : newIncident.severity,
 
-          status:
-            "Open",
-        };
+        status:
+          "Open",
+      };
 
       const normalizedIncident =
         normalizeIncidentWithRules(
@@ -1849,90 +2082,83 @@ export default function Incidents() {
               },
 
               body:
-                JSON.stringify(
-                  {
-                    employeeId:
-                      normalizedIncident.employeeId,
+                JSON.stringify({
+                  employeeId:
+                    normalizedIncident.employeeId,
 
-                    employee:
-                      normalizedIncident.employee,
+                  employee:
+                    normalizedIncident.employee,
 
-                    employeeName:
-                      normalizedIncident.employee,
+                  employeeName:
+                    normalizedIncident.employee,
 
-                    company:
-                      normalizedIncident.company,
+                  company:
+                    normalizedIncident.company,
 
-                    violation:
-                      normalizedIncident.violation,
+                  violation:
+                    normalizedIncident.violation,
 
-                    violationType:
-                      normalizedIncident.violation,
+                  violationType:
+                    normalizedIncident.violation,
 
-                    severity:
-                      normalizedIncident.severity,
+                  severity:
+                    normalizedIncident.severity,
 
-                    status:
-                      "Open",
+                  status:
+                    "Open",
 
-                    date:
-                      normalizedIncident.date,
+                  date:
+                    normalizedIncident.date,
 
-                    incidentDate:
-                      normalizedIncident.date,
+                  incidentDate:
+                    normalizedIncident.date,
 
-                    location:
-                      normalizedIncident.location ||
-                      "",
+                  location:
+                    normalizedIncident.location ||
+                    "",
 
-                    description:
-                      normalizedIncident.description ||
-                      "",
+                  description:
+                    normalizedIncident.description ||
+                    "",
 
-                    reportedBy:
-                      actorFullName,
+                  reportedBy:
+                    actorFullName,
 
-                    actionTaken:
-                      normalizedIncident.sanction ||
-                      "",
+                  actionTaken:
+                    normalizedIncident.sanction ||
+                    "",
 
-                    recommendation:
-                      normalizedIncident.recommendation ||
-                      "",
+                  recommendation:
+                    normalizedIncident.recommendation ||
+                    "",
 
-                    resolutionNotes:
-                      "",
+                  resolutionNotes:
+                    "",
 
-                    duplicateVerified:
-                      Boolean(
-                        normalizedIncident.duplicateVerified
-                      ),
+                  duplicateVerified:
+                    Boolean(
+                      normalizedIncident.duplicateVerified
+                    ),
 
-                    duplicateVerificationNote:
-                      normalizedIncident.duplicateVerificationNote ||
-                      "",
+                  duplicateVerificationNote:
+                    normalizedIncident.duplicateVerificationNote ||
+                    "",
 
-                    userId:
-                      user?.userId ||
-                      user?.id,
+                  userId:
+                    user?.userId ||
+                    user?.id,
 
-                    username:
-                      user?.username,
+                  username:
+                    user?.username,
 
-                    fullName:
-                      actorFullName,
+                  fullName:
+                    actorFullName,
 
-                    role:
-                      user?.role,
-                  }
-                ),
+                  role:
+                    user?.role,
+                }),
             }
           );
-
-        await createOperationalLog(
-          "CREATE_INCIDENT",
-          `${actorFullName} created an incident report for employee ${normalizedIncident.employee}.`
-        );
 
         setOpenAddModal(
           false
@@ -1943,8 +2169,11 @@ export default function Incidents() {
         );
 
         await fetchPageData({
-          silent: true,
-          showError: false,
+          silent:
+            true,
+
+          showError:
+            false,
         });
 
         emitDataUpdated(
@@ -1956,7 +2185,7 @@ export default function Incidents() {
           "Incident Report Saved",
           `Incident ${formatIncidentCode(
             response?.id ||
-              response?.incidentId
+            response?.incidentId
           )} has been saved to the system.`
         );
 
@@ -1979,7 +2208,9 @@ export default function Incidents() {
     };
 
   const handleConfirmStartInvestigation =
-    async (incident) => {
+    async (
+      incident
+    ) => {
       if (
         isSuperAdmin ||
         !incident
@@ -1997,7 +2228,8 @@ export default function Incidents() {
 
             investigation: {
               startedAt:
-                new Date().toISOString(),
+                new Date()
+                  .toISOString(),
 
               startedById:
                 currentUser.id,
@@ -2016,41 +2248,37 @@ export default function Incidents() {
         );
 
       const success =
-        await patchIncidentStatus(
-          {
-            incident,
-            updatedIncident,
+        await patchIncidentStatus({
+          incident,
 
-            payload: {
-              status:
-                "Investigating",
+          updatedIncident,
 
-              workflowAction:
-                "START_INVESTIGATION",
+          payload: {
+            status:
+              "Investigating",
 
-              resolutionNotes:
-                "Investigation started.",
-            },
-
-            auditAction:
+            workflowAction:
               "START_INVESTIGATION",
 
-            auditDescription:
-              `${actorFullName} started investigation for incident ${formatIncidentCode(
-                incident.id
-              )}.`,
+            resolutionNotes:
+              "Investigation started.",
+          },
 
-            successTitle:
-              "Investigation Started",
+          auditAction:
+            "START_INVESTIGATION",
 
-            successMessage:
-              `Incident ${formatIncidentCode(
-                incident.id
-              )} is now marked as Investigating.`,
-          }
-        );
+          successTitle:
+            "Investigation Started",
 
-      if (success) {
+          successMessage:
+            `Incident ${formatIncidentCode(
+              incident.id
+            )} is now marked as Investigating.`,
+        });
+
+      if (
+        success
+      ) {
         setConfirmStartIncident(
           null
         );
@@ -2068,7 +2296,9 @@ export default function Incidents() {
       incident,
       resolutionData
     ) => {
-      if (isSuperAdmin) {
+      if (
+        isSuperAdmin
+      ) {
         return false;
       }
 
@@ -2077,12 +2307,15 @@ export default function Incidents() {
           resolutionData
             ?.proofFiles
         )
-          ? resolutionData.proofFiles
+          ? resolutionData
+              .proofFiles
           : [];
 
       const validFiles =
         proofFiles.filter(
-          (item) =>
+          (
+            item
+          ) =>
             item?.file instanceof
               File &&
             !item?.error
@@ -2142,7 +2375,9 @@ export default function Incidents() {
       );
 
       validFiles.forEach(
-        (item) =>
+        (
+          item
+        ) =>
           formData.append(
             "evidenceFiles",
             item.file,
@@ -2160,7 +2395,8 @@ export default function Incidents() {
 
             resolution: {
               submittedAt:
-                new Date().toISOString(),
+                new Date()
+                  .toISOString(),
 
               submittedById:
                 currentUser.id,
@@ -2193,50 +2429,46 @@ export default function Incidents() {
         );
 
       const success =
-        await patchIncidentStatus(
-          {
-            incident,
-            updatedIncident,
+        await patchIncidentStatus({
+          incident,
 
-            payload: {
-              status:
-                "For Review",
+          updatedIncident,
 
-              workflowAction:
-                "SUBMIT_RESOLUTION",
+          payload: {
+            status:
+              "For Review",
 
-              actionTaken:
-                resolutionData.actionTaken,
-
-              resolutionNotes:
-                resolutionData.remarks,
-
-              recommendation:
-                incident.recommendation ||
-                "",
-            },
-
-            formData,
-
-            auditAction:
+            workflowAction:
               "SUBMIT_RESOLUTION",
 
-            auditDescription:
-              `${actorFullName} submitted proof for incident ${formatIncidentCode(
-                incident.id
-              )}.`,
+            actionTaken:
+              resolutionData.actionTaken,
 
-            successTitle:
-              "Submitted for Review",
+            resolutionNotes:
+              resolutionData.remarks,
 
-            successMessage:
-              `Proof for incident ${formatIncidentCode(
-                incident.id
-              )} has been submitted for authorized review.`,
-          }
-        );
+            recommendation:
+              incident.recommendation ||
+              "",
+          },
 
-      if (success) {
+          formData,
+
+          auditAction:
+            "SUBMIT_RESOLUTION",
+
+          successTitle:
+            "Submitted for Review",
+
+          successMessage:
+            `Proof for incident ${formatIncidentCode(
+              incident.id
+            )} has been submitted for authorized review.`,
+        });
+
+      if (
+        success
+      ) {
         setResolutionIncident(
           null
         );
@@ -2246,7 +2478,9 @@ export default function Incidents() {
     };
 
   const handleApproveCase =
-    async (incident) => {
+    async (
+      incident
+    ) => {
       if (
         !isAuthorizedReviewer ||
         !incident
@@ -2263,7 +2497,8 @@ export default function Incidents() {
       if (
         normalizeStatus(
           incident.status
-        ) !== "For Review"
+        ) !==
+        "For Review"
       ) {
         showNotice(
           "error",
@@ -2284,7 +2519,8 @@ export default function Incidents() {
 
             review: {
               reviewedAt:
-                new Date().toISOString(),
+                new Date()
+                  .toISOString(),
 
               reviewedById:
                 currentUser.id,
@@ -2309,55 +2545,51 @@ export default function Incidents() {
         );
 
       const success =
-        await patchIncidentStatus(
-          {
-            incident,
-            updatedIncident,
+        await patchIncidentStatus({
+          incident,
 
-            payload: {
-              status:
-                "Closed",
+          updatedIncident,
 
-              workflowAction:
-                "CLOSE_INCIDENT",
+          payload: {
+            status:
+              "Closed",
 
-              resolutionNotes:
-                incident.resolutionNotes ||
-                incident.resolution
-                  ?.remarks ||
-                "Proof reviewed and approved.",
-
-              actionTaken:
-                incident.actionTaken ||
-                incident.resolution
-                  ?.actionTaken ||
-                incident.sanction ||
-                "",
-
-              recommendation:
-                incident.recommendation ||
-                "",
-            },
-
-            auditAction:
+            workflowAction:
               "CLOSE_INCIDENT",
 
-            auditDescription:
-              `${actorFullName} approved and closed incident ${formatIncidentCode(
-                incident.id
-              )}.`,
+            resolutionNotes:
+              incident.resolutionNotes ||
+              incident.resolution
+                ?.remarks ||
+              "Proof reviewed and approved.",
 
-            successTitle:
-              "Case Approved",
+            actionTaken:
+              incident.actionTaken ||
+              incident.resolution
+                ?.actionTaken ||
+              incident.sanction ||
+              "",
 
-            successMessage:
-              `Incident ${formatIncidentCode(
-                incident.id
-              )} has been approved and closed successfully.`,
-          }
-        );
+            recommendation:
+              incident.recommendation ||
+              "",
+          },
 
-      if (success) {
+          auditAction:
+            "CLOSE_INCIDENT",
+
+          successTitle:
+            "Case Approved",
+
+          successMessage:
+            `Incident ${formatIncidentCode(
+              incident.id
+            )} has been approved and closed successfully.`,
+        });
+
+      if (
+        success
+      ) {
         setReviewIncident(
           null
         );
@@ -2391,7 +2623,8 @@ export default function Incidents() {
       if (
         normalizeStatus(
           incident.status
-        ) !== "For Review"
+        ) !==
+        "For Review"
       ) {
         showNotice(
           "error",
@@ -2412,7 +2645,8 @@ export default function Incidents() {
 
             review: {
               reviewedAt:
-                new Date().toISOString(),
+                new Date()
+                  .toISOString(),
 
               reviewedById:
                 currentUser.id,
@@ -2436,50 +2670,46 @@ export default function Incidents() {
         );
 
       const success =
-        await patchIncidentStatus(
-          {
-            incident,
-            updatedIncident,
+        await patchIncidentStatus({
+          incident,
 
-            payload: {
-              status:
-                "Investigating",
+          updatedIncident,
 
-              workflowAction:
-                "RETURN_INCIDENT",
+          payload: {
+            status:
+              "Investigating",
 
-              resolutionNotes:
-                comments,
-
-              actionTaken:
-                incident.actionTaken ||
-                incident.sanction ||
-                "",
-
-              recommendation:
-                incident.recommendation ||
-                "",
-            },
-
-            auditAction:
+            workflowAction:
               "RETURN_INCIDENT",
 
-            auditDescription:
-              `${actorFullName} returned incident ${formatIncidentCode(
-                incident.id
-              )} for correction.`,
+            resolutionNotes:
+              comments,
 
-            successTitle:
-              "Case Returned",
+            actionTaken:
+              incident.actionTaken ||
+              incident.sanction ||
+              "",
 
-            successMessage:
-              `Incident ${formatIncidentCode(
-                incident.id
-              )} has been returned for correction.`,
-          }
-        );
+            recommendation:
+              incident.recommendation ||
+              "",
+          },
 
-      if (success) {
+          auditAction:
+            "RETURN_INCIDENT",
+
+          successTitle:
+            "Case Returned",
+
+          successMessage:
+            `Incident ${formatIncidentCode(
+              incident.id
+            )} has been returned for correction.`,
+        });
+
+      if (
+        success
+      ) {
         setReviewIncident(
           null
         );
@@ -2495,14 +2725,21 @@ export default function Incidents() {
   const handleRefresh =
     useCallback(
       async () => {
-        if (isRefreshing) {
+        if (
+          isRefreshing
+        ) {
           return;
         }
 
         await fetchPageData({
-          silent: true,
-          showError: true,
-          showRefreshing: true,
+          silent:
+            true,
+
+          showError:
+            true,
+
+          showRefreshing:
+            true,
         });
       },
       [
@@ -2512,118 +2749,144 @@ export default function Incidents() {
     );
 
   const handleClearIncidentFilters =
-    useCallback(() => {
-      setSearch("");
-      setSeverityFilter(
-        "ALL"
-      );
-      setCaseTab("ALL");
-    }, []);
+    useCallback(
+      () => {
+        setSearch(
+          ""
+        );
+
+        setSeverityFilter(
+          "ALL"
+        );
+
+        setCaseTab(
+          "ALL"
+        );
+      },
+      []
+    );
 
   const filteredIncidents =
-    useMemo(() => {
-      const normalizedSearch =
-        normalizeName(search);
+    useMemo(
+      () => {
+        const normalizedSearch =
+          normalizeName(
+            search
+          );
 
-      const searchTerms =
-        normalizedSearch
-          ? normalizedSearch.split(
-              /\s+/
-            )
-          : [];
+        const searchTerms =
+          normalizedSearch
+            ? normalizedSearch.split(
+                /\s+/
+              )
+            : [];
 
-      return incidents.filter(
-        (incident) => {
-          const status =
-            normalizeStatus(
-              incident.status
-            );
+        return incidents.filter(
+          (
+            incident
+          ) => {
+            const status =
+              normalizeStatus(
+                incident.status
+              );
 
-          const matchesCaseTab =
-            caseTab ===
-              "ALL" ||
-            (caseTab ===
-              "ACTIVE" &&
-              [
-                "Open",
-                "Investigating",
-              ].includes(
-                status
-              )) ||
-            (caseTab ===
-              "FOR_REVIEW" &&
-              status ===
-                "For Review") ||
-            (caseTab ===
-              "CLOSED" &&
-              status ===
-                "Closed");
-
-          const searchableText =
-            normalizeName(
-              [
-                incident.displayId,
-                incident.id,
-                incident.employeeId,
-                incident.employee,
-                incident.employeeName,
-                incident.violation,
-                incident.violationType,
-                incident.company,
-                incident.location,
-                incident.severity,
-                incident.status,
-                incident.sanction,
-                incident.actionTaken,
-                incident.recommendation,
-                incident.description,
-                incident.reportedBy,
-                incident.reportedByName,
-              ]
-                .filter(
-                  Boolean
+            const matchesCaseTab =
+              caseTab ===
+                "ALL" ||
+              (
+                caseTab ===
+                  "ACTIVE" &&
+                [
+                  "Open",
+                  "Investigating",
+                ].includes(
+                  status
                 )
-                .join(" ")
-            );
+              ) ||
+              (
+                caseTab ===
+                  "FOR_REVIEW" &&
+                status ===
+                  "For Review"
+              ) ||
+              (
+                caseTab ===
+                  "CLOSED" &&
+                status ===
+                  "Closed"
+              );
 
-          const matchesSearch =
-            searchTerms.length ===
-              0 ||
-            searchTerms.every(
-              (term) =>
-                searchableText.includes(
+            const searchableText =
+              normalizeName(
+                [
+                  incident.displayId,
+                  incident.id,
+                  incident.employeeId,
+                  incident.employee,
+                  incident.employeeName,
+                  incident.violation,
+                  incident.violationType,
+                  incident.company,
+                  incident.location,
+                  incident.severity,
+                  incident.status,
+                  incident.sanction,
+                  incident.actionTaken,
+                  incident.recommendation,
+                  incident.description,
+                  incident.reportedBy,
+                  incident.reportedByName,
+                ]
+                  .filter(
+                    Boolean
+                  )
+                  .join(
+                    " "
+                  )
+              );
+
+            const matchesSearch =
+              searchTerms.length ===
+                0 ||
+              searchTerms.every(
+                (
                   term
-                )
-            );
+                ) =>
+                  searchableText.includes(
+                    term
+                  )
+              );
 
-          const matchesSeverity =
-            severityFilter ===
-              "ALL" ||
-            String(
-              incident.severity ||
-                ""
-            )
-              .trim()
-              .toLowerCase() ===
+            const matchesSeverity =
+              severityFilter ===
+                "ALL" ||
               String(
-                severityFilter
+                incident.severity ||
+                ""
               )
                 .trim()
-                .toLowerCase();
+                .toLowerCase() ===
+                String(
+                  severityFilter
+                )
+                  .trim()
+                  .toLowerCase();
 
-          return (
-            matchesCaseTab &&
-            matchesSearch &&
-            matchesSeverity
-          );
-        }
-      );
-    }, [
-      incidents,
-      search,
-      caseTab,
-      severityFilter,
-    ]);
+            return (
+              matchesCaseTab &&
+              matchesSearch &&
+              matchesSeverity
+            );
+          }
+        );
+      },
+      [
+        incidents,
+        search,
+        caseTab,
+        severityFilter,
+      ]
+    );
 
   return (
     <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
@@ -2727,12 +2990,16 @@ export default function Incidents() {
           totalIncidentCount={
             incidents.length
           }
-          search={search}
+          search={
+            search
+          }
           onSearchChange={
             setSearch
           }
           onClearSearch={() =>
-            setSearch("")
+            setSearch(
+              ""
+            )
           }
           onClearFilters={
             handleClearIncidentFilters
@@ -2901,7 +3168,9 @@ export default function Incidents() {
             notice.message
           }
           onClose={() =>
-            setNotice(null)
+            setNotice(
+              null
+            )
           }
         />
       )}

@@ -1,14 +1,12 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 
 import {
   canViewSmartSuggestions,
-  getSmartSuggestionUserKey,
   requestSmartSuggestionJson,
 } from "../utils/suggestions/smartSuggestions";
 
@@ -24,21 +22,28 @@ const EMPTY_SUMMARY = {
   compliance: 0,
 };
 
-const SMART_SUGGESTION_DATA_DOMAINS = new Set([
-  "employee",
-  "employees",
-  "employee_document",
-  "employee_documents",
-  "employee-document",
-  "employee-documents",
-  "document",
-  "documents",
-  "compliance",
-  "incident",
-  "incidents",
-  "deployment",
-  "deployments",
-]);
+const SMART_SUGGESTION_DATA_DOMAINS =
+  new Set([
+    "employee",
+    "employees",
+
+    "employee_document",
+    "employee_documents",
+
+    "employee-document",
+    "employee-documents",
+
+    "document",
+    "documents",
+
+    "compliance",
+
+    "incident",
+    "incidents",
+
+    "deployment",
+    "deployments",
+  ]);
 
 function normalizeDataDomain(value) {
   return String(value || "")
@@ -46,13 +51,18 @@ function normalizeDataDomain(value) {
     .toLowerCase();
 }
 
-function shouldRefreshForDataUpdated(event) {
-  const domain = normalizeDataDomain(
-    event?.detail?.domain
-  );
+function shouldRefreshForDataUpdated(
+  event
+) {
+  const domain =
+    normalizeDataDomain(
+      event?.detail?.domain
+    );
 
-  // Preserve compatibility with older/unscoped events.
-  // If no domain was supplied, refresh exactly as before.
+  /*
+   * Preserve compatibility with older
+   * unscoped dataUpdated events.
+   */
   if (!domain) {
     return true;
   }
@@ -69,20 +79,17 @@ export default function useSmartSuggestions(
   const role =
     user?.role || "USER";
 
-  const userKey = useMemo(
-    () =>
-      getSmartSuggestionUserKey(
-        user
-      ),
-    [user]
-  );
-
   const canView =
-    canViewSmartSuggestions(role);
+    canViewSmartSuggestions(
+      role
+    );
 
   const pollInterval =
     options.pollInterval ??
     60000;
+
+  const hasPolling =
+    Number(pollInterval) > 0;
 
   const requestInFlightRef =
     useRef(false);
@@ -107,7 +114,9 @@ export default function useSmartSuggestions(
   const [
     isLoading,
     setIsLoading,
-  ] = useState(canView);
+  ] = useState(
+    canView
+  );
 
   const [
     isFetching,
@@ -127,12 +136,15 @@ export default function useSmartSuggestions(
         if (!canView) {
           setSuggestions([]);
           setLatestSuggestions([]);
+
           setSummary(
             EMPTY_SUMMARY
           );
+
           setIsLoading(false);
           setIsFetching(false);
           setError("");
+
           return;
         }
 
@@ -153,15 +165,16 @@ export default function useSmartSuggestions(
           setIsFetching(true);
           setError("");
 
-          const query =
-            new URLSearchParams({
-              userKey,
-              role,
-            }).toString();
-
+          /*
+           * Authentication and role authority
+           * are derived from the JWT.
+           *
+           * No userKey or role query parameters
+           * are required by the backend.
+           */
           const data =
             await requestSmartSuggestionJson(
-              `/smart-suggestions?${query}`
+              "/smart-suggestions"
             );
 
           setSuggestions(
@@ -182,6 +195,7 @@ export default function useSmartSuggestions(
 
           setSummary({
             ...EMPTY_SUMMARY,
+
             ...(data?.summary ||
               {}),
           });
@@ -208,111 +222,6 @@ export default function useSmartSuggestions(
       },
       [
         canView,
-        role,
-        userKey,
-      ]
-    );
-
-  const takeSuggestionAction =
-    useCallback(
-      async (
-        suggestionKey,
-        payload = {}
-      ) => {
-        if (
-          !suggestionKey ||
-          !canView
-        ) {
-          return;
-        }
-
-        await requestSmartSuggestionJson(
-          "/smart-suggestions/action",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              userKey,
-              role,
-              suggestionKey,
-              actionType:
-                payload.actionType,
-              actionNotes:
-                payload.actionNotes,
-            }),
-          }
-        );
-
-        await fetchSuggestions({
-          silent: true,
-        });
-      },
-      [
-        canView,
-        fetchSuggestions,
-        role,
-        userKey,
-      ]
-    );
-
-  const markSuggestionReviewed =
-    useCallback(
-      async (
-        suggestionKey,
-        payload = {}
-      ) => {
-        await takeSuggestionAction(
-          suggestionKey,
-          {
-            actionType:
-              payload.actionType ||
-              "HR Acknowledged",
-
-            actionNotes:
-              payload.actionNotes ||
-              "HR acknowledged the smart suggestion for monitoring.",
-          }
-        );
-      },
-      [
-        takeSuggestionAction,
-      ]
-    );
-
-  const dismissSuggestion =
-    useCallback(
-      async (
-        suggestionKey,
-        dismissReason = ""
-      ) => {
-        if (
-          !suggestionKey ||
-          !canView
-        ) {
-          return;
-        }
-
-        await requestSmartSuggestionJson(
-          "/smart-suggestions/dismiss",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              userKey,
-              role,
-              suggestionKey,
-              dismissReason,
-            }),
-          }
-        );
-
-        await fetchSuggestions({
-          silent: true,
-        });
-      },
-      [
-        canView,
-        fetchSuggestions,
-        role,
-        userKey,
       ]
     );
 
@@ -334,14 +243,21 @@ export default function useSmartSuggestions(
         });
       };
 
-    const intervalId =
-      window.setInterval(
-        () =>
-          fetchSuggestions({
-            silent: true,
-          }),
-        pollInterval
-      );
+    let intervalId = null;
+
+    if (hasPolling) {
+      intervalId =
+        window.setInterval(
+          () => {
+            fetchSuggestions({
+              silent: true,
+            });
+          },
+          Number(
+            pollInterval
+          )
+        );
+    }
 
     window.addEventListener(
       "dataUpdated",
@@ -354,27 +270,36 @@ export default function useSmartSuggestions(
         handleDataUpdated
       );
 
-      window.clearInterval(
-        intervalId
-      );
+      if (
+        intervalId !== null
+      ) {
+        window.clearInterval(
+          intervalId
+        );
+      }
     };
   }, [
     fetchSuggestions,
+    hasPolling,
     pollInterval,
   ]);
 
   return {
     canView,
+
     suggestions,
+
     latestSuggestions,
+
     summary,
+
     isLoading,
+
     isFetching,
+
     error,
+
     refresh:
       fetchSuggestions,
-    takeSuggestionAction,
-    markSuggestionReviewed,
-    dismissSuggestion,
   };
 }

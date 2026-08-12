@@ -23,6 +23,7 @@ import EditEmployeeModal from "../components/employees/EditEmployeeModal";
 
 import { buildExecutiveActionItems } from "../utils/dashboard/prescriptiveAnalytics";
 import { buildDashboardInsights } from "../utils/dashboard/dashboardInsights";
+import authenticatedFetch from "../utils/authenticatedFetch";
 
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
@@ -378,19 +379,20 @@ async function requestJson(
     }, REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      ...options,
+    const response =
+      await authenticatedFetch(url, {
+        ...options,
 
-      signal:
-        controller.signal,
+        signal:
+          controller.signal,
 
-      cache: "no-store",
+        cache: "no-store",
 
-      headers: {
-        Accept: "application/json",
-        ...(options.headers || {}),
-      },
-    });
+        headers: {
+          Accept: "application/json",
+          ...(options.headers || {}),
+        },
+      });
 
     const data = await response
       .json()

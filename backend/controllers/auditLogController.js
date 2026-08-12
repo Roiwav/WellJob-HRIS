@@ -1,120 +1,157 @@
 const db = require("../config/db");
-const { logAudit, AUDIT_CATEGORY } = require("../utils/auditLogger");
+
+const {
+  AUDIT_CATEGORY,
+} = require("../utils/auditLogger");
 
 function cleanCategory(category) {
-  const value = String(category || "").trim().toUpperCase();
+  const value = String(
+    category || ""
+  )
+    .trim()
+    .toUpperCase();
 
-  if (value === AUDIT_CATEGORY.TECHNICAL) return AUDIT_CATEGORY.TECHNICAL;
-  if (value === AUDIT_CATEGORY.OPERATIONAL) return AUDIT_CATEGORY.OPERATIONAL;
+  if (
+    value ===
+    AUDIT_CATEGORY.TECHNICAL
+  ) {
+    return AUDIT_CATEGORY.TECHNICAL;
+  }
+
+  if (
+    value ===
+    AUDIT_CATEGORY.OPERATIONAL
+  ) {
+    return AUDIT_CATEGORY.OPERATIONAL;
+  }
 
   return null;
 }
 
-exports.getAllLogs = async (req, res) => {
-  try {
-    const [logs] = await db.promise().query(
-      "SELECT * FROM audit_logs ORDER BY created_at DESC"
-    );
-    res.json(logs);
-  } catch (err) {
-    console.error("Fetch All Audit Logs Error:", err);
-    res.status(200).json([]); 
-  }
-};
+/*
+ * GET ALL AUDIT LOGS
+ *
+ * Access control is handled by
+ * auditLogRoutes.js.
+ *
+ * Database failures must return
+ * an actual server error instead
+ * of pretending the audit log is
+ * successfully empty.
+ */
+exports.getAllLogs =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const [logs] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT *
+            FROM audit_logs
+            ORDER BY
+              created_at DESC,
+              id DESC
+            `
+          );
 
-exports.getLogsByCategory = async (req, res) => {
-  const category = cleanCategory(req.params.category);
+      return res
+        .status(200)
+        .json(logs);
+    } catch (error) {
+      console.error(
+        "Fetch All Audit Logs Error:",
+        error
+      );
 
-  if (!category) {
-    return res.status(400).json({
-      error: "Invalid audit log category.",
-    });
-  }
+      return res
+        .status(500)
+        .json({
+          success: false,
+          error:
+            "Failed to fetch audit logs.",
+          message:
+            "The audit log records could not be retrieved.",
+        });
+    }
+  };
 
-  try {
-    const [logs] = await db.promise().query(
-      `
-      SELECT
-        id,
-        user_id,
-        username,
-        role,
-        category,
-        action,
-        description,
-        created_at,
-        full_name
-      FROM audit_logs
-      WHERE category = ?
-      ORDER BY created_at DESC, id DESC
-      `,
-      [category]
-    );
+/*
+ * GET AUDIT LOGS BY CATEGORY
+ *
+ * Supported categories:
+ * - TECHNICAL
+ * - OPERATIONAL
+ */
+exports.getLogsByCategory =
+  async (
+    req,
+    res
+  ) => {
+    const category =
+      cleanCategory(
+        req.params.category
+      );
 
-    res.json(logs);
-  } catch (err) {
-    console.error("Fetch Audit Logs Error:", err);
-    res.status(200).json([]);
-  }
-};
+    if (!category) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error:
+            "Invalid audit log category.",
+          message:
+            "Audit log category must be TECHNICAL or OPERATIONAL.",
+        });
+    }
 
-exports.createAuditLog = async (req, res) => {
-  try {
-    const {
-      userId,
-      user_id,
-      username,
-      fullName,
-      full_name,
-      role,
-      category,
-      action,
-      description,
-    } = req.body;
+    try {
+      const [logs] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              id,
+              user_id,
+              username,
+              role,
+              category,
+              action,
+              description,
+              created_at,
+              full_name
+            FROM audit_logs
+            WHERE category = ?
+            ORDER BY
+              created_at DESC,
+              id DESC
+            `,
+            [
+              category,
+            ]
+          );
 
-    await logAudit({
-      userId: userId || user_id,
-      username,
-      fullName: fullName || full_name,
-      role,
-      category: cleanCategory(category) || AUDIT_CATEGORY.OPERATIONAL,
-      action,
-      description,
-    });
+      return res
+        .status(200)
+        .json(logs);
+    } catch (error) {
+      console.error(
+        "Fetch Audit Logs Error:",
+        error
+      );
 
-    res.status(201).json({
-      success: true,
-      message: "Audit log created successfully.",
-    });
-  } catch (err) {
-    console.error("Create Audit Log Error:", err);
-    res.status(500).json({
-      error: "Failed to create audit log.",
-    });
-  }
-};
-
-// 🔥 FIX: Tinanggal natin ang 'full_name' sa INSERT query para hindi mag-error ang MySQL
-exports.createLog = async (req, res) => {
-  try {
-    const { userId, username, role, category, action, description } = req.body;
-    
-    await db.promise().query(
-      `INSERT INTO audit_logs (user_id, username, role, category, action, description) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        userId || "-", 
-        username || "-", 
-        role || "-", 
-        category || "OPERATIONAL", 
-        action, 
-        description
-      ]
-    );
-
-    res.status(201).json({ success: true });
-  } catch (err) {
-    console.error("Create Audit Log Error:", err);
-    res.status(500).json({ error: "Failed to create log" });
-  }
-};
+      return res
+        .status(500)
+        .json({
+          success: false,
+          error:
+            "Failed to fetch audit logs.",
+          message:
+            "The requested audit log records could not be retrieved.",
+        });
+    }
+  };

@@ -61,28 +61,47 @@ const INPUT_CLASS_NAME = [
   "dark:disabled:bg-slate-800 dark:disabled:text-slate-500",
 ].join(" ");
 
-function normalizeSearchText(value) {
-  return String(value || "")
+function normalizeSearchText(
+  value
+) {
+  return String(
+    value || ""
+  )
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ");
+    .replace(
+      /[^a-z0-9\s]/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    );
 }
 
-function formatEmployeeId(id) {
-  return String(id || "-").replace(
+function formatEmployeeId(
+  id
+) {
+  return String(
+    id || "-"
+  ).replace(
     /^KPI-/i,
     ""
   );
 }
 
-function getInitials(name) {
-  return String(name || "Employee")
+function getInitials(
+  name
+) {
+  return String(
+    name || "Employee"
+  )
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
-    .map((part) =>
-      part[0]?.toUpperCase()
+    .map(
+      (part) =>
+        part[0]?.toUpperCase()
     )
     .join("");
 }
@@ -90,9 +109,11 @@ function getInitials(name) {
 function isPendingRecommendation(
   employee
 ) {
-  const recommendation = String(
-    employee?.recommendation || ""
-  );
+  const recommendation =
+    String(
+      employee?.recommendation ||
+        ""
+    );
 
   const suggestedHRAction =
     employee?.suggestedHRAction ||
@@ -100,7 +121,8 @@ function isPendingRecommendation(
 
   const hasConcern =
     Number(
-      employee?.violationCount || 0
+      employee?.violationCount ||
+        0
     ) > 0 ||
     Number(
       employee?.criticalIncidentCount ||
@@ -114,15 +136,18 @@ function isPendingRecommendation(
   const isRetain =
     recommendation ===
       RECOMMENDATION_LABELS.RETAIN ||
-    recommendation === "Retain" ||
+    recommendation ===
+      "Retain" ||
     recommendation ===
       "Retain / Maintain Good Standing";
 
   return (
     hasConcern &&
-    (!isRetain ||
+    (
+      !isRetain ||
       suggestedHRAction !==
-        HR_ACTION_WORKFLOW.MONITOR)
+        HR_ACTION_WORKFLOW.MONITOR
+    )
   );
 }
 
@@ -164,71 +189,106 @@ function DecisionModal({
   const [
     finalAction,
     setFinalAction,
-  ] = useState(() => {
-    if (mode === "reject") {
-      return "No Action Required";
+  ] = useState(
+    () => {
+      if (
+        mode === "reject"
+      ) {
+        return "No Action Required";
+      }
+
+      if (
+        mode === "modify"
+      ) {
+        return systemRecommendation;
+      }
+
+      return systemSuggestedAction;
     }
+  );
 
-    if (mode === "modify") {
-      return systemRecommendation;
-    }
-
-    return systemSuggestedAction;
-  });
-
-  const [notes, setNotes] =
-    useState("");
+  const [
+    notes,
+    setNotes,
+  ] = useState("");
 
   const modeConfig = {
     accept: {
       title:
         "Accept System Suggestion",
+
       icon: (
         <FiThumbsUp
           aria-hidden="true"
         />
       ),
-      tone: "success",
+
+      tone:
+        "success",
+
       panelClassName:
         "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300",
+
       buttonLabel:
         "Accept Recommendation",
-      buttonVariant: "success",
-      decisionType: "Accepted",
+
+      buttonVariant:
+        "success",
+
+      decisionType:
+        "Accepted",
     },
 
     modify: {
       title:
         "Modify Final HR Action",
+
       icon: (
         <FiEdit3
           aria-hidden="true"
         />
       ),
-      tone: "warning",
+
+      tone:
+        "warning",
+
       panelClassName:
         "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300",
+
       buttonLabel:
         "Save Modified Action",
-      buttonVariant: "primary",
-      decisionType: "Modified",
+
+      buttonVariant:
+        "primary",
+
+      decisionType:
+        "Modified",
     },
 
     reject: {
       title:
         "Reject System Suggestion",
+
       icon: (
         <FiXCircle
           aria-hidden="true"
         />
       ),
-      tone: "warning",
+
+      tone:
+        "warning",
+
       panelClassName:
         "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300",
+
       buttonLabel:
         "Reject Recommendation",
-      buttonVariant: "warning",
-      decisionType: "Rejected",
+
+      buttonVariant:
+        "warning",
+
+      decisionType:
+        "Rejected",
     },
   };
 
@@ -243,123 +303,154 @@ function DecisionModal({
     mode === "reject" &&
     !notes.trim();
 
-  const handleSave = async () => {
-    if (
-      isRejectMissingNotes ||
-      isPending ||
-      !employee
-    ) {
-      return;
-    }
+  const handleSave =
+    async () => {
+      if (
+        isRejectMissingNotes ||
+        isPending ||
+        !employee
+      ) {
+        return;
+      }
 
-    const payload = {
-      employeeId: employee.id,
-      employeeName: employee.name,
+      const payload = {
+        employeeId:
+          employee.id,
 
-      company:
-        employee.company ||
-        "Unassigned",
+        employeeName:
+          employee.name,
 
-      riskLevel:
-        employee.riskLevel ||
-        "Low Risk",
+        company:
+          employee.company ||
+          "Unassigned",
 
-      kpiLevel:
-        employee.kpiLevel ||
-        "Good Standing",
+        riskLevel:
+          employee.riskLevel ||
+          "Low Risk",
 
-      violationCount: Number(
-        employee.violationCount || 0
-      ),
+        kpiLevel:
+          employee.kpiLevel ||
+          "Good Standing",
 
-      severityScore: Number(
-        employee.severityScore || 0
-      ),
+        violationCount:
+          Number(
+            employee.violationCount ||
+              0
+          ),
 
-      criticalIncidentCount: Number(
-        employee.criticalIncidentCount ||
-          0
-      ),
+        severityScore:
+          Number(
+            employee.severityScore ||
+              0
+          ),
 
-      decisionConfidence:
-        employee.decisionConfidence ||
-        DECISION_CONFIDENCE.LOW,
+        criticalIncidentCount:
+          Number(
+            employee.criticalIncidentCount ||
+              0
+          ),
 
-      suggestedHRAction:
-        systemSuggestedAction,
+        decisionConfidence:
+          employee.decisionConfidence ||
+          DECISION_CONFIDENCE.LOW,
 
-      systemRecommendation,
-      finalAction,
+        suggestedHRAction:
+          systemSuggestedAction,
 
-      decisionType:
-        config.decisionType,
+        systemRecommendation,
 
-      notes:
-        notes.trim() ||
-        `${config.decisionType} based on HR review of the system-generated recommendation.`,
+        finalAction,
 
-      decidedBy:
-        user?.name ||
-        user?.username ||
-        "HR User",
+        decisionType:
+          config.decisionType,
 
-      decidedByRole:
-        user?.role ||
-        "Authorized User",
+        notes:
+          notes.trim() ||
+          `${config.decisionType} based on HR review of the system-generated recommendation.`,
 
-      recommendationReason:
-        employee.recommendationReason ||
-        employee.correctiveActionReason ||
-        "",
+        decidedBy:
+          user?.name ||
+          user?.username ||
+          "HR User",
 
-      decisionConfidenceReason:
-        employee.decisionConfidenceReason ||
-        "",
+        decidedByRole:
+          user?.role ||
+          "Authorized User",
 
-      suggestedHRActionReason:
-        employee.suggestedHRActionReason ||
-        "",
+        recommendationReason:
+          employee.recommendationReason ||
+          employee.correctiveActionReason ||
+          "",
 
-      correctiveActionBasis:
-        employee.correctiveActionBasis ||
-        "",
-    };
+        decisionConfidenceReason:
+          employee.decisionConfidenceReason ||
+          "",
 
-    try {
-      const result =
-        await createDecisionMutation.mutateAsync(
-          payload
+        suggestedHRActionReason:
+          employee.suggestedHRActionReason ||
+          "",
+
+        correctiveActionBasis:
+          employee.correctiveActionBasis ||
+          "",
+      };
+
+      try {
+        const result =
+          await createDecisionMutation.mutateAsync(
+            payload
+          );
+
+        onSaved?.(
+          result?.record ||
+            result
         );
-
-      onSaved?.(
-        result?.record || result
-      );
-    } catch (error) {
-      console.error(
-        "KPI decision save error:",
-        error
-      );
-    }
-  };
+      } catch (error) {
+        console.error(
+          "KPI decision save error:",
+          error
+        );
+      }
+    };
 
   return (
     <Dialog
-      open={Boolean(employee)}
-      onClose={onClose}
-      title={config.title}
+      open={
+        Boolean(
+          employee
+        )
+      }
+      onClose={
+        onClose
+      }
+      title={
+        config.title
+      }
       description="This records HR validation of the system-generated recommendation."
-      tone={config.tone}
+      tone={
+        config.tone
+      }
       size="lg"
-      preventClose={isPending}
-      closeOnOverlay={!isPending}
-      closeOnEscape={!isPending}
+      preventClose={
+        isPending
+      }
+      closeOnOverlay={
+        !isPending
+      }
+      closeOnEscape={
+        !isPending
+      }
       footer={
         <>
           <Button
             type="button"
             variant="secondary"
-            disabled={isPending}
-            onClick={onClose}
+            disabled={
+              isPending
+            }
+            onClick={
+              onClose
+            }
           >
             Cancel
           </Button>
@@ -369,15 +460,23 @@ function DecisionModal({
             variant={
               config.buttonVariant
             }
-            leftIcon={config.icon}
-            loading={isPending}
+            leftIcon={
+              config.icon
+            }
+            loading={
+              isPending
+            }
             disabled={
               isRejectMissingNotes ||
               isPending
             }
-            onClick={handleSave}
+            onClick={
+              handleSave
+            }
           >
-            {config.buttonLabel}
+            {
+              config.buttonLabel
+            }
           </Button>
         </>
       }
@@ -395,18 +494,23 @@ function DecisionModal({
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-lg dark:bg-slate-950/30"
                 aria-hidden="true"
               >
-                {config.icon}
+                {
+                  config.icon
+                }
               </div>
 
               <div>
                 <p className="font-extrabold">
-                  {config.title}
+                  {
+                    config.title
+                  }
                 </p>
 
                 <p className="mt-1 text-xs font-semibold opacity-80">
                   Review the system
                   output and record the
-                  authorized HR decision.
+                  authorized HR
+                  decision.
                 </p>
               </div>
             </div>
@@ -444,7 +548,8 @@ function DecisionModal({
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div className="rounded-xl bg-white p-3 text-xs dark:bg-slate-900">
                 <p className="font-extrabold uppercase tracking-wide text-slate-400">
-                  System Recommendation
+                  System
+                  Recommendation
                 </p>
 
                 <p className="mt-1 font-bold text-slate-800 dark:text-slate-200">
@@ -478,33 +583,48 @@ function DecisionModal({
 
             <select
               id="kpi-final-hr-action"
-              value={finalAction}
+              value={
+                finalAction
+              }
               disabled={
-                mode === "accept" ||
+                mode ===
+                  "accept" ||
                 isPending
               }
               className={
                 INPUT_CLASS_NAME
               }
-              onChange={(event) =>
+              onChange={(
+                event
+              ) =>
                 setFinalAction(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
             >
               {FINAL_ACTION_OPTIONS.map(
-                (option) => (
+                (
+                  option
+                ) => (
                   <option
-                    key={option}
-                    value={option}
+                    key={
+                      option
+                    }
+                    value={
+                      option
+                    }
                   >
-                    {option}
+                    {
+                      option
+                    }
                   </option>
                 )
               )}
             </select>
 
-            {mode === "accept" && (
+            {mode ===
+              "accept" && (
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                 Accepted
                 recommendations use
@@ -521,25 +641,34 @@ function DecisionModal({
               className="mb-2 block text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400"
             >
               HR Notes{" "}
-              {mode === "reject"
+              {mode ===
+              "reject"
                 ? "(Required)"
                 : "(Optional)"}
             </label>
 
             <textarea
               id="kpi-hr-decision-notes"
-              value={notes}
+              value={
+                notes
+              }
               rows={4}
-              disabled={isPending}
+              disabled={
+                isPending
+              }
               placeholder={
-                mode === "reject"
+                mode ===
+                "reject"
                   ? "Explain why HR rejected the system suggestion..."
                   : "Add HR validation notes..."
               }
               className={`${INPUT_CLASS_NAME} resize-y font-normal`}
-              onChange={(event) =>
+              onChange={(
+                event
+              ) =>
                 setNotes(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
             />
@@ -562,7 +691,8 @@ function DecisionModal({
               className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300"
             >
               {createDecisionMutation
-                .error?.message ||
+                .error
+                ?.message ||
                 "Failed to save KPI decision."}
             </div>
           )}
@@ -576,14 +706,15 @@ function DecisionModal({
 
               <p>
                 This action records
-                HR’s final review. The
-                system recommendation
+                HR’s final review.
+                The system
+                recommendation
                 remains
                 decision-support
                 information and does
                 not take effect
-                without authorized HR
-                validation.
+                without authorized
+                HR validation.
               </p>
             </div>
           </div>
@@ -597,9 +728,12 @@ export default function RecommendationReviewSection({
   employees = [],
   user,
   onDecisionSaved,
+  canManageDecisions = false,
 }) {
-  const [search, setSearch] =
-    useState("");
+  const [
+    search,
+    setSearch,
+  ] = useState("");
 
   const [
     selectedReview,
@@ -607,175 +741,242 @@ export default function RecommendationReviewSection({
   ] = useState(null);
 
   const safeEmployees =
-    useMemo(() => {
-      return Array.isArray(employees)
-        ? employees
-        : [];
-    }, [employees]);
+    useMemo(
+      () => {
+        return Array.isArray(
+          employees
+        )
+          ? employees
+          : [];
+      },
+      [
+        employees,
+      ]
+    );
 
   const {
     data:
       decisionHistoryData,
+
     isLoading:
       isHistoryLoading,
+
     isFetching:
       isHistoryFetching,
-    error: historyError,
+
+    error:
+      historyError,
+
     refetch:
       refetchDecisionHistory,
   } =
     useKPIDecisionHistoryQuery();
 
   const decisionHistory =
-    useMemo(() => {
-      return Array.isArray(
-        decisionHistoryData
-      )
-        ? decisionHistoryData
-        : [];
-    }, [decisionHistoryData]);
+    useMemo(
+      () => {
+        return Array.isArray(
+          decisionHistoryData
+        )
+          ? decisionHistoryData
+          : [];
+      },
+      [
+        decisionHistoryData,
+      ]
+    );
 
   const decidedEmployeeIds =
-    useMemo(() => {
-      return new Set(
-        decisionHistory.map(
-          (record) =>
-            String(
-              record.employeeId
-            )
-        )
-      );
-    }, [decisionHistory]);
+    useMemo(
+      () => {
+        return new Set(
+          decisionHistory.map(
+            (
+              record
+            ) =>
+              String(
+                record.employeeId
+              )
+          )
+        );
+      },
+      [
+        decisionHistory,
+      ]
+    );
 
   const allPendingEmployees =
-    useMemo(() => {
-      return safeEmployees
-        .filter(
-          isPendingRecommendation
-        )
-        .filter(
-          (employee) =>
-            !decidedEmployeeIds.has(
-              String(employee.id)
-            )
-        )
-        .sort(
-          (first, second) => {
-            const firstScore =
-              Number(
-                first.severityScore ||
-                  0
-              ) +
-              Number(
-                first.violationCount ||
-                  0
-              ) +
-              Number(
-                first.criticalIncidentCount ||
-                  0
-              ) *
-                3;
+    useMemo(
+      () => {
+        return safeEmployees
+          .filter(
+            isPendingRecommendation
+          )
+          .filter(
+            (
+              employee
+            ) =>
+              !decidedEmployeeIds.has(
+                String(
+                  employee.id
+                )
+              )
+          )
+          .sort(
+            (
+              first,
+              second
+            ) => {
+              const firstScore =
+                Number(
+                  first.severityScore ||
+                    0
+                ) +
+                Number(
+                  first.violationCount ||
+                    0
+                ) +
+                Number(
+                  first.criticalIncidentCount ||
+                    0
+                ) *
+                  3;
 
-            const secondScore =
-              Number(
-                second.severityScore ||
-                  0
-              ) +
-              Number(
-                second.violationCount ||
-                  0
-              ) +
-              Number(
-                second.criticalIncidentCount ||
-                  0
-              ) *
-                3;
+              const secondScore =
+                Number(
+                  second.severityScore ||
+                    0
+                ) +
+                Number(
+                  second.violationCount ||
+                    0
+                ) +
+                Number(
+                  second.criticalIncidentCount ||
+                    0
+                ) *
+                  3;
 
-            return (
-              secondScore -
-              firstScore
+              return (
+                secondScore -
+                firstScore
+              );
+            }
+          );
+      },
+      [
+        decidedEmployeeIds,
+        safeEmployees,
+      ]
+    );
+
+  const pendingEmployees =
+    useMemo(
+      () => {
+        const normalizedSearch =
+          normalizeSearchText(
+            search
+          );
+
+        const searchTerms =
+          normalizedSearch
+            ? normalizedSearch.split(
+                /\s+/
+              )
+            : [];
+
+        if (
+          searchTerms.length ===
+          0
+        ) {
+          return allPendingEmployees;
+        }
+
+        return allPendingEmployees.filter(
+          (
+            employee
+          ) => {
+            const searchableText =
+              normalizeSearchText(
+                [
+                  employee.name,
+                  employee.id,
+
+                  formatEmployeeId(
+                    employee.id
+                  ),
+
+                  employee.company,
+                  employee.kpiLevel,
+                  employee.riskLevel,
+                  employee.decisionConfidence,
+                  employee.suggestedHRAction,
+                  employee.recommendation,
+                  employee.recommendationReason,
+                  employee.correctiveActionReason,
+                  employee.suggestedHRActionReason,
+                  employee.decisionConfidenceReason,
+                  employee.correctiveActionBasis,
+                  employee.violationCount,
+                  employee.criticalIncidentCount,
+                  employee.severityScore,
+                ]
+                  .filter(
+                    (
+                      value
+                    ) =>
+                      value !==
+                        null &&
+                      value !==
+                        undefined &&
+                      value !==
+                        ""
+                  )
+                  .join(
+                    " "
+                  )
+              );
+
+            return searchTerms.every(
+              (
+                term
+              ) =>
+                searchableText.includes(
+                  term
+                )
             );
           }
         );
-    }, [
-      decidedEmployeeIds,
-      safeEmployees,
-    ]);
-
-  const pendingEmployees =
-    useMemo(() => {
-      const normalizedSearch =
-        normalizeSearchText(search);
-
-      const searchTerms =
-        normalizedSearch
-          ? normalizedSearch.split(/\s+/)
-          : [];
-
-      if (
-        searchTerms.length === 0
-      ) {
-        return allPendingEmployees;
-      }
-
-      return allPendingEmployees.filter(
-        (employee) => {
-          const searchableText =
-            normalizeSearchText(
-              [
-                employee.name,
-                employee.id,
-                formatEmployeeId(
-                  employee.id
-                ),
-                employee.company,
-                employee.kpiLevel,
-                employee.riskLevel,
-                employee.decisionConfidence,
-                employee.suggestedHRAction,
-                employee.recommendation,
-                employee.recommendationReason,
-                employee.correctiveActionReason,
-                employee.suggestedHRActionReason,
-                employee.decisionConfidenceReason,
-                employee.correctiveActionBasis,
-                employee.violationCount,
-                employee.criticalIncidentCount,
-                employee.severityScore,
-              ]
-                .filter(
-                  (value) =>
-                    value !== null &&
-                    value !== undefined &&
-                    value !== ""
-                )
-                .join(" ")
-            );
-
-          return searchTerms.every(
-            (term) =>
-              searchableText.includes(
-                term
-              )
-          );
-        }
-      );
-    }, [
-      allPendingEmployees,
-      search,
-    ]);
+      },
+      [
+        allPendingEmployees,
+        search,
+      ]
+    );
 
   const hasSearch =
-    Boolean(search.trim());
+    Boolean(
+      search.trim()
+    );
 
-  const handleSaved = (record) => {
-    setSelectedReview(null);
-    onDecisionSaved?.(record);
-  };
+  const handleSaved =
+    (
+      record
+    ) => {
+      setSelectedReview(
+        null
+      );
+
+      onDecisionSaved?.(
+        record
+      );
+    };
 
   const handleRetryHistory =
     async () => {
-      if (isHistoryFetching) {
+      if (
+        isHistoryFetching
+      ) {
         return;
       }
 
@@ -787,7 +988,9 @@ export default function RecommendationReviewSection({
       <section
         className="space-y-5"
         aria-labelledby="recommendation-review-title"
-        aria-busy={isHistoryLoading}
+        aria-busy={
+          isHistoryLoading
+        }
       >
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -810,9 +1013,9 @@ export default function RecommendationReviewSection({
                 system-generated
                 recommendations here.
                 Accepted, modified, or
-                rejected decisions will
-                appear in Decision
-                History.
+                rejected decisions
+                will appear in
+                Decision History.
               </p>
             </div>
 
@@ -868,7 +1071,9 @@ export default function RecommendationReviewSection({
                     isHistoryLoading
                   }
                   onClick={() =>
-                    setSearch("")
+                    setSearch(
+                      ""
+                    )
                   }
                 >
                   Clear Search
@@ -880,17 +1085,24 @@ export default function RecommendationReviewSection({
                   label="Search pending recommendations"
                   hideLabel
                   placeholder="Search employee, ID, company, action, confidence, or risk..."
-                  value={search}
+                  value={
+                    search
+                  }
                   disabled={
                     isHistoryLoading
                   }
-                  onChange={(event) =>
+                  onChange={(
+                    event
+                  ) =>
                     setSearch(
-                      event.target.value
+                      event.target
+                        .value
                     )
                   }
                   onClear={() =>
-                    setSearch("")
+                    setSearch(
+                      ""
+                    )
                   }
                 />
               </div>
@@ -946,7 +1158,9 @@ export default function RecommendationReviewSection({
               onSecondaryAction={
                 hasSearch
                   ? () =>
-                      setSearch("")
+                      setSearch(
+                        ""
+                      )
                   : undefined
               }
             />
@@ -954,7 +1168,9 @@ export default function RecommendationReviewSection({
         ) : (
           <div className="grid gap-4">
             {pendingEmployees.map(
-              (employee) => {
+              (
+                employee
+              ) => {
                 const confidence =
                   employee.decisionConfidence ||
                   DECISION_CONFIDENCE.LOW;
@@ -1010,7 +1226,9 @@ export default function RecommendationReviewSection({
                                 aria-hidden="true"
                               />
 
-                              {confidence}
+                              {
+                                confidence
+                              }
                             </StatusBadge>
 
                             <StatusBadge
@@ -1042,64 +1260,75 @@ export default function RecommendationReviewSection({
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant="success"
-                          size="sm"
-                          leftIcon={
-                            <FiThumbsUp
-                              aria-hidden="true"
-                            />
-                          }
-                          onClick={() =>
-                            setSelectedReview({
-                              employee,
-                              mode: "accept",
-                            })
-                          }
-                        >
-                          Accept
-                        </Button>
+                      {canManageDecisions && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="success"
+                            size="sm"
+                            leftIcon={
+                              <FiThumbsUp
+                                aria-hidden="true"
+                              />
+                            }
+                            onClick={() =>
+                              setSelectedReview(
+                                {
+                                  employee,
+                                  mode:
+                                    "accept",
+                                }
+                              )
+                            }
+                          >
+                            Accept
+                          </Button>
 
-                        <Button
-                          type="button"
-                          variant="warning"
-                          size="sm"
-                          leftIcon={
-                            <FiEdit3
-                              aria-hidden="true"
-                            />
-                          }
-                          onClick={() =>
-                            setSelectedReview({
-                              employee,
-                              mode: "modify",
-                            })
-                          }
-                        >
-                          Modify
-                        </Button>
+                          <Button
+                            type="button"
+                            variant="warning"
+                            size="sm"
+                            leftIcon={
+                              <FiEdit3
+                                aria-hidden="true"
+                              />
+                            }
+                            onClick={() =>
+                              setSelectedReview(
+                                {
+                                  employee,
+                                  mode:
+                                    "modify",
+                                }
+                              )
+                            }
+                          >
+                            Modify
+                          </Button>
 
-                        <Button
-                          type="button"
-                          variant="warning"
-                          size="sm"
-                          leftIcon={
-                            <FiXCircle
-                              aria-hidden="true"
-                            />
-                          }
-                          onClick={() =>
-                            setSelectedReview({
-                              employee,
-                              mode: "reject",
-                            })
-                          }
-                        >
-                          Reject
-                        </Button>
-                      </div>
+                          <Button
+                            type="button"
+                            variant="warning"
+                            size="sm"
+                            leftIcon={
+                              <FiXCircle
+                                aria-hidden="true"
+                              />
+                            }
+                            onClick={() =>
+                              setSelectedReview(
+                                {
+                                  employee,
+                                  mode:
+                                    "reject",
+                                }
+                              )
+                            }
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-5 grid gap-3 xl:grid-cols-2">
@@ -1126,7 +1355,8 @@ export default function RecommendationReviewSection({
                             aria-hidden="true"
                           />
 
-                          Next Step Reason
+                          Next Step
+                          Reason
                         </p>
 
                         <p className="line-clamp-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
@@ -1155,28 +1385,35 @@ export default function RecommendationReviewSection({
                 aria-hidden="true"
               />
 
-              Updating recommendation
-              queue...
+              Updating
+              recommendation queue...
             </div>
           )}
       </section>
 
-      {selectedReview && (
-        <DecisionModal
-          key={`${selectedReview.employee.id}-${selectedReview.mode}`}
-          employee={
-            selectedReview.employee
-          }
-          mode={
-            selectedReview.mode
-          }
-          user={user}
-          onClose={() =>
-            setSelectedReview(null)
-          }
-          onSaved={handleSaved}
-        />
-      )}
+      {selectedReview &&
+        canManageDecisions && (
+          <DecisionModal
+            key={`${selectedReview.employee.id}-${selectedReview.mode}`}
+            employee={
+              selectedReview.employee
+            }
+            mode={
+              selectedReview.mode
+            }
+            user={
+              user
+            }
+            onClose={() =>
+              setSelectedReview(
+                null
+              )
+            }
+            onSaved={
+              handleSaved
+            }
+          />
+        )}
     </>
   );
 }

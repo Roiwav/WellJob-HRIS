@@ -31,6 +31,8 @@ import ErrorState from "../components/ui/ErrorState";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Dialog from "../components/ui/Dialog";
 
+import authenticatedFetch from "../utils/authenticatedFetch";
+
 const USERS_API_URL =
   "http://localhost:5000/api/users";
 
@@ -131,10 +133,11 @@ async function requestJson(
     }, REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
+    const response =
+      await authenticatedFetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
 
     const data = await response
       .json()
@@ -1273,25 +1276,25 @@ export default function SuperAdminPortal() {
                   search.trim()
                     ? "search"
                     : userRoleFilter !==
-                      "ALL"
-                    ? "filter"
-                    : "records"
+                        "ALL"
+                      ? "filter"
+                      : "records"
                 }
                 title={
                   search.trim()
                     ? "No accounts matched"
                     : userRoleFilter !==
-                      "ALL"
-                    ? "No role-filter results"
-                    : "No accounts found"
+                        "ALL"
+                      ? "No role-filter results"
+                      : "No accounts found"
                 }
                 description={
                   search.trim()
                     ? "No internal user accounts matched the current search and role filter."
                     : userRoleFilter !==
-                      "ALL"
-                    ? "Internal accounts exist, but none match the selected role."
-                    : "No internal user accounts are currently available."
+                        "ALL"
+                      ? "Internal accounts exist, but none match the selected role."
+                      : "No internal user accounts are currently available."
                 }
                 secondaryActionLabel={
                   hasActiveFilters

@@ -8,7 +8,6 @@ import {
 
 import {
   canViewSmartAlerts,
-  getUserKey,
   requestSmartAlertJson,
 } from "../utils/notifications/smartNotifications";
 
@@ -46,9 +45,9 @@ function shouldRefreshForDataUpdated(
     );
 
   /*
-   * Preserve compatibility with
-   * older dataUpdated events that
-   * do not include a domain.
+   * Preserve compatibility with older
+   * dataUpdated events that do not
+   * include a domain.
    */
   if (!domain) {
     return true;
@@ -56,28 +55,6 @@ function shouldRefreshForDataUpdated(
 
   return SMART_ALERT_REFRESH_DOMAINS.has(
     domain
-  );
-}
-
-function getDisplayName(user) {
-  return (
-    user?.full_name ||
-    user?.fullName ||
-    user?.fullname ||
-    user?.display_name ||
-    user?.displayName ||
-    user?.name ||
-    user?.username ||
-    "Unknown User"
-  );
-}
-
-function getUserId(user) {
-  return (
-    user?.userId ||
-    user?.user_id ||
-    user?.id ||
-    ""
   );
 }
 
@@ -130,11 +107,6 @@ export default function useSmartNotifications(
   const role =
     user?.role || "USER";
 
-  const userKey = useMemo(
-    () => getUserKey(user),
-    [user]
-  );
-
   const canView =
     canViewSmartAlerts(role);
 
@@ -161,8 +133,12 @@ export default function useSmartNotifications(
     setPopupAlert,
   ] = useState(null);
 
-  const [summary, setSummary] =
-    useState(EMPTY_SUMMARY);
+  const [
+    summary,
+    setSummary,
+  ] = useState(
+    EMPTY_SUMMARY
+  );
 
   const [
     unreadCount,
@@ -191,8 +167,10 @@ export default function useSmartNotifications(
     () => new Set()
   );
 
-  const [error, setError] =
-    useState("");
+  const [
+    error,
+    setError,
+  ] = useState("");
 
   const visibleAlerts =
     useMemo(
@@ -302,43 +280,15 @@ export default function useSmartNotifications(
           setIsFetching(true);
           setError("");
 
-          const displayName =
-            getDisplayName(user);
-
-          const userId =
-            String(
-              getUserId(user)
-            );
-
-          const query =
-            new URLSearchParams({
-              userKey,
-              role,
-              userId,
-              id: userId,
-
-              username:
-                String(
-                  user?.username ||
-                    ""
-                ),
-
-              userName:
-                displayName,
-
-              fullName:
-                displayName,
-
-              full_name:
-                displayName,
-
-              name:
-                displayName,
-            }).toString();
-
+          /*
+           * Authenticated identity and role are now
+           * derived exclusively from the JWT by the
+           * backend. No user/role query parameters
+           * are sent by the client.
+           */
           const data =
             await requestSmartAlertJson(
-              `/smart-alerts?${query}`
+              "/smart-alerts"
             );
 
           const nextAlerts =
@@ -359,12 +309,9 @@ export default function useSmartNotifications(
             nextLatestAlerts
           );
 
-          const nextPopupAlert =
-            data?.popupAlert ||
-            null;
-
           setPopupAlert(
-            nextPopupAlert
+            data?.popupAlert ||
+              null
           );
 
           setSummary({
@@ -402,9 +349,6 @@ export default function useSmartNotifications(
       },
       [
         canView,
-        role,
-        user,
-        userKey,
       ]
     );
 
@@ -482,9 +426,6 @@ export default function useSmartNotifications(
 
             body:
               JSON.stringify({
-                userKey,
-                role,
-
                 alertKey:
                   normalizedKey,
               }),
@@ -498,8 +439,6 @@ export default function useSmartNotifications(
       [
         canView,
         fetchAlerts,
-        role,
-        userKey,
       ]
     );
 
@@ -577,15 +516,10 @@ export default function useSmartNotifications(
                 "POST",
 
               body:
-                JSON.stringify(
-                  {
-                    userKey,
-                    role,
-
-                    alertKey:
-                      normalizedKey,
-                  }
-                ),
+                JSON.stringify({
+                  alertKey:
+                    normalizedKey,
+                }),
             }
           );
 
@@ -618,8 +552,6 @@ export default function useSmartNotifications(
       [
         canView,
         fetchAlerts,
-        role,
-        userKey,
       ]
     );
 
@@ -718,13 +650,9 @@ export default function useSmartNotifications(
                     "POST",
 
                   body:
-                    JSON.stringify(
-                      {
-                        userKey,
-                        role,
-                        alertKey,
-                      }
-                    ),
+                    JSON.stringify({
+                      alertKey,
+                    }),
                 }
               )
           )
@@ -778,8 +706,6 @@ export default function useSmartNotifications(
       fetchAlerts,
       isClearingRead,
       readAlerts,
-      role,
-      userKey,
     ]);
 
   const markAllAsRead =
@@ -796,8 +722,7 @@ export default function useSmartNotifications(
           .filter(Boolean);
 
       if (
-        alertKeys.length ===
-        0
+        alertKeys.length === 0
       ) {
         return;
       }
@@ -833,8 +758,6 @@ export default function useSmartNotifications(
 
           body:
             JSON.stringify({
-              userKey,
-              role,
               alertKeys,
             }),
         }
@@ -846,8 +769,6 @@ export default function useSmartNotifications(
     }, [
       canView,
       fetchAlerts,
-      role,
-      userKey,
       visibleAlerts,
     ]);
 

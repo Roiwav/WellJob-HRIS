@@ -50,17 +50,11 @@ import {
   normalizeEmployeeStatus,
 } from "../utils/employees/employeeHelpers";
 
-const AUDIT_API_URL =
-  "http://localhost:5000/api/audit-logs";
-
 const DATA_EVENT_SOURCE =
   "employees-page";
 
 const REQUEST_TIMEOUT_MS =
   45 * 1000;
-
-const AUDIT_TIMEOUT_MS =
-  8000;
 
 const DATA_UPDATE_DEBOUNCE_MS =
   300;
@@ -88,20 +82,55 @@ const SELECT_CLASS_NAME =
   "dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20 " +
   "dark:disabled:bg-slate-800 dark:disabled:text-gray-500";
 
-let activeEmployeeRequest = null;
+let activeEmployeeRequest =
+  null;
+
+function getAuthenticatedHeaders(
+  additionalHeaders = {}
+) {
+  const token = String(
+    localStorage.getItem(
+      "token"
+    ) || ""
+  ).trim();
+
+  return {
+    Accept:
+      "application/json",
+
+    ...additionalHeaders,
+
+    ...(token
+      ? {
+          Authorization:
+            `Bearer ${token}`,
+        }
+      : {}),
+  };
+}
 
 function emitDataUpdated(
-  action = "EMPLOYEES_UPDATED"
+  action =
+    "EMPLOYEES_UPDATED"
 ) {
   window.dispatchEvent(
-    new CustomEvent("dataUpdated", {
-      detail: {
-        source: DATA_EVENT_SOURCE,
-        domain: "employees",
-        action,
-        at: Date.now(),
-      },
-    })
+    new CustomEvent(
+      "dataUpdated",
+      {
+        detail: {
+          source:
+            DATA_EVENT_SOURCE,
+
+          domain:
+            "employees",
+
+          action,
+
+          at:
+            Date.now(),
+        },
+      }
+    )
   );
 }
 
@@ -118,11 +147,12 @@ function shouldRefreshEmployees(
     return false;
   }
 
-  const domain = String(
-    detail.domain || ""
-  )
-    .trim()
-    .toLowerCase();
+  const domain =
+    String(
+      detail.domain || ""
+    )
+      .trim()
+      .toLowerCase();
 
   /*
    * Preserve compatibility with
@@ -140,7 +170,9 @@ function shouldRefreshEmployees(
   );
 }
 
-function getEmployeeId(employee) {
+function getEmployeeId(
+  employee
+) {
   return String(
     employee?.id ||
       employee?.employeeId ||
@@ -149,12 +181,16 @@ function getEmployeeId(employee) {
   );
 }
 
-function getEmployeeName(employee) {
+function getEmployeeName(
+  employee
+) {
   return String(
     employee?.name ||
       employee?.full_name ||
       employee?.fullName ||
-      getEmployeeId(employee) ||
+      getEmployeeId(
+        employee
+      ) ||
       "the employee"
   ).trim();
 }
@@ -178,31 +214,41 @@ function requestEmployees() {
    * simultaneous consumers do not
    * create duplicate GET requests.
    */
-  if (!activeEmployeeRequest) {
-    activeEmployeeRequest = axios
-      .get(EMPLOYEE_API_URL, {
-        timeout:
-          REQUEST_TIMEOUT_MS,
+  if (
+    !activeEmployeeRequest
+  ) {
+    activeEmployeeRequest =
+      axios
+        .get(
+          EMPLOYEE_API_URL,
+          {
+            timeout:
+              REQUEST_TIMEOUT_MS,
 
-        headers: {
-          Accept:
-            "application/json",
-        },
-      })
-      .then(({ data }) => {
-        const records =
-          Array.isArray(data)
-            ? data
-            : [];
+            headers:
+              getAuthenticatedHeaders(),
+          }
+        )
+        .then(
+          ({ data }) => {
+            const records =
+              Array.isArray(
+                data
+              )
+                ? data
+                : [];
 
-        return records.map(
-          normalizeEmployee
+            return records.map(
+              normalizeEmployee
+            );
+          }
+        )
+        .finally(
+          () => {
+            activeEmployeeRequest =
+              null;
+          }
         );
-      })
-      .finally(() => {
-        activeEmployeeRequest =
-          null;
-      });
   }
 
   return activeEmployeeRequest;
@@ -231,10 +277,15 @@ function SelectFilter({
       <select
         id={id}
         value={value}
-        disabled={disabled}
-        onChange={(event) =>
+        disabled={
+          disabled
+        }
+        onChange={(
+          event
+        ) =>
           onChange(
-            event.target.value
+            event.target
+              .value
           )
         }
         className={
@@ -242,12 +293,20 @@ function SelectFilter({
         }
       >
         {options.map(
-          (option) => (
+          (
+            option
+          ) => (
             <option
-              key={option.value}
-              value={option.value}
+              key={
+                option.value
+              }
+              value={
+                option.value
+              }
             >
-              {option.label}
+              {
+                option.label
+              }
             </option>
           )
         )}
@@ -260,94 +319,108 @@ export default function Employees() {
   const navigate =
     useNavigate();
 
-  const { user } = useAuth();
+  const { user } =
+    useAuth();
 
   const isSuperAdmin =
-    user?.role === "SUPER_ADMIN";
+    user?.role ===
+    "SUPER_ADMIN";
 
   const isHRManager =
-    user?.role === "HR_MANAGER";
-
-  const currentUserName =
-    user?.full_name ||
-    user?.fullName ||
-    user?.username ||
-    "System Admin";
+    user?.role ===
+    "HR_MANAGER";
 
   const [
     employees,
     setEmployees,
-  ] = useState([]);
+  ] =
+    useState([]);
 
   const [
     showEmployeeForm,
     setShowEmployeeForm,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     generatedId,
     setGeneratedId,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     editingEmployee,
     setEditingEmployee,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const [
     viewEmployee,
     setViewEmployee,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const [
     archiveTarget,
     setArchiveTarget,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const [
     search,
     setSearch,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     filterStatus,
     setFilterStatus,
-  ] = useState("All");
+  ] =
+    useState("All");
 
   const [
     filterCompliance,
     setFilterCompliance,
-  ] = useState("All");
+  ] =
+    useState("All");
 
   const [
     sortBy,
     setSortBy,
-  ] = useState("latest");
+  ] =
+    useState(
+      "latest"
+    );
 
   const [
     successMessage,
     setSuccessMessage,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     pageError,
     setPageError,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     isLoadingEmployees,
     setIsLoadingEmployees,
-  ] = useState(true);
+  ] =
+    useState(true);
 
   const [
     isRefreshingEmployees,
     setIsRefreshingEmployees,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     isArchiving,
     setIsArchiving,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const isFetchingRef =
     useRef(false);
@@ -358,78 +431,26 @@ export default function Employees() {
   const dataUpdateTimerRef =
     useRef(null);
 
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    return () => {
+  useEffect(
+    () => {
       isMountedRef.current =
-        false;
+        true;
 
-      if (
-        dataUpdateTimerRef.current
-      ) {
-        window.clearTimeout(
+      return () => {
+        isMountedRef.current =
+          false;
+
+        if (
           dataUpdateTimerRef.current
-        );
-      }
-    };
-  }, []);
-
-  const createOperationalLog =
-    useCallback(
-      async (
-        action,
-        description
-      ) => {
-        try {
-          await axios.post(
-            AUDIT_API_URL,
-            {
-              userId:
-                user?.userId ||
-                user?.id ||
-                "-",
-
-              username:
-                user?.username ||
-                "-",
-
-              full_name:
-                currentUserName,
-
-              role:
-                user?.role || "-",
-
-              category:
-                "OPERATIONAL",
-
-              action,
-              description,
-            },
-            {
-              timeout:
-                AUDIT_TIMEOUT_MS,
-            }
+        ) {
+          window.clearTimeout(
+            dataUpdateTimerRef.current
           );
-
-          return true;
-        } catch (error) {
-          console.error(
-            "Failed to save operational log:",
-            error
-          );
-
-          return false;
         }
-      },
-      [
-        currentUserName,
-        user?.id,
-        user?.role,
-        user?.userId,
-        user?.username,
-      ]
-    );
+      };
+    },
+    []
+  );
 
   const fetchEmployees =
     useCallback(
@@ -450,20 +471,28 @@ export default function Employees() {
         if (
           isMountedRef.current
         ) {
-          if (showLoading) {
+          if (
+            showLoading
+          ) {
             setIsLoadingEmployees(
               true
             );
           }
 
-          if (showRefreshing) {
+          if (
+            showRefreshing
+          ) {
             setIsRefreshingEmployees(
               true
             );
           }
 
-          if (showError) {
-            setPageError("");
+          if (
+            showError
+          ) {
+            setPageError(
+              ""
+            );
           }
         }
 
@@ -477,7 +506,9 @@ export default function Employees() {
             return false;
           }
 
-          setEmployees(records);
+          setEmployees(
+            records
+          );
 
           return true;
         } catch (error) {
@@ -506,13 +537,17 @@ export default function Employees() {
           if (
             isMountedRef.current
           ) {
-            if (showLoading) {
+            if (
+              showLoading
+            ) {
               setIsLoadingEmployees(
                 false
               );
             }
 
-            if (showRefreshing) {
+            if (
+              showRefreshing
+            ) {
               setIsRefreshingEmployees(
                 false
               );
@@ -523,15 +558,61 @@ export default function Employees() {
       []
     );
 
-  useEffect(() => {
-    void fetchEmployees({
-      showLoading: true,
-    });
-  }, [fetchEmployees]);
+  useEffect(
+    () => {
+      void fetchEmployees({
+        showLoading:
+          true,
+      });
+    },
+    [
+      fetchEmployees,
+    ]
+  );
 
-  useEffect(() => {
-    const scheduleEmployeeRefresh =
-      () => {
+  useEffect(
+    () => {
+      const scheduleEmployeeRefresh =
+        () => {
+          if (
+            dataUpdateTimerRef.current
+          ) {
+            window.clearTimeout(
+              dataUpdateTimerRef.current
+            );
+          }
+
+          dataUpdateTimerRef.current =
+            window.setTimeout(
+              () => {
+                void fetchEmployees({
+                  showError:
+                    false,
+                });
+              },
+              DATA_UPDATE_DEBOUNCE_MS
+            );
+        };
+
+      const handleDataUpdated =
+        (
+          event
+        ) => {
+          if (
+            shouldRefreshEmployees(
+              event
+            )
+          ) {
+            scheduleEmployeeRefresh();
+          }
+        };
+
+      window.addEventListener(
+        "dataUpdated",
+        handleDataUpdated
+      );
+
+      return () => {
         if (
           dataUpdateTimerRef.current
         ) {
@@ -540,46 +621,16 @@ export default function Employees() {
           );
         }
 
-        dataUpdateTimerRef.current =
-          window.setTimeout(() => {
-            void fetchEmployees({
-              showError: false,
-            });
-          }, DATA_UPDATE_DEBOUNCE_MS);
-      };
-
-    const handleDataUpdated = (
-      event
-    ) => {
-      if (
-        shouldRefreshEmployees(
-          event
-        )
-      ) {
-        scheduleEmployeeRefresh();
-      }
-    };
-
-    window.addEventListener(
-      "dataUpdated",
-      handleDataUpdated
-    );
-
-    return () => {
-      if (
-        dataUpdateTimerRef.current
-      ) {
-        window.clearTimeout(
-          dataUpdateTimerRef.current
+        window.removeEventListener(
+          "dataUpdated",
+          handleDataUpdated
         );
-      }
-
-      window.removeEventListener(
-        "dataUpdated",
-        handleDataUpdated
-      );
-    };
-  }, [fetchEmployees]);
+      };
+    },
+    [
+      fetchEmployees,
+    ]
+  );
 
   const filteredEmployees =
     useMemo(
@@ -588,6 +639,7 @@ export default function Employees() {
           employees,
           {
             search,
+
             status:
               filterStatus,
 
@@ -595,6 +647,7 @@ export default function Employees() {
               filterCompliance,
 
             sortBy,
+
             includeArchived:
               false,
           }
@@ -612,13 +665,18 @@ export default function Employees() {
     useMemo(
       () =>
         employees.filter(
-          (employee) =>
+          (
+            employee
+          ) =>
             !employee?.archived &&
             normalizeEmployeeStatus(
               employee?.status
-            ) !== "Inactive"
+            ) !==
+              "Inactive"
         ).length,
-      [employees]
+      [
+        employees,
+      ]
     );
 
   const hasActiveFilters =
@@ -646,62 +704,100 @@ export default function Employees() {
     );
 
   const handleResetFilters =
-    useCallback(() => {
-      setSearch("");
-      setFilterStatus("All");
-      setFilterCompliance(
-        "All"
-      );
-      setSortBy("latest");
-    }, []);
+    useCallback(
+      () => {
+        setSearch(
+          ""
+        );
+
+        setFilterStatus(
+          "All"
+        );
+
+        setFilterCompliance(
+          "All"
+        );
+
+        setSortBy(
+          "latest"
+        );
+      },
+      []
+    );
 
   const handleRefresh =
-    useCallback(async () => {
-      if (
-        isFetchingRef.current ||
-        isRefreshingEmployees
-      ) {
-        return;
-      }
+    useCallback(
+      async () => {
+        if (
+          isFetchingRef.current ||
+          isRefreshingEmployees
+        ) {
+          return;
+        }
 
-      await fetchEmployees({
-        showRefreshing: true,
-      });
-    }, [
-      fetchEmployees,
-      isRefreshingEmployees,
-    ]);
+        await fetchEmployees({
+          showRefreshing:
+            true,
+        });
+      },
+      [
+        fetchEmployees,
+        isRefreshingEmployees,
+      ]
+    );
 
   const handleOpenAddEmployee =
-    useCallback(() => {
-      if (isSuperAdmin) {
-        return;
-      }
+    useCallback(
+      () => {
+        if (
+          isSuperAdmin
+        ) {
+          return;
+        }
 
-      setGeneratedId(
-        generateEmployeeId(
-          employees
-        )
-      );
+        setGeneratedId(
+          generateEmployeeId(
+            employees
+          )
+        );
 
-      setEditingEmployee(null);
+        setEditingEmployee(
+          null
+        );
 
-      setShowEmployeeForm(true);
-    }, [
-      employees,
-      isSuperAdmin,
-    ]);
+        setShowEmployeeForm(
+          true
+        );
+      },
+      [
+        employees,
+        isSuperAdmin,
+      ]
+    );
 
   const handleCloseEmployeeForm =
-    useCallback(() => {
-      setShowEmployeeForm(false);
-      setEditingEmployee(null);
-      setGeneratedId("");
-    }, []);
+    useCallback(
+      () => {
+        setShowEmployeeForm(
+          false
+        );
+
+        setEditingEmployee(
+          null
+        );
+
+        setGeneratedId(
+          ""
+        );
+      },
+      []
+    );
 
   const handleEditEmployee =
     useCallback(
-      (employee) => {
+      (
+        employee
+      ) => {
         if (
           isSuperAdmin ||
           !employee
@@ -721,14 +817,20 @@ export default function Employees() {
           )
         );
 
-        setShowEmployeeForm(true);
+        setShowEmployeeForm(
+          true
+        );
       },
-      [isSuperAdmin]
+      [
+        isSuperAdmin,
+      ]
     );
 
   const handleOpenArchiveDialog =
     useCallback(
-      (employee) => {
+      (
+        employee
+      ) => {
         if (
           isSuperAdmin ||
           !isHRManager ||
@@ -738,8 +840,13 @@ export default function Employees() {
           return;
         }
 
-        setArchiveTarget(employee);
-        setPageError("");
+        setArchiveTarget(
+          employee
+        );
+
+        setPageError(
+          ""
+        );
       },
       [
         isArchiving,
@@ -749,106 +856,130 @@ export default function Employees() {
     );
 
   const handleCloseArchiveDialog =
-    useCallback(() => {
-      if (!isArchiving) {
-        setArchiveTarget(null);
-      }
-    }, [isArchiving]);
+    useCallback(
+      () => {
+        if (
+          !isArchiving
+        ) {
+          setArchiveTarget(
+            null
+          );
+        }
+      },
+      [
+        isArchiving,
+      ]
+    );
 
   const handleConfirmArchive =
-    useCallback(async () => {
-      const employeeId =
-        getEmployeeId(
-          archiveTarget
-        );
+    useCallback(
+      async () => {
+        const employeeId =
+          getEmployeeId(
+            archiveTarget
+          );
 
-      if (
-        !employeeId ||
-        isArchiving ||
-        isSuperAdmin ||
-        !isHRManager
-      ) {
-        return;
-      }
-
-      const employeeName =
-        getEmployeeName(
-          archiveTarget
-        );
-
-      try {
-        setIsArchiving(true);
-        setPageError("");
-
-        await axios.put(
-          `${EMPLOYEE_API_URL}/archive/${encodeURIComponent(
-            employeeId
-          )}`,
-          {},
-          {
-            timeout:
-              REQUEST_TIMEOUT_MS,
-          }
-        );
-
-        setEmployees(
-          (
-            currentEmployees
-          ) =>
-            currentEmployees.filter(
-              (employee) =>
-                getEmployeeId(
-                  employee
-                ) !== employeeId
-            )
-        );
-
-        setArchiveTarget(null);
-
-        setSuccessMessage(
-          `${employeeName} was archived successfully.`
-        );
-
-        void createOperationalLog(
-          "ARCHIVE_EMPLOYEE",
-          `${currentUserName} archived employee record for ${employeeName}.`
-        );
-
-        emitDataUpdated(
-          "ARCHIVE_EMPLOYEE"
-        );
-
-        void fetchEmployees({
-          showError: false,
-        });
-      } catch (error) {
-        console.error(
-          "Archive employee error:",
-          error
-        );
-
-        setPageError(
-          getEmployeeApiError(
-            error,
-            "Failed to archive the employee record."
-          )
-        );
-      } finally {
         if (
-          isMountedRef.current
+          !employeeId ||
+          isArchiving ||
+          isSuperAdmin ||
+          !isHRManager
         ) {
-          setIsArchiving(false);
+          return;
         }
-      }
-    }, [
-      archiveTarget,
-      createOperationalLog,
-      currentUserName,
-      fetchEmployees,
-      isArchiving,
-      isHRManager,
-      isSuperAdmin,
-    ]);
+
+        const employeeName =
+          getEmployeeName(
+            archiveTarget
+          );
+
+        try {
+          setIsArchiving(
+            true
+          );
+
+          setPageError(
+            ""
+          );
+
+          await axios.put(
+            `${EMPLOYEE_API_URL}/archive/${encodeURIComponent(
+              employeeId
+            )}`,
+            {},
+            {
+              timeout:
+                REQUEST_TIMEOUT_MS,
+
+              headers:
+                getAuthenticatedHeaders({
+                  "Content-Type":
+                    "application/json",
+                }),
+            }
+          );
+
+          setEmployees(
+            (
+              currentEmployees
+            ) =>
+              currentEmployees.filter(
+                (
+                  employee
+                ) =>
+                  getEmployeeId(
+                    employee
+                  ) !==
+                  employeeId
+              )
+          );
+
+          setArchiveTarget(
+            null
+          );
+
+          setSuccessMessage(
+            `${employeeName} was archived successfully.`
+          );
+
+          emitDataUpdated(
+            "ARCHIVE_EMPLOYEE"
+          );
+
+          void fetchEmployees({
+            showError:
+              false,
+          });
+        } catch (error) {
+          console.error(
+            "Archive employee error:",
+            error
+          );
+
+          setPageError(
+            getEmployeeApiError(
+              error,
+              "Failed to archive the employee record."
+            )
+          );
+        } finally {
+          if (
+            isMountedRef.current
+          ) {
+            setIsArchiving(
+              false
+            );
+          }
+        }
+      },
+      [
+        archiveTarget,
+        fetchEmployees,
+        isArchiving,
+        isHRManager,
+        isSuperAdmin,
+      ]
+    );
 
   const handleSaveSuccess =
     useCallback(
@@ -861,7 +992,8 @@ export default function Employees() {
           "the employee";
 
         const isEditMode =
-          mode === "edit";
+          mode ===
+          "edit";
 
         handleCloseEmployeeForm();
 
@@ -871,18 +1003,6 @@ export default function Employees() {
             : `${safeEmployeeName} was saved successfully.`
         );
 
-        void createOperationalLog(
-          isEditMode
-            ? "EDIT_EMPLOYEE"
-            : "ADD_EMPLOYEE",
-
-          `${currentUserName} ${
-            isEditMode
-              ? "edited"
-              : "added"
-          } employee record for ${safeEmployeeName}.`
-        );
-
         emitDataUpdated(
           isEditMode
             ? "EDIT_EMPLOYEE"
@@ -890,12 +1010,11 @@ export default function Employees() {
         );
 
         await fetchEmployees({
-          showError: false,
+          showError:
+            false,
         });
       },
       [
-        createOperationalLog,
-        currentUserName,
         fetchEmployees,
         handleCloseEmployeeForm,
       ]
@@ -1023,17 +1142,24 @@ export default function Employees() {
             label="Search employees"
             hideLabel
             placeholder="Search by name, ID, company, or position..."
-            value={search}
+            value={
+              search
+            }
             disabled={
               isLoadingEmployees
             }
-            onChange={(event) =>
+            onChange={(
+              event
+            ) =>
               setSearch(
-                event.target.value
+                event.target
+                  .value
               )
             }
             onClear={() =>
-              setSearch("")
+              setSearch(
+                ""
+              )
             }
           />
         </div>
@@ -1041,7 +1167,9 @@ export default function Employees() {
         <SelectFilter
           id="employee-status-filter"
           label="Employment Status"
-          value={filterStatus}
+          value={
+            filterStatus
+          }
           options={
             ACTIVE_STATUS_OPTIONS
           }
@@ -1073,14 +1201,18 @@ export default function Employees() {
         <SelectFilter
           id="employee-sort-filter"
           label="Sort Employees"
-          value={sortBy}
+          value={
+            sortBy
+          }
           options={
             EMPLOYEE_SORT_OPTIONS
           }
           disabled={
             isLoadingEmployees
           }
-          onChange={setSortBy}
+          onChange={
+            setSortBy
+          }
           className="xl:w-56"
         />
       </FilterBar>
@@ -1089,7 +1221,9 @@ export default function Employees() {
         <ErrorState
           compact
           title="Employee data error"
-          message={pageError}
+          message={
+            pageError
+          }
           retryLabel="Reload employees"
           onRetry={
             handleRefresh
@@ -1111,7 +1245,9 @@ export default function Employees() {
           totalRecords={
             activeEmployeeCount
           }
-          searchQuery={search}
+          searchQuery={
+            search
+          }
           hasFilters={
             filterStatus !==
               "All" ||
@@ -1119,7 +1255,9 @@ export default function Employees() {
               "All"
           }
           onClearSearch={() =>
-            setSearch("")
+            setSearch(
+              ""
+            )
           }
           onClearFilters={
             handleResetFilters
@@ -1266,7 +1404,9 @@ export default function Employees() {
           }
           duration={3500}
           onClose={() =>
-            setSuccessMessage("")
+            setSuccessMessage(
+              ""
+            )
           }
         />
       )}

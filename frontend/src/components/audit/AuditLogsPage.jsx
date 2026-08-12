@@ -20,6 +20,8 @@ import LoadingSkeleton from "../ui/LoadingSkeleton";
 import EmptyState from "../ui/EmptyState";
 import ErrorState from "../ui/ErrorState";
 
+import authenticatedFetch from "../../utils/authenticatedFetch";
+
 const API_BASE =
   "http://localhost:5000/api/audit-logs";
 
@@ -253,18 +255,26 @@ async function requestJson(
     }, REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        ...(options.headers || {}),
-      },
-    });
+    const response =
+      await authenticatedFetch(
+        url,
+        {
+          ...options,
+          signal:
+            controller.signal,
+          headers: {
+            Accept:
+              "application/json",
+            ...(options.headers ||
+              {}),
+          },
+        }
+      );
 
-    const result = await response
-      .json()
-      .catch(() => null);
+    const result =
+      await response
+        .json()
+        .catch(() => null);
 
     if (!response.ok) {
       throw new Error(
@@ -277,7 +287,8 @@ async function requestJson(
     return result;
   } catch (error) {
     if (
-      error?.name === "AbortError"
+      error?.name ===
+      "AbortError"
     ) {
       throw new Error(
         "The server took too long to respond. Check that the backend and database are running, then try again."
@@ -286,7 +297,9 @@ async function requestJson(
 
     throw error;
   } finally {
-    window.clearTimeout(timeoutId);
+    window.clearTimeout(
+      timeoutId
+    );
   }
 }
 
@@ -415,7 +428,9 @@ export default function AuditLogsPage({
           )}`;
 
         const result =
-          await requestJson(endpoint);
+          await requestJson(
+            endpoint
+          );
 
         if (!isMountedRef.current) {
           return false;
@@ -495,66 +510,77 @@ export default function AuditLogsPage({
 
       const searchTerms =
         normalizedSearch
-          ? normalizedSearch.split(/\s+/)
+          ? normalizedSearch.split(
+              /\s+/
+            )
           : [];
 
-      return logs.filter((log) => {
-        const actorName =
-          getActorName(log);
+      return logs.filter(
+        (log) => {
+          const actorName =
+            getActorName(log);
 
-        const readableDescription =
-          getReadableAuditDescription(
-            log
+          const readableDescription =
+            getReadableAuditDescription(
+              log
+            );
+
+          const roleLabel =
+            ROLE_LABELS[
+              log?.role
+            ] ||
+            formatAction(
+              log?.role
+            );
+
+          const searchableText =
+            normalizeSearchText(
+              [
+                log?.id,
+                log?.audit_id,
+                log?.auditId,
+                log?.username,
+                log?.user_id,
+                log?.userId,
+                actorName,
+                log?.action,
+                formatAction(
+                  log?.action
+                ),
+                readableDescription,
+                log?.role,
+                roleLabel,
+                log?.created_at,
+                log?.createdAt,
+                formatDate(
+                  log?.created_at ||
+                    log?.createdAt
+                ),
+              ]
+                .filter(Boolean)
+                .join(" ")
+            );
+
+          const matchesSearch =
+            searchTerms.length ===
+              0 ||
+            searchTerms.every(
+              (term) =>
+                searchableText.includes(
+                  term
+                )
+            );
+
+          const matchesRole =
+            role === "All" ||
+            log?.role === role;
+
+          return (
+            matchesSearch &&
+            matchesRole
           );
-
-        const roleLabel =
-          ROLE_LABELS[log?.role] ||
-          formatAction(log?.role);
-
-        const searchableText =
-          normalizeSearchText(
-            [
-              log?.id,
-              log?.audit_id,
-              log?.auditId,
-              log?.username,
-              log?.user_id,
-              log?.userId,
-              actorName,
-              log?.action,
-              formatAction(log?.action),
-              readableDescription,
-              log?.role,
-              roleLabel,
-              log?.created_at,
-              log?.createdAt,
-              formatDate(
-                log?.created_at ||
-                  log?.createdAt
-              ),
-            ]
-              .filter(Boolean)
-              .join(" ")
-          );
-
-        const matchesSearch =
-          searchTerms.length === 0 ||
-          searchTerms.every(
-            (term) =>
-              searchableText.includes(
-                term
-              )
-          );
-
-        const matchesRole =
-          role === "All" ||
-          log?.role === role;
-
-        return (
-          matchesSearch &&
-          matchesRole
-        );
-      });
+        }
+      );
     }, [logs, search, role]);
 
   const uniqueUsers =
@@ -570,13 +596,18 @@ export default function AuditLogsPage({
             .toLowerCase()
         );
 
-      return new Set(users).size;
+      return new Set(
+        users
+      ).size;
     }, [logs]);
 
   const availableRoles =
     useMemo(() => {
       const roles = logs
-        .map((log) => log?.role)
+        .map(
+          (log) =>
+            log?.role
+        )
         .filter(Boolean);
 
       return [
@@ -621,10 +652,13 @@ export default function AuditLogsPage({
 
   const emptyStateContent =
     useMemo(() => {
-      if (logs.length === 0) {
+      if (
+        logs.length === 0
+      ) {
         return {
           icon: "records",
-          title: "No audit logs available",
+          title:
+            "No audit logs available",
           description:
             "Audit activity will appear here after authorized system actions are recorded.",
         };
@@ -633,7 +667,8 @@ export default function AuditLogsPage({
       if (hasSearch) {
         return {
           icon: "search",
-          title: "No search results",
+          title:
+            "No search results",
           description:
             "No audit logs matched the current search.",
         };
@@ -642,7 +677,8 @@ export default function AuditLogsPage({
       if (hasRoleFilter) {
         return {
           icon: "filter",
-          title: "No role-filter results",
+          title:
+            "No role-filter results",
           description:
             "Audit logs exist, but none match the selected role.",
         };
@@ -650,7 +686,8 @@ export default function AuditLogsPage({
 
       return {
         icon: "records",
-        title: "No audit logs found",
+        title:
+          "No audit logs found",
         description:
           "No audit records are currently available.",
       };
@@ -665,9 +702,13 @@ export default function AuditLogsPage({
       <PageHeader
         eyebrow="System Monitoring"
         title={title}
-        description={description}
+        description={
+          description
+        }
         icon={
-          <FiShield size={22} />
+          <FiShield
+            size={22}
+          />
         }
         actions={
           <Button
@@ -682,13 +723,17 @@ export default function AuditLogsPage({
                 aria-hidden="true"
               />
             }
-            loading={isRefreshing}
+            loading={
+              isRefreshing
+            }
             disabled={
               isLoading ||
               isRefreshing ||
               isFetchingRef.current
             }
-            onClick={handleRefresh}
+            onClick={
+              handleRefresh
+            }
           >
             Refresh Logs
           </Button>
@@ -699,9 +744,13 @@ export default function AuditLogsPage({
         <ErrorState
           compact
           title="Audit log error"
-          message={pageError}
+          message={
+            pageError
+          }
           retryLabel="Reload audit logs"
-          onRetry={handleRefresh}
+          onRetry={
+            handleRefresh
+          }
         />
       )}
 
@@ -724,7 +773,9 @@ export default function AuditLogsPage({
             />
           }
           label="Users"
-          value={uniqueUsers}
+          value={
+            uniqueUsers
+          }
           helper="Unique recorded actors"
         />
 
@@ -778,7 +829,9 @@ export default function AuditLogsPage({
               isLoading ||
               isRefreshing
             }
-            onChange={(event) =>
+            onChange={(
+              event
+            ) =>
               setSearch(
                 event.target.value
               )
@@ -804,7 +857,9 @@ export default function AuditLogsPage({
               isLoading ||
               isRefreshing
             }
-            onChange={(event) =>
+            onChange={(
+              event
+            ) =>
               setRole(
                 event.target.value
               )
@@ -820,8 +875,12 @@ export default function AuditLogsPage({
             {availableRoles.map(
               (roleName) => (
                 <option
-                  key={roleName}
-                  value={roleName}
+                  key={
+                    roleName
+                  }
+                  value={
+                    roleName
+                  }
                 >
                   {ROLE_LABELS[
                     roleName
@@ -875,7 +934,10 @@ export default function AuditLogsPage({
             </h2>
 
             <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              Review recorded system and operational activity.
+              Review recorded
+              system and
+              operational
+              activity.
             </p>
           </header>
 
@@ -922,9 +984,14 @@ export default function AuditLogsPage({
 
               <tbody className="divide-y divide-gray-100 text-gray-700 dark:divide-white/5 dark:text-gray-200">
                 {filteredLogs.map(
-                  (log, index) => {
+                  (
+                    log,
+                    index
+                  ) => {
                     const actorName =
-                      getActorName(log);
+                      getActorName(
+                        log
+                      );
 
                     const readableDescription =
                       getReadableAuditDescription(
@@ -949,14 +1016,19 @@ export default function AuditLogsPage({
                         <td className="px-6 py-4">
                           <div className="min-w-0">
                             <p className="max-w-[220px] truncate font-semibold text-gray-900 dark:text-white">
-                              {actorName}
+                              {
+                                actorName
+                              }
                             </p>
 
                             {log?.username &&
                               actorName !==
                                 log.username && (
                                 <p className="mt-0.5 max-w-[220px] truncate text-xs text-gray-500 dark:text-gray-400">
-                                  @{log.username}
+                                  @
+                                  {
+                                    log.username
+                                  }
                                 </p>
                               )}
                           </div>
@@ -965,10 +1037,12 @@ export default function AuditLogsPage({
                         <td className="whitespace-nowrap px-6 py-4">
                           <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             {ROLE_LABELS[
-                              log?.role
+                              log
+                                ?.role
                             ] ||
                               formatAction(
-                                log?.role
+                                log
+                                  ?.role
                               )}
                           </span>
                         </td>
@@ -980,7 +1054,9 @@ export default function AuditLogsPage({
                               getActionStyle(
                                 log?.action
                               ),
-                            ].join(" ")}
+                            ].join(
+                              " "
+                            )}
                           >
                             {formatAction(
                               log?.action

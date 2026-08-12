@@ -32,6 +32,8 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Dialog from "../components/ui/Dialog";
 import SuccessToast from "../components/ui/SuccessToast";
 
+import authenticatedFetch from "../utils/authenticatedFetch";
+
 const API_BASE =
   "http://localhost:5000/api";
 
@@ -121,14 +123,15 @@ async function requestJson(
     }, REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        ...(options.headers || {}),
-      },
-    });
+    const response =
+      await authenticatedFetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          ...(options.headers || {}),
+        },
+      });
 
     const data = await response
       .json()

@@ -31,6 +31,24 @@ const TOGGLE_MAINTENANCE_URL =
 
 const REQUEST_TIMEOUT_MS = 15000;
 
+function getAuthenticatedHeaders(
+  additionalHeaders = {}
+) {
+  const token = String(
+    localStorage.getItem("token") || ""
+  ).trim();
+
+  return {
+    Accept: "application/json",
+    ...additionalHeaders,
+    ...(token
+      ? {
+          Authorization: `Bearer ${token}`,
+        }
+      : {}),
+  };
+}
+
 function getApiError(
   error,
   fallbackMessage
@@ -40,6 +58,14 @@ function getApiError(
     error?.name === "AbortError"
   ) {
     return "The server took too long to respond. Check that the backend and database are running, then try again.";
+  }
+
+  if (error?.response?.status === 401) {
+    return "Your session is missing or expired. Please log in again.";
+  }
+
+  if (error?.response?.status === 403) {
+    return "You do not have permission to access system maintenance controls.";
   }
 
   if (error?.response?.status === 503) {
@@ -139,10 +165,8 @@ export default function SystemMaintenance() {
                 timeout:
                   REQUEST_TIMEOUT_MS,
 
-                headers: {
-                  Accept:
-                    "application/json",
-                },
+                headers:
+                  getAuthenticatedHeaders(),
               }
             );
 
@@ -267,13 +291,11 @@ export default function SystemMaintenance() {
             timeout:
               REQUEST_TIMEOUT_MS,
 
-            headers: {
-              Accept:
-                "application/json",
-
-              "Content-Type":
-                "application/json",
-            },
+            headers:
+              getAuthenticatedHeaders({
+                "Content-Type":
+                  "application/json",
+              }),
           }
         );
 

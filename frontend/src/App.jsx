@@ -65,13 +65,45 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  const [
-    isMaintenance,
-    setIsMaintenance,
-  ] = useState(false);
+  const [isMaintenance, setIsMaintenance] = useState(false);
 
   useEffect(() => {
-    const interceptor =
+    /*
+     * Attach the saved JWT automatically to Axios API requests.
+     *
+     * Example:
+     * Authorization: Bearer <token>
+     *
+     * This means components using axios.get/post/put/delete
+     * do not need to manually read localStorage every time.
+     */
+    const requestInterceptor =
+      axios.interceptors.request.use(
+        (config) => {
+          const token = String(
+            localStorage.getItem("token") || ""
+          ).trim();
+
+          if (token) {
+            config.headers =
+              config.headers || {};
+
+            config.headers.Authorization =
+              `Bearer ${token}`;
+          }
+
+          return config;
+        },
+        (error) => {
+          return Promise.reject(error);
+        }
+      );
+
+    /*
+     * Existing maintenance response handling.
+     * Keep the current behavior unchanged.
+     */
+    const responseInterceptor =
       axios.interceptors.response.use(
         (response) => {
           setIsMaintenance(false);
@@ -80,8 +112,7 @@ function App() {
         },
         (error) => {
           if (
-            error?.response?.status ===
-            503
+            error?.response?.status === 503
           ) {
             setIsMaintenance(true);
           }
@@ -90,27 +121,31 @@ function App() {
         }
       );
 
+    /*
+     * Remove both interceptors when App unmounts
+     * so duplicate interceptors are not created.
+     */
     return () => {
+      axios.interceptors.request.eject(
+        requestInterceptor
+      );
+
       axios.interceptors.response.eject(
-        interceptor
+        responseInterceptor
       );
     };
   }, []);
 
   return (
-    <QueryClientProvider
-      client={queryClient}
-    >
+    <QueryClientProvider client={queryClient}>
       <AuthProvider>
         {isMaintenance && (
           <div
-            role="alert"
-            className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+            role="status"
+            className="fixed left-1/2 top-4 z-[9999] -translate-x-1/2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 shadow-lg dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200"
           >
-            System maintenance is
-            currently active. Some
-            actions may be temporarily
-            unavailable.
+            System maintenance is currently active. Some
+            actions may be temporarily unavailable.
           </div>
         )}
 
@@ -134,22 +169,15 @@ function App() {
             {/* Password change intentionally remains outside MainLayout */}
             <Route
               path="/change-password"
-              element={
-                <ChangePassword />
-              }
+              element={<ChangePassword />}
             />
 
             {/*
              * Protected application shell.
              * Navbar, Sidebar, and global widgets
-             * mount only after authentication
-             * succeeds.
+             * mount only after authentication succeeds.
              */}
-            <Route
-              element={
-                <MainLayout />
-              }
-            >
+            <Route element={<MainLayout />}>
               {/* Dashboard */}
               <Route
                 element={
@@ -162,9 +190,7 @@ function App() {
               >
                 <Route
                   path="/"
-                  element={
-                    <Dashboard />
-                  }
+                  element={<Dashboard />}
                 />
               </Route>
 
@@ -180,30 +206,22 @@ function App() {
               >
                 <Route
                   path="/employees"
-                  element={
-                    <Employees />
-                  }
+                  element={<Employees />}
                 />
 
                 <Route
                   path="/deployments"
-                  element={
-                    <Deployments />
-                  }
+                  element={<Deployments />}
                 />
 
                 <Route
                   path="/incidents"
-                  element={
-                    <Incidents />
-                  }
+                  element={<Incidents />}
                 />
 
                 <Route
                   path="/notifications"
-                  element={
-                    <Notifications />
-                  }
+                  element={<Notifications />}
                 />
               </Route>
 
@@ -238,9 +256,7 @@ function App() {
               >
                 <Route
                   path="/kpi"
-                  element={
-                    <KPIReports />
-                  }
+                  element={<KPIReports />}
                 />
               </Route>
 
@@ -256,9 +272,7 @@ function App() {
               >
                 <Route
                   path="/settings"
-                  element={
-                    <Settings />
-                  }
+                  element={<Settings />}
                 />
 
                 <Route

@@ -23,19 +23,40 @@ function normalizeRole(value) {
     .toUpperCase()
     .replace(/[\s-]+/g, "_");
 
-  if (["SUPERADMIN", "SUPER_ADMIN", "ADMIN"].includes(role)) {
+  if (
+    [
+      "SUPERADMIN",
+      "SUPER_ADMIN",
+      "ADMIN",
+    ].includes(role)
+  ) {
     return "SUPER_ADMIN";
   }
 
-  if (["HRMANAGER", "HR_MANAGER"].includes(role)) {
+  if (
+    [
+      "HRMANAGER",
+      "HR_MANAGER",
+    ].includes(role)
+  ) {
     return "HR_MANAGER";
   }
 
-  if (["HRSTAFF", "HR_STAFF"].includes(role)) {
+  if (
+    [
+      "HRSTAFF",
+      "HR_STAFF",
+    ].includes(role)
+  ) {
     return "HR_STAFF";
   }
 
-  if (["ITSUPPORT", "IT_SUPPORT"].includes(role)) {
+  if (
+    [
+      "ITSUPPORT",
+      "IT_SUPPORT",
+    ].includes(role)
+  ) {
     return "IT_SUPPORT";
   }
 
@@ -52,8 +73,20 @@ function normalizeIdentity(value) {
   return normalizeText(value);
 }
 
+function cleanValue(value) {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return "";
+  }
+
+  return String(value).trim();
+}
+
 function normalizeStatus(value) {
-  const status = normalizeText(value);
+  const status =
+    normalizeText(value);
 
   if (
     status === "for_review" ||
@@ -63,15 +96,21 @@ function normalizeStatus(value) {
     return "For Review";
   }
 
-  if (status === "investigating") {
+  if (
+    status === "investigating"
+  ) {
     return "Investigating";
   }
 
-  if (status === "closed") {
+  if (
+    status === "closed"
+  ) {
     return "Closed";
   }
 
-  if (status === "open") {
+  if (
+    status === "open"
+  ) {
     return "Open";
   }
 
@@ -79,17 +118,24 @@ function normalizeStatus(value) {
 }
 
 function normalizeSeverity(value) {
-  const severity = normalizeText(value);
+  const severity =
+    normalizeText(value);
 
-  if (severity === "critical") {
+  if (
+    severity === "critical"
+  ) {
     return "Critical";
   }
 
-  if (severity === "major") {
+  if (
+    severity === "major"
+  ) {
     return "Major";
   }
 
-  if (severity === "minor") {
+  if (
+    severity === "minor"
+  ) {
     return "Minor";
   }
 
@@ -97,178 +143,305 @@ function normalizeSeverity(value) {
 }
 
 function isReviewerRole(role) {
-  return REVIEWER_ROLES.has(role);
+  return REVIEWER_ROLES.has(
+    role
+  );
 }
 
 function toTimestamp(value) {
-  const timestamp = new Date(value).getTime();
+  const timestamp =
+    new Date(value).getTime();
 
-  return Number.isNaN(timestamp)
+  return Number.isNaN(
+    timestamp
+  )
     ? 0
     : timestamp;
 }
 
 function cleanAlertKey(value) {
   return String(value || "")
-    .replace(/[^a-zA-Z0-9:_-]/g, "_")
+    .replace(
+      /[^a-zA-Z0-9:_-]/g,
+      "_"
+    )
     .slice(0, 180);
 }
 
+/*
+ * SECURITY:
+ * Alert state ownership now comes only from
+ * the authenticated JWT identity.
+ *
+ * Client query/body userKey, userId, username,
+ * name, etc. are intentionally ignored.
+ */
 function getUserKey(req) {
-  const query = req?.query || {};
-  const body = req?.body || {};
+  const user =
+    req?.user || {};
 
-  return (
-    query.userKey ||
-    body.userKey ||
-    query.userId ||
-    body.userId ||
-    query.username ||
-    body.username ||
-    "UNKNOWN_USER"
+  return cleanValue(
+    user.id ??
+      user.userId ??
+      user.username
   );
 }
 
+/*
+ * SECURITY:
+ * Role now comes exclusively from req.user,
+ * which is populated by verifyToken.
+ */
 function getRole(req) {
-  const query = req?.query || {};
-  const body = req?.body || {};
-
   return normalizeRole(
-    query.role ||
-      body.role ||
-      "USER"
+    req?.user?.role
   );
 }
 
-function getCurrentUserAliases(req) {
-  const query = req?.query || {};
-  const body = req?.body || {};
+function getTrustedIdentityValues(
+  req
+) {
+  const user =
+    req?.user || {};
 
-  return new Set(
-    [
-      query.userKey,
-      body.userKey,
-
-      query.userId,
-      body.userId,
-
-      query.id,
-      body.id,
-
-      query.username,
-      body.username,
-
-      query.userName,
-      body.userName,
-
-      query.fullName,
-      body.fullName,
-
-      query.full_name,
-      body.full_name,
-
-      query.name,
-      body.name,
-
-      query.displayName,
-      body.displayName,
-
-      query.display_name,
-      body.display_name,
-    ]
-      .map(normalizeIdentity)
-      .filter(Boolean)
-  );
+  return [
+    user.id,
+    user.userId,
+    user.username,
+  ]
+    .map(cleanValue)
+    .filter(Boolean);
 }
 
-async function tableExists(tableName) {
-  const [rows] = await db
-    .promise()
-    .query(
-      "SHOW TABLES LIKE ?",
-      [tableName]
+/*
+ * Adds only database-resolved aliases for the
+ * already-authenticated JWT user.
+ *
+ * This preserves old incident records that may
+ * identify an actor by full name while preventing
+ * clients from claiming another user's identity.
+ */
+function getCurrentUserAliases(
+  req,
+  userNameMap = new Map()
+) {
+  const trustedValues =
+    getTrustedIdentityValues(req);
+
+  const aliases =
+    new Set(
+      trustedValues
+        .map(
+          normalizeIdentity
+        )
+        .filter(Boolean)
     );
+
+  trustedValues.forEach(
+    (value) => {
+      const profile =
+        userNameMap.get(
+          normalizeIdentity(
+            value
+          )
+        );
+
+      if (!profile) {
+        return;
+      }
+
+      [
+        profile.name,
+        profile.username,
+      ]
+        .map(
+          normalizeIdentity
+        )
+        .filter(Boolean)
+        .forEach(
+          (alias) => {
+            aliases.add(
+              alias
+            );
+          }
+        );
+    }
+  );
+
+  return aliases;
+}
+
+/*
+ * Used only for backwards-compatible lookup of
+ * existing read/dismiss state.
+ *
+ * Every key here is derived from the JWT user
+ * or that user's trusted database profile.
+ */
+function getTrustedStateUserKeys(
+  req,
+  userNameMap = new Map()
+) {
+  const trustedValues =
+    getTrustedIdentityValues(req);
+
+  const keys =
+    new Set(
+      trustedValues
+        .map(cleanValue)
+        .filter(Boolean)
+    );
+
+  trustedValues.forEach(
+    (value) => {
+      const profile =
+        userNameMap.get(
+          normalizeIdentity(
+            value
+          )
+        );
+
+      if (!profile) {
+        return;
+      }
+
+      [
+        profile.name,
+        profile.username,
+      ]
+        .map(cleanValue)
+        .filter(Boolean)
+        .forEach(
+          (key) => {
+            keys.add(key);
+          }
+        );
+    }
+  );
+
+  return Array.from(keys);
+}
+
+async function tableExists(
+  tableName
+) {
+  const [rows] =
+    await db
+      .promise()
+      .query(
+        "SHOW TABLES LIKE ?",
+        [
+          tableName,
+        ]
+      );
 
   return rows.length > 0;
 }
 
-function addAlias(map, key, profile) {
-  const alias = normalizeIdentity(key);
+function addAlias(
+  map,
+  key,
+  profile
+) {
+  const alias =
+    normalizeIdentity(key);
 
-  if (!alias || !profile) {
+  if (
+    !alias ||
+    !profile
+  ) {
     return;
   }
 
-  map.set(alias, profile);
+  map.set(
+    alias,
+    profile
+  );
 }
 
 async function getUserNameMap() {
   const userTable =
-    (await tableExists("users"))
+    (await tableExists(
+      "users"
+    ))
       ? "users"
-      : (await tableExists("user_accounts"))
+      : (await tableExists(
+          "user_accounts"
+        ))
       ? "user_accounts"
       : null;
 
-  const map = new Map();
+  const map =
+    new Map();
 
   if (!userTable) {
     return map;
   }
 
-  const [rows] = await db
-    .promise()
-    .query(
-      `SELECT * FROM ${userTable}`
-    );
+  const [rows] =
+    await db
+      .promise()
+      .query(
+        `SELECT * FROM ${userTable}`
+      );
 
-  rows.forEach((user) => {
-    const profile = {
-      name:
-        user.full_name ||
-        user.fullName ||
-        user.fullname ||
-        user.display_name ||
-        user.displayName ||
-        user.name ||
-        user.username ||
-        "Unknown User",
-
-      username:
-        user.username ||
-        user.email ||
-        "",
-
-      role:
+  rows.forEach(
+    (user) => {
+      const rawRole =
         user.role ||
         user.user_role ||
-        user.userRole
-          ? normalizeRole(
-              user.role ||
-                user.user_role ||
-                user.userRole
-            )
-          : "",
-    };
+        user.userRole ||
+        "";
 
-    [
-      user.id,
-      user.user_id,
-      user.userId,
-      user.employee_id,
-      user.employeeId,
-      user.username,
-      user.email,
-      user.name,
-      user.full_name,
-      user.fullName,
-      user.fullname,
-      user.display_name,
-      user.displayName,
-    ].forEach((value) => {
-      addAlias(map, value, profile);
-    });
-  });
+      const profile = {
+        name:
+          user.full_name ||
+          user.fullName ||
+          user.fullname ||
+          user.display_name ||
+          user.displayName ||
+          user.name ||
+          user.username ||
+          "Unknown User",
+
+        username:
+          user.username ||
+          user.email ||
+          "",
+
+        role:
+          rawRole
+            ? normalizeRole(
+                rawRole
+              )
+            : "",
+      };
+
+      [
+        user.id,
+        user.user_id,
+        user.userId,
+        user.employee_id,
+        user.employeeId,
+        user.username,
+        user.email,
+        user.name,
+        user.full_name,
+        user.fullName,
+        user.fullname,
+        user.display_name,
+        user.displayName,
+      ].forEach(
+        (value) => {
+          addAlias(
+            map,
+            value,
+            profile
+          );
+        }
+      );
+    }
+  );
 
   return map;
 }
@@ -278,7 +451,10 @@ function resolvePersonProfile(
   userNameMap,
   fallback = "Unknown User"
 ) {
-  const raw = String(value || "").trim();
+  const raw =
+    String(
+      value || ""
+    ).trim();
 
   if (!raw) {
     return {
@@ -288,11 +464,16 @@ function resolvePersonProfile(
     };
   }
 
-  const matchedProfile = userNameMap.get(
-    normalizeIdentity(raw)
-  );
+  const matchedProfile =
+    userNameMap.get(
+      normalizeIdentity(
+        raw
+      )
+    );
 
-  if (matchedProfile) {
+  if (
+    matchedProfile
+  ) {
     return matchedProfile;
   }
 
@@ -303,34 +484,29 @@ function resolvePersonProfile(
   };
 }
 
-function resolvePersonName(
-  value,
-  userNameMap,
-  fallback = "Unknown User"
-) {
-  return resolvePersonProfile(
-    value,
-    userNameMap,
-    fallback
-  ).name;
-}
-
 function hasAliasMatch(
   currentUserAliases,
   values = []
 ) {
-  if (!currentUserAliases?.size) {
+  if (
+    !currentUserAliases?.size
+  ) {
     return false;
   }
 
-  return values.some((value) =>
-    currentUserAliases.has(
-      normalizeIdentity(value)
-    )
+  return values.some(
+    (value) =>
+      currentUserAliases.has(
+        normalizeIdentity(
+          value
+        )
+      )
   );
 }
 
-function getReporterValues(incident) {
+function getReporterValues(
+  incident
+) {
   return [
     incident.reportedByRaw,
     incident.reported_by_raw,
@@ -343,7 +519,9 @@ function getReporterValues(incident) {
   ];
 }
 
-function getInvestigatorValues(incident) {
+function getInvestigatorValues(
+  incident
+) {
   return [
     incident.investigationStartedById,
     incident.investigation_started_by_id,
@@ -356,7 +534,9 @@ function getInvestigatorValues(incident) {
   ];
 }
 
-function getProofSubmitterValues(incident) {
+function getProofSubmitterValues(
+  incident
+) {
   return [
     incident.resolutionSubmittedById,
     incident.resolution_submitted_by_id,
@@ -369,7 +549,9 @@ function getProofSubmitterValues(incident) {
   ];
 }
 
-function getReviewerValues(incident) {
+function getReviewerValues(
+  incident
+) {
   return [
     incident.reviewedById,
     incident.reviewed_by_id,
@@ -382,7 +564,9 @@ function getReviewerValues(incident) {
   ];
 }
 
-function getLastActorValues(incident) {
+function getLastActorValues(
+  incident
+) {
   return [
     incident.lastActionById,
     incident.last_action_by_id,
@@ -395,30 +579,45 @@ function getLastActorValues(incident) {
   ];
 }
 
-function getHandlerValues(incident) {
+function getHandlerValues(
+  incident
+) {
   return [
-    ...getInvestigatorValues(incident),
-    ...getProofSubmitterValues(incident),
+    ...getInvestigatorValues(
+      incident
+    ),
+
+    ...getProofSubmitterValues(
+      incident
+    ),
   ];
 }
 
-function isReturnedCase(incident) {
-  const decision = normalizeText(
-    incident.reviewDecision ||
-      incident.review_decision
-  );
+function isReturnedCase(
+  incident
+) {
+  const decision =
+    normalizeText(
+      incident.reviewDecision ||
+        incident.review_decision
+    );
 
   return (
-    decision === "returned" ||
-    decision === "rejected"
+    decision ===
+      "returned" ||
+    decision ===
+      "rejected"
   );
 }
 
-function normalizeEmployee(employee = {}) {
+function normalizeEmployee(
+  employee = {}
+) {
   return {
     ...employee,
 
-    id: employee.id,
+    id:
+      employee.id,
 
     name:
       employee.name ||
@@ -426,15 +625,19 @@ function normalizeEmployee(employee = {}) {
       "Unknown Employee",
 
     company:
-      employee.company || "",
+      employee.company ||
+      "",
 
     status:
       employee.status ||
       "Unknown",
 
     archived:
-      employee.archived === true ||
-      Number(employee.archived) === 1,
+      employee.archived ===
+        true ||
+      Number(
+        employee.archived
+      ) === 1,
   };
 }
 
@@ -483,46 +686,61 @@ function normalizeIncident(
     incident.reviewed_by_id ||
     "";
 
-  const reporterProfile = resolvePersonProfile(
-    reportedByRaw,
-    userNameMap,
-    "Unknown Reporter"
-  );
+  const reporterProfile =
+    resolvePersonProfile(
+      reportedByRaw,
+      userNameMap,
+      "Unknown Reporter"
+    );
 
-  const lastActorProfile = resolvePersonProfile(
-    lastActionByRaw,
-    userNameMap,
-    ""
-  );
+  const lastActorProfile =
+    resolvePersonProfile(
+      lastActionByRaw,
+      userNameMap,
+      ""
+    );
 
-  const investigatorProfile = resolvePersonProfile(
-    investigationByRaw,
-    userNameMap,
-    ""
-  );
+  const investigatorProfile =
+    resolvePersonProfile(
+      investigationByRaw,
+      userNameMap,
+      ""
+    );
 
-  const submitterProfile = resolvePersonProfile(
-    resolutionByRaw,
-    userNameMap,
-    ""
-  );
+  const submitterProfile =
+    resolvePersonProfile(
+      resolutionByRaw,
+      userNameMap,
+      ""
+    );
 
-  const reviewerProfile = resolvePersonProfile(
-    reviewedByRaw,
-    userNameMap,
-    ""
-  );
+  const reviewerProfile =
+    resolvePersonProfile(
+      reviewedByRaw,
+      userNameMap,
+      ""
+    );
 
-  const reportedByName = reporterProfile.name;
-  const lastActionByName = lastActorProfile.name;
-  const investigationStartedByName = investigatorProfile.name;
-  const resolutionSubmittedByName = submitterProfile.name;
-  const reviewedByName = reviewerProfile.name;
+  const reportedByName =
+    reporterProfile.name;
+
+  const lastActionByName =
+    lastActorProfile.name;
+
+  const investigationStartedByName =
+    investigatorProfile.name;
+
+  const resolutionSubmittedByName =
+    submitterProfile.name;
+
+  const reviewedByName =
+    reviewerProfile.name;
 
   return {
     ...incident,
 
-    id: incident.id,
+    id:
+      incident.id,
 
     employeeId:
       incident.employee_id,
@@ -531,7 +749,9 @@ function normalizeIncident(
       incident.employee_id,
 
     employeeName,
-    employee: employeeName,
+
+    employee:
+      employeeName,
 
     company:
       incident.company ||
@@ -539,8 +759,12 @@ function normalizeIncident(
       "",
 
     violation,
-    violationType: violation,
-    violation_type: violation,
+
+    violationType:
+      violation,
+
+    violation_type:
+      violation,
 
     severity:
       normalizeSeverity(
@@ -792,7 +1016,10 @@ function isSameEmployee(
   incident
 ) {
   const employeeId =
-    String(employee?.id || "");
+    String(
+      employee?.id ||
+        ""
+    );
 
   const incidentEmployeeId =
     String(
@@ -813,11 +1040,16 @@ function isSameEmployee(
 
   return (
     (
-      Boolean(employeeId) &&
-      employeeId === incidentEmployeeId
+      Boolean(
+        employeeId
+      ) &&
+      employeeId ===
+        incidentEmployeeId
     ) ||
     (
-      Boolean(employeeName) &&
+      Boolean(
+        employeeName
+      ) &&
       employeeName ===
         incidentEmployeeName
     )
@@ -829,7 +1061,11 @@ function isAlertVisibleForCurrentUser(
   role,
   aliases
 ) {
-  if (!ALLOWED_ROLES.has(role)) {
+  if (
+    !ALLOWED_ROLES.has(
+      role
+    )
+  ) {
     return false;
   }
 
@@ -841,41 +1077,55 @@ function isAlertVisibleForCurrentUser(
   const isReporter =
     hasAliasMatch(
       aliases,
-      getReporterValues(incident)
+      getReporterValues(
+        incident
+      )
     );
 
   const isInvestigator =
     hasAliasMatch(
       aliases,
-      getInvestigatorValues(incident)
+      getInvestigatorValues(
+        incident
+      )
     );
 
   const isProofSubmitter =
     hasAliasMatch(
       aliases,
-      getProofSubmitterValues(incident)
+      getProofSubmitterValues(
+        incident
+      )
     );
 
   const isHandler =
     hasAliasMatch(
       aliases,
-      getHandlerValues(incident)
+      getHandlerValues(
+        incident
+      )
     );
 
   const isReviewer =
     hasAliasMatch(
       aliases,
-      getReviewerValues(incident)
+      getReviewerValues(
+        incident
+      )
     );
 
   const isLastActor =
     hasAliasMatch(
       aliases,
-      getLastActorValues(incident)
+      getLastActorValues(
+        incident
+      )
     );
 
   const returnedCase =
-    isReturnedCase(incident);
+    isReturnedCase(
+      incident
+    );
 
   /*
     NEW INCIDENT
@@ -888,7 +1138,9 @@ function isAlertVisibleForCurrentUser(
     - Incident creator
     - Super Admin
   */
-  if (status === "Open") {
+  if (
+    status === "Open"
+  ) {
     return (
       [
         "HR_MANAGER",
@@ -912,12 +1164,14 @@ function isAlertVisibleForCurrentUser(
     - Super Admin
   */
   if (
-    status === "Investigating" &&
+    status ===
+      "Investigating" &&
     !returnedCase
   ) {
     const shouldMonitor =
       isReporter ||
-      role === "HR_MANAGER";
+      role ===
+        "HR_MANAGER";
 
     return (
       shouldMonitor &&
@@ -938,7 +1192,8 @@ function isAlertVisibleForCurrentUser(
     - Other HR users
   */
   if (
-    status === "Investigating" &&
+    status ===
+      "Investigating" &&
     returnedCase
   ) {
     return (
@@ -958,9 +1213,14 @@ function isAlertVisibleForCurrentUser(
     Excluded:
     - Investigator / submitter
   */
-  if (status === "For Review") {
+  if (
+    status ===
+    "For Review"
+  ) {
     return (
-      isReviewerRole(role) &&
+      isReviewerRole(
+        role
+      ) &&
       !isProofSubmitter &&
       !isLastActor
     );
@@ -976,7 +1236,10 @@ function isAlertVisibleForCurrentUser(
     Excluded:
     - Reviewer who closed it
   */
-  if (status === "Closed") {
+  if (
+    status ===
+    "Closed"
+  ) {
     return (
       (
         isReporter ||
@@ -990,15 +1253,20 @@ function isAlertVisibleForCurrentUser(
   return false;
 }
 
-function getIncidentDate(incident) {
+function getIncidentDate(
+  incident
+) {
   const status =
     normalizeStatus(
       incident.status
     );
 
   if (
-    status === "Closed" ||
-    isReturnedCase(incident)
+    status ===
+      "Closed" ||
+    isReturnedCase(
+      incident
+    )
   ) {
     return (
       incident.reviewedAt ||
@@ -1013,7 +1281,10 @@ function getIncidentDate(incident) {
     );
   }
 
-  if (status === "For Review") {
+  if (
+    status ===
+    "For Review"
+  ) {
     return (
       incident.resolutionSubmittedAt ||
       incident.resolution_submitted_at ||
@@ -1025,7 +1296,10 @@ function getIncidentDate(incident) {
     );
   }
 
-  if (status === "Investigating") {
+  if (
+    status ===
+    "Investigating"
+  ) {
     return (
       incident.investigationStartedAt ||
       incident.investigation_started_at ||
@@ -1059,26 +1333,37 @@ function getIncidentPriority(
     );
 
   if (
-    severity === "Critical" &&
-    status !== "Closed"
+    severity ===
+      "Critical" &&
+    status !==
+      "Closed"
   ) {
     return ALERT_PRIORITY.HIGH;
   }
 
   if (
-    status === "For Review" &&
-    isReviewerRole(role)
+    status ===
+      "For Review" &&
+    isReviewerRole(
+      role
+    )
   ) {
     return ALERT_PRIORITY.MEDIUM;
   }
 
-  if (isReturnedCase(incident)) {
+  if (
+    isReturnedCase(
+      incident
+    )
+  ) {
     return ALERT_PRIORITY.MEDIUM;
   }
 
   if (
-    status === "Investigating" ||
-    severity === "Major"
+    status ===
+      "Investigating" ||
+    severity ===
+      "Major"
   ) {
     return ALERT_PRIORITY.MEDIUM;
   }
@@ -1086,12 +1371,20 @@ function getIncidentPriority(
   return ALERT_PRIORITY.LOW;
 }
 
-function getPriorityRank(priority) {
-  if (priority === ALERT_PRIORITY.HIGH) {
+function getPriorityRank(
+  priority
+) {
+  if (
+    priority ===
+    ALERT_PRIORITY.HIGH
+  ) {
     return 3;
   }
 
-  if (priority === ALERT_PRIORITY.MEDIUM) {
+  if (
+    priority ===
+    ALERT_PRIORITY.MEDIUM
+  ) {
     return 2;
   }
 
@@ -1113,17 +1406,27 @@ function getIncidentTitle(
       incident.status
     );
 
-  if (isReturnedCase(incident)) {
+  if (
+    isReturnedCase(
+      incident
+    )
+  ) {
     return `Case Returned for Correction ${incidentId}`;
   }
 
-  if (status === "Closed") {
+  if (
+    status ===
+    "Closed"
+  ) {
     return `Case Approved and Closed ${incidentId}`;
   }
 
   if (
-    status === "For Review" &&
-    isReviewerRole(role)
+    status ===
+      "For Review" &&
+    isReviewerRole(
+      role
+    )
   ) {
     return priority ===
       ALERT_PRIORITY.HIGH
@@ -1131,7 +1434,10 @@ function getIncidentTitle(
       : `Case Pending Review ${incidentId}`;
   }
 
-  if (status === "Investigating") {
+  if (
+    status ===
+    "Investigating"
+  ) {
     return `Investigation Started ${incidentId}`;
   }
 
@@ -1154,22 +1460,35 @@ function getIncidentRecommendedAction(
       incident.status
     );
 
-  if (isReturnedCase(incident)) {
+  if (
+    isReturnedCase(
+      incident
+    )
+  ) {
     return "Review the reviewer comments, revise the proof, and resubmit the case for review.";
   }
 
-  if (status === "Closed") {
+  if (
+    status ===
+    "Closed"
+  ) {
     return "Review the completed case record. No further action is required.";
   }
 
   if (
-    status === "For Review" &&
-    isReviewerRole(role)
+    status ===
+      "For Review" &&
+    isReviewerRole(
+      role
+    )
   ) {
     return "Review the submitted proof, then approve and close the case or return it for revision.";
   }
 
-  if (status === "Investigating") {
+  if (
+    status ===
+    "Investigating"
+  ) {
     return "Monitor the assigned investigation and review its current progress.";
   }
 
@@ -1193,22 +1512,35 @@ function getIncidentReason(
       incident.status
     );
 
-  if (isReturnedCase(incident)) {
+  if (
+    isReturnedCase(
+      incident
+    )
+  ) {
     return "Generated because an authorized reviewer returned the case to the assigned investigator for correction.";
   }
 
-  if (status === "Closed") {
+  if (
+    status ===
+    "Closed"
+  ) {
     return "Generated because an authorized reviewer approved and closed the case.";
   }
 
   if (
-    status === "For Review" &&
-    isReviewerRole(role)
+    status ===
+      "For Review" &&
+    isReviewerRole(
+      role
+    )
   ) {
     return "Generated because investigation proof was submitted and is waiting for an authorized reviewer.";
   }
 
-  if (status === "Investigating") {
+  if (
+    status ===
+    "Investigating"
+  ) {
     return "Generated because an HR user started the investigation and the case is now being monitored.";
   }
 
@@ -1225,21 +1557,28 @@ function getIncidentNavigationAction(
     );
 
   if (
-    status === "Investigating" &&
-    isReturnedCase(incident)
+    status ===
+      "Investigating" &&
+    isReturnedCase(
+      incident
+    )
   ) {
     return "submit-resolution";
   }
 
   if (
-    status === "For Review" &&
-    isReviewerRole(role)
+    status ===
+      "For Review" &&
+    isReviewerRole(
+      role
+    )
   ) {
     return "review";
   }
 
   if (
-    status === "Open" &&
+    status ===
+      "Open" &&
     [
       "HR_MANAGER",
       "HR_STAFF",
@@ -1267,7 +1606,9 @@ function buildIncidentAlert(
     );
 
   const timestamp =
-    toTimestamp(date);
+    toTimestamp(
+      date
+    );
 
   const status =
     normalizeStatus(
@@ -1294,7 +1635,8 @@ function buildIncidentAlert(
     alertKey:
       cleanAlertKey(
         `INCIDENT:${incident.id}:${status}:${reviewDecision}:${
-          incident.lastActionType || ""
+          incident.lastActionType ||
+          ""
         }:${timestamp}`
       ),
 
@@ -1304,7 +1646,9 @@ function buildIncidentAlert(
     priority,
 
     priorityRank:
-      getPriorityRank(priority),
+      getPriorityRank(
+        priority
+      ),
 
     title:
       getIncidentTitle(
@@ -1313,13 +1657,14 @@ function buildIncidentAlert(
         priority
       ),
 
-    message: `${
-      incident.employeeName ||
-      "Unknown Employee"
-    } • ${
-      incident.violationType ||
-      "No violation specified"
-    }`,
+    message:
+      `${
+        incident.employeeName ||
+        "Unknown Employee"
+      } • ${
+        incident.violationType ||
+        "No violation specified"
+      }`,
 
     employee:
       incident.employeeName ||
@@ -1337,6 +1682,7 @@ function buildIncidentAlert(
       "-",
 
     severity,
+
     status,
 
     reviewDecision:
@@ -1434,6 +1780,7 @@ function buildIncidentAlert(
       "",
 
     date,
+
     timestamp,
 
     route:
@@ -1498,7 +1845,10 @@ function buildEmployeePatternAlerts(
             )
         );
 
-      if (activeCases.length < 3) {
+      if (
+        activeCases.length <
+        3
+      ) {
         return;
       }
 
@@ -1511,13 +1861,19 @@ function buildEmployeePatternAlerts(
         ).length;
 
       const latestIncident =
-        [...activeCases].sort(
+        [
+          ...activeCases,
+        ].sort(
           (a, b) =>
             toTimestamp(
-              getIncidentDate(b)
+              getIncidentDate(
+                b
+              )
             ) -
             toTimestamp(
-              getIncidentDate(a)
+              getIncidentDate(
+                a
+              )
             )
         )[0];
 
@@ -1529,7 +1885,8 @@ function buildEmployeePatternAlerts(
         );
 
       const priority =
-        activeCases.length >= 5 ||
+        activeCases.length >=
+          5 ||
         criticalCount > 0
           ? ALERT_PRIORITY.HIGH
           : ALERT_PRIORITY.MEDIUM;
@@ -1551,7 +1908,9 @@ function buildEmployeePatternAlerts(
         priority,
 
         priorityRank:
-          getPriorityRank(priority),
+          getPriorityRank(
+            priority
+          ),
 
         title:
           priority ===
@@ -1624,42 +1983,45 @@ async function fetchBaseData() {
     userNameMap,
     [employees],
     [incidents],
-  ] = await Promise.all([
-    getUserNameMap(),
+  ] =
+    await Promise.all([
+      getUserNameMap(),
 
-    db
-      .promise()
-      .query(`
-        SELECT
-          id,
-          name,
-          company,
-          status,
-          archived
-        FROM employees
-      `),
+      db
+        .promise()
+        .query(`
+          SELECT
+            id,
+            name,
+            company,
+            status,
+            archived
+          FROM employees
+        `),
 
-    db
-      .promise()
-      .query(`
-        SELECT
-          i.*,
-          e.name AS employeeNameFromEmployee,
-          e.company AS employeeCompany,
-          e.status AS employeeStatus
-        FROM incidents i
-        LEFT JOIN employees e
-          ON e.id = i.employee_id
-        ORDER BY
-          COALESCE(
-            i.updated_at,
-            i.created_at,
-            i.incident_date
-          ) DESC
-      `),
-  ]);
+      db
+        .promise()
+        .query(`
+          SELECT
+            i.*,
+            e.name AS employeeNameFromEmployee,
+            e.company AS employeeCompany,
+            e.status AS employeeStatus
+          FROM incidents i
+          LEFT JOIN employees e
+            ON e.id = i.employee_id
+          ORDER BY
+            COALESCE(
+              i.updated_at,
+              i.created_at,
+              i.incident_date
+            ) DESC
+        `),
+    ]);
 
   return {
+    userNameMap,
+
     employees:
       employees.map(
         normalizeEmployee
@@ -1727,26 +2089,28 @@ function buildSmartAlerts({
     ),
   ];
 
-  return alerts.sort((a, b) => {
-    if (
-      b.priorityRank !==
-      a.priorityRank
-    ) {
-      return (
-        b.priorityRank -
+  return alerts.sort(
+    (a, b) => {
+      if (
+        b.priorityRank !==
         a.priorityRank
+      ) {
+        return (
+          b.priorityRank -
+          a.priorityRank
+        );
+      }
+
+      return (
+        b.timestamp -
+        a.timestamp
       );
     }
-
-    return (
-      b.timestamp -
-      a.timestamp
-    );
-  });
+  );
 }
 
 async function getAlertStates({
-  userKey,
+  userKeys,
   role,
 }) {
   const hasTable =
@@ -1754,76 +2118,149 @@ async function getAlertStates({
       "smart_alert_states"
     );
 
-  if (!hasTable) {
+  if (
+    !hasTable ||
+    !Array.isArray(
+      userKeys
+    ) ||
+    userKeys.length === 0
+  ) {
     return new Map();
   }
 
-  const [rows] = await db
-    .promise()
-    .query(
-      `
-      SELECT
-        alert_key,
-        is_read,
-        is_dismissed,
-        read_at,
-        dismissed_at
-      FROM smart_alert_states
-      WHERE
-        user_key = ?
-        AND role = ?
-      `,
-      [
-        userKey,
-        role,
-      ]
-    );
+  const placeholders =
+    userKeys
+      .map(() => "?")
+      .join(", ");
 
-  return new Map(
-    rows.map((row) => [
-      row.alert_key,
-      row,
-    ])
+  const [rows] =
+    await db
+      .promise()
+      .query(
+        `
+        SELECT
+          alert_key,
+          is_read,
+          is_dismissed,
+          read_at,
+          dismissed_at
+        FROM smart_alert_states
+        WHERE
+          user_key IN (${placeholders})
+          AND role = ?
+        `,
+        [
+          ...userKeys,
+          role,
+        ]
+      );
+
+  const stateMap =
+    new Map();
+
+  rows.forEach(
+    (row) => {
+      const existing =
+        stateMap.get(
+          row.alert_key
+        );
+
+      if (!existing) {
+        stateMap.set(
+          row.alert_key,
+          row
+        );
+
+        return;
+      }
+
+      stateMap.set(
+        row.alert_key,
+        {
+          ...existing,
+
+          is_read:
+            Math.max(
+              Number(
+                existing.is_read ||
+                0
+              ),
+              Number(
+                row.is_read ||
+                0
+              )
+            ),
+
+          is_dismissed:
+            Math.max(
+              Number(
+                existing.is_dismissed ||
+                0
+              ),
+              Number(
+                row.is_dismissed ||
+                0
+              )
+            ),
+
+          read_at:
+            row.read_at ||
+            existing.read_at ||
+            null,
+
+          dismissed_at:
+            row.dismissed_at ||
+            existing.dismissed_at ||
+            null,
+        }
+      );
+    }
   );
+
+  return stateMap;
 }
 
 function applyAlertStates(
   alerts,
   stateMap
 ) {
-  return alerts.map((alert) => {
-    const state =
-      stateMap.get(
-        alert.alertKey
-      );
+  return alerts.map(
+    (alert) => {
+      const state =
+        stateMap.get(
+          alert.alertKey
+        );
 
-    return {
-      ...alert,
+      return {
+        ...alert,
 
-      isRead:
-        Number(
-          state?.is_read ||
-          0
-        ) === 1,
+        isRead:
+          Number(
+            state?.is_read ||
+            0
+          ) === 1,
 
-      isDismissed:
-        Number(
-          state?.is_dismissed ||
-          0
-        ) === 1,
+        isDismissed:
+          Number(
+            state?.is_dismissed ||
+            0
+          ) === 1,
 
-      readAt:
-        state?.read_at ||
-        null,
+        readAt:
+          state?.read_at ||
+          null,
 
-      dismissedAt:
-        state?.dismissed_at ||
-        null,
-    };
-  });
+        dismissedAt:
+          state?.dismissed_at ||
+          null,
+      };
+    }
+  );
 }
 
-function buildSummary(alerts) {
+function buildSummary(
+  alerts
+) {
   return {
     total:
       alerts.length,
@@ -1865,13 +2302,25 @@ async function upsertAlertState({
   isDismissed,
   skipTableCheck = false,
 }) {
-  if (!skipTableCheck) {
+  if (
+    !userKey ||
+    !role ||
+    !alertKey
+  ) {
+    return;
+  }
+
+  if (
+    !skipTableCheck
+  ) {
     const hasTable =
       await tableExists(
         "smart_alert_states"
       );
 
-    if (!hasTable) {
+    if (
+      !hasTable
+    ) {
       return;
     }
   }
@@ -1927,318 +2376,485 @@ async function upsertAlertState({
             ELSE dismissed_at
           END,
 
-        updated_at = NOW()
+        updated_at =
+          NOW()
       `,
       [
         userKey,
         role,
         alertKey,
-        isRead ? 1 : 0,
-        isDismissed ? 1 : 0,
-        isRead ? 1 : 0,
-        isDismissed ? 1 : 0,
+        isRead
+          ? 1
+          : 0,
+        isDismissed
+          ? 1
+          : 0,
+        isRead
+          ? 1
+          : 0,
+        isDismissed
+          ? 1
+          : 0,
       ]
     );
 }
 
-exports.getSmartAlerts = async (
-  req,
-  res
-) => {
-  try {
-    const userKey =
-      getUserKey(req);
+exports.getSmartAlerts =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const userKey =
+        getUserKey(req);
 
-    const role =
-      getRole(req);
+      const role =
+        getRole(req);
 
-    const currentUserAliases =
-      getCurrentUserAliases(req);
+      if (
+        !userKey
+      ) {
+        return res
+          .status(401)
+          .json({
+            success: false,
 
-    if (!ALLOWED_ROLES.has(role)) {
-      return res.json({
-        alerts: [],
-        latestAlerts: [],
-        unreadCount: 0,
-        popupAlert: null,
+            error:
+              "Authenticated user identity is required.",
+          });
+      }
 
-        summary: {
-          total: 0,
-          unread: 0,
-          high: 0,
-          medium: 0,
-          low: 0,
-        },
-      });
-    }
+      if (
+        !ALLOWED_ROLES.has(
+          role
+        )
+      ) {
+        return res
+          .status(403)
+          .json({
+            success: false,
 
-    const [
-      {
+            error:
+              "You do not have permission to access smart alerts.",
+          });
+      }
+
+      const {
         employees,
         incidents,
-      },
-      stateMap,
-    ] = await Promise.all([
-      fetchBaseData(),
-      getAlertStates({
+        userNameMap,
+      } =
+        await fetchBaseData();
+
+      const currentUserAliases =
+        getCurrentUserAliases(
+          req,
+          userNameMap
+        );
+
+      const trustedStateUserKeys =
+        getTrustedStateUserKeys(
+          req,
+          userNameMap
+        );
+
+      const stateMap =
+        await getAlertStates({
+          userKeys:
+            trustedStateUserKeys,
+
+          role,
+        });
+
+      const alerts =
+        buildSmartAlerts({
+          employees,
+          incidents,
+          role,
+
+          currentUserAliases,
+        });
+
+      const alertsWithState =
+        applyAlertStates(
+          alerts,
+          stateMap
+        );
+
+      const unreadAlerts =
+        alertsWithState.filter(
+          (alert) =>
+            !alert.isRead
+        );
+
+      const popupAlert =
+        unreadAlerts
+          .filter(
+            (alert) =>
+              !alert.isDismissed
+          )
+          .sort(
+            (a, b) => {
+              if (
+                b.timestamp !==
+                a.timestamp
+              ) {
+                return (
+                  b.timestamp -
+                  a.timestamp
+                );
+              }
+
+              return (
+                b.priorityRank -
+                a.priorityRank
+              );
+            }
+          )[0] ||
+        null;
+
+      return res.json({
+        alerts:
+          alertsWithState,
+
+        latestAlerts:
+          alertsWithState.slice(
+            0,
+            5
+          ),
+
+        unreadCount:
+          unreadAlerts.length,
+
+        popupAlert,
+
+        summary:
+          buildSummary(
+            alertsWithState
+          ),
+      });
+    } catch (error) {
+      console.error(
+        "GET SMART ALERTS ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          error:
+            error.sqlMessage ||
+            error.message ||
+            "Failed to fetch smart alerts.",
+        });
+    }
+  };
+
+exports.markSmartAlertRead =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const userKey =
+        getUserKey(req);
+
+      const role =
+        getRole(req);
+
+      const alertKey =
+        cleanAlertKey(
+          req?.body?.alertKey
+        );
+
+      if (
+        !userKey
+      ) {
+        return res
+          .status(401)
+          .json({
+            success: false,
+
+            error:
+              "Authenticated user identity is required.",
+          });
+      }
+
+      if (
+        !ALLOWED_ROLES.has(
+          role
+        )
+      ) {
+        return res
+          .status(403)
+          .json({
+            success: false,
+
+            error:
+              "You do not have permission to update smart alerts.",
+          });
+      }
+
+      if (
+        !alertKey
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            error:
+              "Alert key is required.",
+          });
+      }
+
+      await upsertAlertState({
         userKey,
         role,
-      }),
-    ]);
+        alertKey,
 
-    const alerts =
-      buildSmartAlerts({
-        employees,
-        incidents,
-        role,
-        currentUserAliases,
+        isRead:
+          true,
+
+        isDismissed:
+          false,
       });
 
-    const alertsWithState =
-      applyAlertStates(
-        alerts,
-        stateMap
+      return res.json({
+        success: true,
+
+        message:
+          "Alert marked as read.",
+      });
+    } catch (error) {
+      console.error(
+        "MARK SMART ALERT READ ERROR:",
+        error
       );
 
-    const unreadAlerts =
-      alertsWithState.filter(
-        (alert) =>
-          !alert.isRead
-      );
-
-    const popupAlert =
-      unreadAlerts
-        .filter(
-          (alert) =>
-            !alert.isDismissed
-        )
-        .sort((a, b) => {
-          if (
-            b.timestamp !==
-            a.timestamp
-          ) {
-            return (
-              b.timestamp -
-              a.timestamp
-            );
-          }
-
-          return (
-            b.priorityRank -
-            a.priorityRank
-          );
-        })[0] ||
-      null;
-
-    return res.json({
-      alerts:
-        alertsWithState,
-
-      latestAlerts:
-        alertsWithState.slice(
-          0,
-          5
-        ),
-
-      unreadCount:
-        unreadAlerts.length,
-
-      popupAlert,
-
-      summary:
-        buildSummary(
-          alertsWithState
-        ),
-    });
-  } catch (error) {
-    console.error(
-      "GET SMART ALERTS ERROR:",
-      error
-    );
-
-    return res
-      .status(500)
-      .json({
-        error:
-          error.sqlMessage ||
-          error.message ||
-          "Failed to fetch smart alerts.",
-      });
-  }
-};
-
-exports.markSmartAlertRead = async (
-  req,
-  res
-) => {
-  try {
-    const alertKey =
-      req?.body?.alertKey;
-
-    if (!alertKey) {
       return res
-        .status(400)
+        .status(500)
         .json({
+          success: false,
+
           error:
-            "Alert key is required.",
+            error.sqlMessage ||
+            error.message ||
+            "Failed to mark alert as read.",
         });
     }
+  };
 
-    await upsertAlertState({
-      userKey:
-        getUserKey(req),
+exports.dismissSmartAlert =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const userKey =
+        getUserKey(req);
 
-      role:
-        getRole(req),
+      const role =
+        getRole(req);
 
-      alertKey,
-
-      isRead:
-        true,
-
-      isDismissed:
-        false,
-    });
-
-    return res.json({
-      success: true,
-
-      message:
-        "Alert marked as read.",
-    });
-  } catch (error) {
-    console.error(
-      "MARK SMART ALERT READ ERROR:",
-      error
-    );
-
-    return res
-      .status(500)
-      .json({
-        error:
-          error.sqlMessage ||
-          error.message ||
-          "Failed to mark alert as read.",
-      });
-  }
-};
-
-exports.dismissSmartAlert = async (
-  req,
-  res
-) => {
-  try {
-    const alertKey =
-      req?.body?.alertKey;
-
-    if (!alertKey) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Alert key is required.",
-        });
-    }
-
-    await upsertAlertState({
-      userKey:
-        getUserKey(req),
-
-      role:
-        getRole(req),
-
-      alertKey,
-
-      isRead:
-        true,
-
-      isDismissed:
-        true,
-    });
-
-    return res.json({
-      success: true,
-
-      message:
-        "Alert dismissed.",
-    });
-  } catch (error) {
-    console.error(
-      "DISMISS SMART ALERT ERROR:",
-      error
-    );
-
-    return res
-      .status(500)
-      .json({
-        error:
-          error.sqlMessage ||
-          error.message ||
-          "Failed to dismiss alert.",
-      });
-  }
-};
-
-exports.markAllSmartAlertsRead = async (
-  req,
-  res
-) => {
-  try {
-    const userKey =
-      getUserKey(req);
-
-    const role =
-      getRole(req);
-
-    const alertKeys =
-      Array.isArray(
-        req?.body?.alertKeys
-      )
-        ? req.body.alertKeys
-        : [];
-
-    if (alertKeys.length > 0) {
-      const hasTable =
-        await tableExists(
-          "smart_alert_states"
+      const alertKey =
+        cleanAlertKey(
+          req?.body?.alertKey
         );
 
-      if (hasTable) {
-        await Promise.all(
-          alertKeys.map(
-            (alertKey) =>
-              upsertAlertState({
-                userKey,
-                role,
-                alertKey,
-                isRead: true,
-                isDismissed: false,
-                skipTableCheck: true,
-              })
+      if (
+        !userKey
+      ) {
+        return res
+          .status(401)
+          .json({
+            success: false,
+
+            error:
+              "Authenticated user identity is required.",
+          });
+      }
+
+      if (
+        !ALLOWED_ROLES.has(
+          role
+        )
+      ) {
+        return res
+          .status(403)
+          .json({
+            success: false,
+
+            error:
+              "You do not have permission to update smart alerts.",
+          });
+      }
+
+      if (
+        !alertKey
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            error:
+              "Alert key is required.",
+          });
+      }
+
+      await upsertAlertState({
+        userKey,
+        role,
+        alertKey,
+
+        isRead:
+          true,
+
+        isDismissed:
+          true,
+      });
+
+      return res.json({
+        success: true,
+
+        message:
+          "Alert dismissed.",
+      });
+    } catch (error) {
+      console.error(
+        "DISMISS SMART ALERT ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          error:
+            error.sqlMessage ||
+            error.message ||
+            "Failed to dismiss alert.",
+        });
+    }
+  };
+
+exports.markAllSmartAlertsRead =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const userKey =
+        getUserKey(req);
+
+      const role =
+        getRole(req);
+
+      if (
+        !userKey
+      ) {
+        return res
+          .status(401)
+          .json({
+            success: false,
+
+            error:
+              "Authenticated user identity is required.",
+          });
+      }
+
+      if (
+        !ALLOWED_ROLES.has(
+          role
+        )
+      ) {
+        return res
+          .status(403)
+          .json({
+            success: false,
+
+            error:
+              "You do not have permission to update smart alerts.",
+          });
+      }
+
+      const submittedAlertKeys =
+        Array.isArray(
+          req?.body?.alertKeys
+        )
+          ? req.body.alertKeys
+          : [];
+
+      const alertKeys =
+        Array.from(
+          new Set(
+            submittedAlertKeys
+              .map(
+                cleanAlertKey
+              )
+              .filter(Boolean)
           )
         );
+
+      if (
+        alertKeys.length >
+        0
+      ) {
+        const hasTable =
+          await tableExists(
+            "smart_alert_states"
+          );
+
+        if (
+          hasTable
+        ) {
+          await Promise.all(
+            alertKeys.map(
+              (alertKey) =>
+                upsertAlertState({
+                  userKey,
+                  role,
+                  alertKey,
+
+                  isRead:
+                    true,
+
+                  isDismissed:
+                    false,
+
+                  skipTableCheck:
+                    true,
+                })
+            )
+          );
+        }
       }
-    }
 
-    return res.json({
-      success: true,
+      return res.json({
+        success: true,
 
-      message:
-        "All visible alerts marked as read.",
-    });
-  } catch (error) {
-    console.error(
-      "MARK ALL SMART ALERTS READ ERROR:",
-      error
-    );
-
-    return res
-      .status(500)
-      .json({
-        error:
-          error.sqlMessage ||
-          error.message ||
-          "Failed to mark all alerts as read.",
+        message:
+          "All visible alerts marked as read.",
       });
-  }
-};
+    } catch (error) {
+      console.error(
+        "MARK ALL SMART ALERTS READ ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          error:
+            error.sqlMessage ||
+            error.message ||
+            "Failed to mark all alerts as read.",
+        });
+    }
+  };

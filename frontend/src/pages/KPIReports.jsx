@@ -57,27 +57,36 @@ const TABS = [
   {
     id: "overview",
     label: "Overview",
-    description: "Executive KPI summary",
+    description:
+      "Executive KPI summary",
   },
   {
     id: "intelligence",
-    label: "Employee Intelligence",
-    description: "KPI risk table",
+    label:
+      "Employee Intelligence",
+    description:
+      "KPI risk table",
   },
   {
     id: "review",
-    label: "Recommendation Review",
-    description: "HR validation queue",
+    label:
+      "Recommendation Review",
+    description:
+      "HR validation queue",
   },
   {
     id: "history",
-    label: "Decision History",
-    description: "Recorded HR actions",
+    label:
+      "Decision History",
+    description:
+      "Recorded HR actions",
   },
   {
     id: "analytics",
-    label: "Analytics",
-    description: "Trend visualization",
+    label:
+      "Analytics",
+    description:
+      "Trend visualization",
   },
 ];
 
@@ -143,20 +152,26 @@ function isPendingForReview(
     return false;
   }
 
-  const recommendation = String(
-    employee.recommendation || ""
-  ).toLowerCase();
+  const recommendation =
+    String(
+      employee.recommendation ||
+        ""
+    ).toLowerCase();
 
-  const suggestedAction = String(
-    employee.suggestedHRAction || ""
-  ).toLowerCase();
+  const suggestedAction =
+    String(
+      employee.suggestedHRAction ||
+        ""
+    ).toLowerCase();
 
   const hasConcern =
     Number(
-      employee.violationCount || 0
+      employee.violationCount ||
+        0
     ) > 0 ||
     Number(
-      employee.criticalIncidentCount || 0
+      employee.criticalIncidentCount ||
+        0
     ) > 0 ||
     employee.riskLevel ===
       "High Risk" ||
@@ -178,8 +193,10 @@ function isPendingForReview(
 
   return (
     hasConcern &&
-    (!isRetain ||
-      !isMonitoringOnly)
+    (
+      !isRetain ||
+      !isMonitoringOnly
+    )
   );
 }
 
@@ -194,15 +211,24 @@ function getErrorMessage(
 }
 
 export default function KPIReports() {
-  const { user } = useAuth();
+  const {
+    user,
+  } = useAuth();
 
   const isSuperAdmin =
-    user?.role === "SUPER_ADMIN";
+    user?.role ===
+    "SUPER_ADMIN";
+
+  const isHRManager =
+    user?.role ===
+    "HR_MANAGER";
 
   const [
     activeTab,
     setActiveTab,
-  ] = useState("overview");
+  ] = useState(
+    "overview"
+  );
 
   const [
     refreshError,
@@ -220,21 +246,33 @@ export default function KPIReports() {
   ] = useState(false);
 
   const {
-    data: kpiData,
-    isLoading: isKpiLoading,
-    error: kpiError,
-    refetch: refetchKPIData,
-  } = useKPIDataQuery({
-    refetchInterval:
-      AUTO_REFRESH_INTERVAL_MS,
-  });
+    data:
+      kpiData,
+
+    isLoading:
+      isKpiLoading,
+
+    error:
+      kpiError,
+
+    refetch:
+      refetchKPIData,
+  } =
+    useKPIDataQuery({
+      refetchInterval:
+        AUTO_REFRESH_INTERVAL_MS,
+    });
 
   const {
-    data: decisionHistoryData,
+    data:
+      decisionHistoryData,
+
     isLoading:
       isDecisionHistoryLoading,
+
     error:
       decisionHistoryError,
+
     refetch:
       refetchDecisionHistory,
   } =
@@ -250,251 +288,353 @@ export default function KPIReports() {
     kpiData?.incidentsRaw;
 
   const employeesRaw =
-    useMemo(() => {
-      return Array.isArray(
-        employeesRawSource
-      )
-        ? employeesRawSource
-        : [];
-    }, [employeesRawSource]);
+    useMemo(
+      () => {
+        return Array.isArray(
+          employeesRawSource
+        )
+          ? employeesRawSource
+          : [];
+      },
+      [
+        employeesRawSource,
+      ]
+    );
 
   const incidentsRaw =
-    useMemo(() => {
-      return Array.isArray(
-        incidentsRawSource
-      )
-        ? incidentsRawSource
-        : [];
-    }, [incidentsRawSource]);
+    useMemo(
+      () => {
+        return Array.isArray(
+          incidentsRawSource
+        )
+          ? incidentsRawSource
+          : [];
+      },
+      [
+        incidentsRawSource,
+      ]
+    );
 
   const decisionHistory =
-    useMemo(() => {
-      return Array.isArray(
-        decisionHistoryData
-      )
-        ? decisionHistoryData
-        : [];
-    }, [decisionHistoryData]);
+    useMemo(
+      () => {
+        return Array.isArray(
+          decisionHistoryData
+        )
+          ? decisionHistoryData
+          : [];
+      },
+      [
+        decisionHistoryData,
+      ]
+    );
 
   const employees =
-    useMemo(() => {
-      return buildKPIEmployees(
+    useMemo(
+      () => {
+        return buildKPIEmployees(
+          employeesRaw,
+          incidentsRaw
+        );
+      },
+      [
         employeesRaw,
-        incidentsRaw
-      );
-    }, [
-      employeesRaw,
-      incidentsRaw,
-    ]);
+        incidentsRaw,
+      ]
+    );
 
   const decidedEmployeeIds =
-    useMemo(() => {
-      return new Set(
-        decisionHistory.map(
-          (record) =>
-            String(
-              record.employeeId
-            )
-        )
-      );
-    }, [decisionHistory]);
+    useMemo(
+      () => {
+        return new Set(
+          decisionHistory.map(
+            (
+              record
+            ) =>
+              String(
+                record.employeeId
+              )
+          )
+        );
+      },
+      [
+        decisionHistory,
+      ]
+    );
 
   const totalEmployees =
     employees.length;
 
   const deployedEmployees =
-    useMemo(() => {
-      return employees.filter(
-        (employee) =>
-          employee.isDeployed
-      ).length;
-    }, [employees]);
+    useMemo(
+      () => {
+        return employees.filter(
+          (
+            employee
+          ) =>
+            employee.isDeployed
+        ).length;
+      },
+      [
+        employees,
+      ]
+    );
 
   const repeatOffenders =
-    useMemo(() => {
-      return employees.filter(
-        (employee) =>
-          employee.riskLevel ===
-            "Repeat" ||
-          Number(
-            employee.violationCount ||
-              0
-          ) >= 3
-      ).length;
-    }, [employees]);
-
-  const highRiskEmployees =
-    useMemo(() => {
-      return employees.filter(
-        (employee) =>
-          employee.riskLevel ===
-          "High Risk"
-      ).length;
-    }, [employees]);
-
-  const goodStandingEmployees =
-    useMemo(() => {
-      return employees.filter(
-        (employee) => {
-          const violationCount =
+    useMemo(
+      () => {
+        return employees.filter(
+          (
+            employee
+          ) =>
+            employee.riskLevel ===
+              "Repeat" ||
             Number(
               employee.violationCount ||
                 0
+            ) >= 3
+        ).length;
+      },
+      [
+        employees,
+      ]
+    );
+
+  const highRiskEmployees =
+    useMemo(
+      () => {
+        return employees.filter(
+          (
+            employee
+          ) =>
+            employee.riskLevel ===
+            "High Risk"
+        ).length;
+      },
+      [
+        employees,
+      ]
+    );
+
+  const goodStandingEmployees =
+    useMemo(
+      () => {
+        return employees.filter(
+          (
+            employee
+          ) => {
+            const violationCount =
+              Number(
+                employee.violationCount ||
+                  0
+              );
+
+            const criticalIncidentCount =
+              Number(
+                employee.criticalIncidentCount ||
+                  0
+              );
+
+            const riskLevel =
+              String(
+                employee.riskLevel ||
+                  ""
+              ).toLowerCase();
+
+            return (
+              violationCount ===
+                0 &&
+              criticalIncidentCount ===
+                0 &&
+              !riskLevel.includes(
+                "high"
+              ) &&
+              !riskLevel.includes(
+                "repeat"
+              )
             );
-
-          const criticalIncidentCount =
-            Number(
-              employee.criticalIncidentCount ||
-                0
-            );
-
-          const riskLevel =
-            String(
-              employee.riskLevel ||
-                ""
-            ).toLowerCase();
-
-          return (
-            violationCount === 0 &&
-            criticalIncidentCount ===
-              0 &&
-            !riskLevel.includes(
-              "high"
-            ) &&
-            !riskLevel.includes(
-              "repeat"
-            )
-          );
-        }
-      ).length;
-    }, [employees]);
+          }
+        ).length;
+      },
+      [
+        employees,
+      ]
+    );
 
   const compliantEmployees =
-    useMemo(() => {
-      return employees.filter(
-        (employee) =>
-          Number(
-            employee.violationCount ||
-              0
-          ) === 0
-      ).length;
-    }, [employees]);
+    useMemo(
+      () => {
+        return employees.filter(
+          (
+            employee
+          ) =>
+            Number(
+              employee.violationCount ||
+                0
+            ) === 0
+        ).length;
+      },
+      [
+        employees,
+      ]
+    );
 
   const complianceRate =
     totalEmployees > 0
       ? Math.round(
-          (compliantEmployees /
-            totalEmployees) *
-            100
+          (
+            compliantEmployees /
+            totalEmployees
+          ) * 100
         )
       : 0;
 
   const pendingRecommendationCount =
-    useMemo(() => {
-      return employees.filter(
-        (employee) =>
-          isPendingForReview(
-            employee,
-            decidedEmployeeIds
-          )
-      ).length;
-    }, [
-      employees,
-      decidedEmployeeIds,
-    ]);
+    useMemo(
+      () => {
+        return employees.filter(
+          (
+            employee
+          ) =>
+            isPendingForReview(
+              employee,
+              decidedEmployeeIds
+            )
+        ).length;
+      },
+      [
+        employees,
+        decidedEmployeeIds,
+      ]
+    );
 
   const criticalAlerts =
-    useMemo(() => {
-      const activeStatuses = [
-        "Open",
-        "Investigating",
-        "For Review",
-      ];
+    useMemo(
+      () => {
+        const activeStatuses = [
+          "Open",
+          "Investigating",
+          "For Review",
+        ];
 
-      const activeIncidents =
-        incidentsRaw.filter(
-          (incident) =>
-            activeStatuses.includes(
-              incident.status
-            )
-        );
+        const activeIncidents =
+          incidentsRaw.filter(
+            (
+              incident
+            ) =>
+              activeStatuses.includes(
+                incident.status
+              )
+          );
 
-      const activeCriticalCases =
-        activeIncidents.filter(
-          (incident) =>
-            incident.severity ===
-            "Critical"
-        ).length;
+        const activeCriticalCases =
+          activeIncidents.filter(
+            (
+              incident
+            ) =>
+              incident.severity ===
+              "Critical"
+          ).length;
 
-      const activeNonCriticalIncidents =
-        activeIncidents.filter(
-          (incident) =>
-            incident.severity !==
-            "Critical"
-        );
+        const activeNonCriticalIncidents =
+          activeIncidents.filter(
+            (
+              incident
+            ) =>
+              incident.severity !==
+              "Critical"
+          );
 
-      const underInvestigationCases =
-        activeNonCriticalIncidents.filter(
-          (incident) =>
-            incident.status ===
-              "Investigating" ||
-            incident.status ===
-              "For Review"
-        ).length;
+        const underInvestigationCases =
+          activeNonCriticalIncidents.filter(
+            (
+              incident
+            ) =>
+              incident.status ===
+                "Investigating" ||
+              incident.status ===
+                "For Review"
+          ).length;
 
-      const openMonitoringCases =
-        activeNonCriticalIncidents.filter(
-          (incident) =>
-            incident.status ===
-            "Open"
-        ).length;
+        const openMonitoringCases =
+          activeNonCriticalIncidents.filter(
+            (
+              incident
+            ) =>
+              incident.status ===
+              "Open"
+          ).length;
 
-      return [
-        {
-          level: "HIGH",
-          text: `${activeCriticalCases} active critical case(s) requiring priority HR attention`,
-        },
-        {
-          level: "MEDIUM",
-          text: `${underInvestigationCases} non-critical case(s) under investigation or review`,
-        },
-        {
-          level: "LOW",
-          text: `${openMonitoringCases} non-critical open case(s) for monitoring`,
-        },
-      ];
-    }, [incidentsRaw]);
+        return [
+          {
+            level:
+              "HIGH",
+
+            text:
+              `${activeCriticalCases} active critical case(s) requiring priority HR attention`,
+          },
+          {
+            level:
+              "MEDIUM",
+
+            text:
+              `${underInvestigationCases} non-critical case(s) under investigation or review`,
+          },
+          {
+            level:
+              "LOW",
+
+            text:
+              `${openMonitoringCases} non-critical open case(s) for monitoring`,
+          },
+        ];
+      },
+      [
+        incidentsRaw,
+      ]
+    );
 
   const violationTrend =
-    useMemo(() => {
-      return buildViolationTrend(
-        incidentsRaw
-      );
-    }, [incidentsRaw]);
+    useMemo(
+      () => {
+        return buildViolationTrend(
+          incidentsRaw
+        );
+      },
+      [
+        incidentsRaw,
+      ]
+    );
 
   const complianceTrend =
-    useMemo(() => {
-      return buildComplianceTrend({
+    useMemo(
+      () => {
+        return buildComplianceTrend({
+          employees,
+          incidentsRaw,
+          totalEmployees,
+        });
+      },
+      [
         employees,
         incidentsRaw,
         totalEmployees,
-      });
-    }, [
-      employees,
-      incidentsRaw,
-      totalEmployees,
-    ]);
+      ]
+    );
 
   const utilizationTrend =
-    useMemo(() => {
-      return buildUtilizationTrend({
+    useMemo(
+      () => {
+        return buildUtilizationTrend({
+          totalEmployees,
+          deployedEmployees,
+        });
+      },
+      [
         totalEmployees,
         deployedEmployees,
-      });
-    }, [
-      totalEmployees,
-      deployedEmployees,
-    ]);
+      ]
+    );
 
   const isLoading =
     isKpiLoading ||
@@ -512,26 +652,39 @@ export default function KPIReports() {
     );
 
   const hasKPIData =
-    Boolean(kpiData);
+    Boolean(
+      kpiData
+    );
 
   const handleRefreshData =
     async () => {
-      if (isManualRefreshing) {
+      if (
+        isManualRefreshing
+      ) {
         return;
       }
 
-      setIsManualRefreshing(true);
-      setRefreshError("");
-      setSuccessMessage("");
+      setIsManualRefreshing(
+        true
+      );
+
+      setRefreshError(
+        ""
+      );
+
+      setSuccessMessage(
+        ""
+      );
 
       try {
         const [
           kpiResult,
           historyResult,
-        ] = await Promise.all([
-          refetchKPIData(),
-          refetchDecisionHistory(),
-        ]);
+        ] =
+          await Promise.all([
+            refetchKPIData(),
+            refetchDecisionHistory(),
+          ]);
 
         const refetchError =
           kpiResult?.error ||
@@ -568,22 +721,27 @@ export default function KPIReports() {
           )
         );
       } finally {
-        setIsManualRefreshing(false);
+        setIsManualRefreshing(
+          false
+        );
       }
     };
 
   const handleDecisionSaved =
     async () => {
-      setRefreshError("");
+      setRefreshError(
+        ""
+      );
 
       try {
         const [
           kpiResult,
           historyResult,
-        ] = await Promise.all([
-          refetchKPIData(),
-          refetchDecisionHistory(),
-        ]);
+        ] =
+          await Promise.all([
+            refetchKPIData(),
+            refetchDecisionHistory(),
+          ]);
 
         const refetchError =
           kpiResult?.error ||
@@ -622,19 +780,20 @@ export default function KPIReports() {
       }
     };
 
-  const handleExportPDF = () => {
-    exportKPIReportPDF({
-      user,
-      totalEmployees,
-      deployedEmployees,
-      complianceRate,
-      repeatOffenders,
-      highRiskEmployees,
-      goodStandingEmployees,
-      criticalAlerts,
-      employees,
-    });
-  };
+  const handleExportPDF =
+    () => {
+      exportKPIReportPDF({
+        user,
+        totalEmployees,
+        deployedEmployees,
+        complianceRate,
+        repeatOffenders,
+        highRiskEmployees,
+        goodStandingEmployees,
+        criticalAlerts,
+        employees,
+      });
+    };
 
   return (
     <main className="min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
@@ -644,7 +803,9 @@ export default function KPIReports() {
         description={
           isSuperAdmin
             ? "View-only KPI analytics access for Super Admin."
-            : "Review workforce performance, risk intelligence, recommendations, decision history, and KPI trends."
+            : isHRManager
+              ? "Review workforce performance, risk intelligence, recommendations, decision history, and KPI trends."
+              : "View workforce performance, risk intelligence, recommendations, decision history, and KPI trends."
         }
         icon={
           <FiBarChart2
@@ -696,7 +857,8 @@ export default function KPIReports() {
                 }
                 disabled={
                   isLoading ||
-                  employees.length === 0
+                  employees.length ===
+                    0
                 }
                 onClick={
                   handleExportPDF
@@ -724,7 +886,9 @@ export default function KPIReports() {
         <ErrorState
           compact
           title="KPI data error"
-          message={pageError}
+          message={
+            pageError
+          }
           retryLabel={
             isManualRefreshing
               ? "Reloading KPI data..."
@@ -744,78 +908,96 @@ export default function KPIReports() {
           aria-label="KPI report sections"
           className="flex gap-2 overflow-x-auto pb-1"
         >
-          {TABS.map((tab) => {
-            const isActive =
-              activeTab === tab.id;
+          {TABS.map(
+            (
+              tab
+            ) => {
+              const isActive =
+                activeTab ===
+                tab.id;
 
-            const showPendingBadge =
-              tab.id === "review" &&
-              pendingRecommendationCount >
-                0;
+              const showPendingBadge =
+                tab.id ===
+                  "review" &&
+                pendingRecommendationCount >
+                  0;
 
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={
-                  isActive
-                }
-                aria-controls={`kpi-panel-${tab.id}`}
-                disabled={isLoading}
-                onClick={() =>
-                  setActiveTab(tab.id)
-                }
-                className={`flex min-w-fit items-center gap-3 rounded-2xl border px-4 py-3 text-left transition focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60 ${
-                  isActive
-                    ? "border-indigo-200 bg-indigo-600 text-white shadow-sm dark:border-indigo-500"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300"
-                }`}
-              >
-                <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+              return (
+                <button
+                  key={
+                    tab.id
+                  }
+                  type="button"
+                  role="tab"
+                  aria-selected={
                     isActive
-                      ? "bg-white/15 text-white"
-                      : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+                  }
+                  aria-controls={`kpi-panel-${tab.id}`}
+                  disabled={
+                    isLoading
+                  }
+                  onClick={() =>
+                    setActiveTab(
+                      tab.id
+                    )
+                  }
+                  className={`flex min-w-fit items-center gap-3 rounded-2xl border px-4 py-3 text-left transition focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60 ${
+                    isActive
+                      ? "border-indigo-200 bg-indigo-600 text-white shadow-sm dark:border-indigo-500"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300"
                   }`}
                 >
-                  <KPIReportTabIcon
-                    tabId={tab.id}
-                  />
-                </span>
-
-                <span>
-                  <span className="flex items-center gap-2 text-sm font-extrabold">
-                    {tab.label}
-
-                    {showPendingBadge && (
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
-                          isActive
-                            ? "bg-white/20 text-white"
-                            : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
-                        }`}
-                      >
-                        {
-                          pendingRecommendationCount
-                        }
-                      </span>
-                    )}
-                  </span>
-
                   <span
-                    className={`mt-0.5 block text-xs ${
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
                       isActive
-                        ? "text-indigo-100"
-                        : "text-slate-400 dark:text-slate-500"
+                        ? "bg-white/15 text-white"
+                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
                     }`}
                   >
-                    {tab.description}
+                    <KPIReportTabIcon
+                      tabId={
+                        tab.id
+                      }
+                    />
                   </span>
-                </span>
-              </button>
-            );
-          })}
+
+                  <span>
+                    <span className="flex items-center gap-2 text-sm font-extrabold">
+                      {
+                        tab.label
+                      }
+
+                      {showPendingBadge && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                            isActive
+                              ? "bg-white/20 text-white"
+                              : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+                          }`}
+                        >
+                          {
+                            pendingRecommendationCount
+                          }
+                        </span>
+                      )}
+                    </span>
+
+                    <span
+                      className={`mt-0.5 block text-xs ${
+                        isActive
+                          ? "text-indigo-100"
+                          : "text-slate-400 dark:text-slate-500"
+                      }`}
+                    >
+                      {
+                        tab.description
+                      }
+                    </span>
+                  </span>
+                </button>
+              );
+            }
+          )}
         </div>
       </div>
 
@@ -826,7 +1008,8 @@ export default function KPIReports() {
           showHeader
         />
       ) : !hasKPIData ||
-        employees.length === 0 ? (
+        employees.length ===
+          0 ? (
         <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900 sm:p-6">
           <EmptyState
             icon="records"
@@ -877,7 +1060,9 @@ export default function KPIReports() {
               </section>
 
               <WorkforceStandingSnapshot
-                employees={employees}
+                employees={
+                  employees
+                }
                 totalEmployees={
                   totalEmployees
                 }
@@ -897,15 +1082,24 @@ export default function KPIReports() {
           {activeTab ===
             "intelligence" && (
             <RiskIntelligenceSection
-              employees={employees}
+              employees={
+                employees
+              }
             />
           )}
 
           {activeTab ===
             "review" && (
             <RecommendationReviewSection
-              employees={employees}
-              user={user}
+              employees={
+                employees
+              }
+              user={
+                user
+              }
+              canManageDecisions={
+                isHRManager
+              }
               onDecisionSaved={
                 handleDecisionSaved
               }
@@ -914,7 +1108,11 @@ export default function KPIReports() {
 
           {activeTab ===
             "history" && (
-            <DecisionHistorySection />
+            <DecisionHistorySection
+              canDeleteDecisions={
+                isHRManager
+              }
+            />
           )}
 
           {activeTab ===
@@ -936,10 +1134,14 @@ export default function KPIReports() {
 
       <SuccessToast
         title="KPI Reports Updated"
-        message={successMessage}
+        message={
+          successMessage
+        }
         duration={3500}
         onClose={() =>
-          setSuccessMessage("")
+          setSuccessMessage(
+            ""
+          )
         }
       />
     </main>

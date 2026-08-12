@@ -4,6 +4,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
+import authenticatedFetch from "../utils/authenticatedFetch";
+
 const API_BASE =
   "http://localhost:5000/api";
 
@@ -17,7 +19,10 @@ const DEFAULT_STALE_TIME_MS =
   5 * 60 * 1000;
 
 export const KPI_DECISION_QUERY_KEYS = {
-  all: ["kpi-decisions"],
+  all: [
+    "kpi-decisions",
+  ],
+
   history: [
     "kpi-decisions",
     "history",
@@ -32,29 +37,46 @@ async function requestJson(
     new AbortController();
 
   const timeoutId =
-    globalThis.setTimeout(() => {
-      controller.abort();
-    }, REQUEST_TIMEOUT_MS);
+    globalThis.setTimeout(
+      () => {
+        controller.abort();
+      },
+      REQUEST_TIMEOUT_MS
+    );
 
   try {
-    const response = await fetch(url, {
-      ...options,
+    const response =
+      await authenticatedFetch(
+        url,
+        {
+          ...options,
 
-      signal: controller.signal,
+          signal:
+            controller.signal,
 
-      headers: {
-        Accept: "application/json",
-        "Content-Type":
-          "application/json",
-        ...(options.headers || {}),
-      },
-    });
+          headers: {
+            Accept:
+              "application/json",
 
-    const data = await response
-      .json()
-      .catch(() => null);
+            "Content-Type":
+              "application/json",
 
-    if (!response.ok) {
+            ...(options.headers ||
+              {}),
+          },
+        }
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(
+          () => null
+        );
+
+    if (
+      !response.ok
+    ) {
       throw new Error(
         data?.error ||
           data?.message ||
@@ -65,7 +87,8 @@ async function requestJson(
     return data;
   } catch (error) {
     if (
-      error?.name === "AbortError"
+      error?.name ===
+      "AbortError"
     ) {
       throw new Error(
         "The server took too long to respond. Check that the backend server and database are running, then try again."
@@ -87,12 +110,14 @@ export function useKPIDecisionHistoryQuery(
     queryKey:
       KPI_DECISION_QUERY_KEYS.history,
 
-    queryFn: () =>
-      requestJson(
-        DECISION_HISTORY_API
-      ),
+    queryFn:
+      () =>
+        requestJson(
+          DECISION_HISTORY_API
+        ),
 
-    refetchInterval: false,
+    refetchInterval:
+      false,
 
     staleTime:
       DEFAULT_STALE_TIME_MS,
@@ -103,7 +128,8 @@ export function useKPIDecisionHistoryQuery(
     refetchOnReconnect:
       true,
 
-    retry: 0,
+    retry:
+      0,
 
     ...options,
   });
@@ -114,31 +140,36 @@ export function useCreateKPIDecisionMutation() {
     useQueryClient();
 
   return useMutation({
-    mutationFn: (payload) =>
-      requestJson(
-        DECISION_HISTORY_API,
-        {
-          method: "POST",
+    mutationFn:
+      (payload) =>
+        requestJson(
+          DECISION_HISTORY_API,
+          {
+            method:
+              "POST",
 
-          body:
-            JSON.stringify(
-              payload
-            ),
-        }
-      ),
+            body:
+              JSON.stringify(
+                payload
+              ),
+          }
+        ),
 
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey:
-            KPI_DECISION_QUERY_KEYS.all,
-        }),
+    onSuccess:
+      async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey:
+              KPI_DECISION_QUERY_KEYS.all,
+          }),
 
-        queryClient.invalidateQueries({
-          queryKey: ["kpi"],
-        }),
-      ]);
-    },
+          queryClient.invalidateQueries({
+            queryKey: [
+              "kpi",
+            ],
+          }),
+        ]);
+      },
   });
 }
 
@@ -147,27 +178,32 @@ export function useDeleteKPIDecisionMutation() {
     useQueryClient();
 
   return useMutation({
-    mutationFn: (id) =>
-      requestJson(
-        `${DECISION_HISTORY_API}/${encodeURIComponent(
-          id
-        )}`,
-        {
-          method: "DELETE",
-        }
-      ),
+    mutationFn:
+      (id) =>
+        requestJson(
+          `${DECISION_HISTORY_API}/${encodeURIComponent(
+            id
+          )}`,
+          {
+            method:
+              "DELETE",
+          }
+        ),
 
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey:
-            KPI_DECISION_QUERY_KEYS.all,
-        }),
+    onSuccess:
+      async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey:
+              KPI_DECISION_QUERY_KEYS.all,
+          }),
 
-        queryClient.invalidateQueries({
-          queryKey: ["kpi"],
-        }),
-      ]);
-    },
+          queryClient.invalidateQueries({
+            queryKey: [
+              "kpi",
+            ],
+          }),
+        ]);
+      },
   });
 }

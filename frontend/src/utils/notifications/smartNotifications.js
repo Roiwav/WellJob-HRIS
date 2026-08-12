@@ -1,7 +1,13 @@
+import authenticatedFetch from "../authenticatedFetch";
+
 const API_BASE = "http://localhost:5000/api";
 
 export function canViewSmartAlerts(role) {
-  return ["HR_MANAGER", "HR_STAFF", "SUPER_ADMIN"].includes(role);
+  return [
+    "HR_MANAGER",
+    "HR_STAFF",
+    "SUPER_ADMIN",
+  ].includes(role);
 }
 
 export function getUserKey(user) {
@@ -16,59 +22,101 @@ export function getUserKey(user) {
   );
 }
 
-export function getAlertPriorityClasses(priority) {
+export function getAlertPriorityClasses(
+  priority
+) {
   switch (priority) {
     case "High":
       return {
-        card: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300",
-        icon: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
+        card:
+          "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300",
+
+        icon:
+          "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
+
         badge:
           "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
       };
 
     case "Medium":
       return {
-        card: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300",
-        icon: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+        card:
+          "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300",
+
+        icon:
+          "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+
         badge:
           "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
       };
 
     default:
       return {
-        card: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-300",
-        icon: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+        card:
+          "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-300",
+
+        icon:
+          "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+
         badge:
           "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
       };
   }
 }
 
-export function formatSmartAlertDate(value) {
-  if (!value) return "-";
+export function formatSmartAlertDate(
+  value
+) {
+  if (!value) {
+    return "-";
+  }
 
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "-";
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "-";
+  }
 
-  return date.toLocaleString("en-PH", {
-    month: "short",
-    day: "2-digit",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return date.toLocaleString(
+    "en-PH",
+    {
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+    }
+  );
 }
 
-export async function requestSmartAlertJson(endpoint, options = {}) {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
+export async function requestSmartAlertJson(
+  endpoint,
+  options = {}
+) {
+  const response =
+    await authenticatedFetch(
+      `${API_BASE}${endpoint}`,
+      {
+        ...options,
 
-  const data = await response.json().catch(() => null);
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...(options.headers ||
+            {}),
+        },
+      }
+    );
+
+  const data =
+    await response
+      .json()
+      .catch(() => null);
 
   if (!response.ok) {
     throw new Error(

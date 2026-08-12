@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, HelpCircle, LoaderCircle, Moon, Sun } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  HelpCircle,
+  LoaderCircle,
+  Moon,
+  Sun,
+} from "lucide-react";
 
 import logo from "../assets/logo.png";
 import { useAuth } from "../context/useAuth";
@@ -22,22 +29,28 @@ export default function Login() {
 
   const handleLogin = async (event) => {
     event.preventDefault();
-    if (isSubmitting) return;
+
+    if (isSubmitting) {
+      return;
+    }
 
     setError("");
     setIsSubmitting(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username: username.trim(),
-          password,
-        }),
-      });
+      const response = await fetch(
+        "http://localhost:5000/api/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            username: username.trim(),
+            password,
+          }),
+        }
+      );
 
       let data = {};
 
@@ -54,6 +67,33 @@ export default function Login() {
               ? "The server is currently unavailable. Please try again."
               : "Invalid username or password.")
         );
+
+        return;
+      }
+
+      const token = String(data.token || "").trim();
+
+      if (!token) {
+        console.error(
+          "Login response did not contain an authentication token."
+        );
+
+        setError(
+          "Login succeeded, but the authentication session could not be created. Please try again."
+        );
+
+        return;
+      }
+
+      if (!data.user || typeof data.user !== "object") {
+        console.error(
+          "Login response did not contain a valid user object."
+        );
+
+        setError(
+          "Login succeeded, but the user session could not be initialized. Please try again."
+        );
+
         return;
       }
 
@@ -68,11 +108,24 @@ export default function Login() {
           data.user?.must_change_password === "1",
       };
 
-      localStorage.setItem("user", JSON.stringify(normalizedUser));
+      // Store the JWT returned by the backend.
+      // Protected API requests will use this value later as:
+      // Authorization: Bearer <token>
+      localStorage.setItem("token", token);
+
+      // Preserve the existing frontend user/session behavior.
+      localStorage.setItem(
+        "user",
+        JSON.stringify(normalizedUser)
+      );
+
       setUser(normalizedUser);
 
       if (normalizedUser.mustChangePassword) {
-        navigate("/change-password", { replace: true });
+        navigate("/change-password", {
+          replace: true,
+        });
+
         return;
       }
 
@@ -83,17 +136,27 @@ export default function Login() {
         IT_SUPPORT: "/settings",
       };
 
-      navigate(redirectByRole[normalizedUser.role] || "/", { replace: true });
+      navigate(
+        redirectByRole[normalizedUser.role] || "/",
+        {
+          replace: true,
+        }
+      );
     } catch (loginError) {
       console.error("Login error:", loginError);
-      setError("Network error. Check your connection and try again.");
+
+      setError(
+        "Network error. Check your connection and try again."
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const clearError = () => {
-    if (error) setError("");
+    if (error) {
+      setError("");
+    }
   };
 
   return (
@@ -106,6 +169,7 @@ export default function Login() {
               alt="Welljob Solutions logo"
               className="h-9 w-9 shrink-0 object-contain"
             />
+
             <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg dark:text-white">
               Welljob Solutions &amp; General Services
             </h1>
@@ -137,12 +201,17 @@ export default function Login() {
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
               Welcome Back
             </h2>
+
             <p className="text-sm text-gray-600 dark:text-gray-300">
               Enter your credentials to access the HR system.
             </p>
           </div>
 
-          <form onSubmit={handleLogin} className="mt-6 space-y-5" noValidate>
+          <form
+            onSubmit={handleLogin}
+            className="mt-6 space-y-5"
+            noValidate
+          >
             <div className="space-y-2">
               <label
                 htmlFor="username"
@@ -150,6 +219,7 @@ export default function Login() {
               >
                 Username
               </label>
+
               <input
                 id="username"
                 name="username"
@@ -179,7 +249,11 @@ export default function Login() {
                 <input
                   id="password"
                   name="password"
-                  type={showPassword ? "text" : "password"}
+                  type={
+                    showPassword
+                      ? "text"
+                      : "password"
+                  }
                   autoComplete="current-password"
                   required
                   disabled={isSubmitting}
@@ -189,25 +263,47 @@ export default function Login() {
                     clearError();
                   }}
                   onKeyUp={(event) =>
-                    setCapsLockOn(event.getModifierState("CapsLock"))
+                    setCapsLockOn(
+                      event.getModifierState(
+                        "CapsLock"
+                      )
+                    )
                   }
                   onKeyDown={(event) =>
-                    setCapsLockOn(event.getModifierState("CapsLock"))
+                    setCapsLockOn(
+                      event.getModifierState(
+                        "CapsLock"
+                      )
+                    )
                   }
-                  onBlur={() => setCapsLockOn(false)}
+                  onBlur={() =>
+                    setCapsLockOn(false)
+                  }
                   placeholder="Enter your password"
                   className="h-11 w-full rounded-xl border border-gray-300 bg-white px-4 pr-12 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                 />
 
                 <button
                   type="button"
-                  onClick={() => setShowPassword((current) => !current)}
+                  onClick={() =>
+                    setShowPassword(
+                      (current) => !current
+                    )
+                  }
                   disabled={isSubmitting}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-label={
+                    showPassword
+                      ? "Hide password"
+                      : "Show password"
+                  }
                   aria-pressed={showPassword}
                   className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
                 >
-                  {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+                  {showPassword ? (
+                    <EyeOff size={19} />
+                  ) : (
+                    <Eye size={19} />
+                  )}
                 </button>
               </div>
 
@@ -221,11 +317,17 @@ export default function Login() {
             <div className="flex justify-end">
               <button
                 type="button"
-                onClick={() => setForgotPasswordOpen(true)}
+                onClick={() =>
+                  setForgotPasswordOpen(true)
+                }
                 disabled={isSubmitting}
                 className="inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-indigo-600 transition hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:text-indigo-300 dark:hover:text-indigo-200"
               >
-                <HelpCircle size={16} aria-hidden="true" />
+                <HelpCircle
+                  size={16}
+                  aria-hidden="true"
+                />
+
                 Forgot password?
               </button>
             </div>
@@ -242,13 +344,23 @@ export default function Login() {
 
             <button
               type="submit"
-              disabled={isSubmitting || !username.trim() || !password}
+              disabled={
+                isSubmitting ||
+                !username.trim() ||
+                !password
+              }
               className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 font-semibold text-white shadow-lg transition hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting && (
-                <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                <LoaderCircle
+                  className="h-5 w-5 animate-spin"
+                  aria-hidden="true"
+                />
               )}
-              {isSubmitting ? "Signing in..." : "Sign In"}
+
+              {isSubmitting
+                ? "Signing in..."
+                : "Sign In"}
             </button>
           </form>
 
@@ -261,7 +373,9 @@ export default function Login() {
 
         <Dialog
           open={forgotPasswordOpen}
-          onClose={() => setForgotPasswordOpen(false)}
+          onClose={() =>
+            setForgotPasswordOpen(false)
+          }
           title="Forgot Password"
           description="Password reset assistance for authorized Welljob users."
           tone="default"
@@ -271,7 +385,9 @@ export default function Login() {
           footer={
             <button
               type="button"
-              onClick={() => setForgotPasswordOpen(false)}
+              onClick={() =>
+                setForgotPasswordOpen(false)
+              }
               className="inline-flex h-10 items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30"
             >
               Close
@@ -280,13 +396,19 @@ export default function Login() {
         >
           <div className="space-y-4 text-sm leading-6 text-gray-600 dark:text-gray-300">
             <p>
-              Please contact Technical IT Support or an authorized system
-              administrator to request a password reset.
+              Please contact Technical IT
+              Support or an authorized system
+              administrator to request a
+              password reset.
             </p>
+
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-              For security, your identity and account must be verified before a
-              temporary password is issued. You will be required to change that
-              temporary password after signing in.
+              For security, your identity and
+              account must be verified before a
+              temporary password is issued. You
+              will be required to change that
+              temporary password after signing
+              in.
             </div>
           </div>
         </Dialog>
@@ -294,13 +416,23 @@ export default function Login() {
         <button
           type="button"
           onClick={toggleTheme}
-          aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label={
+            darkMode
+              ? "Switch to light mode"
+              : "Switch to dark mode"
+          }
           className="fixed bottom-6 right-6 inline-flex h-12 w-12 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-lg transition hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/25 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
         >
           {darkMode ? (
-            <Sun className="h-5 w-5 text-yellow-500" aria-hidden="true" />
+            <Sun
+              className="h-5 w-5 text-yellow-500"
+              aria-hidden="true"
+            />
           ) : (
-            <Moon className="h-5 w-5 text-blue-600" aria-hidden="true" />
+            <Moon
+              className="h-5 w-5 text-blue-600"
+              aria-hidden="true"
+            />
           )}
         </button>
       </main>

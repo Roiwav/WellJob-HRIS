@@ -1,8 +1,17 @@
-// server.js
+const path = require("path");
+
+// 🔐 LOAD ENVIRONMENT VARIABLES FIRST
+require("dotenv").config({
+  path: path.join(__dirname, ".env"),
+});
 
 const express = require("express");
 const cors = require("cors");
-const path = require("path");
+
+// 🔐 MAINTENANCE MIDDLEWARE
+const checkMaintenanceMode = require(
+  "./middleware/maintenanceMiddleware"
+);
 
 // 🔥 ROUTES
 const authRoutes = require("./routes/authRoutes");
@@ -14,25 +23,46 @@ const auditLogRoutes = require("./routes/auditLogRoutes");
 const kpiDecisionRoutes = require("./routes/kpiDecisionRoutes");
 const smartAlertRoutes = require("./routes/smartAlertRoutes");
 const smartSuggestionRoutes = require("./routes/smartSuggestionRoutes");
-
-
-// 🔥 KUNIN ANG CHANGE PASSWORD FUNCTION
-const { changePassword } = require("./controllers/userController");
+const settingsRoutes = require("./routes/settingsRoutes");
 
 // 🔥 INIT APP
 const app = express();
 
-// 🔥 MIDDLEWARE
+// 🔥 CORE MIDDLEWARE
 app.use(cors());
 app.use(express.json());
 
-// 🔥 STATIC FILES (for documents)
-app.use("/documents", express.static(path.join(__dirname, "documents")));
+// 🔥 STATIC FILES
+app.use(
+  "/documents",
+  express.static(
+    path.join(__dirname, "documents")
+  )
+);
 
-// 🚀 DIRECT ROUTE (Ito ang fix! Para sigurado tayong babasahin niya ito bago ang iba)
-app.put("/api/users/change-password", changePassword);
+/*
+ * SYSTEM MAINTENANCE GATE
+ *
+ * Applied only to /api requests.
+ *
+ * When maintenance mode is OFF:
+ * - requests continue normally.
+ *
+ * When maintenance mode is ON:
+ * - login remains reachable,
+ * - maintenance status/toggle remain reachable,
+ * - valid IT_SUPPORT JWT requests may continue,
+ * - all other API users receive HTTP 503.
+ *
+ * Individual routes still enforce their own
+ * authentication and RBAC after this middleware.
+ */
+app.use(
+  "/api",
+  checkMaintenanceMode
+);
 
-// 🔥 ROUTES
+// 🔥 API ROUTES
 app.use("/api", authRoutes);
 app.use("/api", userRoutes);
 app.use("/api", employeeRoutes);
@@ -41,8 +71,8 @@ app.use("/api", deploymentRoutes);
 app.use("/api", kpiDecisionRoutes);
 app.use("/api", smartAlertRoutes);
 app.use("/api", smartSuggestionRoutes);
-
 app.use("/api", auditLogRoutes);
+app.use("/api", settingsRoutes);
 
 // 🔥 DEFAULT TEST ROUTE
 app.get("/", (req, res) => {
@@ -50,9 +80,12 @@ app.get("/", (req, res) => {
 });
 
 // 🔥 PORT
-const PORT = process.env.PORT || 5000;
+const PORT =
+  process.env.PORT || 5000;
 
 // 🔥 START SERVER
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(
+    `Server running on port ${PORT}`
+  );
 });
