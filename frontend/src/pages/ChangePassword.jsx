@@ -223,34 +223,26 @@ export default function ChangePassword() {
       setLoading(true);
 
       /*
-       * authenticatedFetch automatically attaches:
-       *
-       * Authorization: Bearer <token>
-       *
-       * The userId and username fields remain temporarily
-       * for compatibility with the current backend.
-       *
-       * After backend JWT enforcement is enabled,
-       * account identity will come from req.user instead.
-       */
-      const response = await authenticatedFetch(
-        "http://localhost:5000/api/users/change-password",
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            userId:
-              user?.userId ||
-              user?.user_id ||
-              user?.id,
-            username: user?.username,
-            currentPassword,
-            newPassword,
-          }),
-        }
-      );
+ * authenticatedFetch automatically attaches:
+ *
+ * Authorization: Bearer <token>
+ *
+ * Account identity is derived exclusively from
+ * the verified JWT by the backend.
+ */
+const response = await authenticatedFetch(
+  "http://localhost:5000/api/users/change-password",
+  {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      currentPassword,
+      newPassword,
+    }),
+  }
+);
 
       let data = {};
 
