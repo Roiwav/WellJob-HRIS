@@ -9,6 +9,80 @@ const {
   generateAccountCredentials,
 } = require("../utils/helpers");
 
+/*
+ * SECURITY:
+ * Audit actor identity must come from req.user.
+ *
+ * req.user contains the trusted JWT identity.
+ * The database lookup below is only used to enrich
+ * that trusted identity with user_id and full_name.
+ *
+ * Client-supplied user IDs, usernames, and roles
+ * are never used for audit attribution.
+ */
+async function getAuthenticatedActor(req) {
+  const authenticatedId =
+    req.user?.id ?? req.user?.userId;
+
+  const username = String(
+    req.user?.username || ""
+  ).trim();
+
+  const role = String(
+    req.user?.role || ""
+  )
+    .trim()
+    .toUpperCase();
+
+  let userId = authenticatedId;
+  let fullName =
+    username || "Authenticated User";
+
+  if (
+    authenticatedId !== undefined &&
+    authenticatedId !== null &&
+    String(authenticatedId).trim() !== ""
+  ) {
+    try {
+      const [rows] = await db.promise().query(
+        `SELECT user_id, full_name
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [authenticatedId]
+      );
+
+      if (rows.length > 0) {
+        userId =
+          rows[0].user_id ??
+          authenticatedId;
+
+        fullName =
+          String(
+            rows[0].full_name || ""
+          ).trim() ||
+          fullName;
+      }
+    } catch (error) {
+      /*
+       * Do not replace the verified req.user identity
+       * if audit display enrichment fails.
+       */
+      console.error(
+        "Audit actor enrichment error:",
+        error
+      );
+    }
+  }
+
+  return {
+    userId,
+    username,
+    fullName,
+    role,
+  };
+}
+
 // ✅ GET USERS
 exports.getUsers = async (req, res) => {
   try {
@@ -47,6 +121,9 @@ exports.createUser = async (req, res) => {
       });
     }
 
+    const actor =
+      await getAuthenticatedActor(req);
+
     const { userId, username } =
       await generateAccountCredentials(role);
 
@@ -67,11 +144,13 @@ exports.createUser = async (req, res) => {
     );
 
     await logAudit({
-      userId,
-      username,
-      role,
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
       action: "CREATE_USER",
-      description: `Created account for ${trimmedName}`,
+      description:
+        `${actor.fullName} created account for ${trimmedName} (${username}, ${role}).`,
     });
 
     return res.status(201).json({
@@ -110,6 +189,9 @@ exports.resetPassword = async (req, res) => {
 
     const user = users[0];
 
+    const actor =
+      await getAuthenticatedActor(req);
+
     const tempPassword = generatePassword(8);
     const hash = await bcrypt.hash(tempPassword, 10);
 
@@ -119,10 +201,13 @@ exports.resetPassword = async (req, res) => {
     );
 
     await logAudit({
-      userId: user.user_id,
-      username: user.username,
-      role: user.role,
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
       action: "RESET_PASSWORD",
+      description:
+        `${actor.fullName} reset the password for ${user.full_name} (${user.username}).`,
     });
 
     return res.json({
@@ -156,6 +241,9 @@ exports.toggleStatus = async (req, res) => {
 
     const user = users[0];
 
+    const actor =
+      await getAuthenticatedActor(req);
+
     const newStatus =
       user.status === "Active"
         ? "Inactive"
@@ -167,11 +255,13 @@ exports.toggleStatus = async (req, res) => {
     );
 
     await logAudit({
-      userId: user.user_id,
-      username: user.username,
-      role: user.role,
+      userId: actor.userId,
+      username: actor.username,
+      fullName: actor.fullName,
+      role: actor.role,
       action: "TOGGLE_STATUS",
-      description: `Changed to ${newStatus}`,
+      description:
+        `${actor.fullName} changed ${user.full_name} (${user.username}) to ${newStatus}.`,
     });
 
     return res.json({

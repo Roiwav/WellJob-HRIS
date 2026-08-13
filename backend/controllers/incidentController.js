@@ -8,6 +8,92 @@ const API_BASE =
   process.env.API_BASE_URL ||
   "http://localhost:5000";
 
+function normalizeIncidentEvidencePath(
+  value
+) {
+  const normalized =
+    String(value || "")
+      .trim()
+      .replace(/\\/g, "/");
+
+  if (!normalized) {
+    return "";
+  }
+
+  /*
+   * Already a full external URL.
+   * Preserve it as-is.
+   */
+  if (
+    /^https?:\/\//i.test(
+      normalized
+    )
+  ) {
+    return normalized;
+  }
+
+  /*
+   * Handles legacy absolute paths such as:
+   *
+   * C:/Users/.../backend/documents/employees/file.pdf
+   *
+   * and converts them to:
+   *
+   * /documents/employees/file.pdf
+   */
+  const documentsMarker =
+    "/documents/";
+
+  const markerIndex =
+    normalized
+      .toLowerCase()
+      .indexOf(
+        documentsMarker
+      );
+
+  if (markerIndex >= 0) {
+    return normalized.slice(
+      markerIndex
+    );
+  }
+
+  /*
+   * Handles:
+   * documents/employees/file.pdf
+   */
+  if (
+    normalized
+      .toLowerCase()
+      .startsWith(
+        "documents/"
+      )
+  ) {
+    return `/${normalized}`;
+  }
+
+  /*
+   * Handles:
+   * backend/documents/employees/file.pdf
+   */
+  if (
+    normalized
+      .toLowerCase()
+      .startsWith(
+        "backend/documents/"
+      )
+  ) {
+    return `/${normalized.slice(
+      "backend/".length
+    )}`;
+  }
+
+  return normalized.startsWith(
+    "/"
+  )
+    ? normalized
+    : `/${normalized}`;
+}
+
 const WORKFLOW_ACTION = {
   START: "START_INVESTIGATION",
   SUBMIT_RESOLUTION: "SUBMIT_RESOLUTION",
@@ -271,12 +357,19 @@ function buildEvidenceFromReq(
       fileName:
         file.originalname,
 
+      /*
+       * Store only the public application path,
+       * never the local machine filesystem path.
+       *
+       * Physical:
+       * backend/documents/employees/file.pdf
+       *
+       * Stored/public:
+       * /documents/employees/file.pdf
+       */
       filePath:
-        String(
-          file.path || ""
-        ).replace(
-          /\\/g,
-          "/"
+        normalizeIncidentEvidencePath(
+          file.path
         ),
     })
   );
@@ -421,6 +514,20 @@ async function getActiveDeploymentForEmployee(
 function serializeEvidenceItem(
   item
 ) {
+  const filePath =
+    normalizeIncidentEvidencePath(
+      item.file_path
+    );
+
+  const normalizedApiBase =
+    String(API_BASE || "")
+      .replace(/\/+$/, "");
+
+  const isExternalUrl =
+    /^https?:\/\//i.test(
+      filePath
+    );
+
   return {
     id:
       item.id,
@@ -428,11 +535,20 @@ function serializeEvidenceItem(
     fileName:
       item.file_name,
 
-    filePath:
-      item.file_path,
+    /*
+     * Legacy absolute database paths are
+     * normalized here as well, so existing
+     * records continue working without a
+     * destructive database migration.
+     */
+    filePath,
 
     url:
-      `${API_BASE}/${item.file_path}`,
+      !filePath
+        ? null
+        : isExternalUrl
+          ? filePath
+          : `${normalizedApiBase}${filePath}`,
   };
 }
 
