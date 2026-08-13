@@ -2221,6 +2221,13 @@ exports.updateIncident =
         id,
       } = req.params;
 
+      /*
+       * SECURITY:
+       * Load the existing workflow state first.
+       *
+       * Closed incidents are immutable and cannot
+       * be edited through the general PUT endpoint.
+       */
       const [
         existingIncidentRows,
       ] =
@@ -2228,7 +2235,9 @@ exports.updateIncident =
           .promise()
           .query(
             `
-            SELECT id
+            SELECT
+              id,
+              status
             FROM incidents
             WHERE id = ?
             LIMIT 1
@@ -2248,6 +2257,56 @@ exports.updateIncident =
           });
       }
 
+      const existingIncident =
+        existingIncidentRows[0];
+
+      const existingStatus =
+        normalizeStatus(
+          existingIncident.status
+        );
+
+      if (
+        existingStatus ===
+        "Closed"
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This case is already closed and can no longer be modified.",
+          });
+      }
+
+      /*
+       * GENERAL INCIDENT DETAILS ONLY
+       *
+       * Intentionally accepted:
+       * - employee
+       * - company
+       * - violation
+       * - severity
+       * - incident date
+       * - location
+       * - description
+       * - reporter display value
+       *
+       * Intentionally NOT accepted here:
+       * - status
+       * - workflowAction
+       * - actionTaken
+       * - recommendation
+       * - resolutionNotes
+       * - investigation metadata
+       * - resolution metadata
+       * - review metadata
+       * - last workflow action metadata
+       *
+       * Those fields belong exclusively to
+       * PATCH /incidents/:id/status.
+       *
+       * Extra client-supplied workflow fields are
+       * therefore ignored by this endpoint.
+       */
       const {
         employeeId,
         employee_id,
@@ -2262,11 +2321,15 @@ exports.updateIncident =
         location,
         description,
         reportedBy,
-        actionTaken,
-        recommendation,
-        resolutionNotes,
       } = req.body || {};
 
+      /*
+       * Trusted actor identity comes exclusively
+       * from verified req.user.
+       *
+       * Body/query userId, username, fullName,
+       * role, etc. are never used for authority.
+       */
       const actor =
         await getActor(req);
 
@@ -2285,7 +2348,9 @@ exports.updateIncident =
           });
       }
 
-      const [employeeRows] =
+      const [
+        employeeRows,
+      ] =
         await db
           .promise()
           .query(
@@ -2383,9 +2448,25 @@ exports.updateIncident =
           actor
         );
 
-      const actionType =
-        "UPDATE_INCIDENT";
-
+      /*
+       * IMPORTANT:
+       *
+       * This SQL intentionally does NOT write:
+       *
+       * status
+       * action_taken
+       * recommendation
+       * resolution_notes
+       * investigation_started_*
+       * resolution_submitted_*
+       * reviewed_*
+       * review_decision
+       * review_comments
+       * last_action_*
+       *
+       * The PATCH workflow is the sole authority
+       * for those workflow-controlled fields.
+       */
       await db
         .promise()
         .query(
@@ -2401,14 +2482,6 @@ exports.updateIncident =
             location = ?,
             description = ?,
             reported_by = ?,
-            action_taken = ?,
-            recommendation = ?,
-            resolution_notes = ?,
-            last_action_by_id = ?,
-            last_action_by_username = ?,
-            last_action_by_name = ?,
-            last_action_type = ?,
-            last_action_at = NOW(),
             updated_at = NOW()
           WHERE id = ?
           `,
@@ -2424,19 +2497,19 @@ exports.updateIncident =
             location || null,
             description || null,
             finalReportedBy,
-            actionTaken || null,
-            recommendation ||
-              null,
-            resolutionNotes ||
-              null,
-            actor.userId,
-            actor.username,
-            actor.fullName,
-            actionType,
             id,
           ]
         );
 
+      /*
+       * Preserve existing general incident evidence
+       * attachment behavior.
+       *
+       * Workflow submission proof requirements are
+       * still independently enforced by the PATCH
+       * endpoint using the files submitted with that
+       * workflow request.
+       */
       const evidenceFiles =
         buildEvidenceFromReq(
           req
@@ -2466,6 +2539,12 @@ exports.updateIncident =
           );
       }
 
+      /*
+       * Audit uses the authenticated actor only.
+       *
+       * This audit record does not alter workflow
+       * ownership / last-action metadata.
+       */
       await safeLogAudit({
         userId:
           actor.userId,
@@ -2483,7 +2562,7 @@ exports.updateIncident =
           AUDIT_CATEGORY.OPERATIONAL,
 
         action:
-          actionType,
+          "UPDATE_INCIDENT",
 
         description:
           `${actor.fullName} updated incident record for ${finalEmployeeName}.`,
