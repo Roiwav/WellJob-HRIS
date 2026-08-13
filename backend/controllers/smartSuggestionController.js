@@ -1,5 +1,11 @@
 const db = require("../config/db");
 
+const {
+  getTrustedSuggestionIdentity,
+  getSuggestionStates,
+  applySuggestionStates,
+} = require("../utils/smartSuggestionState");
+
 const PRIORITY = {
   HIGH: "High",
   MEDIUM: "Medium",
@@ -1378,23 +1384,84 @@ exports.getSmartSuggestions =
           });
       }
 
+      /*
+       * SECURITY:
+       * Persisted suggestion ownership comes only
+       * from the verified JWT identity in req.user.
+       *
+       * Query/body userKey and role values are
+       * intentionally ignored.
+       */
+      const {
+        userKey,
+        role: trustedRole,
+      } =
+        getTrustedSuggestionIdentity(
+          req
+        );
+
+      if (!userKey) {
+        return res
+          .status(401)
+          .json({
+            success: false,
+
+            error:
+              "Authenticated user identity is required.",
+          });
+      }
+
+      /*
+       * Existing DSS source reads remain unchanged.
+       *
+       * Suggestion state is an independent per-user
+       * read and can safely run in the same parallel
+       * group without changing rule generation.
+       */
       const [
         employees,
         incidents,
         documents,
+        stateMap,
       ] =
         await Promise.all([
           fetchEmployees(),
           fetchIncidents(),
           fetchEmployeeDocuments(),
+
+          getSuggestionStates({
+            userKey,
+            role:
+              trustedRole,
+          }),
         ]);
 
-      const suggestions =
+      /*
+       * DO NOT CHANGE:
+       * Existing deterministic rule-based DSS logic.
+       */
+      const generatedSuggestions =
         buildSmartSuggestions({
           employees,
           incidents,
           documents,
         });
+
+      /*
+       * Merge only user-specific persisted state.
+       *
+       * This does not change:
+       * - suggestion generation
+       * - priority
+       * - metrics
+       * - recommendation
+       * - thresholds
+       */
+      const suggestions =
+        applySuggestionStates(
+          generatedSuggestions,
+          stateMap
+        );
 
       return res.json({
         suggestions,
@@ -1405,6 +1472,10 @@ exports.getSmartSuggestions =
             5
           ),
 
+        /*
+         * Preserve the existing DSS summary
+         * calculation exactly.
+         */
         summary:
           buildSummary(
             suggestions

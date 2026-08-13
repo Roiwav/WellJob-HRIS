@@ -61,6 +61,97 @@ export async function requestSmartSuggestionJson(
   return data;
 }
 
+/*
+ * SAVE SMART SUGGESTION ACTION
+ *
+ * Compatibility payload:
+ * {
+ *   userKey,
+ *   role,
+ *   suggestionKey,
+ *   actionType,
+ *   actionNotes
+ * }
+ *
+ * SECURITY:
+ * userKey and role are sent only to preserve
+ * the existing frontend/backend contract.
+ *
+ * Backend identity and authorization come
+ * exclusively from the verified JWT.
+ */
+export async function takeSmartSuggestionAction({
+  user,
+  suggestionKey,
+  actionType,
+  actionNotes = "",
+}) {
+  return requestSmartSuggestionJson(
+    "/smart-suggestions/action",
+    {
+      method: "POST",
+
+      body: JSON.stringify({
+        userKey:
+          getSmartSuggestionUserKey(
+            user
+          ),
+
+        role:
+          user?.role || "",
+
+        suggestionKey,
+
+        actionType,
+
+        actionNotes,
+      }),
+    }
+  );
+}
+
+/*
+ * DISMISS SMART SUGGESTION
+ *
+ * Compatibility payload:
+ * {
+ *   userKey,
+ *   role,
+ *   suggestionKey,
+ *   dismissReason
+ * }
+ *
+ * SECURITY:
+ * userKey and role are compatibility fields only.
+ * Backend ownership comes from verified req.user.
+ */
+export async function dismissSmartSuggestion({
+  user,
+  suggestionKey,
+  dismissReason = "",
+}) {
+  return requestSmartSuggestionJson(
+    "/smart-suggestions/dismiss",
+    {
+      method: "POST",
+
+      body: JSON.stringify({
+        userKey:
+          getSmartSuggestionUserKey(
+            user
+          ),
+
+        role:
+          user?.role || "",
+
+        suggestionKey,
+
+        dismissReason,
+      }),
+    }
+  );
+}
+
 export function getSuggestionPriorityClasses(
   priority
 ) {

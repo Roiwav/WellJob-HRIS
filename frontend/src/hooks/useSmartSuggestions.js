@@ -8,6 +8,8 @@ import {
 import {
   canViewSmartSuggestions,
   requestSmartSuggestionJson,
+  takeSmartSuggestionAction as requestTakeSmartSuggestionAction,
+  dismissSmartSuggestion as requestDismissSmartSuggestion,
 } from "../utils/suggestions/smartSuggestions";
 
 const EMPTY_SUMMARY = {
@@ -72,6 +74,26 @@ function shouldRefreshForDataUpdated(
   );
 }
 
+function mergeSuggestionState(
+  suggestion,
+  suggestionKey,
+  state
+) {
+  if (
+    !suggestion ||
+    suggestion.suggestionKey !==
+      suggestionKey ||
+    !state
+  ) {
+    return suggestion;
+  }
+
+  return {
+    ...suggestion,
+    ...state,
+  };
+}
+
 export default function useSmartSuggestions(
   user,
   options = {}
@@ -92,6 +114,9 @@ export default function useSmartSuggestions(
     Number(pollInterval) > 0;
 
   const requestInFlightRef =
+    useRef(false);
+
+  const mutationInFlightRef =
     useRef(false);
 
   const [
@@ -124,9 +149,59 @@ export default function useSmartSuggestions(
   ] = useState(false);
 
   const [
+    isMutating,
+    setIsMutating,
+  ] = useState(false);
+
+  const [
     error,
     setError,
   ] = useState("");
+
+  const [
+    mutationError,
+    setMutationError,
+  ] = useState("");
+
+  const applyMutationState =
+    useCallback(
+      (
+        suggestionKey,
+        state
+      ) => {
+        if (
+          !suggestionKey ||
+          !state
+        ) {
+          return;
+        }
+
+        setSuggestions(
+          (current) =>
+            current.map(
+              (suggestion) =>
+                mergeSuggestionState(
+                  suggestion,
+                  suggestionKey,
+                  state
+                )
+            )
+        );
+
+        setLatestSuggestions(
+          (current) =>
+            current.map(
+              (suggestion) =>
+                mergeSuggestionState(
+                  suggestion,
+                  suggestionKey,
+                  state
+                )
+            )
+        );
+      },
+      []
+    );
 
   const fetchSuggestions =
     useCallback(
@@ -145,13 +220,13 @@ export default function useSmartSuggestions(
           setIsFetching(false);
           setError("");
 
-          return;
+          return null;
         }
 
         if (
           requestInFlightRef.current
         ) {
-          return;
+          return null;
         }
 
         requestInFlightRef.current =
@@ -170,7 +245,7 @@ export default function useSmartSuggestions(
            * are derived from the JWT.
            *
            * No userKey or role query parameters
-           * are required by the backend.
+           * are required by the GET endpoint.
            */
           const data =
             await requestSmartSuggestionJson(
@@ -199,6 +274,8 @@ export default function useSmartSuggestions(
             ...(data?.summary ||
               {}),
           });
+
+          return data;
         } catch (err) {
           console.error(
             "Smart suggestion fetch error:",
@@ -212,6 +289,8 @@ export default function useSmartSuggestions(
 
           setSuggestions([]);
           setLatestSuggestions([]);
+
+          return null;
         } finally {
           requestInFlightRef.current =
             false;
@@ -222,6 +301,189 @@ export default function useSmartSuggestions(
       },
       [
         canView,
+      ]
+    );
+
+  /*
+   * Save a human action/review decision
+   * for one generated suggestion.
+   *
+   * Backend ownership comes from req.user.
+   * The helper still sends the existing
+   * compatibility payload expected by Phase 5.
+   */
+  const takeSuggestionAction =
+    useCallback(
+      async ({
+        suggestionKey,
+        actionType,
+        actionNotes = "",
+      }) => {
+        if (!canView) {
+          throw new Error(
+            "You do not have permission to update smart suggestions."
+          );
+        }
+
+        if (
+          mutationInFlightRef.current
+        ) {
+          return null;
+        }
+
+        mutationInFlightRef.current =
+          true;
+
+        setIsMutating(true);
+        setMutationError("");
+
+        try {
+          const data =
+            await requestTakeSmartSuggestionAction({
+              user,
+              suggestionKey,
+              actionType,
+              actionNotes,
+            });
+
+          /*
+           * Update current UI immediately using
+           * the trusted state returned by backend.
+           */
+          applyMutationState(
+            suggestionKey,
+            data?.state
+          );
+
+          /*
+           * Re-fetch from backend so the UI is
+           * synchronized with persisted state.
+           *
+           * If another GET is already running,
+           * the local state above still keeps
+           * the mutation visible immediately,
+           * while the existing poll/event refresh
+           * will retrieve the persisted state later.
+           */
+          await fetchSuggestions({
+            silent: true,
+          });
+
+          return data;
+        } catch (err) {
+          console.error(
+            "Smart suggestion action error:",
+            err
+          );
+
+          const message =
+            err?.message ||
+            "Unable to save smart suggestion action.";
+
+          setMutationError(
+            message
+          );
+
+          throw err;
+        } finally {
+          mutationInFlightRef.current =
+            false;
+
+          setIsMutating(false);
+        }
+      },
+      [
+        applyMutationState,
+        canView,
+        fetchSuggestions,
+        user,
+      ]
+    );
+
+  /*
+   * Persist dismissal state for one generated
+   * suggestion.
+   *
+   * The suggestion itself remains part of the
+   * rule-based DSS output. Its per-user dismissal
+   * state is merged by the backend on future GETs.
+   */
+  const dismissSuggestion =
+    useCallback(
+      async ({
+        suggestionKey,
+        dismissReason = "",
+      }) => {
+        if (!canView) {
+          throw new Error(
+            "You do not have permission to update smart suggestions."
+          );
+        }
+
+        if (
+          mutationInFlightRef.current
+        ) {
+          return null;
+        }
+
+        mutationInFlightRef.current =
+          true;
+
+        setIsMutating(true);
+        setMutationError("");
+
+        try {
+          const data =
+            await requestDismissSmartSuggestion({
+              user,
+              suggestionKey,
+              dismissReason,
+            });
+
+          /*
+           * Apply persisted backend state to
+           * the current browser view immediately.
+           */
+          applyMutationState(
+            suggestionKey,
+            data?.state
+          );
+
+          /*
+           * Fresh backend synchronization.
+           */
+          await fetchSuggestions({
+            silent: true,
+          });
+
+          return data;
+        } catch (err) {
+          console.error(
+            "Smart suggestion dismiss error:",
+            err
+          );
+
+          const message =
+            err?.message ||
+            "Unable to dismiss smart suggestion.";
+
+          setMutationError(
+            message
+          );
+
+          throw err;
+        } finally {
+          mutationInFlightRef.current =
+            false;
+
+          setIsMutating(false);
+        }
+      },
+      [
+        applyMutationState,
+        canView,
+        fetchSuggestions,
+        user,
       ]
     );
 
@@ -297,9 +559,17 @@ export default function useSmartSuggestions(
 
     isFetching,
 
+    isMutating,
+
     error,
+
+    mutationError,
 
     refresh:
       fetchSuggestions,
+
+    takeSuggestionAction,
+
+    dismissSuggestion,
   };
 }
