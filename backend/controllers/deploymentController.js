@@ -1,45 +1,71 @@
 const db = require("../config/db");
 
 const COMPANY_LOCATIONS = {
-  "SM Supermalls": "Calamba City, Laguna",
-  "Robinsons Retail Holdings": "Calamba City, Laguna",
-  "Ayala Land Inc.": "Makati City",
-  "Jollibee Foods Corporation": "Pasig City",
-  "San Miguel Corporation": "Mandaluyong City",
-  "PLDT Inc.": "Makati City",
-  "Globe Telecom": "Taguig City",
-  "BDO Unibank": "Makati City",
-  Metrobank: "Makati City",
-  "Puregold Price Club": "Quezon City",
-  "Wilcon Depot": "Quezon City",
-  "DMCI Holdings": "Makati City",
-  "Megaworld Corporation": "Taguig City",
-  "Unilab Inc.": "Mandaluyong City",
-  "Nestlé Philippines": "Makati City",
-  "Coca-Cola Philippines": "Taguig City",
-  "Pepsi-Cola Products Philippines": "Muntinlupa City",
-  "Toyota Philippines": "Santa Rosa, Laguna",
-  "Honda Philippines": "Batangas",
-  "Accenture Philippines": "Taguig City",
-  "IBM Philippines": "Quezon City",
-  "Teleperformance Philippines": "Pasig City",
-  "Concentrix Philippines": "Quezon City",
-  "Sitel Philippines": "Makati City",
+  "SM Supermalls":
+    "Calamba City, Laguna",
+  "Robinsons Retail Holdings":
+    "Calamba City, Laguna",
+  "Ayala Land Inc.":
+    "Makati City",
+  "Jollibee Foods Corporation":
+    "Pasig City",
+  "San Miguel Corporation":
+    "Mandaluyong City",
+  "PLDT Inc.":
+    "Makati City",
+  "Globe Telecom":
+    "Taguig City",
+  "BDO Unibank":
+    "Makati City",
+  Metrobank:
+    "Makati City",
+  "Puregold Price Club":
+    "Quezon City",
+  "Wilcon Depot":
+    "Quezon City",
+  "DMCI Holdings":
+    "Makati City",
+  "Megaworld Corporation":
+    "Taguig City",
+  "Unilab Inc.":
+    "Mandaluyong City",
+  "Nestlé Philippines":
+    "Makati City",
+  "Coca-Cola Philippines":
+    "Taguig City",
+  "Pepsi-Cola Products Philippines":
+    "Muntinlupa City",
+  "Toyota Philippines":
+    "Santa Rosa, Laguna",
+  "Honda Philippines":
+    "Batangas",
+  "Accenture Philippines":
+    "Taguig City",
+  "IBM Philippines":
+    "Quezon City",
+  "Teleperformance Philippines":
+    "Pasig City",
+  "Concentrix Philippines":
+    "Quezon City",
+  "Sitel Philippines":
+    "Makati City",
 };
 
-const CANCELLED_REASONS = new Set([
-  "Resigned",
-  "AWOL",
-  "Terminated",
-  "End of Assignment / Pulled Out by Client",
-]);
+const CANCELLED_REASONS =
+  new Set([
+    "Resigned",
+    "AWOL",
+    "Terminated",
+    "End of Assignment / Pulled Out by Client",
+  ]);
 
 function normalizeDate(value) {
   if (!value) {
     return "-";
   }
 
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
   if (
     Number.isNaN(
@@ -54,12 +80,15 @@ function normalizeDate(value) {
     .slice(0, 10);
 }
 
-function normalizeNullableDate(value) {
+function normalizeNullableDate(
+  value
+) {
   if (!value) {
     return null;
   }
 
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
   if (
     Number.isNaN(
@@ -69,11 +98,16 @@ function normalizeNullableDate(value) {
     return null;
   }
 
-  return String(value).slice(0, 10);
+  return String(value).slice(
+    0,
+    10
+  );
 }
 
 function normalizeText(value) {
-  return String(value || "")
+  return String(
+    value || ""
+  )
     .trim()
     .toLowerCase();
 }
@@ -137,7 +171,8 @@ function mapEmployeeToDeployment(
   employee
 ) {
   const company =
-    employee.company || "-";
+    employee.company ||
+    "-";
 
   const endReason =
     employee.contractEndReason ||
@@ -227,7 +262,8 @@ exports.getDeployments =
       const [rows] =
         await db
           .promise()
-          .query(`
+          .query(
+            `
             SELECT
               id,
               name,
@@ -253,7 +289,8 @@ exports.getDeployments =
                 OR contractEndReason IS NOT NULL
               )
             ORDER BY created_at DESC
-          `);
+            `
+          );
 
       const deployments =
         rows.map(
@@ -264,6 +301,13 @@ exports.getDeployments =
         deployments
       );
     } catch (err) {
+      /*
+       * Keep technical database details
+       * on the server only.
+       *
+       * Never return sqlMessage or the
+       * raw exception message to clients.
+       */
       console.error(
         "GET DEPLOYMENTS ERROR:",
         err
@@ -273,8 +317,6 @@ exports.getDeployments =
         .status(500)
         .json({
           error:
-            err.sqlMessage ||
-            err.message ||
             "Failed to fetch deployments",
         });
     }
@@ -327,7 +369,9 @@ exports.updateDeploymentStatus =
             WHERE id = ?
             LIMIT 1
             `,
-            [employeeId]
+            [
+              employeeId,
+            ]
           );
 
       if (
@@ -374,7 +418,8 @@ exports.updateDeploymentStatus =
        */
       if (
         Number(
-          employee.archived || 0
+          employee.archived ||
+          0
         ) === 1
       ) {
         return res
@@ -391,7 +436,8 @@ exports.updateDeploymentStatus =
         );
 
       const endReason =
-        status === "Cancelled"
+        status ===
+        "Cancelled"
           ? "End of Assignment / Pulled Out by Client"
           : "Completed Contract";
 
@@ -418,10 +464,12 @@ exports.updateDeploymentStatus =
         );
 
       return res.json({
-        success: true,
+        success:
+          true,
 
         message:
-          status === "Cancelled"
+          status ===
+          "Cancelled"
             ? "Deployment cancelled successfully."
             : "Deployment marked as completed successfully.",
 
@@ -435,6 +483,13 @@ exports.updateDeploymentStatus =
         endReason,
       });
     } catch (err) {
+      /*
+       * Log the full exception only on
+       * the backend for diagnostics.
+       *
+       * Client receives a stable public
+       * error message without SQL details.
+       */
       console.error(
         "UPDATE DEPLOYMENT STATUS ERROR:",
         err
@@ -444,8 +499,6 @@ exports.updateDeploymentStatus =
         .status(500)
         .json({
           error:
-            err.sqlMessage ||
-            err.message ||
             "Failed to update deployment status",
         });
     }

@@ -39,6 +39,37 @@ const API_BASE =
 
 const REQUEST_TIMEOUT_MS = 15000;
 
+const TEMP_PASSWORD_BYTES = 8;
+
+function generateTemporaryPassword() {
+  if (
+    !window.crypto ||
+    typeof window.crypto
+      .getRandomValues !== "function"
+  ) {
+    throw new Error(
+      "Secure temporary password generation is unavailable in this browser."
+    );
+  }
+
+  const randomBytes =
+    new Uint8Array(
+      TEMP_PASSWORD_BYTES
+    );
+
+  window.crypto.getRandomValues(
+    randomBytes
+  );
+
+  return Array.from(
+    randomBytes,
+    (value) =>
+      value
+        .toString(16)
+        .padStart(2, "0")
+  ).join("");
+}
+
 const ROLE_LABELS = {
   SUPER_ADMIN: "Super Admin",
   HR_MANAGER: "HR Manager",
@@ -470,34 +501,42 @@ export default function Settings() {
         setProcessingAction("reset");
         setPageError("");
 
-        const data =
-          await requestJson(
-            `${API_BASE}/users/reset/${encodeURIComponent(
-              resetTarget.id
-            )}`,
-            {
-              method: "PUT",
-            }
-          );
+        /*
+         * Generate the temporary password locally.
+         *
+         * The backend receives it only for hashing
+         * and never returns it in the API response.
+         */
+        const generatedPassword =
+          generateTemporaryPassword();
+
+        await requestJson(
+          `${API_BASE}/users/reset/${encodeURIComponent(
+            resetTarget.id
+          )}`,
+          {
+            method: "PUT",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              temporaryPassword:
+                generatedPassword,
+            }),
+          }
+        );
 
         if (!isMountedRef.current) {
           return;
         }
 
-        const generatedPassword =
-          data?.temporaryPassword ||
-          data?.temporary_password ||
-          data?.password ||
-          data?.newPassword ||
-          data?.new_password ||
-          "";
-
-        if (!generatedPassword) {
-          throw new Error(
-            "The password was reset, but the server did not return a temporary password."
-          );
-        }
-
+        /*
+         * Keep the locally generated password only
+         * for the authorized one-time success dialog.
+         */
         setTemporaryPassword(
           generatedPassword
         );

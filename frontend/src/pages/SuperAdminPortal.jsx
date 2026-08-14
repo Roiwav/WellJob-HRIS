@@ -38,6 +38,37 @@ const USERS_API_URL =
 
 const REQUEST_TIMEOUT_MS = 15000;
 
+const TEMP_PASSWORD_BYTES = 8;
+
+function generateTemporaryPassword() {
+  if (
+    !window.crypto ||
+    typeof window.crypto
+      .getRandomValues !== "function"
+  ) {
+    throw new Error(
+      "Secure temporary password generation is unavailable in this browser."
+    );
+  }
+
+  const randomBytes =
+    new Uint8Array(
+      TEMP_PASSWORD_BYTES
+    );
+
+  window.crypto.getRandomValues(
+    randomBytes
+  );
+
+  return Array.from(
+    randomBytes,
+    (value) =>
+      value
+        .toString(16)
+        .padStart(2, "0")
+  ).join("");
+}
+
 const ROLE_CONFIG = {
   [ROLES.HR_STAFF]: {
     label: "HR Staff",
@@ -658,6 +689,16 @@ export default function SuperAdminPortal() {
         setIsSubmitting(true);
         setPageError("");
 
+        /*
+         * Generate the one-time temporary password
+         * locally in the authorized browser.
+         *
+         * The backend receives it only for immediate
+         * bcrypt hashing and never echoes it back.
+         */
+        const generatedPassword =
+          generateTemporaryPassword();
+
         const data =
           await requestJson(
             USERS_API_URL,
@@ -674,6 +715,8 @@ export default function SuperAdminPortal() {
               body: JSON.stringify({
                 name: trimmedName,
                 role,
+                temporaryPassword:
+                  generatedPassword,
               }),
             }
           );
@@ -693,9 +736,7 @@ export default function SuperAdminPortal() {
             "",
 
           temporaryPassword:
-            data?.temporaryPassword ||
-            data?.temporary_password ||
-            "",
+            generatedPassword,
 
           name: trimmedName,
 
@@ -746,6 +787,18 @@ export default function SuperAdminPortal() {
     useCallback(() => {
       setIsSuccessDialogOpen(false);
       setCopyMessage("");
+
+      /*
+       * Remove the temporary password from
+       * component state as soon as the one-time
+       * credentials dialog is closed.
+       */
+      setCreatedAccount(
+        (currentAccount) => ({
+          ...currentAccount,
+          temporaryPassword: "",
+        })
+      );
     }, []);
 
   const handleCopyCredentials =

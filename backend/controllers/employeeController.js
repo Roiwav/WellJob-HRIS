@@ -494,8 +494,6 @@ exports.createEmployee = async (
       .status(500)
       .json({
         error:
-          err.sqlMessage ||
-          err.message ||
           "Create employee error",
       });
   } finally {
@@ -612,8 +610,6 @@ exports.getEmployees = async (
       .status(500)
       .json({
         error:
-          err.sqlMessage ||
-          err.message ||
           "Fetch employees error",
       });
   }
@@ -918,8 +914,6 @@ exports.updateEmployee = async (
       .status(500)
       .json({
         error:
-          err.sqlMessage ||
-          err.message ||
           "Update employee error",
       });
   } finally {
@@ -1148,9 +1142,7 @@ exports.updateContractEnd = async (
 
     return res.status(500).json({
       error:
-        err.sqlMessage ||
-        err.message ||
-        "Failed to update contract end date.",
+          "Failed to update contract end date.",
     });
   }
 };
@@ -1233,9 +1225,7 @@ exports.archiveEmployee = async (
 
     return res.status(500).json({
       error:
-        err.sqlMessage ||
-        err.message ||
-        "Archive employee error",
+          "Archive employee error",
     });
   }
 };
@@ -1318,9 +1308,7 @@ exports.restoreEmployee = async (
 
     return res.status(500).json({
       error:
-        err.sqlMessage ||
-        err.message ||
-        "Restore employee error",
+          "Restore employee error",
     });
   }
 };
@@ -1527,8 +1515,6 @@ exports.deleteEmployee = async (
       .status(500)
       .json({
         error:
-          err.sqlMessage ||
-          err.message ||
           "Delete employee error",
       });
   } finally {

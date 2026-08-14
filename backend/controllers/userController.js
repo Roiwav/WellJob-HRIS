@@ -2,14 +2,20 @@
 
 const db = require("../config/db");
 const bcrypt = require("bcrypt");
-const { logAudit } = require("../utils/auditLogger");
 const {
-  generatePassword,
+  logAudit,
+} = require("../utils/auditLogger");
+
+const {
   isValidName,
   generateAccountCredentials,
 } = require("../utils/helpers");
 
 /*
+ * ==================================================
+ * AUTHENTICATED AUDIT ACTOR
+ * ==================================================
+ *
  * SECURITY:
  * Audit actor identity must come from req.user.
  *
@@ -20,53 +26,78 @@ const {
  * Client-supplied user IDs, usernames, and roles
  * are never used for audit attribution.
  */
-async function getAuthenticatedActor(req) {
+async function getAuthenticatedActor(
+  req
+) {
   const authenticatedId =
-    req.user?.id ?? req.user?.userId;
+    req.user?.id ??
+    req.user?.userId;
 
-  const username = String(
-    req.user?.username || ""
-  ).trim();
+  const username =
+    String(
+      req.user?.username || ""
+    ).trim();
 
-  const role = String(
-    req.user?.role || ""
-  )
-    .trim()
-    .toUpperCase();
+  const role =
+    String(
+      req.user?.role || ""
+    )
+      .trim()
+      .toUpperCase();
 
-  let userId = authenticatedId;
+  let userId =
+    authenticatedId;
+
   let fullName =
-    username || "Authenticated User";
+    username ||
+    "Authenticated User";
 
   if (
-    authenticatedId !== undefined &&
+    authenticatedId !==
+      undefined &&
     authenticatedId !== null &&
-    String(authenticatedId).trim() !== ""
+    String(
+      authenticatedId
+    ).trim() !== ""
   ) {
     try {
-      const [rows] = await db.promise().query(
-        `SELECT user_id, full_name
-         FROM users
-         WHERE id = ?
-         LIMIT 1`,
-        [authenticatedId]
-      );
+      const [rows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              user_id,
+              full_name
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [
+              authenticatedId,
+            ]
+          );
 
-      if (rows.length > 0) {
+      if (
+        rows.length > 0
+      ) {
         userId =
           rows[0].user_id ??
           authenticatedId;
 
         fullName =
           String(
-            rows[0].full_name || ""
+            rows[0]
+              .full_name ||
+              ""
           ).trim() ||
           fullName;
       }
     } catch (error) {
       /*
-       * Do not replace the verified req.user identity
-       * if audit display enrichment fails.
+       * Do not replace the verified
+       * req.user identity if audit
+       * display enrichment fails.
        */
       console.error(
         "Audit actor enrichment error:",
@@ -83,314 +114,712 @@ async function getAuthenticatedActor(req) {
   };
 }
 
-// ✅ GET USERS
-exports.getUsers = async (req, res) => {
-  try {
-    const [users] = await db.promise().query(
-      `SELECT id, user_id, full_name, username, role, status
-       FROM users
-       ORDER BY id DESC`
-    );
+/*
+ * ==================================================
+ * GET USERS
+ * ==================================================
+ */
+exports.getUsers =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const [users] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              id,
+              user_id,
+              full_name,
+              username,
+              role,
+              status
+            FROM users
+            ORDER BY id DESC
+            `
+          );
 
-    return res.json(users);
-  } catch (err) {
-    console.error(err);
+      return res.json(
+        users
+      );
+    } catch (err) {
+      console.error(
+        "FETCH USERS ERROR:",
+        err
+      );
 
-    return res.status(500).json({
-      message: "Fetch users error",
-    });
-  }
-};
-
-// ✅ CREATE USER
-exports.createUser = async (req, res) => {
-  const { name, role } = req.body;
-
-  try {
-    const trimmedName = String(name || "").trim();
-
-    if (!trimmedName) {
-      return res.status(400).json({
-        message: "Full name is required",
-      });
+      return res
+        .status(500)
+        .json({
+          message:
+            "Fetch users error",
+        });
     }
+  };
 
-    if (!isValidName(trimmedName)) {
-      return res.status(400).json({
-        message: "Full name must contain letters only",
-      });
-    }
+/*
+ * ==================================================
+ * CREATE USER
+ * ==================================================
+ *
+ * SECURITY:
+ *
+ * The authorized frontend generates the temporary
+ * password locally and sends it to this endpoint.
+ *
+ * The backend:
+ * - validates it
+ * - hashes it immediately using bcrypt
+ * - stores only the hash
+ * - NEVER returns the raw password
+ *
+ * Existing must_change_password behavior remains.
+ */
+exports.createUser =
+  async (
+    req,
+    res
+  ) => {
+    const {
+      name,
+      role,
+      temporaryPassword,
+    } =
+      req.body || {};
 
-    const actor =
-      await getAuthenticatedActor(req);
+    try {
+      const trimmedName =
+        String(
+          name || ""
+        ).trim();
 
-    const { userId, username } =
-      await generateAccountCredentials(role);
+      if (
+        !trimmedName
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Full name is required",
+          });
+      }
 
-    const tempPassword = generatePassword(8);
-    const hash = await bcrypt.hash(tempPassword, 10);
+      if (
+        !isValidName(
+          trimmedName
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Full name must contain letters only",
+          });
+      }
 
-    await db.promise().query(
-      `INSERT INTO users
-       (user_id, full_name, username, password, role, status, must_change_password)
-       VALUES (?, ?, ?, ?, ?, 'Active', 1)`,
-      [
+      /*
+       * Temporary password validation.
+       *
+       * It must exist and be at least
+       * 8 characters long.
+       *
+       * Maximum length prevents excessively
+       * large password payloads.
+       */
+      if (
+        typeof temporaryPassword !==
+          "string" ||
+        temporaryPassword.length <
+          8 ||
+        temporaryPassword.length >
+          128
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "A valid temporary password is required.",
+          });
+      }
+
+      const actor =
+        await getAuthenticatedActor(
+          req
+        );
+
+      const {
         userId,
-        trimmedName,
         username,
-        hash,
-        role,
-      ]
-    );
+      } =
+        await generateAccountCredentials(
+          role
+        );
 
-    await logAudit({
-      userId: actor.userId,
-      username: actor.username,
-      fullName: actor.fullName,
-      role: actor.role,
-      action: "CREATE_USER",
-      description:
-        `${actor.fullName} created account for ${trimmedName} (${username}, ${role}).`,
-    });
+      /*
+       * SECURITY:
+       * Hash immediately.
+       *
+       * The raw temporary password is
+       * never written to the database.
+       */
+      const hash =
+        await bcrypt.hash(
+          temporaryPassword,
+          10
+        );
 
-    return res.status(201).json({
-      message: "User created",
-      temporaryPassword: tempPassword,
-      account: {
-        userId,
-        username,
-        role,
-      },
-    });
-  } catch (err) {
-    console.error(err);
+      await db
+        .promise()
+        .query(
+          `
+          INSERT INTO users
+          (
+            user_id,
+            full_name,
+            username,
+            password,
+            role,
+            status,
+            must_change_password
+          )
+          VALUES (
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            'Active',
+            1
+          )
+          `,
+          [
+            userId,
+            trimmedName,
+            username,
+            hash,
+            role,
+          ]
+        );
 
-    return res.status(500).json({
-      message: "Create user error",
-    });
-  }
-};
+      await logAudit({
+        userId:
+          actor.userId,
 
-// ✅ RESET PASSWORD
-exports.resetPassword = async (req, res) => {
-  const { id } = req.params;
+        username:
+          actor.username,
 
-  try {
-    const [users] = await db.promise().query(
-      "SELECT * FROM users WHERE id = ?",
-      [id]
-    );
+        fullName:
+          actor.fullName,
 
-    if (users.length === 0) {
-      return res.status(404).json({
-        message: "User not found",
+        role:
+          actor.role,
+
+        action:
+          "CREATE_USER",
+
+        description:
+          `${actor.fullName} created account for ${trimmedName} (${username}, ${role}).`,
       });
+
+      /*
+       * SECURITY:
+       *
+       * Do not return temporaryPassword.
+       *
+       * The authorized frontend already owns
+       * its local one-time copy.
+       */
+      return res
+        .status(201)
+        .json({
+          message:
+            "User created",
+
+          account: {
+            userId,
+            username,
+            role,
+          },
+        });
+    } catch (err) {
+      console.error(
+        "CREATE USER ERROR:",
+        err
+      );
+
+      return res
+        .status(500)
+        .json({
+          message:
+            "Create user error",
+        });
     }
+  };
 
-    const user = users[0];
+/*
+ * ==================================================
+ * RESET PASSWORD
+ * ==================================================
+ *
+ * SECURITY:
+ *
+ * The IT Support frontend generates a one-time
+ * temporary password locally and sends it here.
+ *
+ * The backend hashes it immediately and never
+ * returns the raw password in the response.
+ */
+exports.resetPassword =
+  async (
+    req,
+    res
+  ) => {
+    const {
+      id,
+    } = req.params;
 
-    const actor =
-      await getAuthenticatedActor(req);
+    const {
+      temporaryPassword,
+    } =
+      req.body || {};
 
-    const tempPassword = generatePassword(8);
-    const hash = await bcrypt.hash(tempPassword, 10);
+    try {
+      /*
+       * Require a valid temporary password
+       * from the authorized frontend.
+       */
+      if (
+        typeof temporaryPassword !==
+          "string" ||
+        temporaryPassword.length <
+          8 ||
+        temporaryPassword.length >
+          128
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "A valid temporary password is required.",
+          });
+      }
 
-    await db.promise().query(
-      "UPDATE users SET password = ?, must_change_password = 1 WHERE id = ?",
-      [hash, id]
-    );
+      const [users] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT *
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [
+              id,
+            ]
+          );
 
-    await logAudit({
-      userId: actor.userId,
-      username: actor.username,
-      fullName: actor.fullName,
-      role: actor.role,
-      action: "RESET_PASSWORD",
-      description:
-        `${actor.fullName} reset the password for ${user.full_name} (${user.username}).`,
-    });
+      if (
+        users.length ===
+        0
+      ) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "User not found",
+          });
+      }
 
-    return res.json({
-      message: "Password reset",
-      temporaryPassword: tempPassword,
-    });
-  } catch (err) {
-    console.error(err);
+      const user =
+        users[0];
 
-    return res.status(500).json({
-      message: "Reset error",
-    });
-  }
-};
+      const actor =
+        await getAuthenticatedActor(
+          req
+        );
 
-// ✅ TOGGLE STATUS
-exports.toggleStatus = async (req, res) => {
-  const { id } = req.params;
+      /*
+       * SECURITY:
+       * Hash before persistence.
+       */
+      const hash =
+        await bcrypt.hash(
+          temporaryPassword,
+          10
+        );
 
-  try {
-    const [users] = await db.promise().query(
-      "SELECT * FROM users WHERE id = ?",
-      [id]
-    );
+      await db
+        .promise()
+        .query(
+          `
+          UPDATE users
+          SET
+            password = ?,
+            must_change_password = 1
+          WHERE id = ?
+          `,
+          [
+            hash,
+            id,
+          ]
+        );
 
-    if (users.length === 0) {
-      return res.status(404).json({
-        message: "User not found",
+      await logAudit({
+        userId:
+          actor.userId,
+
+        username:
+          actor.username,
+
+        fullName:
+          actor.fullName,
+
+        role:
+          actor.role,
+
+        action:
+          "RESET_PASSWORD",
+
+        description:
+          `${actor.fullName} reset the password for ${user.full_name} (${user.username}).`,
       });
+
+      /*
+       * SECURITY:
+       *
+       * Do not echo the raw temporary password.
+       */
+      return res.json({
+        message:
+          "Password reset",
+      });
+    } catch (err) {
+      console.error(
+        "RESET PASSWORD ERROR:",
+        err
+      );
+
+      return res
+        .status(500)
+        .json({
+          message:
+            "Reset error",
+        });
     }
+  };
 
-    const user = users[0];
+/*
+ * ==================================================
+ * TOGGLE USER STATUS
+ * ==================================================
+ */
+exports.toggleStatus =
+  async (
+    req,
+    res
+  ) => {
+    const {
+      id,
+    } = req.params;
 
-    const actor =
-      await getAuthenticatedActor(req);
+    try {
+      const [users] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT *
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [
+              id,
+            ]
+          );
 
-    const newStatus =
-      user.status === "Active"
-        ? "Inactive"
-        : "Active";
+      if (
+        users.length ===
+        0
+      ) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "User not found",
+          });
+      }
 
-    await db.promise().query(
-      "UPDATE users SET status = ? WHERE id = ?",
-      [newStatus, id]
-    );
+      const user =
+        users[0];
 
-    await logAudit({
-      userId: actor.userId,
-      username: actor.username,
-      fullName: actor.fullName,
-      role: actor.role,
-      action: "TOGGLE_STATUS",
-      description:
-        `${actor.fullName} changed ${user.full_name} (${user.username}) to ${newStatus}.`,
-    });
+      const actor =
+        await getAuthenticatedActor(
+          req
+        );
 
-    return res.json({
-      status: newStatus,
-    });
-  } catch (err) {
-    console.error(err);
+      const newStatus =
+        user.status ===
+        "Active"
+          ? "Inactive"
+          : "Active";
 
-    return res.status(500).json({
-      message: "Toggle error",
-    });
-  }
-};
+      await db
+        .promise()
+        .query(
+          `
+          UPDATE users
+          SET status = ?
+          WHERE id = ?
+          `,
+          [
+            newStatus,
+            id,
+          ]
+        );
 
-// ✅ CHANGE OWN PASSWORD
-exports.changePassword = async (req, res) => {
-  /*
-   * SECURITY:
-   * The account identity comes only from req.user.
-   *
-   * Do NOT trust these for authority:
-   * - req.body.userId
-   * - req.body.id
-   * - req.body.username
-   *
-   * Those values may still be sent by an older frontend,
-   * but they are intentionally ignored here.
-   */
-  const authenticatedUserId =
-    req.user?.id ?? req.user?.userId;
+      await logAudit({
+        userId:
+          actor.userId,
 
-  const {
-    currentPassword,
-    newPassword,
-  } = req.body;
+        username:
+          actor.username,
 
-  if (
-    authenticatedUserId === undefined ||
-    authenticatedUserId === null ||
-    String(authenticatedUserId).trim() === ""
-  ) {
-    return res.status(401).json({
-      success: false,
-      message:
-        "A verified authenticated user is required.",
-    });
-  }
+        fullName:
+          actor.fullName,
 
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "Current password and new password are required.",
-    });
-  }
+        role:
+          actor.role,
 
-  try {
+        action:
+          "TOGGLE_STATUS",
+
+        description:
+          `${actor.fullName} changed ${user.full_name} (${user.username}) to ${newStatus}.`,
+      });
+
+      return res.json({
+        status:
+          newStatus,
+      });
+    } catch (err) {
+      console.error(
+        "TOGGLE USER STATUS ERROR:",
+        err
+      );
+
+      return res
+        .status(500)
+        .json({
+          message:
+            "Toggle error",
+        });
+    }
+  };
+
+/*
+ * ==================================================
+ * CHANGE OWN PASSWORD
+ * ==================================================
+ */
+exports.changePassword =
+  async (
+    req,
+    res
+  ) => {
     /*
-     * Find the account using the verified JWT identity.
-     * We no longer select the account using request-body IDs.
+     * SECURITY:
+     *
+     * The account identity comes only
+     * from req.user.
+     *
+     * Do NOT trust these for authority:
+     * - req.body.userId
+     * - req.body.id
+     * - req.body.username
+     *
+     * Those values may still be sent by
+     * an older frontend, but they are
+     * intentionally ignored here.
      */
-    const [users] = await db.promise().query(
-      `SELECT *
-       FROM users
-       WHERE id = ?
-       LIMIT 1`,
-      [authenticatedUserId]
-    );
+    const authenticatedUserId =
+      req.user?.id ??
+      req.user?.userId;
 
-    if (users.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    const user = users[0];
-
-    // Verify the user's current password.
-    const isMatch = await bcrypt.compare(
+    const {
       currentPassword,
-      user.password
-    );
+      newPassword,
+    } =
+      req.body || {};
 
-    if (!isMatch) {
-      return res.status(400).json({
-        success: false,
-        message: "Incorrect current password",
-      });
+    if (
+      authenticatedUserId ===
+        undefined ||
+      authenticatedUserId ===
+        null ||
+      String(
+        authenticatedUserId
+      ).trim() === ""
+    ) {
+      return res
+        .status(401)
+        .json({
+          success:
+            false,
+
+          message:
+            "A verified authenticated user is required.",
+        });
     }
 
-    // Hash the new password.
-    const hash = await bcrypt.hash(
-      newPassword,
-      10
-    );
+    if (
+      !currentPassword ||
+      !newPassword
+    ) {
+      return res
+        .status(400)
+        .json({
+          success:
+            false,
 
-    // Save new password and clear forced-change flag.
-    await db.promise().query(
-      `UPDATE users
-       SET password = ?,
-           must_change_password = 0
-       WHERE id = ?`,
-      [hash, user.id]
-    );
+          message:
+            "Current password and new password are required.",
+        });
+    }
 
-    await logAudit({
-      userId: user.user_id,
-      username: user.username,
-      role: user.role,
-      action: "CHANGE_PASSWORD",
-      description:
-        "User successfully changed their password",
-    });
+    try {
+      /*
+       * Find account using only the
+       * verified JWT identity.
+       */
+      const [users] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT *
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [
+              authenticatedUserId,
+            ]
+          );
 
-    return res.json({
-      success: true,
-      message:
-        "Password updated successfully",
-    });
-  } catch (err) {
-    console.error(
-      "Change Password Error:",
-      err
-    );
+      if (
+        users.length ===
+        0
+      ) {
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
 
-    return res.status(500).json({
-      success: false,
-      message: "Error changing password",
-    });
-  }
-};
+            message:
+              "User not found",
+          });
+      }
+
+      const user =
+        users[0];
+
+      /*
+       * Verify existing password.
+       */
+      const isMatch =
+        await bcrypt.compare(
+          currentPassword,
+          user.password
+        );
+
+      if (
+        !isMatch
+      ) {
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Incorrect current password",
+          });
+      }
+
+      /*
+       * Hash the new password before
+       * storing it.
+       */
+      const hash =
+        await bcrypt.hash(
+          newPassword,
+          10
+        );
+
+      /*
+       * Save new password and clear
+       * forced-change flag.
+       */
+      await db
+        .promise()
+        .query(
+          `
+          UPDATE users
+          SET
+            password = ?,
+            must_change_password = 0
+          WHERE id = ?
+          `,
+          [
+            hash,
+            user.id,
+          ]
+        );
+
+      await logAudit({
+        userId:
+          user.user_id,
+
+        username:
+          user.username,
+
+        role:
+          user.role,
+
+        action:
+          "CHANGE_PASSWORD",
+
+        description:
+          "User successfully changed their password",
+      });
+
+      return res.json({
+        success:
+          true,
+
+        message:
+          "Password updated successfully",
+      });
+    } catch (err) {
+      console.error(
+        "Change Password Error:",
+        err
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Error changing password",
+        });
+    }
+  };

@@ -1766,9 +1766,7 @@ exports.getIncidents = async (
       .status(500)
       .json({
         error:
-          err.sqlMessage ||
-          err.message ||
-          "Failed to fetch incidents",
+            "Failed to fetch incidents",
       });
   }
 };
@@ -1966,8 +1964,6 @@ exports.getIncidentsByEmployee =
         .status(500)
         .json({
           error:
-            err.sqlMessage ||
-            err.message ||
             "Failed to fetch employee incidents",
         });
     }
@@ -2011,8 +2007,6 @@ exports.getIncidentById =
         .status(500)
         .json({
           error:
-            err.sqlMessage ||
-            err.message ||
             "Failed to fetch incident",
         });
     }
@@ -2474,8 +2468,6 @@ exports.createIncident =
         .status(500)
         .json({
           error:
-            err.sqlMessage ||
-            err.message ||
             "Failed to create incident",
         });
     } finally {
@@ -2956,8 +2948,6 @@ exports.updateIncident =
         .status(500)
         .json({
           error:
-            err.sqlMessage ||
-            err.message ||
             "Failed to update incident",
         });
     }
@@ -3672,8 +3662,6 @@ exports.updateIncidentStatus =
         .status(500)
         .json({
           error:
-            err.sqlMessage ||
-            err.message ||
             "Failed to update incident status",
         });
     } finally {
@@ -3858,8 +3846,6 @@ exports.deleteIncident =
         .status(500)
         .json({
           error:
-            err.sqlMessage ||
-            err.message ||
             "Failed to delete incident",
         });
     } finally {

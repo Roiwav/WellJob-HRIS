@@ -1,4 +1,5 @@
 const express = require("express");
+
 const router = express.Router();
 
 const upload = require("../middleware/upload");
@@ -21,6 +22,31 @@ const {
   authorizeRoles,
 } = require("../middleware/roleMiddleware");
 
+/*
+ * ==================================================
+ * INCIDENT UPLOAD ERROR HANDLING
+ * ==================================================
+ *
+ * Only explicitly approved validation messages
+ * may be returned to the client.
+ *
+ * Unknown/internal upload errors are logged on
+ * the backend and replaced with a generic response.
+ *
+ * Existing upload requirements remain unchanged:
+ *
+ * - PNG
+ * - JPEG
+ * - PDF
+ * - maximum 5 MB per file
+ * - evidenceFiles field
+ * - maximum 10 files
+ */
+const SAFE_UPLOAD_ERROR_MESSAGES =
+  new Set([
+    "Only PNG, JPEG, and PDF files are allowed.",
+  ]);
+
 function handleUploadError(
   error,
   req,
@@ -31,31 +57,77 @@ function handleUploadError(
     return next();
   }
 
+  /*
+   * Multer file-size limit.
+   *
+   * Preserve the existing user-facing
+   * validation message.
+   */
   if (
     error.code ===
     "LIMIT_FILE_SIZE"
   ) {
-    return res.status(400).json({
-      error:
-        "Each uploaded file must not exceed 5 MB.",
-    });
+    return res
+      .status(400)
+      .json({
+        error:
+          "Each uploaded file must not exceed 5 MB.",
+      });
   }
 
+  /*
+   * Multer unexpected-field validation.
+   *
+   * Preserve the existing field requirement.
+   */
   if (
     error.code ===
     "LIMIT_UNEXPECTED_FILE"
   ) {
-    return res.status(400).json({
-      error:
-        "Unexpected upload field. Use evidenceFiles for incident proof.",
-    });
+    return res
+      .status(400)
+      .json({
+        error:
+          "Unexpected upload field. Use evidenceFiles for incident proof.",
+      });
   }
 
-  return res.status(400).json({
-    error:
-      error.message ||
-      "Unable to upload incident evidence.",
-  });
+  /*
+   * Allow only known validation messages
+   * intentionally created by our own upload
+   * middleware.
+   *
+   * Never expose arbitrary error.message values.
+   */
+  if (
+    SAFE_UPLOAD_ERROR_MESSAGES.has(
+      error.message
+    )
+  ) {
+    return res
+      .status(400)
+      .json({
+        error:
+          error.message,
+      });
+  }
+
+  /*
+   * Preserve the full technical error on the
+   * server for diagnostics, but do not expose
+   * internal implementation details to clients.
+   */
+  console.error(
+    "INCIDENT EVIDENCE UPLOAD ERROR:",
+    error
+  );
+
+  return res
+    .status(400)
+    .json({
+      error:
+        "Unable to upload incident evidence.",
+    });
 }
 
 function uploadIncidentFiles(

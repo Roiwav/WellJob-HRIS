@@ -2545,8 +2545,6 @@ exports.getSmartAlerts =
           success: false,
 
           error:
-            error.sqlMessage ||
-            error.message ||
             "Failed to fetch smart alerts.",
         });
     }
@@ -2640,8 +2638,6 @@ exports.markSmartAlertRead =
           success: false,
 
           error:
-            error.sqlMessage ||
-            error.message ||
             "Failed to mark alert as read.",
         });
     }
@@ -2735,8 +2731,6 @@ exports.dismissSmartAlert =
           success: false,
 
           error:
-            error.sqlMessage ||
-            error.message ||
             "Failed to dismiss alert.",
         });
     }
@@ -2852,8 +2846,6 @@ exports.markAllSmartAlertsRead =
           success: false,
 
           error:
-            error.sqlMessage ||
-            error.message ||
             "Failed to mark all alerts as read.",
         });
     }
