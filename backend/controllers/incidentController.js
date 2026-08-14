@@ -1,3 +1,5 @@
+const fs = require("fs");
+
 const db = require("../config/db");
 const {
   logAudit,
@@ -375,6 +377,67 @@ function buildEvidenceFromReq(
   );
 }
 
+/*
+ * PHASE 8 — INCIDENT UPLOAD COMPENSATION
+ *
+ * Multer writes incident evidence files before
+ * the controller performs database mutations.
+ *
+ * If a create/update transaction fails, remove
+ * only files uploaded by that failed request.
+ *
+ * Pre-existing incident evidence files are never
+ * touched by this helper.
+ */
+async function cleanupIncidentUploadedFiles(
+  files
+) {
+  const uploadedFiles =
+    Array.isArray(files)
+      ? files
+      : [];
+
+  for (
+    const file of uploadedFiles
+  ) {
+    const physicalPath =
+      String(
+        file?.path || ""
+      ).trim();
+
+    if (!physicalPath) {
+      continue;
+    }
+
+    try {
+      await fs.promises.unlink(
+        physicalPath
+      );
+    } catch (error) {
+      /*
+       * ENOENT means the file is already absent,
+       * which is already the desired compensated
+       * state.
+       */
+      if (
+        error?.code !==
+        "ENOENT"
+      ) {
+        console.error(
+          "INCIDENT FILE CLEANUP ERROR:",
+          {
+            physicalPath,
+
+            message:
+              error?.message ||
+              error,
+          }
+        );
+      }
+    }
+  }
+}
+
 function normalizeEmployeeLookupId(
   value
 ) {
@@ -705,10 +768,36 @@ async function addTimelineEvent({
   title,
   description,
   actor,
-}) {
-  await ensureIncidentTimelineTable();
 
-  await db.promise().query(
+  /*
+   * Optional transaction support.
+   *
+   * Existing callers do not need to provide
+   * either option and therefore retain the
+   * original behavior.
+   */
+  connection = null,
+  ensureTable = true,
+}) {
+  /*
+   * DDL should not run inside the incident
+   * transaction.
+   *
+   * Existing non-transactional callers retain
+   * the historical ensure-table behavior.
+   *
+   * Transactional callers must ensure the table
+   * before BEGIN and pass ensureTable: false.
+   */
+  if (ensureTable) {
+    await ensureIncidentTimelineTable();
+  }
+
+  const queryTarget =
+    connection ||
+    db.promise();
+
+  await queryTarget.query(
     `
     INSERT INTO incident_timeline
     (
@@ -727,12 +816,16 @@ async function addTimelineEvent({
       incidentId,
       actionType,
       title,
-      description || null,
-      actor?.userId || null,
-      actor?.username || null,
+      description ||
+        null,
+      actor?.userId ||
+        null,
+      actor?.username ||
+        null,
       actor?.fullName ||
         "System",
-      actor?.role || null,
+      actor?.role ||
+        null,
     ]
   );
 }
@@ -1925,13 +2018,27 @@ exports.getIncidentById =
     }
   };
 
-// CREATE INCIDENT
 exports.createIncident =
   async (
     req,
     res
   ) => {
+    let connection = null;
+
+    let transactionStarted =
+      false;
+
+    let transactionCommitted =
+      false;
+
     try {
+      /*
+       * Ensure the timeline table BEFORE opening
+       * the transaction.
+       *
+       * CREATE TABLE / DDL is intentionally kept
+       * outside the transaction boundary.
+       */
       await ensureIncidentTimelineTable();
 
       const {
@@ -1953,6 +2060,11 @@ exports.createIncident =
         resolutionNotes,
       } = req.body || {};
 
+      /*
+       * SECURITY:
+       * Actor identity continues to come from
+       * verified req.user through getActor().
+       */
       const actor =
         await getActor(req);
 
@@ -1971,6 +2083,10 @@ exports.createIncident =
           });
       }
 
+      /*
+       * Read-only validation may occur before
+       * the transaction.
+       */
       const [employeeRows] =
         await db
           .promise()
@@ -1987,7 +2103,8 @@ exports.createIncident =
           );
 
       if (
-        employeeRows.length === 0
+        employeeRows.length ===
+        0
       ) {
         return res
           .status(404)
@@ -2064,12 +2181,12 @@ exports.createIncident =
 
       /*
        * SECURITY:
-       * Every newly created incident must begin
-       * at the Open stage.
+       * Every newly created incident continues
+       * to start at Open.
        *
-       * Client-supplied status values are intentionally
-       * ignored here so incident creation cannot bypass
-       * the protected PATCH workflow.
+       * Client-supplied status is intentionally
+       * ignored so create cannot bypass the
+       * protected PATCH workflow.
        */
       const normalizedStatus =
         "Open";
@@ -2080,91 +2197,130 @@ exports.createIncident =
           actor
         );
 
-      const [result] =
-        await db
-          .promise()
-          .query(
-            `
-            INSERT INTO incidents
-            (
-              employee_id,
-              employee_name,
-              company,
-              violation_type,
-              severity,
-              status,
-              incident_date,
-              location,
-              description,
-              reported_by,
-              action_taken,
-              recommendation,
-              resolution_notes,
-              last_action_by_id,
-              last_action_by_username,
-              last_action_by_name,
-              last_action_type,
-              last_action_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-            `,
-            [
-              finalEmployeeId,
-              finalEmployeeName,
-              finalCompany,
-              finalViolation,
-              normalizeSeverity(
-                severity
-              ),
-              normalizedStatus,
-              finalDate,
-              location || null,
-              description || null,
-              finalReportedBy,
-              actionTaken || null,
-              recommendation ||
-                null,
-              resolutionNotes ||
-                null,
-              actor.userId,
-              actor.username,
-              actor.fullName,
-              "CREATE_INCIDENT",
-            ]
-          );
-
-      const incidentId =
-        result.insertId;
-
+      /*
+       * Capture Multer-created evidence metadata
+       * before the transaction.
+       *
+       * Stored DB paths continue using the
+       * Phase 7 /documents/... normalization.
+       */
       const evidenceFiles =
         buildEvidenceFromReq(
           req
         );
 
-      for (
-        const file of
-        evidenceFiles
-      ) {
+      /*
+       * ==================================================
+       * PHASE 8D TRANSACTION
+       * ==================================================
+       *
+       * Atomic unit:
+       *
+       * incident
+       * + evidence
+       * + initial timeline
+       * + audit
+       */
+      connection =
         await db
           .promise()
-          .query(
-            `
-            INSERT INTO incident_evidence
-            (
-              incident_id,
-              file_name,
-              file_path
-            )
-            VALUES (?, ?, ?)
-            `,
-            [
-              incidentId,
-              file.fileName,
-              file.filePath,
-            ]
-          );
+          .getConnection();
+
+      await connection
+        .beginTransaction();
+
+      transactionStarted =
+        true;
+
+      const [result] =
+        await connection.query(
+          `
+          INSERT INTO incidents
+          (
+            employee_id,
+            employee_name,
+            company,
+            violation_type,
+            severity,
+            status,
+            incident_date,
+            location,
+            description,
+            reported_by,
+            action_taken,
+            recommendation,
+            resolution_notes,
+            last_action_by_id,
+            last_action_by_username,
+            last_action_by_name,
+            last_action_type,
+            last_action_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          `,
+          [
+            finalEmployeeId,
+            finalEmployeeName,
+            finalCompany,
+            finalViolation,
+            normalizeSeverity(
+              severity
+            ),
+            normalizedStatus,
+            finalDate,
+            location ||
+              null,
+            description ||
+              null,
+            finalReportedBy,
+            actionTaken ||
+              null,
+            recommendation ||
+              null,
+            resolutionNotes ||
+              null,
+            actor.userId,
+            actor.username,
+            actor.fullName,
+            "CREATE_INCIDENT",
+          ]
+        );
+
+      const incidentId =
+        result.insertId;
+
+      /*
+       * Evidence records use the SAME connection.
+       */
+      for (
+        const file of
+          evidenceFiles
+      ) {
+        await connection.query(
+          `
+          INSERT INTO incident_evidence
+          (
+            incident_id,
+            file_name,
+            file_path
+          )
+          VALUES (?, ?, ?)
+          `,
+          [
+            incidentId,
+            file.fileName,
+            file.filePath,
+          ]
+        );
       }
 
+      /*
+       * Initial timeline record also participates
+       * in the SAME transaction.
+       *
+       * Timeline table was already ensured before
+       * BEGIN, so do not run DDL here.
+       */
       await addTimelineEvent({
         incidentId,
 
@@ -2178,31 +2334,65 @@ exports.createIncident =
           `Reported by ${finalReportedBy}.`,
 
         actor,
+
+        connection,
+
+        ensureTable:
+          false,
       });
 
-      await safeLogAudit({
-        userId:
-          actor.userId,
+      /*
+       * PHASE 8D:
+       * Audit must be part of the same transaction.
+       *
+       * Unlike normal audit calls, this call must
+       * throw on failure so the entire incident
+       * transaction can rollback.
+       */
+      await logAudit(
+        {
+          userId:
+            actor.userId,
 
-        username:
-          actor.username,
+          username:
+            actor.username,
 
-        fullName:
-          actor.fullName,
+          fullName:
+            actor.fullName,
 
-        role:
-          actor.role,
+          role:
+            actor.role,
 
-        category:
-          AUDIT_CATEGORY.OPERATIONAL,
+          category:
+            AUDIT_CATEGORY.OPERATIONAL,
 
-        action:
-          "ADD_INCIDENT",
+          action:
+            "ADD_INCIDENT",
 
-        description:
-          `${actor.fullName} created incident record for ${finalEmployeeName}.`,
-      });
+          description:
+            `${actor.fullName} created incident record for ${finalEmployeeName}.`,
+        },
+        {
+          connection,
 
+          throwOnError:
+            true,
+        }
+      );
+
+      /*
+       * Commit only after incident, evidence,
+       * timeline and audit all succeed.
+       */
+      await connection.commit();
+
+      transactionCommitted =
+        true;
+
+      /*
+       * Fetch the completed representation only
+       * after the transactional writes commit.
+       */
       const createdIncident =
         await getIncidentWithEvidence(
           incidentId
@@ -2225,6 +2415,56 @@ exports.createIncident =
             createdIncident,
         });
     } catch (err) {
+      let rollbackSucceeded =
+        !transactionStarted;
+
+      /*
+       * If transaction began but did not commit,
+       * restore every transactional DB write.
+       */
+      if (
+        connection &&
+        transactionStarted &&
+        !transactionCommitted
+      ) {
+        try {
+          await connection.rollback();
+
+          rollbackSucceeded =
+            true;
+        } catch (
+          rollbackError
+        ) {
+          rollbackSucceeded =
+            false;
+
+          console.error(
+            "CREATE INCIDENT ROLLBACK ERROR:",
+            rollbackError
+          );
+        }
+      }
+
+      /*
+       * Multer has already created physical files.
+       *
+       * If the transaction did not commit and DB
+       * rollback is confirmed, remove only files
+       * uploaded by this failed create request.
+       *
+       * If rollback itself is uncertain, do not
+       * blindly delete evidence that might already
+       * belong to committed DB state.
+       */
+      if (
+        !transactionCommitted &&
+        rollbackSucceeded
+      ) {
+        await cleanupIncidentUploadedFiles(
+          req.files
+        );
+      }
+
       console.error(
         "CREATE INCIDENT ERROR:",
         err
@@ -2238,6 +2478,14 @@ exports.createIncident =
             err.message ||
             "Failed to create incident",
         });
+    } finally {
+      /*
+       * Always return the dedicated MySQL
+       * connection to the pool.
+       */
+      if (connection) {
+        connection.release();
+      }
     }
   };
 
@@ -2721,7 +2969,18 @@ exports.updateIncidentStatus =
     req,
     res
   ) => {
+    let connection = null;
+
+    let transactionStarted =
+      false;
+
+    let transactionCommitted =
+      false;
+
     try {
+      /*
+       * Keep DDL outside the transaction.
+       */
       await ensureIncidentTimelineTable();
 
       const {
@@ -2809,6 +3068,11 @@ exports.updateIncidentStatus =
           recommendation
         );
 
+      /*
+       * ==================================================
+       * EXISTING WORKFLOW RULES — PRESERVED
+       * ==================================================
+       */
       if (
         existingStatus ===
         "Closed"
@@ -3022,6 +3286,10 @@ exports.updateIncidentStatus =
           });
       }
 
+      /*
+       * Build exactly the same workflow-controlled
+       * UPDATE fields as the existing implementation.
+       */
       const updateFields = [
         "status = ?",
 
@@ -3055,6 +3323,12 @@ exports.updateIncidentStatus =
         actionType,
       ];
 
+      /*
+       * START INVESTIGATION
+       *
+       * Existing ownership and reviewer-reset
+       * behavior is preserved.
+       */
       if (
         actionType ===
         WORKFLOW_ACTION.START
@@ -3079,6 +3353,9 @@ exports.updateIncidentStatus =
         );
       }
 
+      /*
+       * SUBMIT / RESUBMIT PROOF
+       */
       if (
         actionType ===
           WORKFLOW_ACTION
@@ -3107,6 +3384,9 @@ exports.updateIncidentStatus =
         );
       }
 
+      /*
+       * APPROVE + CLOSE
+       */
       if (
         actionType ===
         WORKFLOW_ACTION.CLOSE
@@ -3130,6 +3410,9 @@ exports.updateIncidentStatus =
         );
       }
 
+      /*
+       * RETURN TO INVESTIGATOR
+       */
       if (
         actionType ===
         WORKFLOW_ACTION.RETURN
@@ -3154,19 +3437,50 @@ exports.updateIncidentStatus =
 
       params.push(id);
 
-      await db
-        .promise()
-        .query(
-          `
-          UPDATE incidents
-          SET ${updateFields.join(
-            ", "
-          )}
-          WHERE id = ?
-          `,
-          params
-        );
+      /*
+       * ==================================================
+       * PHASE 8E — ATOMIC WORKFLOW TRANSACTION
+       * ==================================================
+       *
+       * Same MySQL connection for:
+       *
+       * 1. incident status/workflow update
+       * 2. submitted evidence records
+       * 3. workflow timeline
+       * 4. workflow audit
+       *
+       * Nothing commits unless all writes succeed.
+       */
+      connection =
+        await db
+          .promise()
+          .getConnection();
 
+      await connection
+        .beginTransaction();
+
+      transactionStarted =
+        true;
+
+      /*
+       * Main incident workflow mutation.
+       */
+      await connection.query(
+        `
+        UPDATE incidents
+        SET ${updateFields.join(
+          ", "
+        )}
+        WHERE id = ?
+        `,
+        params
+      );
+
+      /*
+       * Existing workflow rule:
+       * evidence is persisted only for proof
+       * submission/resubmission actions.
+       */
       if (
         actionType ===
           WORKFLOW_ACTION
@@ -3179,27 +3493,32 @@ exports.updateIncidentStatus =
           const file of
           evidenceFiles
         ) {
-          await db
-            .promise()
-            .query(
-              `
-              INSERT INTO incident_evidence
-              (
-                incident_id,
-                file_name,
-                file_path
-              )
-              VALUES (?, ?, ?)
-              `,
-              [
-                id,
-                file.fileName,
-                file.filePath,
-              ]
-            );
+          await connection.query(
+            `
+            INSERT INTO incident_evidence
+            (
+              incident_id,
+              file_name,
+              file_path
+            )
+            VALUES (?, ?, ?)
+            `,
+            [
+              id,
+              file.fileName,
+              file.filePath,
+            ]
+          );
         }
       }
 
+      /*
+       * Timeline uses the transaction-aware helper
+       * added during Phase 8D.
+       *
+       * Table was already ensured before BEGIN,
+       * so no DDL is run inside the transaction.
+       */
       await addTimelineEvent({
         incidentId:
           id,
@@ -3223,31 +3542,64 @@ exports.updateIncidentStatus =
           ),
 
         actor,
+
+        connection,
+
+        ensureTable:
+          false,
       });
 
-      await safeLogAudit({
-        userId:
-          actor.userId,
+      /*
+       * Audit also uses the SAME connection.
+       *
+       * throwOnError is required here:
+       * if audit insert fails, rollback the
+       * entire workflow transition.
+       */
+      await logAudit(
+        {
+          userId:
+            actor.userId,
 
-        username:
-          actor.username,
+          username:
+            actor.username,
 
-        fullName:
-          actor.fullName,
+          fullName:
+            actor.fullName,
 
-        role:
-          actor.role,
+          role:
+            actor.role,
 
-        category:
-          AUDIT_CATEGORY.OPERATIONAL,
+          category:
+            AUDIT_CATEGORY.OPERATIONAL,
 
-        action:
-          actionType,
+          action:
+            actionType,
 
-        description:
-          `${actor.fullName} updated incident #${id} to ${normalizedStatus}.`,
-      });
+          description:
+            `${actor.fullName} updated incident #${id} to ${normalizedStatus}.`,
+        },
+        {
+          connection,
 
+          throwOnError:
+            true,
+        }
+      );
+
+      /*
+       * Commit only after all related writes
+       * complete successfully.
+       */
+      await connection.commit();
+
+      transactionCommitted =
+        true;
+
+      /*
+       * Fetch response representation only after
+       * the workflow transaction is committed.
+       */
       const updatedIncident =
         await getIncidentWithEvidence(
           id
@@ -3263,6 +3615,54 @@ exports.updateIncidentStatus =
           updatedIncident,
       });
     } catch (err) {
+      let rollbackSucceeded =
+        !transactionStarted;
+
+      /*
+       * Restore all DB state if anything fails
+       * before commit.
+       */
+      if (
+        connection &&
+        transactionStarted &&
+        !transactionCommitted
+      ) {
+        try {
+          await connection.rollback();
+
+          rollbackSucceeded =
+            true;
+        } catch (
+          rollbackError
+        ) {
+          rollbackSucceeded =
+            false;
+
+          console.error(
+            "UPDATE INCIDENT STATUS ROLLBACK ERROR:",
+            rollbackError
+          );
+        }
+      }
+
+      /*
+       * Multer writes uploaded proof files before
+       * the controller executes.
+       *
+       * After confirmed rollback, delete only files
+       * uploaded by THIS failed PATCH request.
+       *
+       * Existing evidence files are untouched.
+       */
+      if (
+        !transactionCommitted &&
+        rollbackSucceeded
+      ) {
+        await cleanupIncidentUploadedFiles(
+          req.files
+        );
+      }
+
       console.error(
         "UPDATE INCIDENT STATUS ERROR:",
         err
@@ -3276,20 +3676,61 @@ exports.updateIncidentStatus =
             err.message ||
             "Failed to update incident status",
         });
+    } finally {
+      /*
+       * Always release the dedicated transaction
+       * connection back to the pool.
+       */
+      if (connection) {
+        connection.release();
+      }
     }
   };
 
 // DELETE INCIDENT
+/*
+ * ==================================================
+ * PHASE 8F — TRANSACTION-SAFE INCIDENT DELETE
+ * ==================================================
+ *
+ * Current related-record behavior is preserved:
+ *
+ * 1. incident_evidence is explicitly deleted
+ * 2. incidents row is deleted
+ * 3. incident_timeline is automatically deleted
+ *    by the existing ON DELETE CASCADE FK
+ *
+ * The evidence table also has ON DELETE CASCADE,
+ * but the existing explicit delete is intentionally
+ * preserved to avoid changing established behavior
+ * during transaction hardening.
+ *
+ * No physical evidence files are deleted here because
+ * the existing delete endpoint did not remove them.
+ * This phase changes DB atomicity only.
+ */
 exports.deleteIncident =
   async (
     req,
     res
   ) => {
-    try {
-      const {
-        id,
-      } = req.params;
+    const {
+      id,
+    } = req.params;
 
+    let connection = null;
+
+    let transactionStarted =
+      false;
+
+    let transactionCommitted =
+      false;
+
+    try {
+      /*
+       * Read-only existence validation occurs before
+       * opening the transaction.
+       */
       const [incidentRows] =
         await db
           .promise()
@@ -3300,7 +3741,9 @@ exports.deleteIncident =
             WHERE id = ?
             LIMIT 1
             `,
-            [id]
+            [
+              id,
+            ]
           );
 
       if (
@@ -3315,25 +3758,68 @@ exports.deleteIncident =
           });
       }
 
-      await db
-        .promise()
-        .query(
-          `
-          DELETE FROM incident_evidence
-          WHERE incident_id = ?
-          `,
-          [id]
-        );
+      /*
+       * ==================================================
+       * PHASE 8F TRANSACTION
+       * ==================================================
+       *
+       * Related DB deletions must succeed together.
+       */
+      connection =
+        await db
+          .promise()
+          .getConnection();
 
-      await db
-        .promise()
-        .query(
-          `
-          DELETE FROM incidents
-          WHERE id = ?
-          `,
-          [id]
-        );
+      await connection
+        .beginTransaction();
+
+      transactionStarted =
+        true;
+
+      /*
+       * Preserve the existing explicit evidence delete.
+       *
+       * If the parent incident delete later fails,
+       * this deletion is restored by ROLLBACK.
+       */
+      await connection.query(
+        `
+        DELETE FROM incident_evidence
+        WHERE incident_id = ?
+        `,
+        [
+          id,
+        ]
+      );
+
+      /*
+       * Delete parent incident.
+       *
+       * Existing database FK behavior automatically
+       * cascades this delete to incident_timeline.
+       *
+       * incident_evidence also has ON DELETE CASCADE,
+       * although rows were already explicitly removed
+       * above as part of the preserved current flow.
+       */
+      await connection.query(
+        `
+        DELETE FROM incidents
+        WHERE id = ?
+        `,
+        [
+          id,
+        ]
+      );
+
+      /*
+       * Commit only after all confirmed related
+       * database deletions succeed.
+       */
+      await connection.commit();
+
+      transactionCommitted =
+        true;
 
       return res.json({
         success: true,
@@ -3342,6 +3828,27 @@ exports.deleteIncident =
           "Incident deleted successfully",
       });
     } catch (err) {
+      /*
+       * Restore related database state when any
+       * delete fails before COMMIT.
+       */
+      if (
+        connection &&
+        transactionStarted &&
+        !transactionCommitted
+      ) {
+        try {
+          await connection.rollback();
+        } catch (
+          rollbackError
+        ) {
+          console.error(
+            "DELETE INCIDENT ROLLBACK ERROR:",
+            rollbackError
+          );
+        }
+      }
+
       console.error(
         "DELETE INCIDENT ERROR:",
         err
@@ -3355,5 +3862,13 @@ exports.deleteIncident =
             err.message ||
             "Failed to delete incident",
         });
+    } finally {
+      /*
+       * Always return the dedicated transaction
+       * connection to the MySQL pool.
+       */
+      if (connection) {
+        connection.release();
+      }
     }
   };

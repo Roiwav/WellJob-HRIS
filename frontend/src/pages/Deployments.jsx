@@ -33,13 +33,23 @@ import {
   normalizeSeparationReason,
 } from "../utils/deployments/deploymentHelpers";
 
-const API_BASE = "http://localhost:5000/api";
-const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
-const EMPLOYEES_API_URL = `${API_BASE}/employees`;
+const API_BASE =
+  "http://localhost:5000/api";
 
-const DATA_EVENT_SOURCE = "deployments-page";
-const REQUEST_TIMEOUT_MS = 15000;
-const DATA_UPDATE_DEBOUNCE_MS = 300;
+const DEPLOYMENT_API_URL =
+  `${API_BASE}/deployments`;
+
+const EMPLOYEES_API_URL =
+  `${API_BASE}/employees`;
+
+const DATA_EVENT_SOURCE =
+  "deployments-page";
+
+const REQUEST_TIMEOUT_MS =
+  15000;
+
+const DATA_UPDATE_DEBOUNCE_MS =
+  300;
 
 const SELECT_CLASS_NAME = [
   "min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5",
@@ -51,39 +61,185 @@ const SELECT_CLASS_NAME = [
   "dark:disabled:bg-slate-800 dark:disabled:text-gray-500",
 ].join(" ");
 
-let activeDeploymentRequest = null;
+let activeDeploymentRequest =
+  null;
 
-function emitDataUpdated(action = "DEPLOYMENTS_UPDATED") {
+/*
+ * ==================================================
+ * DEPLOYMENT PAGE AUTH HEADERS
+ * ==================================================
+ *
+ * Login stores the authenticated JWT in:
+ *
+ * localStorage["token"]
+ *
+ * Axios requests may already receive the token from
+ * the global Axios interceptor, but this page also
+ * uses native fetch() through requestJson().
+ *
+ * Native fetch does NOT use Axios interceptors, so
+ * Authorization must be attached explicitly here.
+ */
+function getAuthenticatedHeaders(
+  additionalHeaders = {}
+) {
+  const token =
+    String(
+      localStorage.getItem(
+        "token"
+      ) || ""
+    ).trim();
+
+  let normalizedHeaders = {};
+
+  /*
+   * Support either a plain object or a Headers
+   * instance without losing existing request headers.
+   */
+  if (
+    typeof Headers !==
+      "undefined" &&
+    additionalHeaders instanceof
+      Headers
+  ) {
+    normalizedHeaders =
+      Object.fromEntries(
+        additionalHeaders.entries()
+      );
+  } else if (
+    additionalHeaders &&
+    typeof additionalHeaders ===
+      "object"
+  ) {
+    normalizedHeaders = {
+      ...additionalHeaders,
+    };
+  }
+
+  return {
+    Accept:
+      "application/json",
+
+    ...normalizedHeaders,
+
+    ...(token
+      ? {
+          Authorization:
+            `Bearer ${token}`,
+        }
+      : {}),
+  };
+}
+
+function emitDataUpdated(
+  action = "DEPLOYMENTS_UPDATED"
+) {
   window.dispatchEvent(
-    new CustomEvent("dataUpdated", {
-      detail: {
-        source: DATA_EVENT_SOURCE,
-        domain: "deployments",
-        action,
-        at: Date.now(),
-      },
-    })
+    new CustomEvent(
+      "dataUpdated",
+      {
+        detail: {
+          source:
+            DATA_EVENT_SOURCE,
+
+          domain:
+            "deployments",
+
+          action,
+
+          at:
+            Date.now(),
+        },
+      }
+    )
   );
 }
 
-async function requestJson(url, options = {}) {
-  const controller = new AbortController();
+/*
+ * ==================================================
+ * AUTHENTICATED FETCH WRAPPER
+ * ==================================================
+ *
+ * Important:
+ * fetch() does not receive Axios interceptors.
+ *
+ * Every deployment GET request therefore receives
+ * the JWT explicitly through getAuthenticatedHeaders.
+ */
+async function requestJson(
+  url,
+  options = {}
+) {
+  const controller =
+    new AbortController();
 
-  const timeoutId = window.setTimeout(() => {
-    controller.abort();
-  }, REQUEST_TIMEOUT_MS);
+  const timeoutId =
+    window.setTimeout(
+      () => {
+        controller.abort();
+      },
+      REQUEST_TIMEOUT_MS
+    );
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
+    const response =
+      await fetch(
+        url,
+        {
+          ...options,
 
-    const data = await response
-      .json()
-      .catch(() => null);
+          headers:
+            getAuthenticatedHeaders(
+              options.headers ||
+                {}
+            ),
 
-    if (!response.ok) {
+          signal:
+            controller.signal,
+        }
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(
+          () => null
+        );
+
+    if (
+      !response.ok
+    ) {
+      if (
+        response.status ===
+        401
+      ) {
+        throw new Error(
+          "Authentication required. Please sign in again."
+        );
+      }
+
+      if (
+        response.status ===
+        403
+      ) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "You do not have permission to access deployment records."
+        );
+      }
+
+      if (
+        response.status ===
+        503
+      ) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "The system is currently under maintenance. Please try again later."
+        );
+      }
+
       throw new Error(
         data?.error ||
           data?.message ||
@@ -93,7 +249,10 @@ async function requestJson(url, options = {}) {
 
     return data;
   } catch (error) {
-    if (error?.name === "AbortError") {
+    if (
+      error?.name ===
+      "AbortError"
+    ) {
       throw new Error(
         "The server took too long to respond. Check that the backend server and database are running, then try again."
       );
@@ -101,50 +260,77 @@ async function requestJson(url, options = {}) {
 
     throw error;
   } finally {
-    window.clearTimeout(timeoutId);
+    window.clearTimeout(
+      timeoutId
+    );
   }
 }
 
 function getDeploymentData() {
-  if (!activeDeploymentRequest) {
-    activeDeploymentRequest = requestJson(
-      DEPLOYMENT_API_URL
-    ).finally(() => {
-      activeDeploymentRequest = null;
-    });
+  if (
+    !activeDeploymentRequest
+  ) {
+    activeDeploymentRequest =
+      requestJson(
+        DEPLOYMENT_API_URL
+      ).finally(() => {
+        activeDeploymentRequest =
+          null;
+      });
   }
 
   return activeDeploymentRequest;
 }
 
-function normalizeDeploymentStatus(status) {
-  const normalized = String(status || "")
-    .trim()
-    .toLowerCase();
+function normalizeDeploymentStatus(
+  status
+) {
+  const normalized =
+    String(
+      status || ""
+    )
+      .trim()
+      .toLowerCase();
 
-  if (normalized === "active") {
+  if (
+    normalized ===
+    "active"
+  ) {
     return "Active";
   }
 
-  if (normalized === "completed") {
+  if (
+    normalized ===
+    "completed"
+  ) {
     return "Completed";
   }
 
   if (
-    normalized === "cancelled" ||
-    normalized === "canceled"
+    normalized ===
+      "cancelled" ||
+    normalized ===
+      "canceled"
   ) {
     return "Cancelled";
   }
 
-  if (normalized === "pending") {
+  if (
+    normalized ===
+    "pending"
+  ) {
     return "Pending";
   }
 
-  return status || "Active";
+  return (
+    status ||
+    "Active"
+  );
 }
 
-function normalizeDeployment(item = {}) {
+function normalizeDeployment(
+  item = {}
+) {
   const employeeId =
     item.employeeId ||
     item.employee_id ||
@@ -218,12 +404,13 @@ function normalizeDeployment(item = {}) {
 
     start,
 
-    status: normalizeDeploymentStatus(
-      item.status ||
-        item.deploymentStatus ||
-        item.deployment_status ||
-        "Active"
-    ),
+    status:
+      normalizeDeploymentStatus(
+        item.status ||
+          item.deploymentStatus ||
+          item.deployment_status ||
+          "Active"
+      ),
 
     employmentType:
       item.employmentType ||
@@ -237,7 +424,9 @@ function normalizeDeployment(item = {}) {
       item.deployment_date ||
       start,
 
-    contractEnd: separationDate,
+    contractEnd:
+      separationDate,
+
     separationDate,
 
     separationReason:
@@ -263,90 +452,166 @@ function normalizeDeployment(item = {}) {
   };
 }
 
-function getRequestError(error, fallbackMessage) {
-  if (error?.response?.status === 503) {
+function getRequestError(
+  error,
+  fallbackMessage
+) {
+  if (
+    error?.response?.status ===
+    401
+  ) {
+    return "Authentication required. Please sign in again.";
+  }
+
+  if (
+    error?.response?.status ===
+    403
+  ) {
+    return (
+      error?.response?.data
+        ?.error ||
+      error?.response?.data
+        ?.message ||
+      "You do not have permission to perform this action."
+    );
+  }
+
+  if (
+    error?.response?.status ===
+    503
+  ) {
     return "The system is currently under maintenance. Please try again later.";
   }
 
   if (
-    error?.code === "ECONNABORTED" ||
-    error?.name === "AbortError"
+    error?.code ===
+      "ECONNABORTED" ||
+    error?.name ===
+      "AbortError"
   ) {
     return "The server took too long to respond. Check that the backend and database are running, then try again.";
   }
 
   return (
-    error?.response?.data?.error ||
-    error?.response?.data?.message ||
+    error?.response?.data
+      ?.error ||
+    error?.response?.data
+      ?.message ||
     error?.message ||
     fallbackMessage
   );
 }
 
-function normalizeSearchText(value) {
-  return String(value || "")
+function normalizeSearchText(
+  value
+) {
+  return String(
+    value || ""
+  )
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ")
+    .replace(
+      /[^a-z0-9\s]/g,
+      ""
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
     .trim();
 }
 
 export default function Deployments() {
-  const { user } = useAuth();
+  const {
+    user,
+  } = useAuth();
 
   const isSuperAdmin =
-    user?.role === "SUPER_ADMIN";
+    user?.role ===
+    "SUPER_ADMIN";
 
   const [
     selectedDeployment,
     setSelectedDeployment,
   ] = useState(null);
 
-  const [deployments, setDeployments] =
-    useState([]);
+  const [
+    deployments,
+    setDeployments,
+  ] = useState([]);
 
-  const [isLoading, setIsLoading] =
-    useState(true);
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(true);
 
-  const [isRefreshing, setIsRefreshing] =
-    useState(false);
+  const [
+    isRefreshing,
+    setIsRefreshing,
+  ] = useState(false);
 
-  const [fetchError, setFetchError] =
-    useState("");
+  const [
+    fetchError,
+    setFetchError,
+  ] = useState("");
 
-  const [toastMessage, setToastMessage] =
-    useState("");
+  const [
+    toastMessage,
+    setToastMessage,
+  ] = useState("");
 
-  const [search, setSearch] =
-    useState("");
+  const [
+    search,
+    setSearch,
+  ] = useState("");
 
-  const [selectedMonth, setSelectedMonth] =
-    useState("");
+  const [
+    selectedMonth,
+    setSelectedMonth,
+  ] = useState("");
 
-  const [selectedYear, setSelectedYear] =
-    useState("");
+  const [
+    selectedYear,
+    setSelectedYear,
+  ] = useState("");
 
-  const isMountedRef = useRef(true);
-  const isFetchingRef = useRef(false);
-  const dataUpdateTimerRef = useRef(null);
+  const isMountedRef =
+    useRef(true);
 
-  const monthOptions = useMemo(
-    () => getMonthOptions(),
-    []
-  );
+  const isFetchingRef =
+    useRef(false);
 
-  const yearOptions = useMemo(
-    () => getYearOptions(deployments),
-    [deployments]
-  );
+  const dataUpdateTimerRef =
+    useRef(null);
+
+  const monthOptions =
+    useMemo(
+      () =>
+        getMonthOptions(),
+      []
+    );
+
+  const yearOptions =
+    useMemo(
+      () =>
+        getYearOptions(
+          deployments
+        ),
+      [
+        deployments,
+      ]
+    );
 
   useEffect(() => {
-    isMountedRef.current = true;
+    isMountedRef.current =
+      true;
 
     return () => {
-      isMountedRef.current = false;
+      isMountedRef.current =
+        false;
 
-      if (dataUpdateTimerRef.current) {
+      if (
+        dataUpdateTimerRef.current
+      ) {
         window.clearTimeout(
           dataUpdateTimerRef.current
         );
@@ -354,125 +619,171 @@ export default function Deployments() {
     };
   }, []);
 
-  const fetchDeployments = useCallback(
-    async ({
-      showInitialLoading = false,
-      showRefreshing = false,
-      showError = true,
-    } = {}) => {
-      if (isFetchingRef.current) {
-        return false;
-      }
+  const fetchDeployments =
+    useCallback(
+      async ({
+        showInitialLoading =
+          false,
 
-      isFetchingRef.current = true;
+        showRefreshing =
+          false,
 
-      if (
-        showInitialLoading &&
-        isMountedRef.current
-      ) {
-        setIsLoading(true);
-      }
-
-      if (
-        showRefreshing &&
-        isMountedRef.current
-      ) {
-        setIsRefreshing(true);
-      }
-
-      try {
+        showError =
+          true,
+      } = {}) => {
         if (
-          showError &&
-          isMountedRef.current
+          isFetchingRef.current
         ) {
-          setFetchError("");
-        }
-
-        const data =
-          await getDeploymentData();
-
-        if (!isMountedRef.current) {
           return false;
         }
 
-        const normalized =
-          Array.isArray(data)
-            ? data.map(
-                normalizeDeployment
-              )
-            : [];
-
-        setDeployments(normalized);
-
-        return true;
-      } catch (error) {
-        console.error(
-          "Fetch deployments error:",
-          error
-        );
+        isFetchingRef.current =
+          true;
 
         if (
-          showError &&
+          showInitialLoading &&
           isMountedRef.current
         ) {
-          setFetchError(
-            getRequestError(
-              error,
-              "Unable to load deployment records."
-            )
+          setIsLoading(
+            true
           );
         }
 
-        return false;
-      } finally {
-        isFetchingRef.current = false;
+        if (
+          showRefreshing &&
+          isMountedRef.current
+        ) {
+          setIsRefreshing(
+            true
+          );
+        }
 
-        if (isMountedRef.current) {
-          if (showInitialLoading) {
-            setIsLoading(false);
+        try {
+          if (
+            showError &&
+            isMountedRef.current
+          ) {
+            setFetchError(
+              ""
+            );
           }
 
-          if (showRefreshing) {
-            setIsRefreshing(false);
+          const data =
+            await getDeploymentData();
+
+          if (
+            !isMountedRef.current
+          ) {
+            return false;
+          }
+
+          const normalized =
+            Array.isArray(
+              data
+            )
+              ? data.map(
+                  normalizeDeployment
+                )
+              : [];
+
+          setDeployments(
+            normalized
+          );
+
+          return true;
+        } catch (
+          error
+        ) {
+          console.error(
+            "Fetch deployments error:",
+            error
+          );
+
+          if (
+            showError &&
+            isMountedRef.current
+          ) {
+            setFetchError(
+              getRequestError(
+                error,
+                "Unable to load deployment records."
+              )
+            );
+          }
+
+          return false;
+        } finally {
+          isFetchingRef.current =
+            false;
+
+          if (
+            isMountedRef.current
+          ) {
+            if (
+              showInitialLoading
+            ) {
+              setIsLoading(
+                false
+              );
+            }
+
+            if (
+              showRefreshing
+            ) {
+              setIsRefreshing(
+                false
+              );
+            }
           }
         }
-      }
-    },
-    []
-  );
+      },
+      []
+    );
 
   useEffect(() => {
     void fetchDeployments({
-      showInitialLoading: true,
+      showInitialLoading:
+        true,
     });
-  }, [fetchDeployments]);
+  }, [
+    fetchDeployments,
+  ]);
 
   useEffect(() => {
-    const scheduleRefresh = () => {
-      if (dataUpdateTimerRef.current) {
-        window.clearTimeout(
+    const scheduleRefresh =
+      () => {
+        if (
           dataUpdateTimerRef.current
-        );
-      }
+        ) {
+          window.clearTimeout(
+            dataUpdateTimerRef.current
+          );
+        }
 
-      dataUpdateTimerRef.current =
-        window.setTimeout(() => {
-          void fetchDeployments({
-            showError: false,
-          });
-        }, DATA_UPDATE_DEBOUNCE_MS);
-    };
+        dataUpdateTimerRef.current =
+          window.setTimeout(
+            () => {
+              void fetchDeployments({
+                showError:
+                  false,
+              });
+            },
+            DATA_UPDATE_DEBOUNCE_MS
+          );
+      };
 
-    const handleDataUpdated = (event) => {
-      if (
-        event?.detail?.source ===
-        DATA_EVENT_SOURCE
-      ) {
-        return;
-      }
+    const handleDataUpdated =
+      (event) => {
+        if (
+          event?.detail
+            ?.source ===
+          DATA_EVENT_SOURCE
+        ) {
+          return;
+        }
 
-      scheduleRefresh();
-    };
+        scheduleRefresh();
+      };
 
     window.addEventListener(
       "dataUpdated",
@@ -485,7 +796,9 @@ export default function Deployments() {
     );
 
     return () => {
-      if (dataUpdateTimerRef.current) {
+      if (
+        dataUpdateTimerRef.current
+      ) {
         window.clearTimeout(
           dataUpdateTimerRef.current
         );
@@ -501,33 +814,48 @@ export default function Deployments() {
         scheduleRefresh
       );
     };
-  }, [fetchDeployments]);
+  }, [
+    fetchDeployments,
+  ]);
 
-  const openView = useCallback(
-    (deployment) => {
-      if (!deployment) {
-        return;
-      }
+  const openView =
+    useCallback(
+      (deployment) => {
+        if (
+          !deployment
+        ) {
+          return;
+        }
 
-      setSelectedDeployment(deployment);
-    },
-    []
-  );
+        setSelectedDeployment(
+          deployment
+        );
+      },
+      []
+    );
 
   const closeDeploymentModal =
     useCallback(() => {
-      setSelectedDeployment(null);
+      setSelectedDeployment(
+        null
+      );
     }, []);
 
   const handleCloseToast =
     useCallback(() => {
-      setToastMessage("");
+      setToastMessage(
+        ""
+      );
     }, []);
 
   const handleInlineUpdateRow =
     useCallback(
-      async (updatedDeployment) => {
-        if (isSuperAdmin) {
+      async (
+        updatedDeployment
+      ) => {
+        if (
+          isSuperAdmin
+        ) {
           setFetchError(
             "Super Admin access is view-only for deployment records."
           );
@@ -536,11 +864,16 @@ export default function Deployments() {
         }
 
         const employeeId =
-          updatedDeployment?.employeeId ||
-          updatedDeployment?.employee_id ||
-          updatedDeployment?.id;
+          updatedDeployment
+            ?.employeeId ||
+          updatedDeployment
+            ?.employee_id ||
+          updatedDeployment
+            ?.id;
 
-        if (!employeeId) {
+        if (
+          !employeeId
+        ) {
           setFetchError(
             "Unable to record separation because the employee ID is missing."
           );
@@ -549,13 +882,22 @@ export default function Deployments() {
         }
 
         try {
-          setFetchError("");
+          setFetchError(
+            ""
+          );
 
           const legacyPayload =
             buildLegacySeparationPayload(
               updatedDeployment
             );
 
+          /*
+           * Axios already receives the JWT from the
+           * global interceptor in App.jsx, but adding
+           * the same authenticated header explicitly
+           * keeps this page self-contained and ensures
+           * the request remains authenticated.
+           */
           await axios.put(
             `${EMPLOYEES_API_URL}/${encodeURIComponent(
               employeeId
@@ -585,11 +927,15 @@ export default function Deployments() {
             {
               timeout:
                 REQUEST_TIMEOUT_MS,
+
+              headers:
+                getAuthenticatedHeaders(),
             }
           );
 
           await fetchDeployments({
-            showError: false,
+            showError:
+              false,
           });
 
           emitDataUpdated(
@@ -601,7 +947,9 @@ export default function Deployments() {
           );
 
           return true;
-        } catch (error) {
+        } catch (
+          error
+        ) {
           console.error(
             "Error recording employee separation:",
             error
@@ -624,24 +972,26 @@ export default function Deployments() {
       ]
     );
 
-  const handleRefresh = useCallback(
-    async () => {
-      if (
-        isFetchingRef.current ||
-        isRefreshing
-      ) {
-        return;
-      }
+  const handleRefresh =
+    useCallback(
+      async () => {
+        if (
+          isFetchingRef.current ||
+          isRefreshing
+        ) {
+          return;
+        }
 
-      await fetchDeployments({
-        showRefreshing: true,
-      });
-    },
-    [
-      fetchDeployments,
-      isRefreshing,
-    ]
-  );
+        await fetchDeployments({
+          showRefreshing:
+            true,
+        });
+      },
+      [
+        fetchDeployments,
+        isRefreshing,
+      ]
+    );
 
   const handleResetFilters =
     useCallback(() => {
@@ -653,37 +1003,57 @@ export default function Deployments() {
   const filteredDeployments =
     useMemo(() => {
       const normalizedSearch =
-        normalizeSearchText(search);
+        normalizeSearchText(
+          search
+        );
 
       const searchTerms =
         normalizedSearch
-          ? normalizedSearch.split(/\s+/)
+          ? normalizedSearch.split(
+              /\s+/
+            )
           : [];
 
       return deployments.filter(
-        (deployment) => {
+        (
+          deployment
+        ) => {
           const searchableText =
             normalizeSearchText(
               [
                 deployment.id,
-                deployment.deploymentId,
-                deployment.employeeId,
-                deployment.employee,
-                deployment.company,
-                deployment.location,
-                deployment.status,
-                deployment.employmentType,
-                deployment.separationReason,
+                deployment
+                  .deploymentId,
+                deployment
+                  .employeeId,
+                deployment
+                  .employee,
+                deployment
+                  .company,
+                deployment
+                  .location,
+                deployment
+                  .status,
+                deployment
+                  .employmentType,
+                deployment
+                  .separationReason,
               ].join(" ")
             );
 
           const matchesSearch =
-            searchTerms.length === 0 ||
-            searchTerms.every((term) =>
-              searchableText.includes(term)
+            searchTerms.length ===
+              0 ||
+            searchTerms.every(
+              (term) =>
+                searchableText.includes(
+                  term
+                )
             );
 
-          if (!matchesSearch) {
+          if (
+            !matchesSearch
+          ) {
             return false;
           }
 
@@ -700,13 +1070,16 @@ export default function Deployments() {
 
           if (
             !startDateValue ||
-            startDateValue === "-"
+            startDateValue ===
+              "-"
           ) {
             return false;
           }
 
           const startDate =
-            new Date(startDateValue);
+            new Date(
+              startDateValue
+            );
 
           if (
             Number.isNaN(
@@ -717,15 +1090,20 @@ export default function Deployments() {
           }
 
           const matchesMonth =
-            selectedMonth === "" ||
+            selectedMonth ===
+              "" ||
             startDate.getMonth() ===
-              Number(selectedMonth);
+              Number(
+                selectedMonth
+              );
 
           const matchesYear =
-            selectedYear === "" ||
+            selectedYear ===
+              "" ||
             String(
               startDate.getFullYear()
-            ) === selectedYear;
+            ) ===
+              selectedYear;
 
           return (
             matchesMonth &&
@@ -757,9 +1135,13 @@ export default function Deployments() {
       <PageHeader
         eyebrow="Workforce Assignment"
         title="Deployment Tracking"
-        description={pageDescription}
+        description={
+          pageDescription
+        }
         icon={
-          <FiBriefcase size={22} />
+          <FiBriefcase
+            size={22}
+          />
         }
         actions={
           <Button
@@ -773,13 +1155,17 @@ export default function Deployments() {
                 }
               />
             }
-            loading={isRefreshing}
+            loading={
+              isRefreshing
+            }
             disabled={
               isLoading ||
               isRefreshing ||
               isFetchingRef.current
             }
-            onClick={handleRefresh}
+            onClick={
+              handleRefresh
+            }
           >
             Refresh
           </Button>
@@ -790,15 +1176,21 @@ export default function Deployments() {
         <ErrorState
           compact
           title="Deployment data error"
-          message={fetchError}
+          message={
+            fetchError
+          }
           retryLabel="Reload deployments"
-          onRetry={handleRefresh}
+          onRetry={
+            handleRefresh
+          }
         />
       )}
 
       {!isLoading && (
         <ClientDeploymentSummary
-          deployments={deployments}
+          deployments={
+            deployments
+          }
         />
       )}
 
@@ -816,7 +1208,9 @@ export default function Deployments() {
               isLoading ||
               isRefreshing
             }
-            onClick={handleResetFilters}
+            onClick={
+              handleResetFilters
+            }
           >
             Clear Filters
           </Button>
@@ -832,9 +1226,12 @@ export default function Deployments() {
               isLoading ||
               isRefreshing
             }
-            onChange={(event) =>
+            onChange={(
+              event
+            ) =>
               setSearch(
-                event.target.value
+                event.target
+                  .value
               )
             }
             onClear={() =>
@@ -859,25 +1256,36 @@ export default function Deployments() {
 
             <select
               id="deployment-month-filter"
-              value={selectedMonth}
+              value={
+                selectedMonth
+              }
               disabled={
                 isLoading ||
                 isRefreshing
               }
-              onChange={(event) =>
+              onChange={(
+                event
+              ) =>
                 setSelectedMonth(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
               className={`${SELECT_CLASS_NAME} pl-10`}
             >
               {monthOptions.map(
-                (month) => (
+                (
+                  month
+                ) => (
                   <option
                     key={`${month.label}-${month.value}`}
-                    value={month.value}
+                    value={
+                      month.value
+                    }
                   >
-                    {month.label}
+                    {
+                      month.label
+                    }
                   </option>
                 )
               )}
@@ -895,14 +1303,19 @@ export default function Deployments() {
 
           <select
             id="deployment-year-filter"
-            value={selectedYear}
+            value={
+              selectedYear
+            }
             disabled={
               isLoading ||
               isRefreshing
             }
-            onChange={(event) =>
+            onChange={(
+              event
+            ) =>
               setSelectedYear(
-                event.target.value
+                event.target
+                  .value
               )
             }
             className={
@@ -910,12 +1323,18 @@ export default function Deployments() {
             }
           >
             {yearOptions.map(
-              (year) => (
+              (
+                year
+              ) => (
                 <option
                   key={`${year.label}-${year.value}`}
-                  value={year.value}
+                  value={
+                    year.value
+                  }
                 >
-                  {year.label}
+                  {
+                    year.label
+                  }
                 </option>
               )
             )}
@@ -929,12 +1348,15 @@ export default function Deployments() {
           columns={8}
           showHeader
         />
-      ) : filteredDeployments.length > 0 ? (
+      ) : filteredDeployments
+          .length > 0 ? (
         <DeploymentTable
           deployments={
             filteredDeployments
           }
-          openView={openView}
+          openView={
+            openView
+          }
           onUpdateRow={
             handleInlineUpdateRow
           }
@@ -987,10 +1409,18 @@ export default function Deployments() {
       )}
 
       <DeploymentToast
-        show={Boolean(toastMessage)}
+        show={
+          Boolean(
+            toastMessage
+          )
+        }
         title="Deployment Updated"
-        message={toastMessage}
-        onClose={handleCloseToast}
+        message={
+          toastMessage
+        }
+        onClose={
+          handleCloseToast
+        }
       />
     </main>
   );
@@ -1004,105 +1434,155 @@ function ClientDeploymentSummary({
     setShowAllCompanies,
   ] = useState(false);
 
-  const safeDeployments = useMemo(() => {
-    return Array.isArray(deployments)
-      ? deployments
-      : [];
-  }, [deployments]);
+  const safeDeployments =
+    useMemo(() => {
+      return Array.isArray(
+        deployments
+      )
+        ? deployments
+        : [];
+    }, [
+      deployments,
+    ]);
 
-  const summaryData = useMemo(() => {
-    const companyMap = new Map();
+  const summaryData =
+    useMemo(() => {
+      const companyMap =
+        new Map();
 
-    safeDeployments.forEach(
-      (deployment) => {
-        const company =
-          deployment.company ||
-          "Unassigned Company";
+      safeDeployments.forEach(
+        (
+          deployment
+        ) => {
+          const company =
+            deployment.company ||
+            "Unassigned Company";
 
-        const status =
-          normalizeDeploymentStatus(
-            deployment.status
-          );
+          const status =
+            normalizeDeploymentStatus(
+              deployment.status
+            );
 
-        if (!companyMap.has(company)) {
-          companyMap.set(company, {
-            company,
-            total: 0,
-            active: 0,
-            completed: 0,
-            cancelled: 0,
-          });
+          if (
+            !companyMap.has(
+              company
+            )
+          ) {
+            companyMap.set(
+              company,
+              {
+                company,
+                total: 0,
+                active: 0,
+                completed: 0,
+                cancelled: 0,
+              }
+            );
+          }
+
+          const current =
+            companyMap.get(
+              company
+            );
+
+          current.total +=
+            1;
+
+          if (
+            status ===
+            "Active"
+          ) {
+            current.active +=
+              1;
+          }
+
+          if (
+            status ===
+            "Completed"
+          ) {
+            current.completed +=
+              1;
+          }
+
+          if (
+            status ===
+            "Cancelled"
+          ) {
+            current.cancelled +=
+              1;
+          }
         }
-
-        const current =
-          companyMap.get(company);
-
-        current.total += 1;
-
-        if (status === "Active") {
-          current.active += 1;
-        }
-
-        if (status === "Completed") {
-          current.completed += 1;
-        }
-
-        if (status === "Cancelled") {
-          current.cancelled += 1;
-        }
-      }
-    );
-
-    const companies =
-      Array.from(
-        companyMap.values()
-      ).sort(
-        (first, second) =>
-          second.total -
-            first.total ||
-          first.company.localeCompare(
-            second.company
-          )
       );
 
-    const totalDeployments =
-      safeDeployments.length;
+      const companies =
+        Array.from(
+          companyMap.values()
+        ).sort(
+          (
+            first,
+            second
+          ) =>
+            second.total -
+              first.total ||
+            first.company.localeCompare(
+              second.company
+            )
+        );
 
-    const totalCompanies =
-      companies.length;
+      const totalDeployments =
+        safeDeployments.length;
 
-    const activeDeployments =
-      companies.reduce(
-        (sum, company) =>
-          sum + company.active,
-        0
-      );
+      const totalCompanies =
+        companies.length;
 
-    const completedDeployments =
-      companies.reduce(
-        (sum, company) =>
-          sum + company.completed,
-        0
-      );
+      const activeDeployments =
+        companies.reduce(
+          (
+            sum,
+            company
+          ) =>
+            sum +
+            company.active,
+          0
+        );
 
-    const cancelledDeployments =
-      companies.reduce(
-        (sum, company) =>
-          sum + company.cancelled,
-        0
-      );
+      const completedDeployments =
+        companies.reduce(
+          (
+            sum,
+            company
+          ) =>
+            sum +
+            company.completed,
+          0
+        );
 
-    return {
-      companies,
-      totalDeployments,
-      totalCompanies,
-      activeDeployments,
-      completedDeployments,
-      cancelledDeployments,
-      topCompany:
-        companies[0] || null,
-    };
-  }, [safeDeployments]);
+      const cancelledDeployments =
+        companies.reduce(
+          (
+            sum,
+            company
+          ) =>
+            sum +
+            company.cancelled,
+          0
+        );
+
+      return {
+        companies,
+        totalDeployments,
+        totalCompanies,
+        activeDeployments,
+        completedDeployments,
+        cancelledDeployments,
+
+        topCompany:
+          companies[0] ||
+          null,
+      };
+    }, [
+      safeDeployments,
+    ]);
 
   const visibleCompanies =
     showAllCompanies
@@ -1113,7 +1593,8 @@ function ClientDeploymentSummary({
         );
 
   if (
-    safeDeployments.length === 0
+    safeDeployments.length ===
+    0
   ) {
     return null;
   }
@@ -1140,19 +1621,23 @@ function ClientDeploymentSummary({
 
               <p className="mt-1 max-w-xs truncate text-sm font-extrabold text-slate-900 dark:text-white">
                 {
-                  summaryData.topCompany
+                  summaryData
+                    .topCompany
                     .company
                 }
               </p>
 
               <p className="mt-0.5 text-xs font-bold text-indigo-600 dark:text-indigo-300">
                 {
-                  summaryData.topCompany
+                  summaryData
+                    .topCompany
                     .total
                 }{" "}
                 employee
-                {summaryData.topCompany
-                  .total === 1
+                {summaryData
+                  .topCompany
+                  .total ===
+                1
                   ? ""
                   : "s"}
               </p>
@@ -1164,7 +1649,8 @@ function ClientDeploymentSummary({
           <SummaryStatCard
             label="Total"
             value={
-              summaryData.totalDeployments
+              summaryData
+                .totalDeployments
             }
             helper="All records"
           />
@@ -1172,7 +1658,8 @@ function ClientDeploymentSummary({
           <SummaryStatCard
             label="Companies"
             value={
-              summaryData.totalCompanies
+              summaryData
+                .totalCompanies
             }
             helper="Client companies"
           />
@@ -1180,7 +1667,8 @@ function ClientDeploymentSummary({
           <SummaryStatCard
             label="Active"
             value={
-              summaryData.activeDeployments
+              summaryData
+                .activeDeployments
             }
             helper="Ongoing"
             tone="green"
@@ -1189,7 +1677,8 @@ function ClientDeploymentSummary({
           <SummaryStatCard
             label="Completed"
             value={
-              summaryData.completedDeployments
+              summaryData
+                .completedDeployments
             }
             helper="Finished"
             tone="blue"
@@ -1198,7 +1687,8 @@ function ClientDeploymentSummary({
           <SummaryStatCard
             label="Cancelled"
             value={
-              summaryData.cancelledDeployments
+              summaryData
+                .cancelledDeployments
             }
             helper="Stopped"
             tone="rose"
@@ -1215,23 +1705,30 @@ function ClientDeploymentSummary({
 
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Showing{" "}
-              {visibleCompanies.length} of{" "}
               {
-                summaryData.companies
+                visibleCompanies.length
+              }{" "}
+              of{" "}
+              {
+                summaryData
+                  .companies
                   .length
               }{" "}
               companies.
             </p>
           </div>
 
-          {summaryData.companies
+          {summaryData
+            .companies
             .length > 6 && (
             <Button
               variant="secondary"
               size="sm"
               onClick={() =>
                 setShowAllCompanies(
-                  (currentValue) =>
+                  (
+                    currentValue
+                  ) =>
                     !currentValue
                 )
               }
@@ -1245,13 +1742,21 @@ function ClientDeploymentSummary({
 
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {visibleCompanies.map(
-            (item, index) => (
+            (
+              item,
+              index
+            ) => (
               <ClientCompanyRow
-                key={item.company}
+                key={
+                  item.company
+                }
                 item={item}
-                rank={index + 1}
+                rank={
+                  index + 1
+                }
                 totalDeployments={
-                  summaryData.totalDeployments
+                  summaryData
+                    .totalDeployments
                 }
               />
             )
@@ -1286,7 +1791,10 @@ function SummaryStatCard({
     <div
       className={[
         "rounded-2xl border px-4 py-3",
-        toneStyles[tone] ||
+
+        toneStyles[
+          tone
+        ] ||
           toneStyles.slate,
       ].join(" ")}
     >
@@ -1313,8 +1821,13 @@ function ClientCompanyRow({
   const percentage =
     totalDeployments > 0
       ? Math.round(
-          (Number(item.total || 0) /
-            totalDeployments) *
+          (
+            Number(
+              item.total ||
+                0
+            ) /
+            totalDeployments
+          ) *
             100
         )
       : 0;
@@ -1330,17 +1843,23 @@ function ClientCompanyRow({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h4 className="truncate text-sm font-extrabold text-slate-900 dark:text-white">
-                {item.company}
+                {
+                  item.company
+                }
               </h4>
 
               <p className="mt-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                {percentage}% of total deployments
+                {percentage}%
+                {" "}
+                of total deployments
               </p>
             </div>
 
             <div className="shrink-0 text-right">
               <p className="text-lg font-black leading-none text-slate-900 dark:text-white">
-                {item.total}
+                {
+                  item.total
+                }
               </p>
 
               <p className="mt-0.5 text-[10px] font-black uppercase tracking-wide text-slate-400">
@@ -1354,17 +1873,24 @@ function ClientCompanyRow({
               className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
               role="progressbar"
               aria-label={`${item.company} deployment percentage`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={percentage}
+              aria-valuemin={
+                0
+              }
+              aria-valuemax={
+                100
+              }
+              aria-valuenow={
+                percentage
+              }
             >
               <div
                 className="h-full rounded-full bg-indigo-600 transition-all"
                 style={{
-                  width: `${Math.min(
-                    percentage,
-                    100
-                  )}%`,
+                  width:
+                    `${Math.min(
+                      percentage,
+                      100
+                    )}%`,
                 }}
               />
             </div>
@@ -1372,9 +1898,12 @@ function ClientCompanyRow({
             <div className="flex shrink-0 items-center gap-1">
               <SummaryPill
                 label="Active"
-                value={item.active}
+                value={
+                  item.active
+                }
                 tone={
-                  item.active > 0
+                  item.active >
+                  0
                     ? "green"
                     : "muted"
                 }
@@ -1382,9 +1911,12 @@ function ClientCompanyRow({
 
               <SummaryPill
                 label="Done"
-                value={item.completed}
+                value={
+                  item.completed
+                }
                 tone={
-                  item.completed > 0
+                  item.completed >
+                  0
                     ? "blue"
                     : "muted"
                 }
@@ -1392,9 +1924,12 @@ function ClientCompanyRow({
 
               <SummaryPill
                 label="Cancelled"
-                value={item.cancelled}
+                value={
+                  item.cancelled
+                }
                 tone={
-                  item.cancelled > 0
+                  item.cancelled >
+                  0
                     ? "rose"
                     : "muted"
                 }
@@ -1430,7 +1965,10 @@ function SummaryPill({
     <span
       className={[
         "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black",
-        toneStyles[tone] ||
+
+        toneStyles[
+          tone
+        ] ||
           toneStyles.muted,
       ].join(" ")}
     >
