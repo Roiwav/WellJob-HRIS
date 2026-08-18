@@ -64,44 +64,42 @@ const queryClient = new QueryClient({
   },
 });
 
+/*
+ * Register JWT transport before React renders any child component.
+ *
+ * This prevents child mount requests from firing before Axios receives
+ * its Authorization interceptor.
+ *
+ * The token is read for every request so login/logout/token replacement
+ * is reflected without recreating the interceptor.
+ */
+axios.interceptors.request.use(
+  (config) => {
+    const token = String(
+      localStorage.getItem("token") || ""
+    ).trim();
+
+    if (token) {
+      config.headers =
+        config.headers || {};
+
+      config.headers.Authorization =
+        `Bearer ${token}`;
+    }
+
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
 function App() {
   const [isMaintenance, setIsMaintenance] = useState(false);
 
   useEffect(() => {
     /*
-     * Attach the saved JWT automatically to Axios API requests.
+     * Global maintenance response handling.
      *
-     * Example:
-     * Authorization: Bearer <token>
-     *
-     * This means components using axios.get/post/put/delete
-     * do not need to manually read localStorage every time.
-     */
-    const requestInterceptor =
-      axios.interceptors.request.use(
-        (config) => {
-          const token = String(
-            localStorage.getItem("token") || ""
-          ).trim();
-
-          if (token) {
-            config.headers =
-              config.headers || {};
-
-            config.headers.Authorization =
-              `Bearer ${token}`;
-          }
-
-          return config;
-        },
-        (error) => {
-          return Promise.reject(error);
-        }
-      );
-
-    /*
-     * Existing maintenance response handling.
-     * Keep the current behavior unchanged.
+     * Keep this inside React because it updates App state.
      */
     const responseInterceptor =
       axios.interceptors.response.use(
@@ -122,14 +120,12 @@ function App() {
       );
 
     /*
-     * Remove both interceptors when App unmounts
-     * so duplicate interceptors are not created.
+     * Remove the response interceptor when App unmounts.
+     *
+     * The JWT request interceptor is intentionally registered once
+     * at module initialization before React renders the application.
      */
     return () => {
-      axios.interceptors.request.eject(
-        requestInterceptor
-      );
-
       axios.interceptors.response.eject(
         responseInterceptor
       );

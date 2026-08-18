@@ -20,6 +20,7 @@ import {
 import {
   parseEmployeeDocuments,
 } from "../../utils/employees/employeeFormHelpers";
+import authenticatedFetch from "../../utils/authenticatedFetch";
 
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
@@ -438,7 +439,7 @@ export default function EmployeeModal({ employee, onClose }) {
         setIncidentLoading(true);
         setIncidentError("");
 
-        const response = await fetch(INCIDENT_API_URL, {
+        const response = await authenticatedFetch(INCIDENT_API_URL, {
           signal: controller.signal,
         });
 
