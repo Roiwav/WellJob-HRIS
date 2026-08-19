@@ -21,9 +21,10 @@ import EmptyState from "../ui/EmptyState";
 import ErrorState from "../ui/ErrorState";
 
 import authenticatedFetch from "../../utils/authenticatedFetch";
+import { API_BASE } from "../../config/api";
 
-const API_BASE =
-  "http://localhost:5000/api/audit-logs";
+const AUDIT_LOGS_API_URL =
+  `${API_BASE}/audit-logs`;
 
 const REQUEST_TIMEOUT_MS = 15000;
 
@@ -423,7 +424,7 @@ export default function AuditLogsPage({
             .toUpperCase();
 
         const endpoint =
-          `${API_BASE}/${encodeURIComponent(
+          `${AUDIT_LOGS_API_URL}/${encodeURIComponent(
             selectedCategory
           )}`;
 

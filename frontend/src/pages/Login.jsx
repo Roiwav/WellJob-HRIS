@@ -13,6 +13,7 @@ import logo from "../assets/logo.png";
 import { useAuth } from "../context/useAuth";
 import Dialog from "../components/ui/Dialog";
 import useTheme from "../hooks/useTheme";
+import { API_BASE } from "../config/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -38,19 +39,16 @@ export default function Login() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(
-        "http://localhost:5000/api/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            username: username.trim(),
-            password,
-          }),
-        }
-      );
+      const response = await fetch(`${API_BASE}/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+        }),
+      });
 
       let data = {};
 

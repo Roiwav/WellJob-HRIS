@@ -15,6 +15,7 @@ import {
 import Dialog from "../components/ui/Dialog";
 import { useAuth } from "../context/useAuth";
 import authenticatedFetch from "../utils/authenticatedFetch";
+import { API_BASE } from "../config/api";
 
 const PASSWORD_RULES = [
   {
@@ -223,26 +224,26 @@ export default function ChangePassword() {
       setLoading(true);
 
       /*
- * authenticatedFetch automatically attaches:
- *
- * Authorization: Bearer <token>
- *
- * Account identity is derived exclusively from
- * the verified JWT by the backend.
- */
-const response = await authenticatedFetch(
-  "http://localhost:5000/api/users/change-password",
-  {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      currentPassword,
-      newPassword,
-    }),
-  }
-);
+       * authenticatedFetch automatically attaches:
+       *
+       * Authorization: Bearer <token>
+       *
+       * Account identity is derived exclusively from
+       * the verified JWT by the backend.
+       */
+      const response = await authenticatedFetch(
+        `${API_BASE}/users/change-password`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            currentPassword,
+            newPassword,
+          }),
+        }
+      );
 
       let data = {};
 

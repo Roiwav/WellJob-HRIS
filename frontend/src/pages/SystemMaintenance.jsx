@@ -13,15 +13,14 @@ import {
 } from "react-icons/fi";
 import axios from "axios";
 
+import { API_BASE } from "../config/api";
+
 import Button from "../components/ui/Button";
 import PageHeader from "../components/ui/PageHeader";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import ErrorState from "../components/ui/ErrorState";
 import SuccessToast from "../components/ui/SuccessToast";
 import LoadingSkeleton from "../components/ui/LoadingSkeleton";
-
-const API_BASE =
-  "http://localhost:5000/api";
 
 const MAINTENANCE_STATUS_URL =
   `${API_BASE}/settings/maintenance-status`;

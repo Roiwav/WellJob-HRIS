@@ -9,9 +9,7 @@ import {
 } from "../utils/kpi/kpiHelpers";
 
 import authenticatedFetch from "../utils/authenticatedFetch";
-
-const API_BASE =
-  "http://localhost:5000/api";
+import { API_BASE } from "../config/api";
 
 const EMPLOYEE_API_URL =
   `${API_BASE}/employees`;

@@ -16,6 +16,7 @@ import {
 
 import { ROLES } from "../constants/roles";
 import { PERMISSIONS } from "../constants/permissions";
+import { API_BASE } from "../config/api";
 
 import RoleGuard from "../components/auth/RoleGuard";
 
@@ -34,7 +35,7 @@ import Dialog from "../components/ui/Dialog";
 import authenticatedFetch from "../utils/authenticatedFetch";
 
 const USERS_API_URL =
-  "http://localhost:5000/api/users";
+  `${API_BASE}/users`;
 
 const REQUEST_TIMEOUT_MS = 15000;
 

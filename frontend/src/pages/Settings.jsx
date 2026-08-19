@@ -18,6 +18,7 @@ import {
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
+import { API_BASE } from "../config/api";
 
 import Button from "../components/ui/Button";
 import IconButton from "../components/ui/IconButton";
@@ -33,9 +34,6 @@ import Dialog from "../components/ui/Dialog";
 import SuccessToast from "../components/ui/SuccessToast";
 
 import authenticatedFetch from "../utils/authenticatedFetch";
-
-const API_BASE =
-  "http://localhost:5000/api";
 
 const REQUEST_TIMEOUT_MS = 15000;
 
@@ -501,12 +499,6 @@ export default function Settings() {
         setProcessingAction("reset");
         setPageError("");
 
-        /*
-         * Generate the temporary password locally.
-         *
-         * The backend receives it only for hashing
-         * and never returns it in the API response.
-         */
         const generatedPassword =
           generateTemporaryPassword();
 
@@ -533,10 +525,6 @@ export default function Settings() {
           return;
         }
 
-        /*
-         * Keep the locally generated password only
-         * for the authorized one-time success dialog.
-         */
         setTemporaryPassword(
           generatedPassword
         );

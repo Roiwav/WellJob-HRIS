@@ -13,6 +13,7 @@ import {
 import axios from "axios";
 
 import { useAuth } from "../context/useAuth";
+import { API_BASE } from "../config/api";
 
 import DeploymentTable from "../components/deployments/table/DeploymentTable";
 import DeploymentModal from "../components/deployments/modals/DeploymentModal";
@@ -32,9 +33,6 @@ import {
   getYearOptions,
   normalizeSeparationReason,
 } from "../utils/deployments/deploymentHelpers";
-
-const API_BASE =
-  "http://localhost:5000/api";
 
 const DEPLOYMENT_API_URL =
   `${API_BASE}/deployments`;

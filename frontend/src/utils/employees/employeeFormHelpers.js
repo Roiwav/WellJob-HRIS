@@ -5,8 +5,13 @@ import {
   toProperName,
 } from "../../components/employees/employeeConstants";
 
+import {
+  API_BASE,
+  documentUrl,
+} from "../../config/api";
+
 export const EMPLOYEE_API_URL =
-  "http://localhost:5000/api/employees";
+  `${API_BASE}/employees`;
 
 export const ALLOWED_DOCUMENT_TYPES = [
   "image/png",
@@ -91,6 +96,7 @@ export function parseEmployeeDocuments(
 
   try {
     const parsed = JSON.parse(documents);
+
     return Array.isArray(parsed)
       ? parsed
       : [];
@@ -145,16 +151,27 @@ export function normalizeDateInput(value) {
     return "";
   }
 
-  const parsedDate = new Date(value);
+  const parsedDate =
+    new Date(value);
 
-  if (Number.isNaN(parsedDate.getTime())) {
-    return String(value).slice(0, 10);
+  if (
+    Number.isNaN(
+      parsedDate.getTime()
+    )
+  ) {
+    return String(value).slice(
+      0,
+      10
+    );
   }
 
-  const year = parsedDate.getFullYear();
+  const year =
+    parsedDate.getFullYear();
+
   const month = String(
     parsedDate.getMonth() + 1
   ).padStart(2, "0");
+
   const day = String(
     parsedDate.getDate()
   ).padStart(2, "0");
@@ -178,25 +195,33 @@ export function createEmployeeDocuments(
             normalizeName(
               document?.name
             ) ===
-            normalizeName(option.name)
+            normalizeName(
+              option.name
+            )
         );
 
       return {
         name: option.name,
-        expirable: option.expirable,
-        checked: Boolean(
-          matchedDocument
-        ),
+        expirable:
+          option.expirable,
+
+        checked:
+          Boolean(
+            matchedDocument
+          ),
+
         expirationDate:
           normalizeDateInput(
             getDocumentExpirationValue(
               matchedDocument
             )
           ),
+
         filePath:
           getExistingDocumentPath(
             matchedDocument
           ),
+
         file: null,
       };
     }
@@ -235,7 +260,8 @@ export function createInitialEmployeeFormData(
     company:
       status === "Deployed"
         ? String(
-            employee?.company || ""
+            employee?.company ||
+              ""
           )
         : "",
 
@@ -271,7 +297,10 @@ export function validateEmployeeDocumentFile(
     return "Only PNG, JPEG, and PDF files are allowed.";
   }
 
-  if (file.size > MAX_DOCUMENT_SIZE) {
+  if (
+    file.size >
+    MAX_DOCUMENT_SIZE
+  ) {
     return "File must be less than 5MB.";
   }
 
@@ -294,7 +323,9 @@ export function isDocumentComplete(
 ) {
   return Boolean(
     document?.checked &&
-      hasDocumentFile(document) &&
+      hasDocumentFile(
+        document
+      ) &&
       (
         !document.expirable ||
         document.expirationDate
@@ -305,19 +336,28 @@ export function isDocumentComplete(
 export function getSelectedDocuments(
   documents = []
 ) {
-  if (!Array.isArray(documents)) {
+  if (
+    !Array.isArray(
+      documents
+    )
+  ) {
     return [];
   }
 
   return documents.filter(
-    (document) => document?.checked
+    (document) =>
+      document?.checked
   );
 }
 
 export function getCompletedDocuments(
   documents = []
 ) {
-  if (!Array.isArray(documents)) {
+  if (
+    !Array.isArray(
+      documents
+    )
+  ) {
     return [];
   }
 
@@ -332,7 +372,9 @@ export function findDuplicateEmployee({
   excludedEmployeeId = "",
 }) {
   const normalizedInput =
-    normalizeName(employeeName);
+    normalizeName(
+      employeeName
+    );
 
   const excludedId =
     normalizeEmployeeId(
@@ -344,25 +386,31 @@ export function findDuplicateEmployee({
   }
 
   return (
-    employees.find((employee) => {
-      const employeeId =
-        normalizeEmployeeId(
-          getEmployeeId(employee)
+    employees.find(
+      (employee) => {
+        const employeeId =
+          normalizeEmployeeId(
+            getEmployeeId(
+              employee
+            )
+          );
+
+        if (
+          excludedId &&
+          employeeId ===
+            excludedId
+        ) {
+          return false;
+        }
+
+        return (
+          normalizeName(
+            employee?.name
+          ) ===
+          normalizedInput
         );
-
-      if (
-        excludedId &&
-        employeeId === excludedId
-      ) {
-        return false;
       }
-
-      return (
-        normalizeName(
-          employee?.name
-        ) === normalizedInput
-      );
-    }) || null
+    ) || null
   );
 }
 
@@ -372,7 +420,9 @@ export function employeeIdExists({
   excludedEmployeeId = "",
 }) {
   const targetId =
-    normalizeEmployeeId(employeeId);
+    normalizeEmployeeId(
+      employeeId
+    );
 
   const excludedId =
     normalizeEmployeeId(
@@ -383,21 +433,29 @@ export function employeeIdExists({
     return false;
   }
 
-  return employees.some((employee) => {
-    const currentId =
-      normalizeEmployeeId(
-        getEmployeeId(employee)
+  return employees.some(
+    (employee) => {
+      const currentId =
+        normalizeEmployeeId(
+          getEmployeeId(
+            employee
+          )
+        );
+
+      if (
+        excludedId &&
+        currentId ===
+          excludedId
+      ) {
+        return false;
+      }
+
+      return (
+        currentId ===
+        targetId
       );
-
-    if (
-      excludedId &&
-      currentId === excludedId
-    ) {
-      return false;
     }
-
-    return currentId === targetId;
-  });
+  );
 }
 
 export function validateEmployeeForm({
@@ -424,26 +482,33 @@ export function validateEmployeeForm({
   ).trim();
 
   const isDeployed =
-    formData?.status === "Deployed";
+    formData?.status ===
+    "Deployed";
 
   if (!name) {
     errors.name =
       "Full name is required.";
   } else if (
-    !/^[A-Za-zÑñ\s.'-]+$/.test(name)
+    !/^[A-Za-zÑñ\s.'-]+$/.test(
+      name
+    )
   ) {
     errors.name =
       "Full name may only contain letters, spaces, apostrophes, periods, and hyphens.";
   } else if (
     name
       .split(" ")
-      .filter(Boolean).length < 2
+      .filter(Boolean)
+      .length < 2
   ) {
     errors.name =
       "Please enter the employee's first name and last name.";
   }
 
-  if (isDeployed && !company) {
+  if (
+    isDeployed &&
+    !company
+  ) {
     errors.company =
       "Company assignment is required for deployed employees.";
   }
@@ -483,30 +548,41 @@ export function validateEmployeeForm({
       ? formData.documents
       : [];
 
-  documents.forEach((document) => {
-    if (!document?.checked) {
-      return;
-    }
+  documents.forEach(
+    (document) => {
+      if (
+        !document?.checked
+      ) {
+        return;
+      }
 
-    if (!hasDocumentFile(document)) {
-      errors.documents[
-        `${document.name}_file`
-      ] = "Proof file is required.";
-    }
+      if (
+        !hasDocumentFile(
+          document
+        )
+      ) {
+        errors.documents[
+          `${document.name}_file`
+        ] =
+          "Proof file is required.";
+      }
 
-    if (
-      document.expirable &&
-      !document.expirationDate
-    ) {
-      errors.documents[
-        document.name
-      ] =
-        "Expiration date is required.";
+      if (
+        document.expirable &&
+        !document.expirationDate
+      ) {
+        errors.documents[
+          document.name
+        ] =
+          "Expiration date is required.";
+      }
     }
-  });
+  );
 
   const completedDocuments =
-    getCompletedDocuments(documents);
+    getCompletedDocuments(
+      documents
+    );
 
   if (
     isDeployed &&
@@ -556,7 +632,8 @@ export function calculateEmployeeFormCompletion(
     DOCUMENT_OPTIONS.length;
 
   const isDeployed =
-    formData?.status === "Deployed";
+    formData?.status ===
+    "Deployed";
 
   let score = 0;
 
@@ -568,7 +645,9 @@ export function calculateEmployeeFormCompletion(
     score += 25;
   }
 
-  if (formData?.status) {
+  if (
+    formData?.status
+  ) {
     score += 10;
   }
 
@@ -588,7 +667,9 @@ export function calculateEmployeeFormCompletion(
     score += 10;
   }
 
-  if (totalDocuments > 0) {
+  if (
+    totalDocuments > 0
+  ) {
     score +=
       (
         completedCount /
@@ -643,7 +724,8 @@ export function buildEmployeeFormData(
     new FormData();
 
   const isDeployed =
-    formData?.status === "Deployed";
+    formData?.status ===
+    "Deployed";
 
   requestData.append(
     "name",
@@ -656,7 +738,8 @@ export function buildEmployeeFormData(
     "company",
     isDeployed
       ? String(
-          formData?.company || ""
+          formData?.company ||
+            ""
         ).trim()
       : ""
   );
@@ -670,14 +753,18 @@ export function buildEmployeeFormData(
   requestData.append(
     "contractStart",
     isDeployed
-      ? formData?.contractStart || ""
+      ? formData?.contractStart ||
+          ""
       : ""
   );
 
   getSelectedDocuments(
     formData?.documents
   ).forEach(
-    (document, index) => {
+    (
+      document,
+      index
+    ) => {
       requestData.append(
         `documents[${index}][name]`,
         document.name
@@ -689,7 +776,11 @@ export function buildEmployeeFormData(
           ""
       );
 
-      if (isFile(document.file)) {
+      if (
+        isFile(
+          document.file
+        )
+      ) {
         requestData.append(
           `documents[${index}]`,
           document.file
@@ -716,8 +807,12 @@ export function getDocumentPreviewUrl(
   }
 
   if (
-    isFile(document.file) ||
-    isBlob(document.file)
+    isFile(
+      document.file
+    ) ||
+    isBlob(
+      document.file
+    )
   ) {
     return URL.createObjectURL(
       document.file
@@ -741,18 +836,19 @@ export function getDocumentPreviewUrl(
     return filePath;
   }
 
-  const separator =
-    filePath.startsWith("/")
-      ? ""
-      : "/";
-
-  return `http://localhost:5000${separator}${filePath}`;
+  return documentUrl(
+    filePath
+  );
 }
 
 export function getDocumentFileName(
   document
 ) {
-  if (isFile(document?.file)) {
+  if (
+    isFile(
+      document?.file
+    )
+  ) {
     return document.file.name;
   }
 
@@ -778,7 +874,11 @@ export function getDocumentFileName(
 export function getDocumentPreviewType(
   document
 ) {
-  if (isFile(document?.file)) {
+  if (
+    isFile(
+      document?.file
+    )
+  ) {
     if (
       document.file.type.startsWith(
         "image/"
@@ -812,7 +912,11 @@ export function getDocumentPreviewType(
     return "image";
   }
 
-  if (filePath.endsWith(".pdf")) {
+  if (
+    filePath.endsWith(
+      ".pdf"
+    )
+  ) {
     return "pdf";
   }
 

@@ -21,6 +21,7 @@ import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 
 import authenticatedFetch from "../utils/authenticatedFetch";
+import { API_BASE } from "../config/api";
 
 import AddIncidentModal from "../components/incidents/modals/AddIncidentModal";
 import ViewIncidentModal from "../components/incidents/modals/ViewIncidentModal";
@@ -39,9 +40,6 @@ import {
 import {
   normalizeEvidenceFiles,
 } from "../utils/incidents/evidenceFiles";
-
-const API_BASE =
-  "http://localhost:5000/api";
 
 const EMPLOYEE_API_URL =
   `${API_BASE}/employees`;

@@ -24,6 +24,7 @@ import EditEmployeeModal from "../components/employees/EditEmployeeModal";
 import { buildExecutiveActionItems } from "../utils/dashboard/prescriptiveAnalytics";
 import { buildDashboardInsights } from "../utils/dashboard/dashboardInsights";
 import authenticatedFetch from "../utils/authenticatedFetch";
+import { API_BASE } from "../config/api";
 
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
@@ -34,7 +35,6 @@ import IncidentTrendChart from "../components/dashboard/charts/IncidentTrendChar
 import SeverityPieChart from "../components/dashboard/charts/SeverityPieChart";
 import CaseAgingChart from "../components/dashboard/charts/CaseAgingChart";
 
-const API_BASE = "http://localhost:5000/api";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
 const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
@@ -60,13 +60,11 @@ const monthList = [
   "Dec",
 ];
 
-
 const FORECAST_RANGES = [
   "weekly",
   "monthly",
   "yearly",
 ];
-
 
 const INSIGHT_CARD_TONES = {
   indigo:

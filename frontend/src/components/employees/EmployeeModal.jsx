@@ -21,6 +21,7 @@ import {
   parseEmployeeDocuments,
 } from "../../utils/employees/employeeFormHelpers";
 import authenticatedFetch from "../../utils/authenticatedFetch";
+import { API_BASE, documentUrl } from "../../config/api";
 
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
@@ -31,8 +32,7 @@ import {
   getDocumentStatus as getExpirationStatus,
 } from "./employeeConstants";
 
-const API_BASE_URL = "http://localhost:5000";
-const INCIDENT_API_URL = `${API_BASE_URL}/api/incidents`;
+const INCIDENT_API_URL = `${API_BASE}/incidents`;
 
 const EXPIRABLE_DOCUMENT_NAMES = new Set(
   DOCUMENT_OPTIONS.filter(({ expirable }) => expirable).map(({ name }) => name)
@@ -360,7 +360,7 @@ function buildDocumentFile(document = {}) {
   const normalizedPath = String(rawPath).replace(/\\/g, "/");
   const url = /^(https?:|blob:|data:)/i.test(normalizedPath)
     ? normalizedPath
-    : `${API_BASE_URL}${normalizedPath.startsWith("/") ? "" : "/"}${normalizedPath}`;
+    : documentUrl(normalizedPath);
 
   const cleanPath = normalizedPath.toLowerCase().split("?")[0];
 
