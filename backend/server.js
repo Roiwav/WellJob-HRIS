@@ -271,36 +271,23 @@ app.use(
   express.json()
 );
 
-// STATIC FILES
-app.use(
-  "/documents",
-  express.static(
-    path.join(
-      __dirname,
-      "documents"
-    )
-  )
-);
-
 /*
  * ==================================================
- * SYSTEM MAINTENANCE GATE
+ * DOCUMENT SECURITY
  * ==================================================
  *
- * Applied only to /api requests.
+ * Employee documents and incident evidence are not
+ * exposed through a public static /documents route.
  *
- * When maintenance mode is OFF:
- * - requests continue normally.
- *
- * When maintenance mode is ON:
- * - login remains reachable,
- * - maintenance status/toggle remain reachable,
- * - valid IT_SUPPORT JWT requests may continue,
- * - all other API users receive HTTP 503.
- *
- * Individual routes still enforce their own
- * authentication and RBAC after this middleware.
+ * Files stored under backend/documents must only be
+ * accessed through their dedicated authenticated
+ * API endpoints, where JWT authentication, RBAC,
+ * record ownership/association validation, path
+ * containment, and response security controls are
+ * enforced.
  */
+
+// SYSTEM MAINTENANCE GATE
 app.use(
   "/api",
   checkMaintenanceMode
