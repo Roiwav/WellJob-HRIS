@@ -1,2 +1,23 @@
+# ============================================================
+# WELLJOB HRIS - Git Ignore Rules
+# ============================================================
+
 # Backend environment secrets
 backend/.env
+
+# ============================================================
+# PRIVATE RUNTIME DOCUMENT STORAGE
+# ============================================================
+# Employee documents and incident evidence uploaded through
+# WellJob are stored under backend/documents/.
+#
+# These files are runtime/on-premises data and must NEVER be
+# committed or pushed to Git.
+#
+# This applies to both:
+# - mock deployment documents
+# - actual Welljob production documents
+#
+# Database records may reference these files, so this rule
+# only prevents Git tracking. It does NOT delete the files.
+backend/documents/
