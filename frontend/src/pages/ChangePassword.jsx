@@ -13,15 +13,17 @@ import {
 } from "react-icons/fi";
 
 import Dialog from "../components/ui/Dialog";
+import { API_BASE } from "../config/api";
 import { useAuth } from "../context/useAuth";
 import authenticatedFetch from "../utils/authenticatedFetch";
-import { API_BASE } from "../config/api";
 
 const PASSWORD_RULES = [
   {
     key: "length",
     label: "At least 8 characters",
-    test: (value) => value.length >= 8,
+    test: (value) =>
+      value.length >= 8 &&
+      value.length <= 128,
   },
   {
     key: "uppercase",
@@ -41,27 +43,41 @@ const PASSWORD_RULES = [
   {
     key: "symbol",
     label: "At least one special character",
-    test: (value) => /[!@#$%^&*()_+]/.test(value),
+    test: (value) =>
+      /[!@#$%^&*()_+]/.test(value),
   },
 ];
+
+const INITIAL_MODAL = {
+  open: false,
+  type: "error",
+  title: "",
+  message: "",
+  redirectToLogin: false,
+};
+
+function clearStoredSession() {
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+}
 
 export default function ChangePassword() {
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
   const modalButtonRef = useRef(null);
 
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [modal, setModal] = useState({
-    open: false,
-    type: "success",
-    title: "",
-    message: "",
-    redirectPath: null,
-  });
+  const [currentPassword, setCurrentPassword] =
+    useState("");
+  const [newPassword, setNewPassword] =
+    useState("");
+  const [confirmPassword, setConfirmPassword] =
+    useState("");
+  const [loading, setLoading] =
+    useState(false);
+  const [fieldErrors, setFieldErrors] =
+    useState({});
+  const [modal, setModal] =
+    useState(INITIAL_MODAL);
 
   const passwordChecks = useMemo(
     () =>
@@ -72,70 +88,56 @@ export default function ChangePassword() {
     [newPassword]
   );
 
-  const isStrongPassword = passwordChecks.every(
-    (rule) => rule.passed
-  );
+  const isStrongPassword =
+    passwordChecks.every(
+      (rule) => rule.passed
+    );
 
   const passwordsMatch =
     confirmPassword.length > 0 &&
     newPassword === confirmPassword;
 
-  const getRedirectPath = (role) => {
-    const normalizedRole = String(role || "")
-      .toUpperCase()
-      .trim();
-
-    const redirectByRole = {
-      SUPER_ADMIN: "/",
-      HR_MANAGER: "/",
-      HR_STAFF: "/employees",
-      IT_SUPPORT: "/settings",
-    };
-
-    return redirectByRole[normalizedRole] || "/";
-  };
-
   const showModal = ({
     type = "error",
     title,
     message,
-    redirectPath = null,
+    redirectToLogin = false,
   }) => {
     setModal({
       open: true,
       type,
       title,
       message,
-      redirectPath,
+      redirectToLogin,
     });
   };
 
-  const closeModal = () => {
-    if (loading) return;
-
-    const pathToGo = modal.redirectPath;
-
-    setModal((current) => ({
-      ...current,
-      open: false,
-    }));
-
-    if (pathToGo) {
-      navigate(pathToGo, {
-        replace: true,
-      });
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
-
+  const finishLogout = () => {
+    clearStoredSession();
     setUser(null);
 
     navigate("/login", {
       replace: true,
     });
+  };
+
+  const closeModal = () => {
+    if (loading) {
+      return;
+    }
+
+    const shouldRedirect =
+      modal.redirectToLogin;
+
+    setModal(INITIAL_MODAL);
+
+    if (shouldRedirect) {
+      finishLogout();
+    }
+  };
+
+  const handleLogout = () => {
+    finishLogout();
   };
 
   const validateFields = () => {
@@ -175,7 +177,9 @@ export default function ChangePassword() {
 
     setFieldErrors(nextErrors);
 
-    return Object.keys(nextErrors).length === 0;
+    return (
+      Object.keys(nextErrors).length === 0
+    );
   };
 
   const updateField =
@@ -205,12 +209,13 @@ export default function ChangePassword() {
     }
 
     if (!user) {
+      clearStoredSession();
+
       showModal({
-        type: "error",
         title: "Session Expired",
         message:
           "Your session is no longer available. Please sign in again.",
-        redirectPath: "/login",
+        redirectToLogin: true,
       });
 
       return;
@@ -223,27 +228,21 @@ export default function ChangePassword() {
     try {
       setLoading(true);
 
-      /*
-       * authenticatedFetch automatically attaches:
-       *
-       * Authorization: Bearer <token>
-       *
-       * Account identity is derived exclusively from
-       * the verified JWT by the backend.
-       */
-      const response = await authenticatedFetch(
-        `${API_BASE}/users/change-password`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            currentPassword,
-            newPassword,
-          }),
-        }
-      );
+      const response =
+        await authenticatedFetch(
+          `${API_BASE}/users/change-password`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              currentPassword,
+              newPassword,
+            }),
+          }
+        );
 
       let data = {};
 
@@ -255,23 +254,25 @@ export default function ChangePassword() {
 
       if (!response.ok) {
         if (response.status === 401) {
+          clearStoredSession();
+
           showModal({
-            type: "error",
             title: "Session Expired",
             message:
               data.message ||
+              data.error ||
               "Your authentication session is no longer valid. Please sign in again.",
-            redirectPath: "/login",
+            redirectToLogin: true,
           });
 
           return;
         }
 
         showModal({
-          type: "error",
           title: "Password Update Failed",
           message:
             data.message ||
+            data.error ||
             (response.status >= 500
               ? "The server could not update your password. Please try again."
               : "Please check your current password and try again."),
@@ -280,19 +281,20 @@ export default function ChangePassword() {
         return;
       }
 
-      const updatedUser = {
-        ...user,
-        mustChangePassword: false,
-        must_change_password: 0,
-        must_change_password_flag: false,
-      };
-
-      localStorage.setItem(
-        "user",
-        JSON.stringify(updatedUser)
-      );
-
-      setUser(updatedUser);
+      /*
+       * The backend increments token_version after a
+       * successful password change.
+       *
+       * Therefore the JWT used for this request is now
+       * intentionally invalid. Remove the persisted
+       * credentials immediately so the revoked token
+       * cannot be reused by later requests.
+       *
+       * React user state is kept temporarily so this
+       * success dialog remains visible. It is cleared
+       * when the user continues to the login page.
+       */
+      clearStoredSession();
 
       setCurrentPassword("");
       setNewPassword("");
@@ -301,21 +303,20 @@ export default function ChangePassword() {
 
       showModal({
         type: "success",
-        title: "Password Changed Successfully",
+        title:
+          "Password Changed Successfully",
         message:
-          "Your password has been updated. You may now continue to the system.",
-        redirectPath: getRedirectPath(
-          updatedUser.role
-        ),
+          data.message ||
+          "Your password has been updated. For security, please sign in again using your new password.",
+        redirectToLogin: true,
       });
-    } catch (passwordError) {
+    } catch (error) {
       console.error(
         "Change password error:",
-        passwordError
+        error
       );
 
       showModal({
-        type: "error",
         title: "Network Error",
         message:
           "Unable to change your password. Check your connection and try again.",
@@ -342,9 +343,10 @@ export default function ChangePassword() {
           Change Password
         </h1>
 
-        <p className="mt-2 text-center text-sm text-gray-600 dark:text-slate-400">
-          Change your temporary password before
-          continuing to the system.
+        <p className="mt-2 text-center text-sm leading-6 text-gray-600 dark:text-slate-400">
+          Create a secure password for your
+          account. After changing it, you will
+          need to sign in again.
         </p>
 
         <form
@@ -378,9 +380,7 @@ export default function ChangePassword() {
               )}
               autoComplete="new-password"
               disabled={loading}
-              error={
-                fieldErrors.newPassword
-              }
+              error={fieldErrors.newPassword}
             />
 
             <div
@@ -403,9 +403,13 @@ export default function ChangePassword() {
                       }`}
                     >
                       {rule.passed ? (
-                        <FiCheck />
+                        <FiCheck
+                          aria-hidden="true"
+                        />
                       ) : (
-                        <FiX />
+                        <FiX
+                          aria-hidden="true"
+                        />
                       )}
 
                       {rule.label}
@@ -495,8 +499,8 @@ export default function ChangePassword() {
                 : "bg-red-600 hover:bg-red-700 focus:ring-red-500/30"
             }`}
           >
-            {modal.redirectPath
-              ? "Continue"
+            {modal.redirectToLogin
+              ? "Go to Login"
               : "Close"}
           </button>
         }
@@ -604,9 +608,9 @@ function PasswordField({
           className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
         >
           {showPassword ? (
-            <FiEyeOff />
+            <FiEyeOff aria-hidden="true" />
           ) : (
-            <FiEye />
+            <FiEye aria-hidden="true" />
           )}
         </button>
       </div>

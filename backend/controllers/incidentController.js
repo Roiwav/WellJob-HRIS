@@ -1,5 +1,3 @@
-const fs = require("fs");
-
 const db = require("../config/db");
 const {
   logAudit,
@@ -9,92 +7,6 @@ const {
 const API_BASE =
   process.env.API_BASE_URL ||
   "http://localhost:5000";
-
-function normalizeIncidentEvidencePath(
-  value
-) {
-  const normalized =
-    String(value || "")
-      .trim()
-      .replace(/\\/g, "/");
-
-  if (!normalized) {
-    return "";
-  }
-
-  /*
-   * Already a full external URL.
-   * Preserve it as-is.
-   */
-  if (
-    /^https?:\/\//i.test(
-      normalized
-    )
-  ) {
-    return normalized;
-  }
-
-  /*
-   * Handles legacy absolute paths such as:
-   *
-   * C:/Users/.../backend/documents/employees/file.pdf
-   *
-   * and converts them to:
-   *
-   * /documents/employees/file.pdf
-   */
-  const documentsMarker =
-    "/documents/";
-
-  const markerIndex =
-    normalized
-      .toLowerCase()
-      .indexOf(
-        documentsMarker
-      );
-
-  if (markerIndex >= 0) {
-    return normalized.slice(
-      markerIndex
-    );
-  }
-
-  /*
-   * Handles:
-   * documents/employees/file.pdf
-   */
-  if (
-    normalized
-      .toLowerCase()
-      .startsWith(
-        "documents/"
-      )
-  ) {
-    return `/${normalized}`;
-  }
-
-  /*
-   * Handles:
-   * backend/documents/employees/file.pdf
-   */
-  if (
-    normalized
-      .toLowerCase()
-      .startsWith(
-        "backend/documents/"
-      )
-  ) {
-    return `/${normalized.slice(
-      "backend/".length
-    )}`;
-  }
-
-  return normalized.startsWith(
-    "/"
-  )
-    ? normalized
-    : `/${normalized}`;
-}
 
 const WORKFLOW_ACTION = {
   START: "START_INVESTIGATION",
@@ -113,6 +25,55 @@ const REVIEWER_ROLES = new Set([
   "HR_MANAGER",
   "SUPER_ADMIN",
 ]);
+
+function normalizeIncidentEvidencePath(value) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/\\/g, "/");
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(normalized)) {
+    return normalized;
+  }
+
+  const documentsMarker =
+    "/documents/";
+
+  const markerIndex = normalized
+    .toLowerCase()
+    .indexOf(documentsMarker);
+
+  if (markerIndex >= 0) {
+    return normalized.slice(markerIndex);
+  }
+
+  if (
+    normalized
+      .toLowerCase()
+      .startsWith("documents/")
+  ) {
+    return `/${normalized}`;
+  }
+
+  if (
+    normalized
+      .toLowerCase()
+      .startsWith(
+        "backend/documents/"
+      )
+  ) {
+    return `/${normalized.slice(
+      "backend/".length
+    )}`;
+  }
+
+  return normalized.startsWith("/")
+    ? normalized
+    : `/${normalized}`;
+}
 
 function toNullable(value) {
   if (
@@ -168,24 +129,14 @@ function normalizeStatus(value) {
   }
 
   if (
-    normalized === "for_review"
-  ) {
-    return "For Review";
-  }
-
-  if (
+    normalized === "for_review" ||
     normalized === "for review"
   ) {
     return "For Review";
   }
 
   if (
-    normalized === "resolved"
-  ) {
-    return "Closed";
-  }
-
-  if (
+    normalized === "resolved" ||
     normalized === "closed"
   ) {
     return "Closed";
@@ -197,9 +148,7 @@ function normalizeStatus(value) {
     return "Investigating";
   }
 
-  if (
-    normalized === "open"
-  ) {
+  if (normalized === "open") {
     return "Open";
   }
 
@@ -293,21 +242,11 @@ function normalizeWorkflowAction(
     return action;
   }
 
-  /*
-   * SECURITY:
-   * PATCH workflow transitions require an explicit,
-   * supported workflowAction.
-   *
-   * Status alone must never determine the workflow
-   * action because that would allow callers to bypass
-   * the protected incident transition rules.
-   */
   return null;
 }
 
 function getWorkflowTargetStatus(
-  actionType,
-  requestedStatus
+  actionType
 ) {
   switch (actionType) {
     case WORKFLOW_ACTION.START:
@@ -315,7 +254,6 @@ function getWorkflowTargetStatus(
 
     case WORKFLOW_ACTION
       .SUBMIT_RESOLUTION:
-
     case WORKFLOW_ACTION
       .SUBMIT_INVESTIGATION:
       return "For Review";
@@ -327,114 +265,41 @@ function getWorkflowTargetStatus(
       return "Closed";
 
     default:
-      return normalizeStatus(
-        requestedStatus
-      );
+      return null;
   }
 }
 
-function isDeployedEmployee(
-  employee
-) {
-  const status =
+function isDeployedEmployee(employee) {
+  return (
     normalizeText(
       employee?.status
-    );
-
-  return status === "deployed";
-}
-
-function buildEvidenceFromReq(
-  req
-) {
-  if (
-    !req.files ||
-    !Array.isArray(req.files)
-  ) {
-    return [];
-  }
-
-  return req.files.map(
-    (file) => ({
-      fileName:
-        file.originalname,
-
-      /*
-       * Store only the public application path,
-       * never the local machine filesystem path.
-       *
-       * Physical:
-       * backend/documents/employees/file.pdf
-       *
-       * Stored/public:
-       * /documents/employees/file.pdf
-       */
-      filePath:
-        normalizeIncidentEvidencePath(
-          file.path
-        ),
-    })
+    ) === "deployed"
   );
 }
 
-/*
- * PHASE 8 — INCIDENT UPLOAD COMPENSATION
- *
- * Multer writes incident evidence files before
- * the controller performs database mutations.
- *
- * If a create/update transaction fails, remove
- * only files uploaded by that failed request.
- *
- * Pre-existing incident evidence files are never
- * touched by this helper.
- */
-async function cleanupIncidentUploadedFiles(
-  files
+function buildEvidenceFromReq(req) {
+  if (!Array.isArray(req.files)) {
+    return [];
+  }
+
+  return req.files.map((file) => ({
+    fileName: file.originalname,
+    filePath:
+      normalizeIncidentEvidencePath(
+        file.path
+      ),
+  }));
+}
+
+function claimIncidentEvidenceFiles(
+  req
 ) {
-  const uploadedFiles =
-    Array.isArray(files)
-      ? files
-      : [];
-
-  for (
-    const file of uploadedFiles
+  if (
+    typeof req
+      ?.claimIncidentEvidenceFiles ===
+    "function"
   ) {
-    const physicalPath =
-      String(
-        file?.path || ""
-      ).trim();
-
-    if (!physicalPath) {
-      continue;
-    }
-
-    try {
-      await fs.promises.unlink(
-        physicalPath
-      );
-    } catch (error) {
-      /*
-       * ENOENT means the file is already absent,
-       * which is already the desired compensated
-       * state.
-       */
-      if (
-        error?.code !==
-        "ENOENT"
-      ) {
-        console.error(
-          "INCIDENT FILE CLEANUP ERROR:",
-          {
-            physicalPath,
-
-            message:
-              error?.message ||
-              error,
-          }
-        );
-      }
-    }
+    req.claimIncidentEvidenceFiles();
   }
 }
 
@@ -449,9 +314,7 @@ function normalizeEmployeeLookupId(
   }
 
   if (
-    /^EMP[-\s]?\d+$/i.test(
-      raw
-    )
+    /^EMP[-\s]?\d+$/i.test(raw)
   ) {
     return (
       raw
@@ -459,30 +322,25 @@ function normalizeEmployeeLookupId(
           /^EMP[-\s]?/i,
           ""
         )
-        .replace(
-          /^0+/,
-          ""
-        ) || raw
+        .replace(/^0+/, "") ||
+      raw
     );
   }
 
   return (
-    raw.replace(
-      /^0+/,
-      ""
-    ) || raw
+    raw.replace(/^0+/, "") ||
+    raw
   );
 }
 
 function isActiveDeploymentRow(
   deployment
 ) {
-  const status =
-    normalizeText(
-      deployment.status ||
-        deployment.deployment_status ||
-        deployment.deploymentStatus
-    );
+  const status = normalizeText(
+    deployment.status ||
+      deployment.deployment_status ||
+      deployment.deploymentStatus
+  );
 
   return [
     "active",
@@ -495,13 +353,12 @@ function isActiveDeploymentRow(
 async function tableExists(
   tableName
 ) {
-  const [rows] =
-    await db
-      .promise()
-      .query(
-        "SHOW TABLES LIKE ?",
-        [tableName]
-      );
+  const [rows] = await db
+    .promise()
+    .query(
+      "SHOW TABLES LIKE ?",
+      [tableName]
+    );
 
   return rows.length > 0;
 }
@@ -521,7 +378,8 @@ async function ensureIncidentTimelineTable() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_incident_timeline_incident_id (incident_id),
       CONSTRAINT fk_incident_timeline_incident
-        FOREIGN KEY (incident_id) REFERENCES incidents(id)
+        FOREIGN KEY (incident_id)
+        REFERENCES incidents(id)
         ON DELETE CASCADE
     )
   `);
@@ -531,13 +389,9 @@ async function getActiveDeploymentForEmployee(
   employeeId
 ) {
   const normalizedEmployeeId =
-    String(
-      employeeId || ""
-    ).trim();
+    String(employeeId || "").trim();
 
-  if (
-    !normalizedEmployeeId
-  ) {
+  if (!normalizedEmployeeId) {
     return null;
   }
 
@@ -546,26 +400,21 @@ async function getActiveDeploymentForEmployee(
       "deployments"
     );
 
-  if (
-    !hasDeploymentsTable
-  ) {
+  if (!hasDeploymentsTable) {
     return null;
   }
 
-  const [rows] =
-    await db
-      .promise()
-      .query(
-        `
-        SELECT *
-        FROM deployments
-        WHERE CAST(employee_id AS CHAR) = ?
-        ORDER BY created_at DESC, id DESC
-        `,
-        [
-          normalizedEmployeeId,
-        ]
-      );
+  const [rows] = await db
+    .promise()
+    .query(
+      `
+      SELECT *
+      FROM deployments
+      WHERE CAST(employee_id AS CHAR) = ?
+      ORDER BY created_at DESC, id DESC
+      `,
+      [normalizedEmployeeId]
+    );
 
   return (
     rows.find(
@@ -574,9 +423,7 @@ async function getActiveDeploymentForEmployee(
   );
 }
 
-function serializeEvidenceItem(
-  item
-) {
+function serializeEvidenceItem(item) {
   const filePath =
     normalizeIncidentEvidencePath(
       item.file_path
@@ -592,35 +439,29 @@ function serializeEvidenceItem(
     );
 
   return {
-    id:
-      item.id,
-
-    fileName:
-      item.file_name,
+    id: item.id,
+    fileName: item.file_name,
 
     /*
-     * Legacy absolute database paths are
-     * normalized here as well, so existing
-     * records continue working without a
-     * destructive database migration.
+     * Retained temporarily for compatibility
+     * with historical incident records.
+     *
+     * Current frontend evidence previews use
+     * the protected evidence endpoint.
      */
     filePath,
 
-    url:
-      !filePath
-        ? null
-        : isExternalUrl
-          ? filePath
-          : `${normalizedApiBase}${filePath}`,
+    url: !filePath
+      ? null
+      : isExternalUrl
+        ? filePath
+        : `${normalizedApiBase}${filePath}`,
   };
 }
 
-function serializeTimelineItem(
-  item
-) {
+function serializeTimelineItem(item) {
   return {
-    id:
-      item.id,
+    id: item.id,
 
     incidentId:
       item.incident_id,
@@ -641,12 +482,10 @@ function serializeTimelineItem(
       item.description || "",
 
     createdById:
-      item.created_by_id ||
-      null,
+      item.created_by_id || null,
 
     created_by_id:
-      item.created_by_id ||
-      null,
+      item.created_by_id || null,
 
     createdByUsername:
       item.created_by_username ||
@@ -665,12 +504,10 @@ function serializeTimelineItem(
       "System",
 
     createdByRole:
-      item.created_by_role ||
-      null,
+      item.created_by_role || null,
 
     created_by_role:
-      item.created_by_role ||
-      null,
+      item.created_by_role || null,
 
     createdAt:
       item.created_at,
@@ -685,18 +522,17 @@ async function getTimelineByIncidentId(
 ) {
   await ensureIncidentTimelineTable();
 
-  const [rows] =
-    await db
-      .promise()
-      .query(
-        `
-        SELECT *
-        FROM incident_timeline
-        WHERE incident_id = ?
-        ORDER BY created_at ASC, id ASC
-        `,
-        [incidentId]
-      );
+  const [rows] = await db
+    .promise()
+    .query(
+      `
+      SELECT *
+      FROM incident_timeline
+      WHERE incident_id = ?
+      ORDER BY created_at ASC, id ASC
+      `,
+      [incidentId]
+    );
 
   return rows.map(
     serializeTimelineItem
@@ -713,24 +549,21 @@ async function getTimelineByIncidentIds(
     await ensureIncidentTimelineTable();
   }
 
-  if (
-    !incidentIds.length
-  ) {
+  if (!incidentIds.length) {
     return new Map();
   }
 
-  const [rows] =
-    await db
-      .promise()
-      .query(
-        `
-        SELECT *
-        FROM incident_timeline
-        WHERE incident_id IN (?)
-        ORDER BY created_at ASC, id ASC
-        `,
-        [incidentIds]
-      );
+  const [rows] = await db
+    .promise()
+    .query(
+      `
+      SELECT *
+      FROM incident_timeline
+      WHERE incident_id IN (?)
+      ORDER BY created_at ASC, id ASC
+      `,
+      [incidentIds]
+    );
 
   return rows.reduce(
     (map, row) => {
@@ -739,13 +572,8 @@ async function getTimelineByIncidentIds(
           row.incident_id
         );
 
-      if (
-        !map.has(key)
-      ) {
-        map.set(
-          key,
-          []
-        );
+      if (!map.has(key)) {
+        map.set(key, []);
       }
 
       map
@@ -768,27 +596,9 @@ async function addTimelineEvent({
   title,
   description,
   actor,
-
-  /*
-   * Optional transaction support.
-   *
-   * Existing callers do not need to provide
-   * either option and therefore retain the
-   * original behavior.
-   */
   connection = null,
   ensureTable = true,
 }) {
-  /*
-   * DDL should not run inside the incident
-   * transaction.
-   *
-   * Existing non-transactional callers retain
-   * the historical ensure-table behavior.
-   *
-   * Transactional callers must ensure the table
-   * before BEGIN and pass ensureTable: false.
-   */
   if (ensureTable) {
     await ensureIncidentTimelineTable();
   }
@@ -816,16 +626,12 @@ async function addTimelineEvent({
       incidentId,
       actionType,
       title,
-      description ||
-        null,
-      actor?.userId ||
-        null,
-      actor?.username ||
-        null,
+      description || null,
+      actor?.userId || null,
+      actor?.username || null,
       actor?.fullName ||
         "System",
-      actor?.role ||
-        null,
+      actor?.role || null,
     ]
   );
 }
@@ -834,19 +640,14 @@ function getTimelineTitle(
   actionType,
   existingIncident
 ) {
+  const reviewDecision = String(
+    existingIncident
+      ?.review_decision || ""
+  ).toLowerCase();
+
   const wasReturned =
-    String(
-      existingIncident
-        ?.review_decision ||
-        ""
-    ).toLowerCase() ===
-      "returned" ||
-    String(
-      existingIncident
-        ?.review_decision ||
-        ""
-    ).toLowerCase() ===
-      "rejected";
+    reviewDecision === "returned" ||
+    reviewDecision === "rejected";
 
   switch (actionType) {
     case "CREATE_INCIDENT":
@@ -857,7 +658,6 @@ function getTimelineTitle(
 
     case WORKFLOW_ACTION
       .SUBMIT_RESOLUTION:
-
     case WORKFLOW_ACTION
       .SUBMIT_INVESTIGATION:
       return wasReturned
@@ -886,23 +686,16 @@ function getTimelineDescription(
 
   switch (actionType) {
     case "CREATE_INCIDENT":
-      return (
-        `Reported by ${actorName}.`
-      );
+      return `Reported by ${actorName}.`;
 
     case WORKFLOW_ACTION.START:
-      return (
-        `${actorName} started the investigation.`
-      );
+      return `${actorName} started the investigation.`;
 
     case WORKFLOW_ACTION
       .SUBMIT_RESOLUTION:
-
     case WORKFLOW_ACTION
       .SUBMIT_INVESTIGATION:
-      return (
-        `${actorName} submitted proof for authorized reviewer assessment.`
-      );
+      return `${actorName} submitted proof for authorized reviewer assessment.`;
 
     case WORKFLOW_ACTION.RETURN:
       return details?.comments
@@ -910,14 +703,10 @@ function getTimelineDescription(
         : `${actorName} returned the case for correction.`;
 
     case WORKFLOW_ACTION.CLOSE:
-      return (
-        `${actorName} approved and closed the case.`
-      );
+      return `${actorName} approved and closed the case.`;
 
     default:
-      return (
-        `${actorName} updated the incident record.`
-      );
+      return `${actorName} updated the incident record.`;
   }
 }
 
@@ -932,8 +721,7 @@ function serializeIncident(
     "Unknown Employee";
 
   const actionTaken =
-    incident.action_taken ||
-    "";
+    incident.action_taken || "";
 
   const investigation =
     incident.investigation_started_at
@@ -968,8 +756,7 @@ function serializeIncident(
             incident.resolution_submitted_by_name,
 
           actionTaken:
-            incident.action_taken ||
-            "",
+            incident.action_taken || "",
 
           remarks:
             incident.resolution_notes ||
@@ -1007,8 +794,7 @@ function serializeIncident(
       : null;
 
   return {
-    id:
-      incident.id,
+    id: incident.id,
 
     employeeId:
       incident.employee_id,
@@ -1016,9 +802,7 @@ function serializeIncident(
     employee_id:
       incident.employee_id,
 
-    employee:
-      employeeName,
-
+    employee: employeeName,
     employeeName,
 
     company:
@@ -1027,28 +811,22 @@ function serializeIncident(
       "",
 
     employeeStatus:
-      incident.employeeStatus ||
-      "",
+      incident.employeeStatus || "",
 
     violation:
-      incident.violation_type ||
-      "",
+      incident.violation_type || "",
 
     violationType:
-      incident.violation_type ||
-      "",
+      incident.violation_type || "",
 
     violation_type:
-      incident.violation_type ||
-      "",
+      incident.violation_type || "",
 
     severity:
-      incident.severity ||
-      "Minor",
+      incident.severity || "Minor",
 
     status:
-      incident.status ||
-      "Open",
+      incident.status || "Open",
 
     date:
       incident.incident_date,
@@ -1064,24 +842,19 @@ function serializeIncident(
       incident.incident_date,
 
     location:
-      incident.location ||
-      "",
+      incident.location || "",
 
     description:
-      incident.description ||
-      "",
+      incident.description || "",
 
     reportedBy:
-      incident.reported_by ||
-      "",
+      incident.reported_by || "",
 
     reportedByName:
-      incident.reported_by ||
-      "",
+      incident.reported_by || "",
 
     reported_by:
-      incident.reported_by ||
-      "",
+      incident.reported_by || "",
 
     actionTaken,
 
@@ -1092,8 +865,7 @@ function serializeIncident(
       actionTaken,
 
     recommendation:
-      incident.recommendation ||
-      "",
+      incident.recommendation || "",
 
     resolutionNotes:
       incident.resolution_notes ||
@@ -1104,9 +876,7 @@ function serializeIncident(
       "",
 
     investigation,
-
     resolution,
-
     review,
 
     investigationStartedAt:
@@ -1291,28 +1061,25 @@ function serializeIncident(
 async function getIncidentWithEvidence(
   id
 ) {
-  const [rows] =
-    await db
-      .promise()
-      .query(
-        `
-        SELECT
-          i.*,
-          e.name AS employeeNameFromEmployee,
-          e.company AS employeeCompany,
-          e.status AS employeeStatus
-        FROM incidents i
-        LEFT JOIN employees e
-          ON e.id = i.employee_id
-        WHERE i.id = ?
-        LIMIT 1
-        `,
-        [id]
-      );
+  const [rows] = await db
+    .promise()
+    .query(
+      `
+      SELECT
+        i.*,
+        e.name AS employeeNameFromEmployee,
+        e.company AS employeeCompany,
+        e.status AS employeeStatus
+      FROM incidents i
+      LEFT JOIN employees e
+        ON e.id = i.employee_id
+      WHERE i.id = ?
+      LIMIT 1
+      `,
+      [id]
+    );
 
-  if (
-    rows.length === 0
-  ) {
+  if (rows.length === 0) {
     return null;
   }
 
@@ -1330,9 +1097,7 @@ async function getIncidentWithEvidence(
       [id]
     ),
 
-    getTimelineByIncidentId(
-      id
-    ),
+    getTimelineByIncidentId(id),
   ]);
 
   return serializeIncident(
@@ -1367,13 +1132,9 @@ async function resolveActorFullName({
   }
 
   const hasUsersTable =
-    await tableExists(
-      "users"
-    );
+    await tableExists("users");
 
-  if (
-    !hasUsersTable
-  ) {
+  if (!hasUsersTable) {
     return (
       cleanFullName ||
       cleanUsername ||
@@ -1381,75 +1142,60 @@ async function resolveActorFullName({
     );
   }
 
-  const [users] =
-    await db
-      .promise()
-      .query(
-        `
-        SELECT *
-        FROM users
-        `
-      );
-
-  const matchedUser =
-    users.find(
-      (user) => {
-        const possibleIds =
-          [
-            user.id,
-            user.user_id,
-            user.userId,
-            user.employee_id,
-            user.employeeId,
-          ].map(
-            (item) =>
-              String(
-                item || ""
-              ).trim()
-          );
-
-        const possibleUsernames =
-          [
-            user.username,
-            user.email,
-            user.name,
-            user.full_name,
-            user.fullName,
-            user.fullname,
-            user.display_name,
-          ].map(
-            (item) =>
-              String(
-                item || ""
-              )
-                .trim()
-                .toLowerCase()
-          );
-
-        return (
-          (
-            !!cleanUserId &&
-            possibleIds.includes(
-              String(
-                cleanUserId
-              )
-            )
-          ) ||
-          (
-            !!cleanUsername &&
-            possibleUsernames.includes(
-              String(
-                cleanUsername
-              ).toLowerCase()
-            )
-          )
-        );
-      }
+  const [users] = await db
+    .promise()
+    .query(
+      `
+      SELECT *
+      FROM users
+      `
     );
 
-  if (
-    !matchedUser
-  ) {
+  const matchedUser =
+    users.find((user) => {
+      const possibleIds = [
+        user.id,
+        user.user_id,
+        user.userId,
+        user.employee_id,
+        user.employeeId,
+      ].map((item) =>
+        String(item || "").trim()
+      );
+
+      const possibleUsernames = [
+        user.username,
+        user.email,
+        user.name,
+        user.full_name,
+        user.fullName,
+        user.fullname,
+        user.display_name,
+      ].map((item) =>
+        String(item || "")
+          .trim()
+          .toLowerCase()
+      );
+
+      return (
+        (
+          !!cleanUserId &&
+          possibleIds.includes(
+            String(cleanUserId)
+          )
+        ) ||
+        (
+          !!cleanUsername &&
+          possibleUsernames.includes(
+            String(
+              cleanUsername
+            ).toLowerCase()
+          )
+        )
+      );
+    });
+
+  if (!matchedUser) {
     return (
       cleanFullName ||
       cleanUsername ||
@@ -1479,16 +1225,6 @@ async function resolveActorFullName({
   );
 }
 
-/*
- * TRUSTED INCIDENT ACTOR
- *
- * SECURITY:
- * Actor identity comes exclusively from req.user,
- * which is established by verifyToken().
- *
- * Request body/query identity fields are intentionally
- * ignored for authorization and audit attribution.
- */
 async function getActor(req) {
   const authenticatedUser =
     req.user || {};
@@ -1530,9 +1266,7 @@ async function getActor(req) {
   };
 }
 
-function looksLikeUsername(
-  value
-) {
+function looksLikeUsername(value) {
   const cleanValue =
     String(value || "")
       .trim()
@@ -1542,10 +1276,8 @@ function looksLikeUsername(
     /^(hm|hr|it)\d+$/i.test(
       cleanValue
     ) ||
-    cleanValue ===
-      "admin" ||
-    cleanValue ===
-      "superadmin"
+    cleanValue === "admin" ||
+    cleanValue === "superadmin"
   );
 }
 
@@ -1554,9 +1286,7 @@ function getSafePersonName(
   actor
 ) {
   const value =
-    toNullable(
-      inputName
-    );
+    toNullable(inputName);
 
   const username =
     toNullable(
@@ -1583,59 +1313,17 @@ function getSafePersonName(
 
   if (
     sameAsUsername ||
-    looksLikeUsername(
-      value
-    )
+    looksLikeUsername(value)
   ) {
-    return (
-      fullName ||
-      value
-    );
+    return fullName || value;
   }
 
   return value;
 }
 
-function getActionTypeFromStatus(
-  status
-) {
-  const normalizedStatus =
-    normalizeStatus(
-      status
-    );
-
-  if (
-    normalizedStatus ===
-    "Investigating"
-  ) {
-    return WORKFLOW_ACTION.START;
-  }
-
-  if (
-    normalizedStatus ===
-    "For Review"
-  ) {
-    return WORKFLOW_ACTION
-      .SUBMIT_INVESTIGATION;
-  }
-
-  if (
-    normalizedStatus ===
-    "Closed"
-  ) {
-    return WORKFLOW_ACTION.CLOSE;
-  }
-
-  return "UPDATE_INCIDENT";
-}
-
-async function safeLogAudit(
-  payload
-) {
+async function safeLogAudit(payload) {
   try {
-    await logAudit(
-      payload
-    );
+    await logAudit(payload);
   } catch (error) {
     console.error(
       "AUDIT LOG ERROR:",
@@ -1644,7 +1332,11 @@ async function safeLogAudit(
   }
 }
 
-// GET ALL INCIDENTS
+/*
+ * ==================================================
+ * GET ALL INCIDENTS
+ * ==================================================
+ */
 exports.getIncidents = async (
   req,
   res
@@ -1652,26 +1344,23 @@ exports.getIncidents = async (
   try {
     await ensureIncidentTimelineTable();
 
-    const [incidents] =
-      await db
-        .promise()
-        .query(`
-          SELECT
-            i.*,
-            e.name AS employeeNameFromEmployee,
-            e.company AS employeeCompany,
-            e.status AS employeeStatus
-          FROM incidents i
-          LEFT JOIN employees e
-            ON e.id = i.employee_id
-          ORDER BY
-            i.created_at DESC,
-            i.id DESC
-        `);
+    const [incidents] = await db
+      .promise()
+      .query(`
+        SELECT
+          i.*,
+          e.name AS employeeNameFromEmployee,
+          e.company AS employeeCompany,
+          e.status AS employeeStatus
+        FROM incidents i
+        LEFT JOIN employees e
+          ON e.id = i.employee_id
+        ORDER BY
+          i.created_at DESC,
+          i.id DESC
+      `);
 
-    if (
-      incidents.length === 0
-    ) {
+    if (incidents.length === 0) {
       return res.json([]);
     }
 
@@ -1713,15 +1402,11 @@ exports.getIncidents = async (
               item.incident_id
             );
 
-          if (
-            !map[key]
-          ) {
+          if (!map[key]) {
             map[key] = [];
           }
 
-          map[key].push(
-            item
-          );
+          map[key].push(item);
 
           return map;
         },
@@ -1731,47 +1416,42 @@ exports.getIncidents = async (
     const result =
       incidents.map(
         (incident) => {
-          const incidentEvidence =
-            evidenceMap[
-              String(
-                incident.id
-              )
-            ] || [];
-
-          const timelineEvents =
-            timelineMap.get(
-              String(
-                incident.id
-              )
-            ) || [];
+          const incidentKey =
+            String(incident.id);
 
           return serializeIncident(
             incident,
-            incidentEvidence,
-            timelineEvents
+            evidenceMap[
+              incidentKey
+            ] || [],
+            timelineMap.get(
+              incidentKey
+            ) || []
           );
         }
       );
 
-    return res.json(
-      result
-    );
-  } catch (err) {
+    return res.json(result);
+  } catch (error) {
     console.error(
       "GET INCIDENTS ERROR:",
-      err
+      error
     );
 
     return res
       .status(500)
       .json({
         error:
-            "Failed to fetch incidents",
+          "Failed to fetch incidents",
       });
   }
 };
 
-// GET INCIDENTS BY EMPLOYEE
+/*
+ * ==================================================
+ * GET INCIDENTS BY EMPLOYEE
+ * ==================================================
+ */
 exports.getIncidentsByEmployee =
   async (
     req,
@@ -1780,28 +1460,19 @@ exports.getIncidentsByEmployee =
     try {
       await ensureIncidentTimelineTable();
 
-      const {
-        employeeId,
-      } = req.params;
+      const { employeeId } =
+        req.params;
 
-      const {
-        name,
-      } = req.query;
-
-      const rawEmployeeId =
-        String(
-          employeeId || ""
-        ).trim();
+      const { name } =
+        req.query;
 
       const lookupEmployeeId =
         normalizeEmployeeLookupId(
-          rawEmployeeId
+          employeeId
         );
 
       const employeeName =
-        String(
-          name || ""
-        )
+        String(name || "")
           .trim()
           .toLowerCase();
 
@@ -1820,9 +1491,7 @@ exports.getIncidentsByEmployee =
       const conditions = [];
       const params = [];
 
-      if (
-        lookupEmployeeId
-      ) {
+      if (lookupEmployeeId) {
         conditions.push(
           "CAST(i.employee_id AS CHAR) = ?"
         );
@@ -1910,13 +1579,8 @@ exports.getIncidentsByEmployee =
                 item.incident_id
               );
 
-            if (
-              !map.has(key)
-            ) {
-              map.set(
-                key,
-                []
-              );
+            if (!map.has(key)) {
+              map.set(key, []);
             }
 
             map
@@ -1932,18 +1596,13 @@ exports.getIncidentsByEmployee =
         incidents.map(
           (incident) => {
             const incidentKey =
-              String(
-                incident.id
-              );
-
-            const incidentEvidence =
-              evidenceMap.get(
-                incidentKey
-              ) || [];
+              String(incident.id);
 
             return serializeIncident(
               incident,
-              incidentEvidence,
+              evidenceMap.get(
+                incidentKey
+              ) || [],
               timelineMap.get(
                 incidentKey
               ) || []
@@ -1951,13 +1610,11 @@ exports.getIncidentsByEmployee =
           }
         );
 
-      return res.json(
-        result
-      );
-    } catch (err) {
+      return res.json(result);
+    } catch (error) {
       console.error(
         "GET INCIDENTS BY EMPLOYEE ERROR:",
-        err
+        error
       );
 
       return res
@@ -1969,939 +1626,312 @@ exports.getIncidentsByEmployee =
     }
   };
 
-// GET ONE INCIDENT
-exports.getIncidentById =
-  async (
-    req,
-    res
-  ) => {
-    try {
-      const {
-        id,
-      } = req.params;
+/*
+ * ==================================================
+ * GET ONE INCIDENT
+ * ==================================================
+ */
+exports.getIncidentById = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
 
-      const incident =
-        await getIncidentWithEvidence(
-          id
-        );
-
-      if (!incident) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Incident not found",
-          });
-      }
-
-      return res.json(
-        incident
-      );
-    } catch (err) {
-      console.error(
-        "GET INCIDENT ERROR:",
-        err
+    const incident =
+      await getIncidentWithEvidence(
+        id
       );
 
+    if (!incident) {
       return res
-        .status(500)
+        .status(404)
         .json({
           error:
-            "Failed to fetch incident",
+            "Incident not found",
         });
     }
-  };
 
-exports.createIncident =
-  async (
-    req,
-    res
-  ) => {
-    let connection = null;
-
-    let transactionStarted =
-      false;
-
-    let transactionCommitted =
-      false;
-
-    try {
-      /*
-       * Ensure the timeline table BEFORE opening
-       * the transaction.
-       *
-       * CREATE TABLE / DDL is intentionally kept
-       * outside the transaction boundary.
-       */
-      await ensureIncidentTimelineTable();
-
-      const {
-        employeeId,
-        employee_id,
-        employee,
-        employeeName,
-        company,
-        violation,
-        violationType,
-        severity,
-        date,
-        incidentDate,
-        location,
-        description,
-        reportedBy,
-        actionTaken,
-        recommendation,
-        resolutionNotes,
-      } = req.body || {};
-
-      /*
-       * SECURITY:
-       * Actor identity continues to come from
-       * verified req.user through getActor().
-       */
-      const actor =
-        await getActor(req);
-
-      const finalEmployeeId =
-        employeeId ||
-        employee_id;
-
-      if (
-        !finalEmployeeId
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Employee is required.",
-          });
-      }
-
-      /*
-       * Read-only validation may occur before
-       * the transaction.
-       */
-      const [employeeRows] =
-        await db
-          .promise()
-          .query(
-            `
-            SELECT *
-            FROM employees
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [
-              finalEmployeeId,
-            ]
-          );
-
-      if (
-        employeeRows.length ===
-        0
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Selected employee not found.",
-          });
-      }
-
-      const employeeRecord =
-        employeeRows[0];
-
-      if (
-        !isDeployedEmployee(
-          employeeRecord
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Incident cannot be created for floating or standby employees. Please select a deployed employee.",
-          });
-      }
-
-      const activeDeployment =
-        await getActiveDeploymentForEmployee(
-          finalEmployeeId
-        );
-
-      const finalEmployeeName =
-        employeeName ||
-        employee ||
-        employeeRecord.name ||
-        null;
-
-      const finalCompany =
-        company ||
-        activeDeployment?.company ||
-        employeeRecord.company ||
-        activeDeployment
-          ?.client_company ||
-        null;
-
-      const finalViolation =
-        violationType ||
-        violation;
-
-      if (
-        !finalViolation
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Violation type is required.",
-          });
-      }
-
-      const finalDate =
-        normalizeDate(
-          incidentDate ||
-          date
-        );
-
-      if (!finalDate) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Incident date is required.",
-          });
-      }
-
-      /*
-       * SECURITY:
-       * Every newly created incident continues
-       * to start at Open.
-       *
-       * Client-supplied status is intentionally
-       * ignored so create cannot bypass the
-       * protected PATCH workflow.
-       */
-      const normalizedStatus =
-        "Open";
-
-      const finalReportedBy =
-        getSafePersonName(
-          reportedBy,
-          actor
-        );
-
-      /*
-       * Capture Multer-created evidence metadata
-       * before the transaction.
-       *
-       * Stored DB paths continue using the
-       * Phase 7 /documents/... normalization.
-       */
-      const evidenceFiles =
-        buildEvidenceFromReq(
-          req
-        );
-
-      /*
-       * ==================================================
-       * PHASE 8D TRANSACTION
-       * ==================================================
-       *
-       * Atomic unit:
-       *
-       * incident
-       * + evidence
-       * + initial timeline
-       * + audit
-       */
-      connection =
-        await db
-          .promise()
-          .getConnection();
-
-      await connection
-        .beginTransaction();
-
-      transactionStarted =
-        true;
-
-      const [result] =
-        await connection.query(
-          `
-          INSERT INTO incidents
-          (
-            employee_id,
-            employee_name,
-            company,
-            violation_type,
-            severity,
-            status,
-            incident_date,
-            location,
-            description,
-            reported_by,
-            action_taken,
-            recommendation,
-            resolution_notes,
-            last_action_by_id,
-            last_action_by_username,
-            last_action_by_name,
-            last_action_type,
-            last_action_at
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-          `,
-          [
-            finalEmployeeId,
-            finalEmployeeName,
-            finalCompany,
-            finalViolation,
-            normalizeSeverity(
-              severity
-            ),
-            normalizedStatus,
-            finalDate,
-            location ||
-              null,
-            description ||
-              null,
-            finalReportedBy,
-            actionTaken ||
-              null,
-            recommendation ||
-              null,
-            resolutionNotes ||
-              null,
-            actor.userId,
-            actor.username,
-            actor.fullName,
-            "CREATE_INCIDENT",
-          ]
-        );
-
-      const incidentId =
-        result.insertId;
-
-      /*
-       * Evidence records use the SAME connection.
-       */
-      for (
-        const file of
-          evidenceFiles
-      ) {
-        await connection.query(
-          `
-          INSERT INTO incident_evidence
-          (
-            incident_id,
-            file_name,
-            file_path
-          )
-          VALUES (?, ?, ?)
-          `,
-          [
-            incidentId,
-            file.fileName,
-            file.filePath,
-          ]
-        );
-      }
-
-      /*
-       * Initial timeline record also participates
-       * in the SAME transaction.
-       *
-       * Timeline table was already ensured before
-       * BEGIN, so do not run DDL here.
-       */
-      await addTimelineEvent({
-        incidentId,
-
-        actionType:
-          "CREATE_INCIDENT",
-
-        title:
-          "Reported",
-
-        description:
-          `Reported by ${finalReportedBy}.`,
-
-        actor,
-
-        connection,
-
-        ensureTable:
-          false,
-      });
-
-      /*
-       * PHASE 8D:
-       * Audit must be part of the same transaction.
-       *
-       * Unlike normal audit calls, this call must
-       * throw on failure so the entire incident
-       * transaction can rollback.
-       */
-      await logAudit(
-        {
-          userId:
-            actor.userId,
-
-          username:
-            actor.username,
-
-          fullName:
-            actor.fullName,
-
-          role:
-            actor.role,
-
-          category:
-            AUDIT_CATEGORY.OPERATIONAL,
-
-          action:
-            "ADD_INCIDENT",
-
-          description:
-            `${actor.fullName} created incident record for ${finalEmployeeName}.`,
-        },
-        {
-          connection,
-
-          throwOnError:
-            true,
-        }
-      );
-
-      /*
-       * Commit only after incident, evidence,
-       * timeline and audit all succeed.
-       */
-      await connection.commit();
-
-      transactionCommitted =
-        true;
-
-      /*
-       * Fetch the completed representation only
-       * after the transactional writes commit.
-       */
-      const createdIncident =
-        await getIncidentWithEvidence(
-          incidentId
-        );
-
-      return res
-        .status(201)
-        .json({
-          success: true,
-
-          message:
-            "Incident created successfully",
-
-          id:
-            incidentId,
-
-          incidentId,
-
-          incident:
-            createdIncident,
-        });
-    } catch (err) {
-      let rollbackSucceeded =
-        !transactionStarted;
-
-      /*
-       * If transaction began but did not commit,
-       * restore every transactional DB write.
-       */
-      if (
-        connection &&
-        transactionStarted &&
-        !transactionCommitted
-      ) {
-        try {
-          await connection.rollback();
-
-          rollbackSucceeded =
-            true;
-        } catch (
-          rollbackError
-        ) {
-          rollbackSucceeded =
-            false;
-
-          console.error(
-            "CREATE INCIDENT ROLLBACK ERROR:",
-            rollbackError
-          );
-        }
-      }
-
-      /*
-       * Multer has already created physical files.
-       *
-       * If the transaction did not commit and DB
-       * rollback is confirmed, remove only files
-       * uploaded by this failed create request.
-       *
-       * If rollback itself is uncertain, do not
-       * blindly delete evidence that might already
-       * belong to committed DB state.
-       */
-      if (
-        !transactionCommitted &&
-        rollbackSucceeded
-      ) {
-        await cleanupIncidentUploadedFiles(
-          req.files
-        );
-      }
-
-      console.error(
-        "CREATE INCIDENT ERROR:",
-        err
-      );
-
-      return res
-        .status(500)
-        .json({
-          error:
-            "Failed to create incident",
-        });
-    } finally {
-      /*
-       * Always return the dedicated MySQL
-       * connection to the pool.
-       */
-      if (connection) {
-        connection.release();
-      }
-    }
-  };
-
-function normalizeIdentity(
-  value
-) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
-}
-
-function buildActorAliases(
-  actor
-) {
-  return new Set(
-    [
-      actor?.userId,
-      actor?.username,
-      actor?.fullName,
-    ]
-      .map(
-        normalizeIdentity
-      )
-      .filter(Boolean)
-  );
-}
-
-function hasActorMatch(
-  actor,
-  values = []
-) {
-  const aliases =
-    buildActorAliases(
-      actor
+    return res.json(incident);
+  } catch (error) {
+    console.error(
+      "GET INCIDENT ERROR:",
+      error
     );
 
-  return values.some(
-    (value) =>
-      aliases.has(
-        normalizeIdentity(
-          value
-        )
-      )
-  );
-}
-
-function getAssignedInvestigatorValues(
-  incident
-) {
-  return [
-    incident.investigation_started_by_id,
-
-    incident.investigation_started_by_username,
-
-    incident.investigation_started_by_name,
-
-    incident.last_action_type ===
-    WORKFLOW_ACTION.START
-      ? incident.last_action_by_id
-      : null,
-
-    incident.last_action_type ===
-    WORKFLOW_ACTION.START
-      ? incident.last_action_by_username
-      : null,
-
-    incident.last_action_type ===
-    WORKFLOW_ACTION.START
-      ? incident.last_action_by_name
-      : null,
-  ].filter(Boolean);
-}
+    return res
+      .status(500)
+      .json({
+        error:
+          "Failed to fetch incident",
+      });
+  }
+};
 
 /*
- * UPDATE INCIDENT DETAILS
- *
- * SECURITY:
- * This endpoint intentionally does NOT update:
- * - status
- * - workflow action
- *
- * Workflow status transitions must go through:
- * PATCH /incidents/:id/status
- *
- * This prevents PUT from bypassing the existing
- * investigation / review / close workflow rules.
+ * ==================================================
+ * CREATE INCIDENT
+ * ==================================================
  */
-exports.updateIncident =
-  async (
-    req,
-    res
-  ) => {
-    try {
-      await ensureIncidentTimelineTable();
+exports.createIncident = async (
+  req,
+  res
+) => {
+  let connection = null;
+  let transactionStarted = false;
+  let transactionCommitted = false;
 
-      const {
-        id,
-      } = req.params;
+  try {
+    /*
+     * Keep timeline DDL outside the transaction.
+     */
+    await ensureIncidentTimelineTable();
 
-      /*
-       * SECURITY:
-       * Load the existing workflow state first.
-       *
-       * Closed incidents are immutable and cannot
-       * be edited through the general PUT endpoint.
-       */
-      const [
-        existingIncidentRows,
-      ] =
-        await db
-          .promise()
-          .query(
-            `
-            SELECT
-              id,
-              status
-            FROM incidents
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [id]
-          );
+    const {
+      employeeId,
+      employee_id,
+      employee,
+      employeeName,
+      company,
+      violation,
+      violationType,
+      severity,
+      date,
+      incidentDate,
+      location,
+      description,
+      reportedBy,
+      actionTaken,
+      recommendation,
+      resolutionNotes,
+    } = req.body || {};
 
-      if (
-        existingIncidentRows.length ===
-        0
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Incident not found.",
-          });
-      }
+    const actor =
+      await getActor(req);
 
-      const existingIncident =
-        existingIncidentRows[0];
+    const finalEmployeeId =
+      employeeId ||
+      employee_id;
 
-      const existingStatus =
-        normalizeStatus(
-          existingIncident.status
-        );
+    if (!finalEmployeeId) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Employee is required.",
+        });
+    }
 
-      if (
-        existingStatus ===
-        "Closed"
-      ) {
-        return res
-          .status(409)
-          .json({
-            error:
-              "This case is already closed and can no longer be modified.",
-          });
-      }
-
-      /*
-       * GENERAL INCIDENT DETAILS ONLY
-       *
-       * Intentionally accepted:
-       * - employee
-       * - company
-       * - violation
-       * - severity
-       * - incident date
-       * - location
-       * - description
-       * - reporter display value
-       *
-       * Intentionally NOT accepted here:
-       * - status
-       * - workflowAction
-       * - actionTaken
-       * - recommendation
-       * - resolutionNotes
-       * - investigation metadata
-       * - resolution metadata
-       * - review metadata
-       * - last workflow action metadata
-       *
-       * Those fields belong exclusively to
-       * PATCH /incidents/:id/status.
-       *
-       * Extra client-supplied workflow fields are
-       * therefore ignored by this endpoint.
-       */
-      const {
-        employeeId,
-        employee_id,
-        employee,
-        employeeName,
-        company,
-        violation,
-        violationType,
-        severity,
-        date,
-        incidentDate,
-        location,
-        description,
-        reportedBy,
-      } = req.body || {};
-
-      /*
-       * Trusted actor identity comes exclusively
-       * from verified req.user.
-       *
-       * Body/query userId, username, fullName,
-       * role, etc. are never used for authority.
-       */
-      const actor =
-        await getActor(req);
-
-      const finalEmployeeId =
-        employeeId ||
-        employee_id;
-
-      if (
-        !finalEmployeeId
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Employee is required.",
-          });
-      }
-
-      const [
-        employeeRows,
-      ] =
-        await db
-          .promise()
-          .query(
-            `
-            SELECT *
-            FROM employees
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [
-              finalEmployeeId,
-            ]
-          );
-
-      if (
-        employeeRows.length ===
-        0
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Selected employee not found.",
-          });
-      }
-
-      const employeeRecord =
-        employeeRows[0];
-
-      if (
-        !isDeployedEmployee(
-          employeeRecord
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Incident cannot be assigned to floating or standby employees. Please select a deployed employee.",
-          });
-      }
-
-      const activeDeployment =
-        await getActiveDeploymentForEmployee(
-          finalEmployeeId
-        );
-
-      const finalEmployeeName =
-        employeeName ||
-        employee ||
-        employeeRecord.name ||
-        null;
-
-      const finalCompany =
-        company ||
-        activeDeployment?.company ||
-        employeeRecord.company ||
-        activeDeployment
-          ?.client_company ||
-        null;
-
-      const finalViolation =
-        violationType ||
-        violation;
-
-      const finalDate =
-        normalizeDate(
-          incidentDate ||
-          date
-        );
-
-      if (
-        !finalViolation
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Violation type is required.",
-          });
-      }
-
-      if (!finalDate) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Incident date is required.",
-          });
-      }
-
-      const finalReportedBy =
-        getSafePersonName(
-          reportedBy,
-          actor
-        );
-
-      /*
-       * IMPORTANT:
-       *
-       * This SQL intentionally does NOT write:
-       *
-       * status
-       * action_taken
-       * recommendation
-       * resolution_notes
-       * investigation_started_*
-       * resolution_submitted_*
-       * reviewed_*
-       * review_decision
-       * review_comments
-       * last_action_*
-       *
-       * The PATCH workflow is the sole authority
-       * for those workflow-controlled fields.
-       */
+    const [employeeRows] =
       await db
         .promise()
         .query(
           `
-          UPDATE incidents
-          SET
-            employee_id = ?,
-            employee_name = ?,
-            company = ?,
-            violation_type = ?,
-            severity = ?,
-            incident_date = ?,
-            location = ?,
-            description = ?,
-            reported_by = ?,
-            updated_at = NOW()
+          SELECT *
+          FROM employees
           WHERE id = ?
+          LIMIT 1
           `,
-          [
-            finalEmployeeId,
-            finalEmployeeName,
-            finalCompany,
-            finalViolation,
-            normalizeSeverity(
-              severity
-            ),
-            finalDate,
-            location || null,
-            description || null,
-            finalReportedBy,
-            id,
-          ]
+          [finalEmployeeId]
         );
 
-      /*
-       * Preserve existing general incident evidence
-       * attachment behavior.
-       *
-       * Workflow submission proof requirements are
-       * still independently enforced by the PATCH
-       * endpoint using the files submitted with that
-       * workflow request.
-       */
-      const evidenceFiles =
-        buildEvidenceFromReq(
-          req
-        );
+    if (
+      employeeRows.length === 0
+    ) {
+      return res
+        .status(404)
+        .json({
+          error:
+            "Selected employee not found.",
+        });
+    }
 
-      for (
-        const file of
-        evidenceFiles
-      ) {
-        await db
-          .promise()
-          .query(
-            `
-            INSERT INTO incident_evidence
-            (
-              incident_id,
-              file_name,
-              file_path
-            )
-            VALUES (?, ?, ?)
-            `,
-            [
-              id,
-              file.fileName,
-              file.filePath,
-            ]
-          );
-      }
+    const employeeRecord =
+      employeeRows[0];
 
-      /*
-       * Audit uses the authenticated actor only.
-       *
-       * This audit record does not alter workflow
-       * ownership / last-action metadata.
-       */
-      await safeLogAudit({
+    if (
+      !isDeployedEmployee(
+        employeeRecord
+      )
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Incident cannot be created for floating or standby employees. Please select a deployed employee.",
+        });
+    }
+
+    const activeDeployment =
+      await getActiveDeploymentForEmployee(
+        finalEmployeeId
+      );
+
+    const finalEmployeeName =
+      employeeName ||
+      employee ||
+      employeeRecord.name ||
+      null;
+
+    const finalCompany =
+      company ||
+      activeDeployment?.company ||
+      employeeRecord.company ||
+      activeDeployment
+        ?.client_company ||
+      null;
+
+    const finalViolation =
+      violationType ||
+      violation;
+
+    if (!finalViolation) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Violation type is required.",
+        });
+    }
+
+    const finalDate =
+      normalizeDate(
+        incidentDate || date
+      );
+
+    if (!finalDate) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Incident date is required.",
+        });
+    }
+
+    /*
+     * New incidents always start Open.
+     * Client-supplied workflow state is ignored.
+     */
+    const normalizedStatus =
+      "Open";
+
+    const finalReportedBy =
+      getSafePersonName(
+        reportedBy,
+        actor
+      );
+
+    const evidenceFiles =
+      buildEvidenceFromReq(req);
+
+    connection =
+      await db
+        .promise()
+        .getConnection();
+
+    await connection
+      .beginTransaction();
+
+    transactionStarted = true;
+
+    const [result] =
+      await connection.query(
+        `
+        INSERT INTO incidents
+        (
+          employee_id,
+          employee_name,
+          company,
+          violation_type,
+          severity,
+          status,
+          incident_date,
+          location,
+          description,
+          reported_by,
+          action_taken,
+          recommendation,
+          resolution_notes,
+          last_action_by_id,
+          last_action_by_username,
+          last_action_by_name,
+          last_action_type,
+          last_action_at
+        )
+        VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, NOW()
+        )
+        `,
+        [
+          finalEmployeeId,
+          finalEmployeeName,
+          finalCompany,
+          finalViolation,
+          normalizeSeverity(
+            severity
+          ),
+          normalizedStatus,
+          finalDate,
+          location || null,
+          description || null,
+          finalReportedBy,
+          actionTaken || null,
+          recommendation || null,
+          resolutionNotes || null,
+          actor.userId,
+          actor.username,
+          actor.fullName,
+          "CREATE_INCIDENT",
+        ]
+      );
+
+    const incidentId =
+      result.insertId;
+
+    for (
+      const file of
+      evidenceFiles
+    ) {
+      await connection.query(
+        `
+        INSERT INTO incident_evidence
+        (
+          incident_id,
+          file_name,
+          file_path
+        )
+        VALUES (?, ?, ?)
+        `,
+        [
+          incidentId,
+          file.fileName,
+          file.filePath,
+        ]
+      );
+    }
+
+    await addTimelineEvent({
+      incidentId,
+
+      actionType:
+        "CREATE_INCIDENT",
+
+      title:
+        "Reported",
+
+      description:
+        `Reported by ${finalReportedBy}.`,
+
+      actor,
+
+      connection,
+
+      ensureTable: false,
+    });
+
+    await logAudit(
+      {
         userId:
           actor.userId,
 
@@ -2918,67 +1948,525 @@ exports.updateIncident =
           AUDIT_CATEGORY.OPERATIONAL,
 
         action:
-          "UPDATE_INCIDENT",
+          "ADD_INCIDENT",
 
         description:
-          `${actor.fullName} updated incident record for ${finalEmployeeName}.`,
-      });
+          `${actor.fullName} created incident record for ${finalEmployeeName}.`,
+      },
+      {
+        connection,
+        throwOnError: true,
+      }
+    );
 
-      const updatedIncident =
-        await getIncidentWithEvidence(
-          id
-        );
+    await connection.commit();
 
-      return res.json({
+    transactionCommitted = true;
+
+    /*
+     * The DB transaction now owns every
+     * uploaded evidence file.
+     */
+    claimIncidentEvidenceFiles(req);
+
+    const createdIncident =
+      await getIncidentWithEvidence(
+        incidentId
+      );
+
+    return res
+      .status(201)
+      .json({
         success: true,
 
         message:
-          "Incident updated successfully",
+          "Incident created successfully",
+
+        id: incidentId,
+        incidentId,
 
         incident:
-          updatedIncident,
+          createdIncident,
       });
-    } catch (err) {
-      console.error(
-        "UPDATE INCIDENT ERROR:",
-        err
+  } catch (error) {
+    let rollbackFailed = false;
+
+    if (
+      connection &&
+      transactionStarted &&
+      !transactionCommitted
+    ) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        rollbackFailed = true;
+
+        console.error(
+          "CREATE INCIDENT ROLLBACK ERROR:",
+          rollbackError
+        );
+      }
+    }
+
+    /*
+     * Normally a failed request leaves files
+     * unclaimed so upload middleware removes
+     * them automatically.
+     *
+     * If rollback itself is uncertain, retain
+     * the physical files rather than risk
+     * deleting potentially referenced data.
+     */
+    if (rollbackFailed) {
+      claimIncidentEvidenceFiles(req);
+    }
+
+    console.error(
+      "CREATE INCIDENT ERROR:",
+      error
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Failed to create incident",
+      });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
+function normalizeIdentity(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function buildActorAliases(actor) {
+  return new Set(
+    [
+      actor?.userId,
+      actor?.username,
+      actor?.fullName,
+    ]
+      .map(normalizeIdentity)
+      .filter(Boolean)
+  );
+}
+
+function hasActorMatch(
+  actor,
+  values = []
+) {
+  const aliases =
+    buildActorAliases(actor);
+
+  return values.some((value) =>
+    aliases.has(
+      normalizeIdentity(value)
+    )
+  );
+}
+
+function getAssignedInvestigatorValues(
+  incident
+) {
+  return [
+    incident
+      .investigation_started_by_id,
+
+    incident
+      .investigation_started_by_username,
+
+    incident
+      .investigation_started_by_name,
+
+    incident.last_action_type ===
+    WORKFLOW_ACTION.START
+      ? incident.last_action_by_id
+      : null,
+
+    incident.last_action_type ===
+    WORKFLOW_ACTION.START
+      ? incident
+          .last_action_by_username
+      : null,
+
+    incident.last_action_type ===
+    WORKFLOW_ACTION.START
+      ? incident.last_action_by_name
+      : null,
+  ].filter(Boolean);
+}
+
+/*
+ * ==================================================
+ * UPDATE INCIDENT DETAILS
+ * ==================================================
+ *
+ * This endpoint does not control workflow state.
+ */
+exports.updateIncident = async (
+  req,
+  res
+) => {
+  let connection = null;
+  let transactionStarted = false;
+  let transactionCommitted = false;
+
+  try {
+    await ensureIncidentTimelineTable();
+
+    const { id } = req.params;
+
+    const [
+      existingIncidentRows,
+    ] = await db
+      .promise()
+      .query(
+        `
+        SELECT
+          id,
+          status
+        FROM incidents
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [id]
       );
 
+    if (
+      existingIncidentRows.length ===
+      0
+    ) {
       return res
-        .status(500)
+        .status(404)
         .json({
           error:
-            "Failed to update incident",
+            "Incident not found.",
         });
     }
-  };
 
-// UPDATE STATUS ONLY
+    const existingIncident =
+      existingIncidentRows[0];
+
+    if (
+      normalizeStatus(
+        existingIncident.status
+      ) === "Closed"
+    ) {
+      return res
+        .status(409)
+        .json({
+          error:
+            "This case is already closed and can no longer be modified.",
+        });
+    }
+
+    const {
+      employeeId,
+      employee_id,
+      employee,
+      employeeName,
+      company,
+      violation,
+      violationType,
+      severity,
+      date,
+      incidentDate,
+      location,
+      description,
+      reportedBy,
+    } = req.body || {};
+
+    const actor =
+      await getActor(req);
+
+    const finalEmployeeId =
+      employeeId ||
+      employee_id;
+
+    if (!finalEmployeeId) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Employee is required.",
+        });
+    }
+
+    const [employeeRows] =
+      await db
+        .promise()
+        .query(
+          `
+          SELECT *
+          FROM employees
+          WHERE id = ?
+          LIMIT 1
+          `,
+          [finalEmployeeId]
+        );
+
+    if (
+      employeeRows.length === 0
+    ) {
+      return res
+        .status(404)
+        .json({
+          error:
+            "Selected employee not found.",
+        });
+    }
+
+    const employeeRecord =
+      employeeRows[0];
+
+    if (
+      !isDeployedEmployee(
+        employeeRecord
+      )
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Incident cannot be assigned to floating or standby employees. Please select a deployed employee.",
+        });
+    }
+
+    const activeDeployment =
+      await getActiveDeploymentForEmployee(
+        finalEmployeeId
+      );
+
+    const finalEmployeeName =
+      employeeName ||
+      employee ||
+      employeeRecord.name ||
+      null;
+
+    const finalCompany =
+      company ||
+      activeDeployment?.company ||
+      employeeRecord.company ||
+      activeDeployment
+        ?.client_company ||
+      null;
+
+    const finalViolation =
+      violationType ||
+      violation;
+
+    if (!finalViolation) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Violation type is required.",
+        });
+    }
+
+    const finalDate =
+      normalizeDate(
+        incidentDate || date
+      );
+
+    if (!finalDate) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Incident date is required.",
+        });
+    }
+
+    const finalReportedBy =
+      getSafePersonName(
+        reportedBy,
+        actor
+      );
+
+    const evidenceFiles =
+      buildEvidenceFromReq(req);
+
+    /*
+     * Incident details + all newly uploaded
+     * evidence rows are committed together.
+     */
+    connection =
+      await db
+        .promise()
+        .getConnection();
+
+    await connection
+      .beginTransaction();
+
+    transactionStarted = true;
+
+    await connection.query(
+      `
+      UPDATE incidents
+      SET
+        employee_id = ?,
+        employee_name = ?,
+        company = ?,
+        violation_type = ?,
+        severity = ?,
+        incident_date = ?,
+        location = ?,
+        description = ?,
+        reported_by = ?,
+        updated_at = NOW()
+      WHERE id = ?
+      `,
+      [
+        finalEmployeeId,
+        finalEmployeeName,
+        finalCompany,
+        finalViolation,
+        normalizeSeverity(
+          severity
+        ),
+        finalDate,
+        location || null,
+        description || null,
+        finalReportedBy,
+        id,
+      ]
+    );
+
+    for (
+      const file of
+      evidenceFiles
+    ) {
+      await connection.query(
+        `
+        INSERT INTO incident_evidence
+        (
+          incident_id,
+          file_name,
+          file_path
+        )
+        VALUES (?, ?, ?)
+        `,
+        [
+          id,
+          file.fileName,
+          file.filePath,
+        ]
+      );
+    }
+
+    await connection.commit();
+
+    transactionCommitted = true;
+
+    claimIncidentEvidenceFiles(req);
+
+    await safeLogAudit({
+      userId:
+        actor.userId,
+
+      username:
+        actor.username,
+
+      fullName:
+        actor.fullName,
+
+      role:
+        actor.role,
+
+      category:
+        AUDIT_CATEGORY.OPERATIONAL,
+
+      action:
+        "UPDATE_INCIDENT",
+
+      description:
+        `${actor.fullName} updated incident record for ${finalEmployeeName}.`,
+    });
+
+    const updatedIncident =
+      await getIncidentWithEvidence(
+        id
+      );
+
+    return res.json({
+      success: true,
+
+      message:
+        "Incident updated successfully",
+
+      incident:
+        updatedIncident,
+    });
+  } catch (error) {
+    let rollbackFailed = false;
+
+    if (
+      connection &&
+      transactionStarted &&
+      !transactionCommitted
+    ) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        rollbackFailed = true;
+
+        console.error(
+          "UPDATE INCIDENT ROLLBACK ERROR:",
+          rollbackError
+        );
+      }
+    }
+
+    if (rollbackFailed) {
+      claimIncidentEvidenceFiles(req);
+    }
+
+    console.error(
+      "UPDATE INCIDENT ERROR:",
+      error
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Failed to update incident",
+      });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
+/*
+ * ==================================================
+ * UPDATE INCIDENT WORKFLOW STATUS
+ * ==================================================
+ */
 exports.updateIncidentStatus =
   async (
     req,
     res
   ) => {
     let connection = null;
-
-    let transactionStarted =
-      false;
-
-    let transactionCommitted =
-      false;
+    let transactionStarted = false;
+    let transactionCommitted = false;
 
     try {
-      /*
-       * Keep DDL outside the transaction.
-       */
       await ensureIncidentTimelineTable();
 
-      const {
-        id,
-      } = req.params;
+      const { id } =
+        req.params;
 
       const {
-        status,
         workflowAction,
         resolutionNotes,
         actionTaken,
@@ -2988,22 +2476,33 @@ exports.updateIncidentStatus =
       const actor =
         await getActor(req);
 
+      /*
+       * Workflow state comes from the explicit
+       * supported workflowAction only.
+       *
+       * Client-supplied status is not authoritative.
+       */
       const actionType =
         normalizeWorkflowAction(
-          workflowAction,
-          status
+          workflowAction
         );
+
+      if (!actionType) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Unsupported incident workflow action.",
+          });
+      }
 
       const normalizedStatus =
         getWorkflowTargetStatus(
-          actionType,
-          status
+          actionType
         );
 
       const evidenceFiles =
-        buildEvidenceFromReq(
-          req
-        );
+        buildEvidenceFromReq(req);
 
       const [existingRows] =
         await db
@@ -3019,8 +2518,7 @@ exports.updateIncidentStatus =
           );
 
       if (
-        existingRows.length ===
-        0
+        existingRows.length === 0
       ) {
         return res
           .status(404)
@@ -3049,23 +2547,15 @@ exports.updateIncidentStatus =
         );
 
       const cleanActionTaken =
-        toNullable(
-          actionTaken
-        );
+        toNullable(actionTaken);
 
       const cleanRecommendation =
         toNullable(
           recommendation
         );
 
-      /*
-       * ==================================================
-       * EXISTING WORKFLOW RULES — PRESERVED
-       * ==================================================
-       */
       if (
-        existingStatus ===
-        "Closed"
+        existingStatus === "Closed"
       ) {
         return res
           .status(409)
@@ -3075,6 +2565,9 @@ exports.updateIncidentStatus =
           });
       }
 
+      /*
+       * START INVESTIGATION
+       */
       if (
         actionType ===
         WORKFLOW_ACTION.START
@@ -3107,14 +2600,18 @@ exports.updateIncidentStatus =
         }
       }
 
-      if (
+      /*
+       * SUBMIT / RESUBMIT PROOF
+       */
+      const isProofSubmission =
         actionType ===
           WORKFLOW_ACTION
             .SUBMIT_RESOLUTION ||
         actionType ===
           WORKFLOW_ACTION
-            .SUBMIT_INVESTIGATION
-      ) {
+            .SUBMIT_INVESTIGATION;
+
+      if (isProofSubmission) {
         if (
           !isInvestigatorRole(
             actor.role
@@ -3166,9 +2663,7 @@ exports.updateIncidentStatus =
             });
         }
 
-        if (
-          !cleanActionTaken
-        ) {
+        if (!cleanActionTaken) {
           return res
             .status(400)
             .json({
@@ -3189,8 +2684,7 @@ exports.updateIncidentStatus =
         }
 
         if (
-          evidenceFiles.length ===
-          0
+          evidenceFiles.length === 0
         ) {
           return res
             .status(400)
@@ -3201,6 +2695,9 @@ exports.updateIncidentStatus =
         }
       }
 
+      /*
+       * REVIEW / RETURN
+       */
       if (
         actionType ===
           WORKFLOW_ACTION.CLOSE ||
@@ -3246,59 +2743,19 @@ exports.updateIncidentStatus =
         }
       }
 
-      const allowedActions =
-        new Set([
-          WORKFLOW_ACTION.START,
-
-          WORKFLOW_ACTION
-            .SUBMIT_RESOLUTION,
-
-          WORKFLOW_ACTION
-            .SUBMIT_INVESTIGATION,
-
-          WORKFLOW_ACTION.CLOSE,
-
-          WORKFLOW_ACTION.RETURN,
-
-          "UPDATE_INCIDENT",
-        ]);
-
-      if (
-        !allowedActions.has(
-          actionType
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Unsupported incident workflow action.",
-          });
-      }
-
       /*
-       * Build exactly the same workflow-controlled
-       * UPDATE fields as the existing implementation.
+       * Build workflow-controlled update only.
        */
       const updateFields = [
         "status = ?",
-
         "resolution_notes = COALESCE(?, resolution_notes)",
-
         "action_taken = COALESCE(?, action_taken)",
-
         "recommendation = COALESCE(?, recommendation)",
-
         "last_action_by_id = ?",
-
         "last_action_by_username = ?",
-
         "last_action_by_name = ?",
-
         "last_action_type = ?",
-
         "last_action_at = NOW()",
-
         "updated_at = NOW()",
       ];
 
@@ -3313,12 +2770,6 @@ exports.updateIncidentStatus =
         actionType,
       ];
 
-      /*
-       * START INVESTIGATION
-       *
-       * Existing ownership and reviewer-reset
-       * behavior is preserved.
-       */
       if (
         actionType ===
         WORKFLOW_ACTION.START
@@ -3343,17 +2794,7 @@ exports.updateIncidentStatus =
         );
       }
 
-      /*
-       * SUBMIT / RESUBMIT PROOF
-       */
-      if (
-        actionType ===
-          WORKFLOW_ACTION
-            .SUBMIT_RESOLUTION ||
-        actionType ===
-          WORKFLOW_ACTION
-            .SUBMIT_INVESTIGATION
-      ) {
+      if (isProofSubmission) {
         updateFields.push(
           "resolution_submitted_by_id = ?",
           "resolution_submitted_by_username = ?",
@@ -3374,9 +2815,6 @@ exports.updateIncidentStatus =
         );
       }
 
-      /*
-       * APPROVE + CLOSE
-       */
       if (
         actionType ===
         WORKFLOW_ACTION.CLOSE
@@ -3400,9 +2838,6 @@ exports.updateIncidentStatus =
         );
       }
 
-      /*
-       * RETURN TO INVESTIGATOR
-       */
       if (
         actionType ===
         WORKFLOW_ACTION.RETURN
@@ -3428,18 +2863,9 @@ exports.updateIncidentStatus =
       params.push(id);
 
       /*
-       * ==================================================
-       * PHASE 8E — ATOMIC WORKFLOW TRANSACTION
-       * ==================================================
-       *
-       * Same MySQL connection for:
-       *
-       * 1. incident status/workflow update
-       * 2. submitted evidence records
-       * 3. workflow timeline
-       * 4. workflow audit
-       *
-       * Nothing commits unless all writes succeed.
+       * Incident workflow mutation,
+       * proof metadata, timeline and
+       * audit all commit together.
        */
       connection =
         await db
@@ -3449,12 +2875,8 @@ exports.updateIncidentStatus =
       await connection
         .beginTransaction();
 
-      transactionStarted =
-        true;
+      transactionStarted = true;
 
-      /*
-       * Main incident workflow mutation.
-       */
       await connection.query(
         `
         UPDATE incidents
@@ -3466,19 +2888,7 @@ exports.updateIncidentStatus =
         params
       );
 
-      /*
-       * Existing workflow rule:
-       * evidence is persisted only for proof
-       * submission/resubmission actions.
-       */
-      if (
-        actionType ===
-          WORKFLOW_ACTION
-            .SUBMIT_RESOLUTION ||
-        actionType ===
-          WORKFLOW_ACTION
-            .SUBMIT_INVESTIGATION
-      ) {
+      if (isProofSubmission) {
         for (
           const file of
           evidenceFiles
@@ -3502,16 +2912,8 @@ exports.updateIncidentStatus =
         }
       }
 
-      /*
-       * Timeline uses the transaction-aware helper
-       * added during Phase 8D.
-       *
-       * Table was already ensured before BEGIN,
-       * so no DDL is run inside the transaction.
-       */
       await addTimelineEvent({
-        incidentId:
-          id,
+        incidentId: id,
 
         actionType,
 
@@ -3535,17 +2937,9 @@ exports.updateIncidentStatus =
 
         connection,
 
-        ensureTable:
-          false,
+        ensureTable: false,
       });
 
-      /*
-       * Audit also uses the SAME connection.
-       *
-       * throwOnError is required here:
-       * if audit insert fails, rollback the
-       * entire workflow transition.
-       */
       await logAudit(
         {
           userId:
@@ -3571,25 +2965,20 @@ exports.updateIncidentStatus =
         },
         {
           connection,
-
-          throwOnError:
-            true,
+          throwOnError: true,
         }
       );
 
-      /*
-       * Commit only after all related writes
-       * complete successfully.
-       */
       await connection.commit();
 
-      transactionCommitted =
-        true;
+      transactionCommitted = true;
 
       /*
-       * Fetch response representation only after
-       * the workflow transaction is committed.
+       * Proof files now belong to committed
+       * incident_evidence rows.
        */
+      claimIncidentEvidenceFiles(req);
+
       const updatedIncident =
         await getIncidentWithEvidence(
           id
@@ -3604,14 +2993,9 @@ exports.updateIncidentStatus =
         incident:
           updatedIncident,
       });
-    } catch (err) {
-      let rollbackSucceeded =
-        !transactionStarted;
+    } catch (error) {
+      let rollbackFailed = false;
 
-      /*
-       * Restore all DB state if anything fails
-       * before commit.
-       */
       if (
         connection &&
         transactionStarted &&
@@ -3619,14 +3003,8 @@ exports.updateIncidentStatus =
       ) {
         try {
           await connection.rollback();
-
-          rollbackSucceeded =
-            true;
-        } catch (
-          rollbackError
-        ) {
-          rollbackSucceeded =
-            false;
+        } catch (rollbackError) {
+          rollbackFailed = true;
 
           console.error(
             "UPDATE INCIDENT STATUS ROLLBACK ERROR:",
@@ -3635,27 +3013,13 @@ exports.updateIncidentStatus =
         }
       }
 
-      /*
-       * Multer writes uploaded proof files before
-       * the controller executes.
-       *
-       * After confirmed rollback, delete only files
-       * uploaded by THIS failed PATCH request.
-       *
-       * Existing evidence files are untouched.
-       */
-      if (
-        !transactionCommitted &&
-        rollbackSucceeded
-      ) {
-        await cleanupIncidentUploadedFiles(
-          req.files
-        );
+      if (rollbackFailed) {
+        claimIncidentEvidenceFiles(req);
       }
 
       console.error(
         "UPDATE INCIDENT STATUS ERROR:",
-        err
+        error
       );
 
       return res
@@ -3665,196 +3029,124 @@ exports.updateIncidentStatus =
             "Failed to update incident status",
         });
     } finally {
-      /*
-       * Always release the dedicated transaction
-       * connection back to the pool.
-       */
       if (connection) {
         connection.release();
       }
     }
   };
 
-// DELETE INCIDENT
 /*
  * ==================================================
- * PHASE 8F — TRANSACTION-SAFE INCIDENT DELETE
+ * DELETE INCIDENT
  * ==================================================
  *
- * Current related-record behavior is preserved:
+ * Database deletion is transactional.
  *
- * 1. incident_evidence is explicitly deleted
- * 2. incidents row is deleted
- * 3. incident_timeline is automatically deleted
- *    by the existing ON DELETE CASCADE FK
- *
- * The evidence table also has ON DELETE CASCADE,
- * but the existing explicit delete is intentionally
- * preserved to avoid changing established behavior
- * during transaction hardening.
- *
- * No physical evidence files are deleted here because
- * the existing delete endpoint did not remove them.
- * This phase changes DB atomicity only.
+ * Physical historical evidence cleanup remains
+ * intentionally separate because safe deletion
+ * requires reference-aware retention handling.
  */
-exports.deleteIncident =
-  async (
-    req,
-    res
-  ) => {
-    const {
-      id,
-    } = req.params;
+exports.deleteIncident = async (
+  req,
+  res
+) => {
+  const { id } = req.params;
 
-    let connection = null;
+  let connection = null;
+  let transactionStarted = false;
+  let transactionCommitted = false;
 
-    let transactionStarted =
-      false;
+  try {
+    const [incidentRows] =
+      await db
+        .promise()
+        .query(
+          `
+          SELECT id
+          FROM incidents
+          WHERE id = ?
+          LIMIT 1
+          `,
+          [id]
+        );
 
-    let transactionCommitted =
-      false;
-
-    try {
-      /*
-       * Read-only existence validation occurs before
-       * opening the transaction.
-       */
-      const [incidentRows] =
-        await db
-          .promise()
-          .query(
-            `
-            SELECT id
-            FROM incidents
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [
-              id,
-            ]
-          );
-
-      if (
-        incidentRows.length ===
-        0
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Incident not found.",
-          });
-      }
-
-      /*
-       * ==================================================
-       * PHASE 8F TRANSACTION
-       * ==================================================
-       *
-       * Related DB deletions must succeed together.
-       */
-      connection =
-        await db
-          .promise()
-          .getConnection();
-
-      await connection
-        .beginTransaction();
-
-      transactionStarted =
-        true;
-
-      /*
-       * Preserve the existing explicit evidence delete.
-       *
-       * If the parent incident delete later fails,
-       * this deletion is restored by ROLLBACK.
-       */
-      await connection.query(
-        `
-        DELETE FROM incident_evidence
-        WHERE incident_id = ?
-        `,
-        [
-          id,
-        ]
-      );
-
-      /*
-       * Delete parent incident.
-       *
-       * Existing database FK behavior automatically
-       * cascades this delete to incident_timeline.
-       *
-       * incident_evidence also has ON DELETE CASCADE,
-       * although rows were already explicitly removed
-       * above as part of the preserved current flow.
-       */
-      await connection.query(
-        `
-        DELETE FROM incidents
-        WHERE id = ?
-        `,
-        [
-          id,
-        ]
-      );
-
-      /*
-       * Commit only after all confirmed related
-       * database deletions succeed.
-       */
-      await connection.commit();
-
-      transactionCommitted =
-        true;
-
-      return res.json({
-        success: true,
-
-        message:
-          "Incident deleted successfully",
-      });
-    } catch (err) {
-      /*
-       * Restore related database state when any
-       * delete fails before COMMIT.
-       */
-      if (
-        connection &&
-        transactionStarted &&
-        !transactionCommitted
-      ) {
-        try {
-          await connection.rollback();
-        } catch (
-          rollbackError
-        ) {
-          console.error(
-            "DELETE INCIDENT ROLLBACK ERROR:",
-            rollbackError
-          );
-        }
-      }
-
-      console.error(
-        "DELETE INCIDENT ERROR:",
-        err
-      );
-
+    if (
+      incidentRows.length === 0
+    ) {
       return res
-        .status(500)
+        .status(404)
         .json({
           error:
-            "Failed to delete incident",
+            "Incident not found.",
         });
-    } finally {
-      /*
-       * Always return the dedicated transaction
-       * connection to the MySQL pool.
-       */
-      if (connection) {
-        connection.release();
+    }
+
+    connection =
+      await db
+        .promise()
+        .getConnection();
+
+    await connection
+      .beginTransaction();
+
+    transactionStarted = true;
+
+    await connection.query(
+      `
+      DELETE FROM incident_evidence
+      WHERE incident_id = ?
+      `,
+      [id]
+    );
+
+    await connection.query(
+      `
+      DELETE FROM incidents
+      WHERE id = ?
+      `,
+      [id]
+    );
+
+    await connection.commit();
+
+    transactionCommitted = true;
+
+    return res.json({
+      success: true,
+
+      message:
+        "Incident deleted successfully",
+    });
+  } catch (error) {
+    if (
+      connection &&
+      transactionStarted &&
+      !transactionCommitted
+    ) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error(
+          "DELETE INCIDENT ROLLBACK ERROR:",
+          rollbackError
+        );
       }
     }
-  };
+
+    console.error(
+      "DELETE INCIDENT ERROR:",
+      error
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Failed to delete incident",
+      });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};

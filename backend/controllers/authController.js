@@ -1,7 +1,9 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const db = require("../config/db");
-const { logAudit } = require("../utils/auditLogger");
+const {
+  logAudit,
+} = require("../utils/auditLogger");
 
 /**
  * Returns the JWT secret loaded from backend/.env.
@@ -29,7 +31,9 @@ function isInactiveAccount(status) {
   );
 }
 
-function normalizeMustChangePassword(value) {
+function normalizeMustChangePassword(
+  value
+) {
   return (
     value === true ||
     value === 1 ||
@@ -37,12 +41,45 @@ function normalizeMustChangePassword(value) {
   );
 }
 
+/*
+ * ==================================================
+ * TOKEN VERSION
+ * ==================================================
+ *
+ * SECURITY:
+ *
+ * Every authenticated session is bound to the user's
+ * current token_version value from the database.
+ *
+ * Password resets, account deactivation, password
+ * changes, and other security-sensitive account
+ * operations can increment token_version.
+ *
+ * Any JWT issued with an older tokenVersion then
+ * becomes invalid.
+ */
+function normalizeTokenVersion(value) {
+  const numericValue =
+    Number(value);
+
+  if (
+    !Number.isSafeInteger(
+      numericValue
+    ) ||
+    numericValue < 1
+  ) {
+    return 1;
+  }
+
+  return numericValue;
+}
+
 /**
  * Build the only user fields that may be returned
  * to the frontend after successful authentication.
  *
- * Password/password hash and any unrelated database
- * columns are intentionally excluded.
+ * Password/password hash and security-internal fields
+ * such as token_version are intentionally excluded.
  */
 function buildSafeUser(user) {
   const mustChangePassword =
@@ -51,229 +88,326 @@ function buildSafeUser(user) {
     );
 
   return {
-    id: user.id,
+    id:
+      user.id,
 
-    user_id: user.user_id,
-    userId: user.user_id,
+    user_id:
+      user.user_id,
 
-    full_name: user.full_name,
-    fullName: user.full_name,
+    userId:
+      user.user_id,
 
-    username: user.username,
+    full_name:
+      user.full_name,
 
-    role: user.role,
+    fullName:
+      user.full_name,
 
-    status: user.status,
+    username:
+      user.username,
+
+    role:
+      user.role,
+
+    status:
+      user.status,
 
     must_change_password:
-      mustChangePassword ? 1 : 0,
+      mustChangePassword
+        ? 1
+        : 0,
 
     mustChangePassword,
   };
 }
 
-exports.login = async (req, res) => {
-  const username =
-    String(
-      req.body?.username || ""
-    ).trim();
+exports.login =
+  async (
+    req,
+    res
+  ) => {
+    const username =
+      String(
+        req.body?.username || ""
+      ).trim();
 
-  const password =
-    String(
-      req.body?.password || ""
-    );
-
-  if (!username || !password) {
-    return res.status(400).json({
-      message:
-        "Username and password are required",
-    });
-  }
-
-  try {
-    const [users] =
-      await db.promise().query(
-        `
-        SELECT
-          id,
-          user_id,
-          full_name,
-          username,
-          password,
-          role,
-          status,
-          must_change_password
-        FROM users
-        WHERE username = ?
-        LIMIT 1
-        `,
-        [username]
+    const password =
+      String(
+        req.body?.password || ""
       );
 
-    /*
-     * FAILED LOGIN:
-     * Username does not exist.
-     */
-    if (users.length === 0) {
-      await logAudit({
-        userId: "-",
-        username,
-        full_name:
-          "Unknown User",
-        role: "-",
-        action:
-          "LOGIN_FAILED",
-        description:
-          `Failed login attempt (Unknown username: ${username})`,
-      });
-
-      return res.status(401).json({
-        message:
-          "User not found",
-      });
-    }
-
-    const user =
-      users[0];
-
-    /*
-     * ACCOUNT SECURITY:
-     * An inactive account must never be
-     * allowed to authenticate or receive
-     * a JWT.
-     */
     if (
-      isInactiveAccount(
-        user.status
-      )
+      !username ||
+      !password
     ) {
-      await logAudit({
-        userId:
-          user.user_id,
-        username:
-          user.username,
-        full_name:
-          user.full_name,
-        role:
-          user.role,
-        action:
-          "LOGIN_FAILED",
-        description:
-          `Failed login attempt for ${user.full_name} (Inactive Account)`,
-      });
-
-      return res.status(403).json({
-        message:
-          "Account is inactive. Please contact IT Support.",
-      });
+      return res
+        .status(400)
+        .json({
+          message:
+            "Username and password are required",
+        });
     }
 
-    const match =
-      await bcrypt.compare(
-        password,
-        user.password
-      );
+    try {
+      const [users] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              id,
+              user_id,
+              full_name,
+              username,
+              password,
+              role,
+              status,
+              must_change_password,
+              token_version
+            FROM users
+            WHERE username = ?
+            LIMIT 1
+            `,
+            [
+              username,
+            ]
+          );
 
-    /*
-     * FAILED LOGIN:
-     * Username exists but password
-     * verification failed.
-     */
-    if (!match) {
-      await logAudit({
-        userId:
-          user.user_id,
-        username:
-          user.username,
-        full_name:
-          user.full_name,
-        role:
-          user.role,
-        action:
-          "LOGIN_FAILED",
-        description:
-          `Failed login attempt for ${user.full_name} (Incorrect Password)`,
-      });
+      /*
+       * FAILED LOGIN:
+       * Username does not exist.
+       */
+      if (
+        users.length === 0
+      ) {
+        await logAudit({
+          userId:
+            "-",
 
-      return res.status(401).json({
-        message:
-          "Invalid password",
-      });
-    }
+          username,
 
-    const jwtSecret =
-      getJwtSecret();
+          full_name:
+            "Unknown User",
 
-    if (!jwtSecret) {
-      console.error(
-        "JWT configuration error: JWT_SECRET is not configured."
-      );
+          role:
+            "-",
 
-      return res.status(500).json({
-        message:
-          "Authentication service configuration error",
-      });
-    }
+          action:
+            "LOGIN_FAILED",
 
-    /*
-     * Preserve the existing authenticated
-     * JWT identity contract.
-     */
-    const token =
-      jwt.sign(
-        {
-          id: user.id,
+          description:
+            `Failed login attempt (Unknown username: ${username})`,
+        });
+
+        return res
+          .status(401)
+          .json({
+            message:
+              "User not found",
+          });
+      }
+
+      const user =
+        users[0];
+
+      /*
+       * ACCOUNT SECURITY:
+       *
+       * An inactive account must never receive
+       * a new authenticated JWT.
+       */
+      if (
+        isInactiveAccount(
+          user.status
+        )
+      ) {
+        await logAudit({
+          userId:
+            user.user_id,
+
           username:
             user.username,
+
+          full_name:
+            user.full_name,
+
           role:
             user.role,
-        },
-        jwtSecret,
-        {
-          expiresIn: "8h",
-        }
+
+          action:
+            "LOGIN_FAILED",
+
+          description:
+            `Failed login attempt for ${user.full_name} (Inactive Account)`,
+        });
+
+        return res
+          .status(403)
+          .json({
+            message:
+              "Account is inactive. Please contact IT Support.",
+          });
+      }
+
+      const match =
+        await bcrypt.compare(
+          password,
+          user.password
+        );
+
+      /*
+       * FAILED LOGIN:
+       * Username exists but password
+       * verification failed.
+       */
+      if (!match) {
+        await logAudit({
+          userId:
+            user.user_id,
+
+          username:
+            user.username,
+
+          full_name:
+            user.full_name,
+
+          role:
+            user.role,
+
+          action:
+            "LOGIN_FAILED",
+
+          description:
+            `Failed login attempt for ${user.full_name} (Incorrect Password)`,
+        });
+
+        return res
+          .status(401)
+          .json({
+            message:
+              "Invalid password",
+          });
+      }
+
+      const jwtSecret =
+        getJwtSecret();
+
+      if (!jwtSecret) {
+        console.error(
+          "JWT configuration error: JWT_SECRET is not configured."
+        );
+
+        return res
+          .status(500)
+          .json({
+            message:
+              "Authentication service configuration error",
+          });
+      }
+
+      const tokenVersion =
+        normalizeTokenVersion(
+          user.token_version
+        );
+
+      /*
+       * ==================================================
+       * JWT SESSION
+       * ==================================================
+       *
+       * SECURITY:
+       *
+       * tokenVersion binds this JWT to the user's
+       * current server-side session generation.
+       *
+       * Example:
+       *
+       * JWT tokenVersion = 1
+       * DB  token_version = 1
+       * -> valid
+       *
+       * Password reset / deactivation:
+       *
+       * DB token_version = 2
+       *
+       * Old JWT still contains:
+       * tokenVersion = 1
+       *
+       * authMiddleware will reject that old JWT.
+       */
+      const token =
+        jwt.sign(
+          {
+            id:
+              user.id,
+
+            username:
+              user.username,
+
+            role:
+              user.role,
+
+            tokenVersion,
+          },
+          jwtSecret,
+          {
+            expiresIn:
+              "8h",
+          }
+        );
+
+      await logAudit({
+        userId:
+          user.user_id,
+
+        username:
+          user.username,
+
+        full_name:
+          user.full_name,
+
+        role:
+          user.role,
+
+        action:
+          "Login Success",
+
+        description:
+          `${user.full_name} successfully logged into the system`,
+      });
+
+      /*
+       * SECURITY:
+       *
+       * Never return the raw database user row.
+       *
+       * In particular:
+       * - password stays private
+       * - token_version stays private
+       */
+      const safeUser =
+        buildSafeUser(
+          user
+        );
+
+      return res
+        .status(200)
+        .json({
+          token,
+          user:
+            safeUser,
+        });
+    } catch (err) {
+      console.error(
+        "LOGIN ERROR:",
+        err
       );
 
-    await logAudit({
-      userId:
-        user.user_id,
-      username:
-        user.username,
-      full_name:
-        user.full_name,
-      role:
-        user.role,
-      action:
-        "Login Success",
-      description:
-        `${user.full_name} successfully logged into the system`,
-    });
-
-    /*
-     * SECURITY:
-     * Never return the raw database user row.
-     *
-     * In particular, user.password must never
-     * leave the backend.
-     */
-    const safeUser =
-      buildSafeUser(
-        user
-      );
-
-    return res.status(200).json({
-      token,
-      user: safeUser,
-    });
-  } catch (err) {
-    console.error(
-      "LOGIN ERROR:",
-      err
-    );
-
-    return res.status(500).json({
-      message:
-        "Login error",
-    });
-  }
-};
+      return res
+        .status(500)
+        .json({
+          message:
+            "Login error",
+        });
+    }
+  };

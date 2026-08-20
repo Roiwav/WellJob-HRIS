@@ -1,9 +1,5 @@
 const express = require("express");
 
-const router = express.Router();
-
-const upload = require("../middleware/upload");
-
 const {
   getIncidents,
   getIncidentsByEmployee,
@@ -26,142 +22,76 @@ const {
   authorizeRoles,
 } = require("../middleware/roleMiddleware");
 
+const upload = require("../middleware/upload");
+
+const router = express.Router();
+
+const EVIDENCE_WORKFLOW_ACTIONS = new Set([
+  "SUBMIT_RESOLUTION",
+  "SUBMIT_INVESTIGATION",
+]);
+
 /*
  * ==================================================
- * INCIDENT UPLOAD ERROR HANDLING
+ * WORKFLOW EVIDENCE POLICY
  * ==================================================
  *
- * Only explicitly approved validation messages
- * may be returned to the client.
+ * Evidence uploaded through the workflow PATCH route
+ * is valid only when an investigator submits or
+ * resubmits proof for review.
  *
- * Unknown/internal upload errors are logged on
- * the backend and replaced with a generic response.
+ * Files are intentionally rejected for:
+ * - START_INVESTIGATION
+ * - CLOSE_INCIDENT
+ * - RETURN_INCIDENT
+ * - missing/unsupported workflow actions
  *
- * Existing upload requirements remain unchanged:
+ * upload.incidentEvidence registers a request-scoped
+ * cleanup boundary before this middleware runs.
  *
- * - PNG
- * - JPEG
- * - PDF
- * - maximum 5 MB per file
- * - evidenceFiles field
- * - maximum 10 files
+ * Therefore rejected files are automatically removed
+ * when this response finishes.
  */
-const SAFE_UPLOAD_ERROR_MESSAGES =
-  new Set([
-    "Only PNG, JPEG, and PDF files are allowed.",
-  ]);
-
-function handleUploadError(
-  error,
+function allowWorkflowEvidenceOnlyForSubmission(
   req,
   res,
   next
 ) {
-  if (!error) {
+  const files =
+    Array.isArray(req.files)
+      ? req.files
+      : [];
+
+  if (files.length === 0) {
     return next();
   }
 
-  /*
-   * Multer file-size limit.
-   *
-   * Preserve the existing user-facing
-   * validation message.
-   */
-  if (
-    error.code ===
-    "LIMIT_FILE_SIZE"
-  ) {
-    return res
-      .status(400)
-      .json({
-        error:
-          "Each uploaded file must not exceed 5 MB.",
-      });
-  }
+  const workflowAction = String(
+    req.body?.workflowAction || ""
+  )
+    .trim()
+    .toUpperCase();
 
-  /*
-   * Multer unexpected-field validation.
-   *
-   * Preserve the existing field requirement.
-   */
   if (
-    error.code ===
-    "LIMIT_UNEXPECTED_FILE"
-  ) {
-    return res
-      .status(400)
-      .json({
-        error:
-          "Unexpected upload field. Use evidenceFiles for incident proof.",
-      });
-  }
-
-  /*
-   * Allow only known validation messages
-   * intentionally created by our own upload
-   * middleware.
-   *
-   * Never expose arbitrary error.message values.
-   */
-  if (
-    SAFE_UPLOAD_ERROR_MESSAGES.has(
-      error.message
+    EVIDENCE_WORKFLOW_ACTIONS.has(
+      workflowAction
     )
   ) {
-    return res
-      .status(400)
-      .json({
-        error:
-          error.message,
-      });
+    return next();
   }
-
-  /*
-   * Preserve the full technical error on the
-   * server for diagnostics, but do not expose
-   * internal implementation details to clients.
-   */
-  console.error(
-    "INCIDENT EVIDENCE UPLOAD ERROR:",
-    error
-  );
 
   return res
     .status(400)
     .json({
       error:
-        "Unable to upload incident evidence.",
+        "Evidence files may only be uploaded when submitting investigation proof for review.",
     });
 }
 
-function uploadIncidentFiles(
-  req,
-  res,
-  next
-) {
-  upload.array(
-    "evidenceFiles",
-    10
-  )(
-    req,
-    res,
-    (error) => {
-      if (error) {
-        return handleUploadError(
-          error,
-          req,
-          res,
-          next
-        );
-      }
-
-      return next();
-    }
-  );
-}
-
 /*
+ * ==================================================
  * INCIDENT LIST
+ * ==================================================
  *
  * SUPER_ADMIN:
  * - view-only incident access
@@ -173,7 +103,7 @@ function uploadIncidentFiles(
  * - operational incident access
  *
  * IT_SUPPORT:
- * - no HR incident-record access
+ * - no incident-record access
  */
 router.get(
   "/incidents",
@@ -187,9 +117,8 @@ router.get(
 );
 
 /*
- * This route must remain above /incidents/:id.
- * Otherwise Express may treat "employee"
- * as an incident ID.
+ * Must remain above /incidents/:id so Express
+ * does not interpret "employee" as an incident ID.
  */
 router.get(
   "/incidents/employee/:employeeId",
@@ -207,30 +136,15 @@ router.get(
  * PROTECTED INCIDENT EVIDENCE FILE
  * ==================================================
  *
- * Persisted incident evidence must be retrieved
- * through an authenticated API route instead of
- * relying on the legacy public /documents mount.
+ * Evidence is retrieved exclusively through this
+ * authenticated endpoint.
  *
- * Access intentionally matches normal incident
- * read access:
- *
+ * Access matches incident read permissions:
  * - SUPER_ADMIN
  * - HR_MANAGER
  * - HR_STAFF
  *
- * IT_SUPPORT remains excluded from HR incident
- * records and evidence.
- *
- * The controller validates both incidentId and
- * evidenceId, retrieves the database-stored path,
- * enforces filesystem containment, and streams
- * only approved PDF/PNG/JPEG evidence.
- *
- * IMPORTANT:
- * The legacy public /documents route remains
- * temporarily available until the frontend
- * evidence viewer is migrated to authenticated
- * Blob/Object URLs.
+ * IT_SUPPORT remains excluded.
  */
 router.get(
   "/incidents/:incidentId/evidence/:evidenceId/file",
@@ -244,7 +158,9 @@ router.get(
 );
 
 /*
+ * ==================================================
  * VIEW ONE INCIDENT
+ * ==================================================
  */
 router.get(
   "/incidents/:id",
@@ -258,14 +174,18 @@ router.get(
 );
 
 /*
+ * ==================================================
  * CREATE INCIDENT
+ * ==================================================
  *
- * Existing frontend CAN_ADD_INCIDENT:
- * - HR_MANAGER
- * - HR_STAFF
+ * HR_MANAGER / HR_STAFF only.
  *
- * Authentication and RBAC intentionally run
- * before Multer processes uploaded files.
+ * Authentication and RBAC execute before Multer,
+ * preventing unauthorized requests from writing
+ * files to disk.
+ *
+ * Incident evidence is validated by the hardened
+ * upload.incidentEvidence middleware.
  */
 router.post(
   "/incidents",
@@ -274,19 +194,23 @@ router.post(
     "HR_MANAGER",
     "HR_STAFF"
   ),
-  uploadIncidentFiles,
+  upload.incidentEvidence,
   createIncident
 );
 
 /*
+ * ==================================================
  * EDIT INCIDENT DETAILS
+ * ==================================================
  *
- * Existing frontend CAN_EDIT_INCIDENT:
- * - HR_MANAGER
- * - HR_STAFF
+ * HR_MANAGER / HR_STAFF only.
  *
- * Workflow status transitions must use
- * PATCH /incidents/:id/status.
+ * General incident editing continues to support
+ * evidence attachments as part of the established
+ * workflow.
+ *
+ * Workflow status transitions remain restricted to:
+ * PATCH /incidents/:id/status
  */
 router.put(
   "/incidents/:id",
@@ -295,31 +219,36 @@ router.put(
     "HR_MANAGER",
     "HR_STAFF"
   ),
-  uploadIncidentFiles,
+  upload.incidentEvidence,
   updateIncident
 );
 
 /*
+ * ==================================================
  * INCIDENT WORKFLOW
+ * ==================================================
  *
  * Route-level access:
  * - SUPER_ADMIN
  * - HR_MANAGER
  * - HR_STAFF
  *
- * IMPORTANT:
- * Existing updateIncidentStatus controller
- * remains responsible for action-specific rules:
+ * Controller remains authoritative for workflow
+ * authorization and state transitions.
+ *
+ * Existing rules:
  *
  * HR_MANAGER / HR_STAFF:
  * - START_INVESTIGATION
  * - SUBMIT_RESOLUTION
+ * - SUBMIT_INVESTIGATION
  *
  * HR_MANAGER / SUPER_ADMIN:
  * - CLOSE_INCIDENT
  * - RETURN_INCIDENT
  *
- * Do not duplicate or redesign those rules here.
+ * Evidence files are accepted only for proof
+ * submission/resubmission actions.
  */
 router.patch(
   "/incidents/:id/status",
@@ -329,12 +258,15 @@ router.patch(
     "HR_MANAGER",
     "HR_STAFF"
   ),
-  uploadIncidentFiles,
+  upload.incidentEvidence,
+  allowWorkflowEvidenceOnlyForSubmission,
   updateIncidentStatus
 );
 
 /*
+ * ==================================================
  * PERMANENT INCIDENT DELETE
+ * ==================================================
  *
  * Destructive administrative operation.
  * Restricted to HR_MANAGER.

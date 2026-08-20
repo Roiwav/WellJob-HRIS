@@ -1,7 +1,4 @@
-import React, {
-  useEffect,
-  useState,
-} from "react";
+import React, { useEffect, useState } from "react";
 import {
   Navigate,
   Route,
@@ -35,16 +32,13 @@ import TechnicalAuditLogs from "./pages/TechnicalAuditLogs";
 import OperationalAuditLogs from "./pages/OperationalAuditLogs";
 
 // Authentication
-import {
-  AuthProvider,
-} from "./context/AuthContext";
-import {
-  useAuth,
-} from "./context/useAuth";
+import { AuthProvider } from "./context/AuthContext";
+import { useAuth } from "./context/useAuth";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import { ROLES } from "./constants/roles";
 
 import {
+  AUTH_SESSION_INVALID_EVENT,
   MAINTENANCE_MODE_DETECTED_EVENT,
 } from "./utils/authenticatedFetch";
 
@@ -61,47 +55,31 @@ const HR_MODULE_ROLES = [
   ROLES.HR_STAFF,
 ];
 
-const queryClient =
-  new QueryClient({
-    defaultOptions: {
-      queries: {
-        staleTime:
-          30 * 1000,
-
-        refetchOnWindowFocus:
-          true,
-
-        refetchOnReconnect:
-          true,
-
-        retry:
-          1,
-      },
-
-      mutations: {
-        retry:
-          0,
-      },
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      retry: 1,
     },
-  });
+    mutations: {
+      retry: 0,
+    },
+  },
+});
 
 /*
- * Register JWT transport before React renders
- * any child component.
+ * Axios JWT transport.
  *
- * This prevents child mount requests from firing
- * before Axios receives its Authorization interceptor.
- *
- * The token is read for every request so
- * login/logout/token replacement is reflected
- * without recreating the interceptor.
+ * The token is read for every request so login,
+ * logout, and token replacement are reflected
+ * immediately without recreating the interceptor.
  */
 axios.interceptors.request.use(
   (config) => {
     const token = String(
-      localStorage.getItem(
-        "token"
-      ) || ""
+      localStorage.getItem("token") || ""
     ).trim();
 
     if (token) {
@@ -114,40 +92,95 @@ axios.interceptors.request.use(
 
     return config;
   },
-
-  (error) =>
-    Promise.reject(error)
+  (error) => Promise.reject(error)
 );
 
-function isAxiosMaintenanceError(
-  error
-) {
+function getAxiosResponseMessage(error) {
+  const responseData =
+    error?.response?.data;
+
   if (
-    error?.response?.status !==
-    503
+    typeof responseData === "string"
+  ) {
+    return responseData.trim();
+  }
+
+  return String(
+    responseData?.error ||
+      responseData?.message ||
+      ""
+  ).trim();
+}
+
+function getAxiosAuthorizationHeader(error) {
+  const headers =
+    error?.config?.headers;
+
+  if (!headers) {
+    return "";
+  }
+
+  if (
+    typeof headers.get === "function"
+  ) {
+    return String(
+      headers.get("Authorization") ||
+        headers.get("authorization") ||
+        ""
+    ).trim();
+  }
+
+  return String(
+    headers.Authorization ||
+      headers.authorization ||
+      ""
+  ).trim();
+}
+
+function isAuthenticatedAxiosRequest(error) {
+  return getAxiosAuthorizationHeader(error)
+    .toLowerCase()
+    .startsWith("bearer ");
+}
+
+function isAxiosMaintenanceError(error) {
+  if (
+    error?.response?.status !== 503
   ) {
     return false;
   }
 
-  const responseData =
-    error?.response?.data;
-
-  const message =
-    typeof responseData ===
-    "string"
-      ? responseData
-      : responseData?.error ||
-        responseData?.message ||
-        "";
-
-  return String(
-    message || ""
-  )
-    .trim()
+  return getAxiosResponseMessage(error)
     .toLowerCase()
-    .includes(
-      "maintenance"
-    );
+    .includes("maintenance");
+}
+
+function isAxiosSessionInvalidError(error) {
+  return (
+    error?.response?.status === 401 &&
+    isAuthenticatedAxiosRequest(error)
+  );
+}
+
+function dispatchSessionInvalidEvent(error) {
+  window.dispatchEvent(
+    new CustomEvent(
+      AUTH_SESSION_INVALID_EVENT,
+      {
+        detail: {
+          status:
+            error?.response?.status ||
+            401,
+          message:
+            getAxiosResponseMessage(
+              error
+            ) ||
+            "Authentication session is no longer valid.",
+          detectedAt: Date.now(),
+        },
+      }
+    )
+  );
 }
 
 function MaintenanceScreen() {
@@ -156,16 +189,14 @@ function MaintenanceScreen() {
     setIsChecking,
   ] = useState(false);
 
-  const handleCheckSystemStatus =
-    () => {
-      if (isChecking) {
-        return;
-      }
+  const handleCheckSystemStatus = () => {
+    if (isChecking) {
+      return;
+    }
 
-      setIsChecking(true);
-
-      window.location.reload();
-    };
+    setIsChecking(true);
+    window.location.reload();
+  };
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
@@ -233,12 +264,8 @@ function MaintenanceScreen() {
 
             <button
               type="button"
-              disabled={
-                isChecking
-              }
-              aria-busy={
-                isChecking
-              }
+              disabled={isChecking}
+              aria-busy={isChecking}
               onClick={
                 handleCheckSystemStatus
               }
@@ -258,31 +285,21 @@ function MaintenanceScreen() {
 function ApplicationContent({
   isMaintenance,
 }) {
-  const { user } =
-    useAuth();
+  const { user } = useAuth();
 
   const isITSupport =
-    user?.role ===
-    ROLES.IT_SUPPORT;
+    user?.role === ROLES.IT_SUPPORT;
 
   /*
-   * Backend maintenance mode blocks normal
-   * HR operations while IT Support retains
-   * access for technical work.
-   *
-   * Once maintenance is detected, normal
-   * application routes are unmounted for
-   * non-IT roles so stale/zero-value screens
-   * are not displayed.
+   * During maintenance, normal authenticated HR
+   * screens are unmounted for non-IT users.
    */
   if (
     isMaintenance &&
     user &&
     !isITSupport
   ) {
-    return (
-      <MaintenanceScreen />
-    );
+    return <MaintenanceScreen />;
   }
 
   return (
@@ -304,28 +321,21 @@ function ApplicationContent({
         }
       >
         {/*
-         * Password change intentionally
-         * remains outside MainLayout.
+         * Password change intentionally remains
+         * outside MainLayout.
          */}
         <Route
           path="/change-password"
-          element={
-            <ChangePassword />
-          }
+          element={<ChangePassword />}
         />
 
         {/*
          * Protected application shell.
          *
-         * Navbar, Sidebar, and global
-         * widgets mount only after
-         * authentication succeeds.
+         * Navbar, Sidebar, and global widgets
+         * mount only after authentication succeeds.
          */}
-        <Route
-          element={
-            <MainLayout />
-          }
-        >
+        <Route element={<MainLayout />}>
           {/* Dashboard */}
           <Route
             element={
@@ -338,9 +348,7 @@ function ApplicationContent({
           >
             <Route
               path="/"
-              element={
-                <Dashboard />
-              }
+              element={<Dashboard />}
             />
           </Route>
 
@@ -356,34 +364,26 @@ function ApplicationContent({
           >
             <Route
               path="/employees"
-              element={
-                <Employees />
-              }
+              element={<Employees />}
             />
 
             <Route
               path="/deployments"
-              element={
-                <Deployments />
-              }
+              element={<Deployments />}
             />
 
             <Route
               path="/incidents"
-              element={
-                <Incidents />
-              }
+              element={<Incidents />}
             />
 
             <Route
               path="/notifications"
-              element={
-                <Notifications />
-              }
+              element={<Notifications />}
             />
           </Route>
 
-          {/* HR Manager-only employee archive */}
+          {/* HR Manager employee archive */}
           <Route
             element={
               <ProtectedRoute
@@ -414,13 +414,11 @@ function ApplicationContent({
           >
             <Route
               path="/kpi"
-              element={
-                <KPIReports />
-              }
+              element={<KPIReports />}
             />
           </Route>
 
-          {/* IT Support module */}
+          {/* IT Support */}
           <Route
             element={
               <ProtectedRoute
@@ -432,9 +430,7 @@ function ApplicationContent({
           >
             <Route
               path="/settings"
-              element={
-                <Settings />
-              }
+              element={<Settings />}
             />
 
             <Route
@@ -452,7 +448,7 @@ function ApplicationContent({
             />
           </Route>
 
-          {/* Super Admin module */}
+          {/* Super Admin */}
           <Route
             element={
               <ProtectedRoute
@@ -507,18 +503,9 @@ function App() {
   ] = useState(false);
 
   useEffect(() => {
-    /*
-     * Native fetch requests use
-     * authenticatedFetch().
-     *
-     * authenticatedFetch dispatches this
-     * event only when the backend returns
-     * a maintenance-related HTTP 503.
-     */
-    const handleFetchMaintenance =
-      () => {
-        setIsMaintenance(true);
-      };
+    const handleFetchMaintenance = () => {
+      setIsMaintenance(true);
+    };
 
     window.addEventListener(
       MAINTENANCE_MODE_DETECTED_EVENT,
@@ -526,34 +513,40 @@ function App() {
     );
 
     /*
-     * Axios remains in use by some
-     * application modules.
+     * Axios response handling is aligned with
+     * authenticatedFetch:
      *
-     * Only maintenance-related 503
-     * responses activate the global
-     * maintenance screen. Other 503
-     * errors remain normal page/API
-     * errors.
+     * maintenance 503
+     *   -> global maintenance screen
+     *
+     * authenticated 401
+     *   -> centralized auth-session-invalid event
+     *
+     * AuthProvider performs the actual logout.
      */
     const responseInterceptor =
       axios.interceptors.response.use(
-        (response) =>
-          response,
-
+        (response) => response,
         (error) => {
           if (
             isAxiosMaintenanceError(
               error
             )
           ) {
-            setIsMaintenance(
-              true
+            setIsMaintenance(true);
+          }
+
+          if (
+            isAxiosSessionInvalidError(
+              error
+            )
+          ) {
+            dispatchSessionInvalidEvent(
+              error
             );
           }
 
-          return Promise.reject(
-            error
-          );
+          return Promise.reject(error);
         }
       );
 
