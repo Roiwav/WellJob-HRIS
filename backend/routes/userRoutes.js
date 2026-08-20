@@ -68,24 +68,40 @@ router.put(
 /*
  * RESET USER PASSWORD
  *
- * Technical account-support responsibility.
+ * Route-level access is available to SUPER_ADMIN and
+ * IT_SUPPORT, but the controller enforces the target-role
+ * hierarchy using canonical database state:
+ *
+ * SUPER_ADMIN -> HR_MANAGER / HR_STAFF / IT_SUPPORT
+ * IT_SUPPORT  -> HR_STAFF only
+ *
+ * SUPER_ADMIN targets and self-targeting are rejected by
+ * the controller.
  */
 router.put(
   "/users/reset/:id",
   verifyToken,
-  authorizeRoles("IT_SUPPORT"),
+  authorizeRoles(
+    "SUPER_ADMIN",
+    "IT_SUPPORT"
+  ),
   resetPassword
 );
 
 /*
  * ACTIVATE / DEACTIVATE USER ACCOUNT
  *
- * Technical account-support responsibility.
+ * Uses the same target-role hierarchy as resetPassword.
+ * SUPER_ADMIN accounts cannot be toggled through this
+ * administrative endpoint.
  */
 router.put(
   "/users/toggle/:id",
   verifyToken,
-  authorizeRoles("IT_SUPPORT"),
+  authorizeRoles(
+    "SUPER_ADMIN",
+    "IT_SUPPORT"
+  ),
   toggleStatus
 );
 

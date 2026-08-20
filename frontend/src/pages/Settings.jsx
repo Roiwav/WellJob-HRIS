@@ -8,6 +8,7 @@ import {
 import {
   FiCheckCircle,
   FiCopy,
+  FiLock,
   FiRefreshCw,
   FiShield,
   FiUserCheck,
@@ -15,8 +16,6 @@ import {
   FiUsers,
 } from "react-icons/fi";
 
-import RoleGuard from "../components/auth/RoleGuard";
-import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
 import { API_BASE } from "../config/api";
 
@@ -38,6 +37,20 @@ import authenticatedFetch from "../utils/authenticatedFetch";
 const REQUEST_TIMEOUT_MS = 15000;
 
 const TEMP_PASSWORD_BYTES = 8;
+
+const ROLE_LABELS = {
+  SUPER_ADMIN: "Super Admin",
+  HR_MANAGER: "HR Manager",
+  HR_STAFF: "HR Staff",
+  IT_SUPPORT: "IT Support",
+};
+
+const SUPER_ADMIN_MANAGEABLE_ROLES =
+  new Set([
+    "HR_MANAGER",
+    "HR_STAFF",
+    "IT_SUPPORT",
+  ]);
 
 function generateTemporaryPassword() {
   if (
@@ -68,12 +81,24 @@ function generateTemporaryPassword() {
   ).join("");
 }
 
-const ROLE_LABELS = {
-  SUPER_ADMIN: "Super Admin",
-  HR_MANAGER: "HR Manager",
-  HR_STAFF: "HR Staff",
-  IT_SUPPORT: "IT Support",
-};
+function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+}
+
+function normalizeIdentity(value) {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return "";
+  }
+
+  return String(value)
+    .trim()
+    .toLowerCase();
+}
 
 function getInitials(value) {
   return (
@@ -123,11 +148,261 @@ function getAccountKey(
   );
 }
 
+/*
+ * ==================================================
+ * CURRENT USER / TARGET ACCOUNT MATCHING
+ * ==================================================
+ *
+ * The backend remains the security authority.
+ *
+ * This helper is only for frontend UX so the UI
+ * does not offer an action that the backend will
+ * reject.
+ *
+ * It supports both:
+ * - numeric database IDs
+ * - business-facing user IDs
+ * - usernames
+ */
+function isSameAccount(
+  currentUser,
+  account
+) {
+  if (
+    !currentUser ||
+    !account
+  ) {
+    return false;
+  }
+
+  const currentUsername =
+    normalizeIdentity(
+      currentUser?.username
+    );
+
+  const accountUsername =
+    normalizeIdentity(
+      account?.username
+    );
+
+  if (
+    currentUsername &&
+    accountUsername &&
+    currentUsername ===
+      accountUsername
+  ) {
+    return true;
+  }
+
+  const currentInternalId =
+    normalizeIdentity(
+      currentUser?.id
+    );
+
+  const accountInternalId =
+    normalizeIdentity(
+      account?.id
+    );
+
+  if (
+    currentInternalId &&
+    accountInternalId &&
+    currentInternalId ===
+      accountInternalId
+  ) {
+    return true;
+  }
+
+  const currentBusinessId =
+    normalizeIdentity(
+      currentUser?.user_id
+    );
+
+  const accountBusinessId =
+    normalizeIdentity(
+      account?.user_id ??
+        account?.userId
+    );
+
+  if (
+    currentBusinessId &&
+    accountBusinessId &&
+    currentBusinessId ===
+      accountBusinessId
+  ) {
+    return true;
+  }
+
+  /*
+   * Some authentication payloads use userId
+   * for either the internal numeric ID or the
+   * business-facing ID.
+   */
+  const currentFallbackUserId =
+    normalizeIdentity(
+      currentUser?.userId
+    );
+
+  if (
+    currentFallbackUserId &&
+    (
+      currentFallbackUserId ===
+        accountInternalId ||
+      currentFallbackUserId ===
+        accountBusinessId
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/*
+ * ==================================================
+ * FRONTEND ACCOUNT-MANAGEMENT POLICY
+ * ==================================================
+ *
+ * Mirrors the backend policy for UX only.
+ *
+ * Backend remains the final authority.
+ *
+ * SUPER_ADMIN:
+ *   HR_MANAGER ✅
+ *   HR_STAFF   ✅
+ *   IT_SUPPORT ✅
+ *   SUPER_ADMIN ❌
+ *
+ * IT_SUPPORT:
+ *   HR_STAFF ✅
+ *   all other roles ❌
+ *
+ * Self-targeting is always blocked.
+ */
+function canManageAccountTarget(
+  currentUser,
+  account
+) {
+  if (
+    !currentUser ||
+    !account
+  ) {
+    return false;
+  }
+
+  if (
+    isSameAccount(
+      currentUser,
+      account
+    )
+  ) {
+    return false;
+  }
+
+  const requesterRole =
+    normalizeRole(
+      currentUser?.role
+    );
+
+  const targetRole =
+    normalizeRole(
+      account?.role
+    );
+
+  if (
+    targetRole ===
+    "SUPER_ADMIN"
+  ) {
+    return false;
+  }
+
+  if (
+    requesterRole ===
+    "SUPER_ADMIN"
+  ) {
+    return (
+      SUPER_ADMIN_MANAGEABLE_ROLES.has(
+        targetRole
+      )
+    );
+  }
+
+  if (
+    requesterRole ===
+      "IT_SUPPORT" &&
+    targetRole ===
+      "HR_STAFF"
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function getAccountRestriction(
+  currentUser,
+  account
+) {
+  if (
+    isSameAccount(
+      currentUser,
+      account
+    )
+  ) {
+    return {
+      label: "Own Account",
+      title:
+        "Use Change Password for your own account.",
+    };
+  }
+
+  const requesterRole =
+    normalizeRole(
+      currentUser?.role
+    );
+
+  const targetRole =
+    normalizeRole(
+      account?.role
+    );
+
+  if (
+    targetRole ===
+    "SUPER_ADMIN"
+  ) {
+    return {
+      label: "Protected",
+      title:
+        "Super Admin accounts are protected from administrative reset and status actions.",
+    };
+  }
+
+  if (
+    requesterRole ===
+      "IT_SUPPORT"
+  ) {
+    return {
+      label: "Restricted",
+      title:
+        "IT Support may manage HR Staff accounts only.",
+    };
+  }
+
+  return {
+    label: "No Access",
+    title:
+      "You are not authorized to manage this account.",
+  };
+}
+
 function getApiError(
   error,
   fallbackMessage
 ) {
-  if (error?.name === "AbortError") {
+  if (
+    error?.name ===
+    "AbortError"
+  ) {
     return "The server took too long to respond. Check that the backend and database are running, then try again.";
   }
 
@@ -153,20 +428,32 @@ async function requestJson(
 
   try {
     const response =
-      await authenticatedFetch(url, {
-        ...options,
-        signal: controller.signal,
-        headers: {
-          Accept: "application/json",
-          ...(options.headers || {}),
-        },
-      });
+      await authenticatedFetch(
+        url,
+        {
+          ...options,
 
-    const data = await response
-      .json()
-      .catch(() => null);
+          signal:
+            controller.signal,
 
-    if (!response.ok) {
+          headers: {
+            Accept:
+              "application/json",
+
+            ...(options.headers ||
+              {}),
+          },
+        }
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(() => null);
+
+    if (
+      !response.ok
+    ) {
       throw new Error(
         data?.message ||
           data?.error ||
@@ -176,15 +463,22 @@ async function requestJson(
 
     return data;
   } finally {
-    window.clearTimeout(timeoutId);
+    window.clearTimeout(
+      timeoutId
+    );
   }
 }
 
-function normalizeSearchText(value) {
+function normalizeSearchText(
+  value
+) {
   return String(value || "")
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(
+      /[^a-z0-9\s]/g,
+      " "
+    )
     .replace(/\s+/g, " ");
 }
 
@@ -212,11 +506,40 @@ function AccountSummaryCard({
   );
 }
 
+function RestrictedAction({
+  label,
+  title,
+}) {
+  return (
+    <span
+      title={title}
+      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-500 dark:border-white/10 dark:bg-slate-800 dark:text-gray-400"
+    >
+      <FiLock
+        size={13}
+        aria-hidden="true"
+      />
+
+      {label}
+    </span>
+  );
+}
+
 export default function Settings() {
   const { user } = useAuth();
 
+  const currentRole =
+    normalizeRole(
+      user?.role
+    );
+
   const isSuperAdmin =
-    user?.role === "SUPER_ADMIN";
+    currentRole ===
+    "SUPER_ADMIN";
+
+  const isItSupport =
+    currentRole ===
+    "IT_SUPPORT";
 
   const [accounts, setAccounts] =
     useState([]);
@@ -239,16 +562,22 @@ export default function Settings() {
     setTemporaryPassword,
   ] = useState("");
 
-  const [pageError, setPageError] =
-    useState("");
+  const [
+    pageError,
+    setPageError,
+  ] = useState("");
 
   const [
     successMessage,
     setSuccessMessage,
   ] = useState("");
 
-  const [copyText, setCopyText] =
-    useState("Copy Password");
+  const [
+    copyText,
+    setCopyText,
+  ] = useState(
+    "Copy Password"
+  );
 
   const [
     isLoadingUsers,
@@ -272,15 +601,21 @@ export default function Settings() {
     useRef(null);
 
   const isProcessing =
-    Boolean(processingAction);
+    Boolean(
+      processingAction
+    );
 
   useEffect(() => {
-    isMountedRef.current = true;
+    isMountedRef.current =
+      true;
 
     return () => {
-      isMountedRef.current = false;
+      isMountedRef.current =
+        false;
 
-      if (copyResetTimerRef.current) {
+      if (
+        copyResetTimerRef.current
+      ) {
         window.clearTimeout(
           copyResetTimerRef.current
         );
@@ -288,102 +623,147 @@ export default function Settings() {
     };
   }, []);
 
-  const fetchUsers = useCallback(
-    async ({
-      showInitialLoading = false,
-      showRefreshing = false,
-      showError = true,
-    } = {}) => {
-      if (showInitialLoading) {
-        setIsLoadingUsers(true);
-      }
+  const canManageAccount =
+    useCallback(
+      (account) =>
+        canManageAccountTarget(
+          user,
+          account
+        ),
+      [user]
+    );
 
-      if (showRefreshing) {
-        setIsRefreshingUsers(true);
-      }
-
-      try {
-        if (showError) {
-          setPageError("");
-        }
-
-        const data =
-          await requestJson(
-            `${API_BASE}/users`
+  const fetchUsers =
+    useCallback(
+      async ({
+        showInitialLoading = false,
+        showRefreshing = false,
+        showError = true,
+      } = {}) => {
+        if (
+          showInitialLoading
+        ) {
+          setIsLoadingUsers(
+            true
           );
-
-        if (!isMountedRef.current) {
-          return false;
         }
-
-        setAccounts(
-          Array.isArray(data)
-            ? data
-            : []
-        );
-
-        return true;
-      } catch (error) {
-        console.error(
-          "Fetch users error:",
-          error
-        );
 
         if (
-          showError &&
-          isMountedRef.current
+          showRefreshing
         ) {
-          setPageError(
-            getApiError(
-              error,
-              "Unable to load user accounts."
-            )
+          setIsRefreshingUsers(
+            true
           );
         }
 
-        return false;
-      } finally {
-        if (isMountedRef.current) {
-          if (showInitialLoading) {
-            setIsLoadingUsers(false);
+        try {
+          if (
+            showError
+          ) {
+            setPageError("");
           }
 
-          if (showRefreshing) {
-            setIsRefreshingUsers(false);
+          const data =
+            await requestJson(
+              `${API_BASE}/users`
+            );
+
+          if (
+            !isMountedRef.current
+          ) {
+            return false;
+          }
+
+          setAccounts(
+            Array.isArray(data)
+              ? data
+              : []
+          );
+
+          return true;
+        } catch (error) {
+          console.error(
+            "Fetch users error:",
+            error
+          );
+
+          if (
+            showError &&
+            isMountedRef.current
+          ) {
+            setPageError(
+              getApiError(
+                error,
+                "Unable to load user accounts."
+              )
+            );
+          }
+
+          return false;
+        } finally {
+          if (
+            isMountedRef.current
+          ) {
+            if (
+              showInitialLoading
+            ) {
+              setIsLoadingUsers(
+                false
+              );
+            }
+
+            if (
+              showRefreshing
+            ) {
+              setIsRefreshingUsers(
+                false
+              );
+            }
           }
         }
-      }
-    },
-    []
-  );
+      },
+      []
+    );
 
   useEffect(() => {
     void fetchUsers({
-      showInitialLoading: true,
+      showInitialLoading:
+        true,
     });
   }, [fetchUsers]);
 
   const filteredAccounts =
     useMemo(() => {
       const normalizedSearch =
-        normalizeSearchText(search);
+        normalizeSearchText(
+          search
+        );
 
       const searchTerms =
         normalizedSearch
-          ? normalizedSearch.split(/\s+/)
+          ? normalizedSearch.split(
+              /\s+/
+            )
           : [];
 
-      if (searchTerms.length === 0) {
+      if (
+        searchTerms.length ===
+        0
+      ) {
         return accounts;
       }
 
       return accounts.filter(
         (account) => {
           const accountStatus =
-            getAccountStatus(account);
+            getAccountStatus(
+              account
+            );
 
           const roleLabel =
-            ROLE_LABELS[account?.role] ||
+            ROLE_LABELS[
+              account?.role
+            ] ||
             account?.role ||
             "";
 
@@ -414,20 +794,28 @@ export default function Settings() {
           );
         }
       );
-    }, [accounts, search]);
+    }, [
+      accounts,
+      search,
+    ]);
 
   const accountSummary =
     useMemo(() => {
       const activeUsers =
         accounts.filter(
           (account) =>
-            getAccountStatus(account) ===
-            "Active"
+            getAccountStatus(
+              account
+            ) === "Active"
         ).length;
 
       return {
-        total: accounts.length,
-        active: activeUsers,
+        total:
+          accounts.length,
+
+        active:
+          activeUsers,
+
         inactive:
           accounts.length -
           activeUsers,
@@ -445,7 +833,8 @@ export default function Settings() {
       }
 
       await fetchUsers({
-        showRefreshing: true,
+        showRefreshing:
+          true,
       });
     }, [
       fetchUsers,
@@ -460,29 +849,41 @@ export default function Settings() {
         if (
           !account?.id ||
           isProcessing ||
-          isSuperAdmin
+          !canManageAccount(
+            account
+          )
         ) {
           return;
         }
 
         setPageError("");
-        setTemporaryPassword("");
-        setCopyText("Copy Password");
-        setResetTarget(account);
+        setTemporaryPassword(
+          ""
+        );
+        setCopyText(
+          "Copy Password"
+        );
+        setResetTarget(
+          account
+        );
       },
       [
+        canManageAccount,
         isProcessing,
-        isSuperAdmin,
       ]
     );
 
   const handleCloseResetDialog =
     useCallback(() => {
-      if (isProcessing) {
+      if (
+        isProcessing
+      ) {
         return;
       }
 
-      setResetTarget(null);
+      setResetTarget(
+        null
+      );
     }, [isProcessing]);
 
   const handleResetPassword =
@@ -490,13 +891,18 @@ export default function Settings() {
       if (
         !resetTarget?.id ||
         isProcessing ||
-        isSuperAdmin
+        !canManageAccount(
+          resetTarget
+        )
       ) {
         return;
       }
 
       try {
-        setProcessingAction("reset");
+        setProcessingAction(
+          "reset"
+        );
+
         setPageError("");
 
         const generatedPassword =
@@ -514,14 +920,17 @@ export default function Settings() {
                 "application/json",
             },
 
-            body: JSON.stringify({
-              temporaryPassword:
-                generatedPassword,
-            }),
+            body:
+              JSON.stringify({
+                temporaryPassword:
+                  generatedPassword,
+              }),
           }
         );
 
-        if (!isMountedRef.current) {
+        if (
+          !isMountedRef.current
+        ) {
           return;
         }
 
@@ -538,7 +947,9 @@ export default function Settings() {
           error
         );
 
-        if (isMountedRef.current) {
+        if (
+          isMountedRef.current
+        ) {
           setPageError(
             getApiError(
               error,
@@ -546,30 +957,44 @@ export default function Settings() {
             )
           );
 
-          setResetTarget(null);
+          setResetTarget(
+            null
+          );
         }
       } finally {
-        if (isMountedRef.current) {
-          setProcessingAction("");
+        if (
+          isMountedRef.current
+        ) {
+          setProcessingAction(
+            ""
+          );
         }
       }
     }, [
+      canManageAccount,
       fetchUsers,
       isProcessing,
-      isSuperAdmin,
       resetTarget,
     ]);
 
   const handleCloseResetSuccess =
     useCallback(() => {
       setResetTarget(null);
-      setTemporaryPassword("");
-      setCopyText("Copy Password");
+
+      setTemporaryPassword(
+        ""
+      );
+
+      setCopyText(
+        "Copy Password"
+      );
     }, []);
 
   const handleCopyPassword =
     useCallback(async () => {
-      if (!temporaryPassword) {
+      if (
+        !temporaryPassword
+      ) {
         return;
       }
 
@@ -578,27 +1003,36 @@ export default function Settings() {
           temporaryPassword
         );
 
-        setCopyText("Copied");
+        setCopyText(
+          "Copied"
+        );
 
-        if (copyResetTimerRef.current) {
+        if (
+          copyResetTimerRef.current
+        ) {
           window.clearTimeout(
             copyResetTimerRef.current
           );
         }
 
         copyResetTimerRef.current =
-          window.setTimeout(() => {
-            setCopyText(
-              "Copy Password"
-            );
-          }, 1500);
+          window.setTimeout(
+            () => {
+              setCopyText(
+                "Copy Password"
+              );
+            },
+            1500
+          );
       } catch (error) {
         console.error(
           "Copy password error:",
           error
         );
 
-        setCopyText("Copy Failed");
+        setCopyText(
+          "Copy Failed"
+        );
       }
     }, [temporaryPassword]);
 
@@ -608,27 +1042,35 @@ export default function Settings() {
         if (
           !account?.id ||
           isProcessing ||
-          isSuperAdmin
+          !canManageAccount(
+            account
+          )
         ) {
           return;
         }
 
         setPageError("");
-        setToggleTarget(account);
+        setToggleTarget(
+          account
+        );
       },
       [
+        canManageAccount,
         isProcessing,
-        isSuperAdmin,
       ]
     );
 
   const handleCloseToggleDialog =
     useCallback(() => {
-      if (isProcessing) {
+      if (
+        isProcessing
+      ) {
         return;
       }
 
-      setToggleTarget(null);
+      setToggleTarget(
+        null
+      );
     }, [isProcessing]);
 
   const handleConfirmToggle =
@@ -636,7 +1078,9 @@ export default function Settings() {
       if (
         !toggleTarget?.id ||
         isProcessing ||
-        isSuperAdmin
+        !canManageAccount(
+          toggleTarget
+        )
       ) {
         return;
       }
@@ -647,7 +1091,8 @@ export default function Settings() {
         );
 
       const nextStatus =
-        currentStatus === "Active"
+        currentStatus ===
+        "Active"
           ? "Inactive"
           : "Active";
 
@@ -657,7 +1102,10 @@ export default function Settings() {
         );
 
       try {
-        setProcessingAction("toggle");
+        setProcessingAction(
+          "toggle"
+        );
+
         setPageError("");
 
         await requestJson(
@@ -669,7 +1117,9 @@ export default function Settings() {
           }
         );
 
-        if (!isMountedRef.current) {
+        if (
+          !isMountedRef.current
+        ) {
           return;
         }
 
@@ -677,12 +1127,15 @@ export default function Settings() {
           (currentAccounts) =>
             currentAccounts.map(
               (account) =>
-                String(account?.id) ===
+                String(
+                  account?.id
+                ) ===
                 String(
                   toggleTarget.id
                 )
                   ? {
                       ...account,
+
                       status:
                         nextStatus,
                     }
@@ -690,11 +1143,14 @@ export default function Settings() {
             )
         );
 
-        setToggleTarget(null);
+        setToggleTarget(
+          null
+        );
 
         setSuccessMessage(
           `${accountName} was ${
-            nextStatus === "Active"
+            nextStatus ===
+            "Active"
               ? "activated"
               : "deactivated"
           } successfully.`
@@ -709,7 +1165,9 @@ export default function Settings() {
           error
         );
 
-        if (isMountedRef.current) {
+        if (
+          isMountedRef.current
+        ) {
           setPageError(
             getApiError(
               error,
@@ -718,42 +1176,66 @@ export default function Settings() {
           );
         }
       } finally {
-        if (isMountedRef.current) {
-          setProcessingAction("");
+        if (
+          isMountedRef.current
+        ) {
+          setProcessingAction(
+            ""
+          );
         }
       }
     }, [
+      canManageAccount,
       fetchUsers,
       isProcessing,
-      isSuperAdmin,
       toggleTarget,
     ]);
 
   const resetAccountName =
-    getAccountName(resetTarget);
+    getAccountName(
+      resetTarget
+    );
 
   const toggleAccountName =
-    getAccountName(toggleTarget);
+    getAccountName(
+      toggleTarget
+    );
 
   const toggleCurrentStatus =
-    getAccountStatus(toggleTarget);
+    getAccountStatus(
+      toggleTarget
+    );
 
   const willActivate =
-    toggleCurrentStatus !== "Active";
+    toggleCurrentStatus !==
+    "Active";
 
   const pageDescription =
     isSuperAdmin
-      ? "View user-account maintenance information. Super Admin access is view-only."
-      : "Reset temporary passwords and activate or deactivate system accounts.";
+      ? "Manage HR Manager, HR Staff, and IT Support accounts. Super Admin accounts remain protected."
+      : isItSupport
+        ? "Reset temporary passwords and activate or deactivate HR Staff accounts. Privileged accounts are protected."
+        : "Review user-account maintenance information.";
+
+  const maintenanceDescription =
+    isSuperAdmin
+      ? "Review accounts and perform authorized account-administration actions."
+      : isItSupport
+        ? "Review system accounts and perform authorized HR Staff technical-support actions."
+        : "Review system accounts.";
 
   return (
     <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
         eyebrow="Technical Administration"
         title="IT Support Maintenance"
-        description={pageDescription}
+        description={
+          pageDescription
+        }
         icon={
-          <FiShield size={22} />
+          <FiShield
+            size={22}
+          />
         }
         actions={
           <Button
@@ -776,7 +1258,9 @@ export default function Settings() {
               isRefreshingUsers ||
               isProcessing
             }
-            onClick={handleRefresh}
+            onClick={
+              handleRefresh
+            }
           >
             Refresh Accounts
           </Button>
@@ -789,26 +1273,34 @@ export default function Settings() {
           title="Account maintenance error"
           message={pageError}
           retryLabel="Reload accounts"
-          onRetry={handleRefresh}
+          onRetry={
+            handleRefresh
+          }
         />
       )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <AccountSummaryCard
           label="Total Accounts"
-          value={accountSummary.total}
+          value={
+            accountSummary.total
+          }
           helper="All system users"
         />
 
         <AccountSummaryCard
           label="Active Users"
-          value={accountSummary.active}
+          value={
+            accountSummary.active
+          }
           helper="Accounts with access"
         />
 
         <AccountSummaryCard
           label="Inactive Users"
-          value={accountSummary.inactive}
+          value={
+            accountSummary.inactive
+          }
           helper="Access currently disabled"
         />
       </div>
@@ -825,7 +1317,7 @@ export default function Settings() {
           </h2>
 
           <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-            Review accounts and perform authorized technical support actions.
+            {maintenanceDescription}
           </p>
         </header>
 
@@ -864,9 +1356,12 @@ export default function Settings() {
                   isRefreshingUsers ||
                   isProcessing
                 }
-                onChange={(event) =>
+                onChange={(
+                  event
+                ) =>
                   setSearch(
-                    event.target.value
+                    event.target
+                      .value
                   )
                 }
                 onClear={() =>
@@ -955,6 +1450,19 @@ export default function Settings() {
                       accountStatus ===
                       "Active";
 
+                    const mayManage =
+                      canManageAccount(
+                        account
+                      );
+
+                    const restriction =
+                      mayManage
+                        ? null
+                        : getAccountRestriction(
+                            user,
+                            account
+                          );
+
                     return (
                       <tr
                         key={getAccountKey(
@@ -979,7 +1487,9 @@ export default function Settings() {
                             </div>
 
                             <p className="max-w-[240px] truncate font-semibold text-gray-900 dark:text-white">
-                              {accountName}
+                              {
+                                accountName
+                              }
                             </p>
                           </div>
                         </td>
@@ -992,7 +1502,8 @@ export default function Settings() {
                         <td className="whitespace-nowrap px-6 py-4">
                           <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             {ROLE_LABELS[
-                              account.role
+                              account
+                                .role
                             ] ||
                               account.role ||
                               "-"}
@@ -1010,67 +1521,76 @@ export default function Settings() {
 
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
-                            <RoleGuard
-                              permission={
-                                PERMISSIONS.CAN_MAINTAIN_IT_USERS
-                              }
-                            >
-                              <IconButton
-                                label={`Reset password for ${accountName}`}
-                                title="Reset Password"
-                                variant="primary"
-                                size="md"
-                                disabled={
-                                  isProcessing
-                                }
-                                onClick={() =>
-                                  handleOpenReset(
-                                    account
-                                  )
-                                }
-                              >
-                                <FiShield
-                                  aria-hidden="true"
-                                />
-                              </IconButton>
+                            {mayManage ? (
+                              <>
+                                <IconButton
+                                  label={`Reset password for ${accountName}`}
+                                  title="Reset Password"
+                                  variant="primary"
+                                  size="md"
+                                  disabled={
+                                    isProcessing
+                                  }
+                                  onClick={() =>
+                                    handleOpenReset(
+                                      account
+                                    )
+                                  }
+                                >
+                                  <FiShield
+                                    aria-hidden="true"
+                                  />
+                                </IconButton>
 
-                              <IconButton
-                                label={`${
-                                  isActive
-                                    ? "Deactivate"
-                                    : "Activate"
-                                } ${accountName}`}
+                                <IconButton
+                                  label={`${
+                                    isActive
+                                      ? "Deactivate"
+                                      : "Activate"
+                                  } ${accountName}`}
+                                  title={
+                                    isActive
+                                      ? "Deactivate Account"
+                                      : "Activate Account"
+                                  }
+                                  variant={
+                                    isActive
+                                      ? "danger"
+                                      : "success"
+                                  }
+                                  size="md"
+                                  disabled={
+                                    isProcessing
+                                  }
+                                  onClick={() =>
+                                    handleOpenToggle(
+                                      account
+                                    )
+                                  }
+                                >
+                                  {isActive ? (
+                                    <FiUserX
+                                      aria-hidden="true"
+                                    />
+                                  ) : (
+                                    <FiUserCheck
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                </IconButton>
+                              </>
+                            ) : (
+                              <RestrictedAction
+                                label={
+                                  restriction?.label ||
+                                  "Restricted"
+                                }
                                 title={
-                                  isActive
-                                    ? "Deactivate Account"
-                                    : "Activate Account"
+                                  restriction?.title ||
+                                  "This account cannot be managed by the current user."
                                 }
-                                variant={
-                                  isActive
-                                    ? "danger"
-                                    : "success"
-                                }
-                                size="md"
-                                disabled={
-                                  isProcessing
-                                }
-                                onClick={() =>
-                                  handleOpenToggle(
-                                    account
-                                  )
-                                }
-                              >
-                                {isActive ? (
-                                  <FiUserX
-                                    aria-hidden="true"
-                                  />
-                                ) : (
-                                  <FiUserCheck
-                                    aria-hidden="true"
-                                  />
-                                )}
-                              </IconButton>
-                            </RoleGuard>
+                              />
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1106,7 +1626,9 @@ export default function Settings() {
               onSecondaryAction={
                 search.trim()
                   ? () =>
-                      setSearch("")
+                      setSearch(
+                        ""
+                      )
                   : undefined
               }
             />
@@ -1116,7 +1638,9 @@ export default function Settings() {
 
       <ConfirmDialog
         open={
-          Boolean(resetTarget) &&
+          Boolean(
+            resetTarget
+          ) &&
           !temporaryPassword
         }
         title="Reset Account Password"
@@ -1129,7 +1653,9 @@ export default function Settings() {
         }
         disabled={
           !resetTarget?.id ||
-          isSuperAdmin
+          !canManageAccount(
+            resetTarget
+          )
         }
         closeOnBackdrop={
           !isProcessing
@@ -1142,22 +1668,32 @@ export default function Settings() {
         }
       >
         <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
-          Generate a new temporary password for{" "}
+          Generate a new
+          temporary password for{" "}
           <strong className="font-extrabold text-gray-900 dark:text-white">
-            {resetAccountName}
+            {
+              resetAccountName
+            }
           </strong>
           ?
         </p>
 
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-          The user will be required to change the temporary password during the next login.
+          The user will be
+          required to change the
+          temporary password
+          during the next login.
         </div>
       </ConfirmDialog>
 
       <Dialog
         open={
-          Boolean(resetTarget) &&
-          Boolean(temporaryPassword)
+          Boolean(
+            resetTarget
+          ) &&
+          Boolean(
+            temporaryPassword
+          )
         }
         onClose={
           handleCloseResetSuccess
@@ -1207,7 +1743,9 @@ export default function Settings() {
           />
 
           <p className="text-sm leading-6">
-            The password reset was completed successfully.
+            The password reset
+            was completed
+            successfully.
           </p>
         </div>
 
@@ -1223,18 +1761,27 @@ export default function Settings() {
             id="temporary-reset-password"
             type="text"
             readOnly
-            value={temporaryPassword}
+            value={
+              temporaryPassword
+            }
             className="ui-control font-mono font-bold"
           />
         </div>
 
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
-          Provide this password securely to the account owner. Do not send it through public channels.
+          Provide this password
+          securely to the account
+          owner. Do not send it
+          through public channels.
         </div>
       </Dialog>
 
       <ConfirmDialog
-        open={Boolean(toggleTarget)}
+        open={
+          Boolean(
+            toggleTarget
+          )
+        }
         title={
           willActivate
             ? "Activate Account"
@@ -1257,7 +1804,9 @@ export default function Settings() {
         }
         disabled={
           !toggleTarget?.id ||
-          isSuperAdmin
+          !canManageAccount(
+            toggleTarget
+          )
         }
         closeOnBackdrop={
           !isProcessing
@@ -1270,7 +1819,8 @@ export default function Settings() {
         }
       >
         <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
-          Are you sure you want to{" "}
+          Are you sure you want
+          to{" "}
           <strong>
             {willActivate
               ? "activate"
@@ -1278,7 +1828,9 @@ export default function Settings() {
           </strong>{" "}
           the account of{" "}
           <strong className="font-extrabold text-gray-900 dark:text-white">
-            {toggleAccountName}
+            {
+              toggleAccountName
+            }
           </strong>
           ?
         </p>
@@ -1292,10 +1844,14 @@ export default function Settings() {
 
       <SuccessToast
         title="Account Status Updated"
-        message={successMessage}
+        message={
+          successMessage
+        }
         duration={3500}
         onClose={() =>
-          setSuccessMessage("")
+          setSuccessMessage(
+            ""
+          )
         }
       />
     </main>

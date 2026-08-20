@@ -5,12 +5,16 @@ import {
   useRef,
   useState,
 } from "react";
+
 import {
   FiCheckCircle,
   FiCopy,
+  FiLock,
   FiRefreshCw,
   FiShield,
+  FiUserCheck,
   FiUserPlus,
+  FiUserX,
   FiUsers,
 } from "react-icons/fi";
 
@@ -31,44 +35,17 @@ import EmptyState from "../components/ui/EmptyState";
 import ErrorState from "../components/ui/ErrorState";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Dialog from "../components/ui/Dialog";
+import SuccessToast from "../components/ui/SuccessToast";
 
 import authenticatedFetch from "../utils/authenticatedFetch";
 
-const USERS_API_URL =
-  `${API_BASE}/users`;
+const USERS_API_URL = `${API_BASE}/users`;
 
 const REQUEST_TIMEOUT_MS = 15000;
-
 const TEMP_PASSWORD_BYTES = 8;
 
-function generateTemporaryPassword() {
-  if (
-    !window.crypto ||
-    typeof window.crypto
-      .getRandomValues !== "function"
-  ) {
-    throw new Error(
-      "Secure temporary password generation is unavailable in this browser."
-    );
-  }
-
-  const randomBytes =
-    new Uint8Array(
-      TEMP_PASSWORD_BYTES
-    );
-
-  window.crypto.getRandomValues(
-    randomBytes
-  );
-
-  return Array.from(
-    randomBytes,
-    (value) =>
-      value
-        .toString(16)
-        .padStart(2, "0")
-  ).join("");
-}
+const TAB_CREATE = "CREATE";
+const TAB_ACCOUNTS = "ACCOUNTS";
 
 const ROLE_CONFIG = {
   [ROLES.HR_STAFF]: {
@@ -90,6 +67,13 @@ const ROLE_CONFIG = {
   },
 };
 
+const ROLE_LABELS = {
+  SUPER_ADMIN: "Super Admin",
+  HR_MANAGER: "HR Manager",
+  HR_STAFF: "HR Staff",
+  IT_SUPPORT: "IT Support",
+};
+
 const CONTROL_CLASS_NAME = [
   "min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5",
   "text-sm text-gray-900 shadow-sm outline-none transition",
@@ -106,15 +90,51 @@ const READ_ONLY_CONTROL_CLASS_NAME = [
   "dark:bg-slate-800 dark:text-gray-300",
 ].join(" ");
 
+function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+}
+
+function generateTemporaryPassword() {
+  if (
+    !window.crypto ||
+    typeof window.crypto.getRandomValues !== "function"
+  ) {
+    throw new Error(
+      "Secure temporary password generation is unavailable in this browser."
+    );
+  }
+
+  const randomBytes = new Uint8Array(
+    TEMP_PASSWORD_BYTES
+  );
+
+  window.crypto.getRandomValues(
+    randomBytes
+  );
+
+  return Array.from(
+    randomBytes,
+    (value) =>
+      value
+        .toString(16)
+        .padStart(2, "0")
+  ).join("");
+}
+
 function extractNumberFromUserId(
   userId,
   prefix
 ) {
-  const normalizedUserId =
-    String(userId || "").trim();
+  const normalizedUserId = String(
+    userId || ""
+  ).trim();
 
   if (
-    !normalizedUserId.startsWith(prefix)
+    !normalizedUserId.startsWith(
+      prefix
+    )
   ) {
     return 0;
   }
@@ -131,7 +151,9 @@ function extractNumberFromUserId(
       10
     );
 
-  return Number.isNaN(parsedNumber)
+  return Number.isNaN(
+    parsedNumber
+  )
     ? 0
     : parsedNumber;
 }
@@ -140,7 +162,9 @@ function getApiError(
   error,
   fallbackMessage
 ) {
-  if (error?.name === "AbortError") {
+  if (
+    error?.name === "AbortError"
+  ) {
     return "The server took too long to respond. Check that the backend and database are running, then try again.";
   }
 
@@ -166,14 +190,28 @@ async function requestJson(
 
   try {
     const response =
-      await authenticatedFetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
+      await authenticatedFetch(
+        url,
+        {
+          ...options,
 
-    const data = await response
-      .json()
-      .catch(() => null);
+          signal:
+            controller.signal,
+
+          headers: {
+            Accept:
+              "application/json",
+
+            ...(options.headers ||
+              {}),
+          },
+        }
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(() => null);
 
     if (!response.ok) {
       throw new Error(
@@ -185,13 +223,27 @@ async function requestJson(
 
     return data;
   } finally {
-    window.clearTimeout(timeoutId);
+    window.clearTimeout(
+      timeoutId
+    );
   }
 }
 
-function getRoleLabel(roleValue) {
+function getRoleLabel(
+  roleValue
+) {
+  const normalizedRole =
+    normalizeRole(
+      roleValue
+    );
+
   return (
-    ROLE_CONFIG[roleValue]?.label ||
+    ROLE_LABELS[
+      normalizedRole
+    ] ||
+    ROLE_CONFIG[
+      roleValue
+    ]?.label ||
     roleValue ||
     "Unknown Role"
   );
@@ -210,19 +262,53 @@ function getAccountKey(
   );
 }
 
-function getAccountStatus(account) {
-  const status = String(
-    account?.status || "Active"
-  ).trim();
-
-  return status || "Active";
+function getAccountName(account) {
+  return (
+    account?.full_name ||
+    account?.fullName ||
+    account?.name ||
+    account?.username ||
+    "Unknown User"
+  );
 }
 
-function normalizeSearchText(value) {
+function getAccountStatus(
+  account
+) {
+  const normalizedStatus =
+    String(
+      account?.status ||
+        "Inactive"
+    )
+      .trim()
+      .toLowerCase();
+
+  return normalizedStatus ===
+    "active"
+    ? "Active"
+    : "Inactive";
+}
+
+function isProtectedAccount(
+  account
+) {
+  return (
+    normalizeRole(
+      account?.role
+    ) === "SUPER_ADMIN"
+  );
+}
+
+function normalizeSearchText(
+  value
+) {
   return String(value || "")
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(
+      /[^a-z0-9\s]/g,
+      " "
+    )
     .replace(/\s+/g, " ");
 }
 
@@ -240,6 +326,7 @@ function AccountDetailRow({
       <span
         className={[
           "break-all text-sm font-extrabold text-gray-900 sm:text-right dark:text-white",
+
           monospace
             ? "font-mono"
             : "",
@@ -251,7 +338,74 @@ function AccountDetailRow({
   );
 }
 
+function PortalTab({
+  active,
+  icon,
+  label,
+  count,
+  onClick,
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={[
+        "flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 py-3",
+        "text-sm font-extrabold transition",
+        "focus:outline-none focus:ring-2 focus:ring-indigo-500/30",
+
+        active
+          ? "bg-indigo-600 text-white shadow-sm"
+          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-white",
+      ].join(" ")}
+    >
+      {icon}
+
+      <span>{label}</span>
+
+      {count !== undefined && (
+        <span
+          className={[
+            "inline-flex min-w-6 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-extrabold",
+
+            active
+              ? "bg-white/20 text-white"
+              : "bg-gray-200 text-gray-700 dark:bg-slate-700 dark:text-gray-200",
+          ].join(" ")}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function ProtectedAction() {
+  return (
+    <span
+      title="Super Admin accounts are protected from administrative password reset and account-status actions."
+      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-500 dark:border-white/10 dark:bg-slate-800 dark:text-gray-400"
+    >
+      <FiLock
+        size={13}
+        aria-hidden="true"
+      />
+
+      Protected
+    </span>
+  );
+}
+
 export default function SuperAdminPortal() {
+  const [
+    activeTab,
+    setActiveTab,
+  ] = useState(
+    TAB_CREATE
+  );
+
   const [accounts, setAccounts] =
     useState([]);
 
@@ -259,7 +413,9 @@ export default function SuperAdminPortal() {
     useState("");
 
   const [role, setRole] =
-    useState(ROLES.HR_STAFF);
+    useState(
+      ROLES.HR_STAFF
+    );
 
   const [
     userRoleFilter,
@@ -280,11 +436,20 @@ export default function SuperAdminPortal() {
     setValidationError,
   ] = useState("");
 
-  const [pageError, setPageError] =
-    useState("");
+  const [
+    pageError,
+    setPageError,
+  ] = useState("");
 
-  const [copyMessage, setCopyMessage] =
-    useState("");
+  const [
+    copyMessage,
+    setCopyMessage,
+  ] = useState("");
+
+  const [
+    successMessage,
+    setSuccessMessage,
+  ] = useState("");
 
   const [
     isLoadingAccounts,
@@ -300,6 +465,11 @@ export default function SuperAdminPortal() {
     isSubmitting,
     setIsSubmitting,
   ] = useState(false);
+
+  const [
+    processingAction,
+    setProcessingAction,
+  ] = useState("");
 
   const [
     isConfirmDialogOpen,
@@ -322,93 +492,148 @@ export default function SuperAdminPortal() {
     roleLabel: "",
   });
 
+  const [
+    resetTarget,
+    setResetTarget,
+  ] = useState(null);
+
+  const [
+    resetTemporaryPassword,
+    setResetTemporaryPassword,
+  ] = useState("");
+
+  const [
+    resetCopyMessage,
+    setResetCopyMessage,
+  ] = useState("");
+
+  const [
+    toggleTarget,
+    setToggleTarget,
+  ] = useState(null);
+
   const isMountedRef =
     useRef(true);
 
   const selectedRoleConfig =
     ROLE_CONFIG[role] ||
-    ROLE_CONFIG[ROLES.HR_STAFF];
+    ROLE_CONFIG[
+      ROLES.HR_STAFF
+    ];
+
+  const isProcessing =
+    Boolean(
+      processingAction
+    );
+
+  const isBusy =
+    isSubmitting ||
+    isProcessing;
 
   useEffect(() => {
-    isMountedRef.current = true;
+    isMountedRef.current =
+      true;
 
     return () => {
-      isMountedRef.current = false;
+      isMountedRef.current =
+        false;
     };
   }, []);
 
-  const fetchUsers = useCallback(
-    async ({
-      showInitialLoading = false,
-      showRefreshing = false,
-      showError = true,
-    } = {}) => {
-      if (showInitialLoading) {
-        setIsLoadingAccounts(true);
-      }
-
-      if (showRefreshing) {
-        setIsRefreshingAccounts(true);
-      }
-
-      try {
-        if (showError) {
-          setPageError("");
-        }
-
-        const data =
-          await requestJson(
-            USERS_API_URL
+  const fetchUsers =
+    useCallback(
+      async ({
+        showInitialLoading = false,
+        showRefreshing = false,
+        showError = true,
+      } = {}) => {
+        if (
+          showInitialLoading
+        ) {
+          setIsLoadingAccounts(
+            true
           );
-
-        if (!isMountedRef.current) {
-          return false;
         }
-
-        setAccounts(
-          Array.isArray(data)
-            ? data
-            : []
-        );
-
-        return true;
-      } catch (error) {
-        console.error(
-          "Fetch users error:",
-          error
-        );
 
         if (
-          showError &&
-          isMountedRef.current
+          showRefreshing
         ) {
-          setPageError(
-            getApiError(
-              error,
-              "Unable to load user accounts."
-            )
+          setIsRefreshingAccounts(
+            true
           );
         }
 
-        return false;
-      } finally {
-        if (isMountedRef.current) {
-          if (showInitialLoading) {
-            setIsLoadingAccounts(false);
+        try {
+          if (showError) {
+            setPageError("");
           }
 
-          if (showRefreshing) {
-            setIsRefreshingAccounts(false);
+          const data =
+            await requestJson(
+              USERS_API_URL
+            );
+
+          if (
+            !isMountedRef.current
+          ) {
+            return false;
+          }
+
+          setAccounts(
+            Array.isArray(data)
+              ? data
+              : []
+          );
+
+          return true;
+        } catch (error) {
+          console.error(
+            "Fetch users error:",
+            error
+          );
+
+          if (
+            showError &&
+            isMountedRef.current
+          ) {
+            setPageError(
+              getApiError(
+                error,
+                "Unable to load user accounts."
+              )
+            );
+          }
+
+          return false;
+        } finally {
+          if (
+            isMountedRef.current
+          ) {
+            if (
+              showInitialLoading
+            ) {
+              setIsLoadingAccounts(
+                false
+              );
+            }
+
+            if (
+              showRefreshing
+            ) {
+              setIsRefreshingAccounts(
+                false
+              );
+            }
           }
         }
-      }
-    },
-    []
-  );
+      },
+      []
+    );
 
   useEffect(() => {
     void fetchUsers({
-      showInitialLoading: true,
+      showInitialLoading:
+        true,
     });
   }, [fetchUsers]);
 
@@ -423,7 +648,12 @@ export default function SuperAdminPortal() {
       const sameRoleAccounts =
         accounts.filter(
           (account) =>
-            account?.role === role
+            normalizeRole(
+              account?.role
+            ) ===
+            normalizeRole(
+              role
+            )
         );
 
       const maxNumber =
@@ -455,13 +685,16 @@ export default function SuperAdminPortal() {
         maxNumber + 1;
 
       const paddedNumber =
-        String(nextNumber).padStart(
+        String(
+          nextNumber
+        ).padStart(
           2,
           "0"
         );
 
       return {
         userId: `${prefix}${paddedNumber}`,
+
         username: `${usernamePrefix}${paddedNumber}`,
       };
     }, [
@@ -479,31 +712,43 @@ export default function SuperAdminPortal() {
     setUsername(
       nextGeneratedAccount.username
     );
-  }, [nextGeneratedAccount]);
+  }, [
+    nextGeneratedAccount,
+  ]);
 
   const filteredAccounts =
     useMemo(() => {
       const normalizedSearch =
-        normalizeSearchText(search);
+        normalizeSearchText(
+          search
+        );
 
       const searchTerms =
         normalizedSearch
-          ? normalizedSearch.split(/\s+/)
+          ? normalizedSearch.split(
+              /\s+/
+            )
           : [];
 
       return accounts.filter(
         (account) => {
           const matchesRole =
-            userRoleFilter === "ALL" ||
-            account?.role ===
-              userRoleFilter;
+            userRoleFilter ===
+              "ALL" ||
+            normalizeRole(
+              account?.role
+            ) ===
+              normalizeRole(
+                userRoleFilter
+              );
 
           if (!matchesRole) {
             return false;
           }
 
           if (
-            searchTerms.length === 0
+            searchTerms.length ===
+            0
           ) {
             return true;
           }
@@ -553,7 +798,10 @@ export default function SuperAdminPortal() {
   const handleClearFilters =
     useCallback(() => {
       setSearch("");
-      setUserRoleFilter("ALL");
+
+      setUserRoleFilter(
+        "ALL"
+      );
     }, []);
 
   const handleRefresh =
@@ -561,7 +809,7 @@ export default function SuperAdminPortal() {
       if (
         isLoadingAccounts ||
         isRefreshingAccounts ||
-        isSubmitting
+        isBusy
       ) {
         return;
       }
@@ -571,9 +819,9 @@ export default function SuperAdminPortal() {
       });
     }, [
       fetchUsers,
+      isBusy,
       isLoadingAccounts,
       isRefreshingAccounts,
-      isSubmitting,
     ]);
 
   const validateForm =
@@ -632,7 +880,7 @@ export default function SuperAdminPortal() {
       (event) => {
         event.preventDefault();
 
-        if (isSubmitting) {
+        if (isBusy) {
           return;
         }
 
@@ -643,15 +891,19 @@ export default function SuperAdminPortal() {
           setValidationError(
             errorMessage
           );
+
           return;
         }
 
         setValidationError("");
         setPageError("");
-        setIsConfirmDialogOpen(true);
+
+        setIsConfirmDialogOpen(
+          true
+        );
       },
       [
-        isSubmitting,
+        isBusy,
         validateForm,
       ]
     );
@@ -662,12 +914,14 @@ export default function SuperAdminPortal() {
         return;
       }
 
-      setIsConfirmDialogOpen(false);
+      setIsConfirmDialogOpen(
+        false
+      );
     }, [isSubmitting]);
 
   const confirmCreateAccount =
     useCallback(async () => {
-      if (isSubmitting) {
+      if (isBusy) {
         return;
       }
 
@@ -679,7 +933,10 @@ export default function SuperAdminPortal() {
           errorMessage
         );
 
-        setIsConfirmDialogOpen(false);
+        setIsConfirmDialogOpen(
+          false
+        );
+
         return;
       }
 
@@ -690,13 +947,6 @@ export default function SuperAdminPortal() {
         setIsSubmitting(true);
         setPageError("");
 
-        /*
-         * Generate the one-time temporary password
-         * locally in the authorized browser.
-         *
-         * The backend receives it only for immediate
-         * bcrypt hashing and never echoes it back.
-         */
         const generatedPassword =
           generateTemporaryPassword();
 
@@ -709,20 +959,24 @@ export default function SuperAdminPortal() {
               headers: {
                 "Content-Type":
                   "application/json",
-                Accept:
-                  "application/json",
               },
 
-              body: JSON.stringify({
-                name: trimmedName,
-                role,
-                temporaryPassword:
-                  generatedPassword,
-              }),
+              body:
+                JSON.stringify({
+                  name:
+                    trimmedName,
+
+                  role,
+
+                  temporaryPassword:
+                    generatedPassword,
+                }),
             }
           );
 
-        if (!isMountedRef.current) {
+        if (
+          !isMountedRef.current
+        ) {
           return;
         }
 
@@ -739,17 +993,29 @@ export default function SuperAdminPortal() {
           temporaryPassword:
             generatedPassword,
 
-          name: trimmedName,
+          name:
+            trimmedName,
 
           roleLabel:
-            getRoleLabel(role),
+            getRoleLabel(
+              role
+            ),
         });
 
-        setIsConfirmDialogOpen(false);
-        setIsSuccessDialogOpen(true);
+        setIsConfirmDialogOpen(
+          false
+        );
+
+        setIsSuccessDialogOpen(
+          true
+        );
 
         setName("");
-        setRole(ROLES.HR_STAFF);
+
+        setRole(
+          ROLES.HR_STAFF
+        );
+
         setValidationError("");
 
         await fetchUsers({
@@ -772,13 +1038,17 @@ export default function SuperAdminPortal() {
           );
         }
       } finally {
-        if (isMountedRef.current) {
-          setIsSubmitting(false);
+        if (
+          isMountedRef.current
+        ) {
+          setIsSubmitting(
+            false
+          );
         }
       }
     }, [
       fetchUsers,
-      isSubmitting,
+      isBusy,
       name,
       role,
       validateForm,
@@ -786,18 +1056,18 @@ export default function SuperAdminPortal() {
 
   const handleCloseSuccessDialog =
     useCallback(() => {
-      setIsSuccessDialogOpen(false);
+      setIsSuccessDialogOpen(
+        false
+      );
+
       setCopyMessage("");
 
-      /*
-       * Remove the temporary password from
-       * component state as soon as the one-time
-       * credentials dialog is closed.
-       */
       setCreatedAccount(
         (currentAccount) => ({
           ...currentAccount,
-          temporaryPassword: "",
+
+          temporaryPassword:
+            "",
         })
       );
     }, []);
@@ -830,16 +1100,367 @@ export default function SuperAdminPortal() {
           "Unable to copy automatically. Please copy the credentials manually."
         );
       }
-    }, [createdAccount]);
+    }, [
+      createdAccount,
+    ]);
+
+  const handleOpenReset =
+    useCallback(
+      (account) => {
+        if (
+          !account?.id ||
+          isBusy ||
+          isProtectedAccount(
+            account
+          )
+        ) {
+          return;
+        }
+
+        setPageError("");
+
+        setResetTemporaryPassword(
+          ""
+        );
+
+        setResetCopyMessage(
+          ""
+        );
+
+        setResetTarget(
+          account
+        );
+      },
+      [
+        isBusy,
+      ]
+    );
+
+  const handleCloseReset =
+    useCallback(() => {
+      if (isProcessing) {
+        return;
+      }
+
+      setResetTarget(null);
+
+      setResetTemporaryPassword(
+        ""
+      );
+
+      setResetCopyMessage(
+        ""
+      );
+    }, [
+      isProcessing,
+    ]);
+
+  const handleConfirmReset =
+    useCallback(async () => {
+      if (
+        !resetTarget?.id ||
+        isBusy ||
+        isProtectedAccount(
+          resetTarget
+        )
+      ) {
+        return;
+      }
+
+      try {
+        setProcessingAction(
+          "reset"
+        );
+
+        setPageError("");
+
+        const generatedPassword =
+          generateTemporaryPassword();
+
+        await requestJson(
+          `${USERS_API_URL}/reset/${encodeURIComponent(
+            resetTarget.id
+          )}`,
+          {
+            method: "PUT",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                temporaryPassword:
+                  generatedPassword,
+              }),
+          }
+        );
+
+        if (
+          !isMountedRef.current
+        ) {
+          return;
+        }
+
+        setResetTemporaryPassword(
+          generatedPassword
+        );
+
+        await fetchUsers({
+          showError: false,
+        });
+      } catch (error) {
+        console.error(
+          "Reset account password error:",
+          error
+        );
+
+        if (
+          isMountedRef.current
+        ) {
+          setPageError(
+            getApiError(
+              error,
+              "Unable to reset the account password."
+            )
+          );
+
+          setResetTarget(
+            null
+          );
+
+          setResetTemporaryPassword(
+            ""
+          );
+        }
+      } finally {
+        if (
+          isMountedRef.current
+        ) {
+          setProcessingAction(
+            ""
+          );
+        }
+      }
+    }, [
+      fetchUsers,
+      isBusy,
+      resetTarget,
+    ]);
+
+  const handleCopyResetPassword =
+    useCallback(async () => {
+      if (
+        !resetTemporaryPassword
+      ) {
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(
+          resetTemporaryPassword
+        );
+
+        setResetCopyMessage(
+          "Temporary password copied."
+        );
+      } catch (error) {
+        console.error(
+          "Copy reset password error:",
+          error
+        );
+
+        setResetCopyMessage(
+          "Unable to copy automatically."
+        );
+      }
+    }, [
+      resetTemporaryPassword,
+    ]);
+
+  const handleOpenToggle =
+    useCallback(
+      (account) => {
+        if (
+          !account?.id ||
+          isBusy ||
+          isProtectedAccount(
+            account
+          )
+        ) {
+          return;
+        }
+
+        setPageError("");
+
+        setToggleTarget(
+          account
+        );
+      },
+      [
+        isBusy,
+      ]
+    );
+
+  const handleCloseToggle =
+    useCallback(() => {
+      if (isProcessing) {
+        return;
+      }
+
+      setToggleTarget(
+        null
+      );
+    }, [
+      isProcessing,
+    ]);
+
+  const handleConfirmToggle =
+    useCallback(async () => {
+      if (
+        !toggleTarget?.id ||
+        isBusy ||
+        isProtectedAccount(
+          toggleTarget
+        )
+      ) {
+        return;
+      }
+
+      const currentStatus =
+        getAccountStatus(
+          toggleTarget
+        );
+
+      const nextStatus =
+        currentStatus === "Active"
+          ? "Inactive"
+          : "Active";
+
+      const accountName =
+        getAccountName(
+          toggleTarget
+        );
+
+      try {
+        setProcessingAction(
+          "toggle"
+        );
+
+        setPageError("");
+
+        await requestJson(
+          `${USERS_API_URL}/toggle/${encodeURIComponent(
+            toggleTarget.id
+          )}`,
+          {
+            method: "PUT",
+          }
+        );
+
+        if (
+          !isMountedRef.current
+        ) {
+          return;
+        }
+
+        setAccounts(
+          (currentAccounts) =>
+            currentAccounts.map(
+              (account) =>
+                String(
+                  account?.id
+                ) ===
+                String(
+                  toggleTarget.id
+                )
+                  ? {
+                      ...account,
+
+                      status:
+                        nextStatus,
+                    }
+                  : account
+            )
+        );
+
+        setToggleTarget(
+          null
+        );
+
+        setSuccessMessage(
+          `${accountName} was ${
+            nextStatus ===
+            "Active"
+              ? "activated"
+              : "deactivated"
+          } successfully.`
+        );
+
+        void fetchUsers({
+          showError: false,
+        });
+      } catch (error) {
+        console.error(
+          "Toggle account status error:",
+          error
+        );
+
+        if (
+          isMountedRef.current
+        ) {
+          setPageError(
+            getApiError(
+              error,
+              "Unable to update the account status."
+            )
+          );
+        }
+      } finally {
+        if (
+          isMountedRef.current
+        ) {
+          setProcessingAction(
+            ""
+          );
+        }
+      }
+    }, [
+      fetchUsers,
+      isBusy,
+      toggleTarget,
+    ]);
+
+  const resetAccountName =
+    getAccountName(
+      resetTarget
+    );
+
+  const toggleAccountName =
+    getAccountName(
+      toggleTarget
+    );
+
+  const toggleCurrentStatus =
+    getAccountStatus(
+      toggleTarget
+    );
+
+  const willActivate =
+    toggleCurrentStatus !==
+    "Active";
 
   return (
     <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
         eyebrow="System Administration"
         title="Super Admin Portal"
-        description="Create and review internal user accounts."
+        description="Create, review, and securely manage internal system accounts."
         icon={
-          <FiShield size={22} />
+          <FiShield
+            size={22}
+          />
         }
         actions={
           <Button
@@ -860,9 +1481,11 @@ export default function SuperAdminPortal() {
             disabled={
               isLoadingAccounts ||
               isRefreshingAccounts ||
-              isSubmitting
+              isBusy
             }
-            onClick={handleRefresh}
+            onClick={
+              handleRefresh
+            }
           >
             Refresh Accounts
           </Button>
@@ -875,18 +1498,71 @@ export default function SuperAdminPortal() {
           title="User account error"
           message={pageError}
           retryLabel="Reload accounts"
-          onRetry={handleRefresh}
+          onRetry={
+            handleRefresh
+          }
         />
       )}
 
-      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
+      <section className="rounded-3xl border border-gray-200 bg-white p-2 shadow-sm dark:border-white/10 dark:bg-slate-900">
+        <div
+          role="tablist"
+          aria-label="Super Admin Portal sections"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+        >
+          <PortalTab
+            active={
+              activeTab ===
+              TAB_CREATE
+            }
+            icon={
+              <FiUserPlus
+                aria-hidden="true"
+              />
+            }
+            label="Create New Account"
+            onClick={() =>
+              setActiveTab(
+                TAB_CREATE
+              )
+            }
+          />
+
+          <PortalTab
+            active={
+              activeTab ===
+              TAB_ACCOUNTS
+            }
+            icon={
+              <FiUsers
+                aria-hidden="true"
+              />
+            }
+            label="Created Accounts"
+            count={
+              accounts.length
+            }
+            onClick={() =>
+              setActiveTab(
+                TAB_ACCOUNTS
+              )
+            }
+          />
+        </div>
+      </section>
+
+      {activeTab ===
+        TAB_CREATE && (
         <RoleGuard
           permission={
             PERMISSIONS.CAN_CREATE_SYSTEM_USERS
           }
         >
-          <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900 sm:p-6">
-            <div className="mb-5 flex items-start gap-3">
+          <section
+            role="tabpanel"
+            className="mx-auto max-w-5xl rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900 sm:p-6 lg:p-8"
+          >
+            <div className="mb-6 flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
                 <FiUserPlus
                   size={21}
@@ -895,7 +1571,7 @@ export default function SuperAdminPortal() {
               </div>
 
               <div>
-                <h2 className="text-lg font-extrabold text-gray-900 dark:text-white">
+                <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">
                   Create New Account
                 </h2>
 
@@ -925,16 +1601,19 @@ export default function SuperAdminPortal() {
                     id="super-admin-full-name"
                     type="text"
                     value={name}
-                    disabled={isSubmitting}
+                    disabled={isBusy}
                     maxLength={150}
                     autoComplete="name"
                     placeholder="Enter full name"
                     className={
                       CONTROL_CLASS_NAME
                     }
-                    onChange={(event) => {
+                    onChange={(
+                      event
+                    ) => {
                       setName(
-                        event.target.value
+                        event.target
+                          .value
                       );
 
                       setValidationError(
@@ -955,13 +1634,16 @@ export default function SuperAdminPortal() {
                   <select
                     id="super-admin-role"
                     value={role}
-                    disabled={isSubmitting}
+                    disabled={isBusy}
                     className={
                       CONTROL_CLASS_NAME
                     }
-                    onChange={(event) => {
+                    onChange={(
+                      event
+                    ) => {
                       setRole(
-                        event.target.value
+                        event.target
+                          .value
                       );
 
                       setValidationError(
@@ -1041,26 +1723,25 @@ export default function SuperAdminPortal() {
               </div>
 
               <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm leading-6 text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
-                <p>
-                  <strong>
-                    Account preview:
-                  </strong>{" "}
-                  This account will be created as{" "}
-                  <strong>
-                    {
-                      selectedRoleConfig.label
-                    }
-                  </strong>{" "}
-                  with User ID{" "}
-                  <strong>
-                    {userId}
-                  </strong>{" "}
-                  and username{" "}
-                  <strong>
-                    {username}
-                  </strong>
-                  .
-                </p>
+                <strong>
+                  Account preview:
+                </strong>{" "}
+                This account will be
+                created as{" "}
+                <strong>
+                  {
+                    selectedRoleConfig.label
+                  }
+                </strong>{" "}
+                with User ID{" "}
+                <strong>
+                  {userId}
+                </strong>{" "}
+                and username{" "}
+                <strong>
+                  {username}
+                </strong>
+                .
               </div>
 
               {validationError && (
@@ -1068,7 +1749,9 @@ export default function SuperAdminPortal() {
                   role="alert"
                   className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
                 >
-                  {validationError}
+                  {
+                    validationError
+                  }
                 </div>
               )}
 
@@ -1080,9 +1763,11 @@ export default function SuperAdminPortal() {
                       aria-hidden="true"
                     />
                   }
-                  loading={isSubmitting}
+                  loading={
+                    isSubmitting
+                  }
                   disabled={
-                    isSubmitting ||
+                    isBusy ||
                     isLoadingAccounts
                   }
                 >
@@ -1092,8 +1777,14 @@ export default function SuperAdminPortal() {
             </form>
           </section>
         </RoleGuard>
+      )}
 
-        <section className="flex min-h-[450px] flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+      {activeTab ===
+        TAB_ACCOUNTS && (
+        <section
+          role="tabpanel"
+          className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900"
+        >
           <header className="border-b border-gray-200 px-5 py-5 sm:px-6 dark:border-white/10">
             <h2 className="flex items-center gap-2 text-lg font-extrabold text-gray-900 dark:text-white">
               <FiUsers
@@ -1104,8 +1795,8 @@ export default function SuperAdminPortal() {
               Created Accounts
             </h2>
 
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Review existing internal system accounts.
+            <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
+              Review and manage existing internal system accounts. Super Admin accounts remain protected.
             </p>
           </header>
 
@@ -1123,7 +1814,7 @@ export default function SuperAdminPortal() {
                     !hasActiveFilters ||
                     isLoadingAccounts ||
                     isRefreshingAccounts ||
-                    isSubmitting
+                    isBusy
                   }
                   onClick={
                     handleClearFilters
@@ -1133,7 +1824,7 @@ export default function SuperAdminPortal() {
                 </Button>
               }
             >
-              <div className="w-full sm:col-span-2 xl:w-80">
+              <div className="w-full sm:col-span-2 xl:w-96">
                 <SearchInput
                   label="Search created accounts"
                   hideLabel
@@ -1142,11 +1833,14 @@ export default function SuperAdminPortal() {
                   disabled={
                     isLoadingAccounts ||
                     isRefreshingAccounts ||
-                    isSubmitting
+                    isBusy
                   }
-                  onChange={(event) =>
+                  onChange={(
+                    event
+                  ) =>
                     setSearch(
-                      event.target.value
+                      event.target
+                        .value
                     )
                   }
                   onClear={() =>
@@ -1165,18 +1859,23 @@ export default function SuperAdminPortal() {
 
                 <select
                   id="account-role-filter"
-                  value={userRoleFilter}
+                  value={
+                    userRoleFilter
+                  }
                   disabled={
                     isLoadingAccounts ||
                     isRefreshingAccounts ||
-                    isSubmitting
+                    isBusy
                   }
                   className={
                     CONTROL_CLASS_NAME
                   }
-                  onChange={(event) =>
+                  onChange={(
+                    event
+                  ) =>
                     setUserRoleFilter(
-                      event.target.value
+                      event.target
+                        .value
                     )
                   }
                 >
@@ -1184,12 +1883,8 @@ export default function SuperAdminPortal() {
                     All Roles
                   </option>
 
-                  <option
-                    value={
-                      ROLES.HR_STAFF
-                    }
-                  >
-                    HR Staff
+                  <option value="SUPER_ADMIN">
+                    Super Admin
                   </option>
 
                   <option
@@ -1198,6 +1893,14 @@ export default function SuperAdminPortal() {
                     }
                   >
                     HR Manager
+                  </option>
+
+                  <option
+                    value={
+                      ROLES.HR_STAFF
+                    }
+                  >
+                    HR Staff
                   </option>
 
                   <option
@@ -1216,49 +1919,38 @@ export default function SuperAdminPortal() {
             <div className="p-5 sm:p-6">
               <LoadingSkeleton
                 rows={6}
-                columns={5}
+                columns={6}
                 showHeader
               />
             </div>
           ) : filteredAccounts.length >
             0 ? (
-            <div className="max-h-[560px] flex-1 overflow-auto">
-              <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
+            <div className="max-h-[650px] overflow-auto">
+              <table className="w-full min-w-[1020px] border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
                   <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    <th
-                      scope="col"
-                      className="px-5 py-4 text-left sm:px-6"
-                    >
+                    <th className="px-5 py-4 sm:px-6">
                       User ID
                     </th>
 
-                    <th
-                      scope="col"
-                      className="px-5 py-4 text-left sm:px-6"
-                    >
+                    <th className="px-5 py-4 sm:px-6">
                       Full Name
                     </th>
 
-                    <th
-                      scope="col"
-                      className="px-5 py-4 text-left sm:px-6"
-                    >
+                    <th className="px-5 py-4 sm:px-6">
                       Username
                     </th>
 
-                    <th
-                      scope="col"
-                      className="px-5 py-4 text-left sm:px-6"
-                    >
+                    <th className="px-5 py-4 sm:px-6">
                       Role
                     </th>
 
-                    <th
-                      scope="col"
-                      className="px-5 py-4 text-left sm:px-6"
-                    >
+                    <th className="px-5 py-4 sm:px-6">
                       Status
+                    </th>
+
+                    <th className="px-5 py-4 text-right sm:px-6">
+                      Actions
                     </th>
                   </tr>
                 </thead>
@@ -1274,6 +1966,20 @@ export default function SuperAdminPortal() {
                           account
                         );
 
+                      const accountName =
+                        getAccountName(
+                          account
+                        );
+
+                      const isActive =
+                        accountStatus ===
+                        "Active";
+
+                      const isProtected =
+                        isProtectedAccount(
+                          account
+                        );
+
                       return (
                         <tr
                           key={getAccountKey(
@@ -1285,15 +1991,15 @@ export default function SuperAdminPortal() {
                           <td className="whitespace-nowrap px-5 py-4 font-semibold text-gray-500 sm:px-6 dark:text-gray-400">
                             {account.user_id ||
                               account.userId ||
+                              account.id ||
                               "-"}
                           </td>
 
                           <td className="px-5 py-4 sm:px-6">
-                            <p className="max-w-[240px] truncate font-semibold text-gray-900 dark:text-white">
-                              {account.full_name ||
-                                account.fullName ||
-                                account.name ||
-                                "-"}
+                            <p className="max-w-[260px] truncate font-semibold text-gray-900 dark:text-white">
+                              {
+                                accountName
+                              }
                             </p>
                           </td>
 
@@ -1302,10 +2008,12 @@ export default function SuperAdminPortal() {
                               "-"}
                           </td>
 
-                          <td className="whitespace-nowrap px-5 py-4 font-medium text-gray-700 sm:px-6 dark:text-gray-300">
-                            {getRoleLabel(
-                              account.role
-                            )}
+                          <td className="whitespace-nowrap px-5 py-4 sm:px-6">
+                            <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                              {getRoleLabel(
+                                account.role
+                              )}
+                            </span>
                           </td>
 
                           <td className="whitespace-nowrap px-5 py-4 sm:px-6">
@@ -1316,6 +2024,72 @@ export default function SuperAdminPortal() {
                               size="md"
                             />
                           </td>
+
+                          <td className="px-5 py-4 sm:px-6">
+                            <div className="flex items-center justify-end gap-2">
+                              {isProtected ? (
+                                <ProtectedAction />
+                              ) : (
+                                <>
+                                  <IconButton
+                                    label={`Reset password for ${accountName}`}
+                                    title="Reset Password"
+                                    variant="primary"
+                                    size="md"
+                                    disabled={
+                                      isBusy
+                                    }
+                                    onClick={() =>
+                                      handleOpenReset(
+                                        account
+                                      )
+                                    }
+                                  >
+                                    <FiShield
+                                      aria-hidden="true"
+                                    />
+                                  </IconButton>
+
+                                  <IconButton
+                                    label={`${
+                                      isActive
+                                        ? "Deactivate"
+                                        : "Activate"
+                                    } ${accountName}`}
+                                    title={
+                                      isActive
+                                        ? "Deactivate Account"
+                                        : "Activate Account"
+                                    }
+                                    variant={
+                                      isActive
+                                        ? "danger"
+                                        : "success"
+                                    }
+                                    size="md"
+                                    disabled={
+                                      isBusy
+                                    }
+                                    onClick={() =>
+                                      handleOpenToggle(
+                                        account
+                                      )
+                                    }
+                                  >
+                                    {isActive ? (
+                                      <FiUserX
+                                        aria-hidden="true"
+                                      />
+                                    ) : (
+                                      <FiUserCheck
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                  </IconButton>
+                                </>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       );
                     }
@@ -1324,7 +2098,7 @@ export default function SuperAdminPortal() {
               </table>
             </div>
           ) : (
-            <div className="flex flex-1 items-center p-5 sm:p-6">
+            <div className="p-5 sm:p-6">
               <EmptyState
                 icon={
                   search.trim()
@@ -1364,22 +2138,28 @@ export default function SuperAdminPortal() {
             </div>
           )}
         </section>
-      </div>
+      )}
 
       <ConfirmDialog
-        open={isConfirmDialogOpen}
+        open={
+          isConfirmDialogOpen
+        }
         title="Confirm Account Creation"
         tone="info"
         confirmLabel="Create Account"
         cancelLabel="Cancel"
-        loading={isSubmitting}
+        loading={
+          isSubmitting
+        }
         disabled={
           isSubmitting ||
           !name.trim() ||
           !userId ||
           !username
         }
-        closeOnBackdrop={!isSubmitting}
+        closeOnBackdrop={
+          !isSubmitting
+        }
         onClose={
           handleCloseConfirmDialog
         }
@@ -1399,7 +2179,9 @@ export default function SuperAdminPortal() {
 
           <AccountDetailRow
             label="Role"
-            value={getRoleLabel(role)}
+            value={
+              getRoleLabel(role)
+            }
           />
 
           <AccountDetailRow
@@ -1417,7 +2199,9 @@ export default function SuperAdminPortal() {
       </ConfirmDialog>
 
       <Dialog
-        open={isSuccessDialogOpen}
+        open={
+          isSuccessDialogOpen
+        }
         onClose={
           handleCloseSuccessDialog
         }
@@ -1523,6 +2307,219 @@ export default function SuperAdminPortal() {
           Do not send temporary credentials through public or unsecured channels.
         </p>
       </Dialog>
+
+      <ConfirmDialog
+        open={
+          Boolean(
+            resetTarget
+          ) &&
+          !resetTemporaryPassword
+        }
+        title="Reset Account Password"
+        tone="warning"
+        confirmLabel="Generate Password"
+        cancelLabel="Cancel"
+        loading={
+          processingAction ===
+          "reset"
+        }
+        disabled={
+          !resetTarget?.id ||
+          isBusy ||
+          isProtectedAccount(
+            resetTarget
+          )
+        }
+        closeOnBackdrop={
+          !isProcessing
+        }
+        onClose={
+          handleCloseReset
+        }
+        onConfirm={
+          handleConfirmReset
+        }
+      >
+        <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+          Generate a new temporary password for{" "}
+          <strong className="font-extrabold text-gray-900 dark:text-white">
+            {resetAccountName}
+          </strong>
+          ?
+        </p>
+
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+          The user will be required to change this temporary password during the next login.
+        </div>
+      </ConfirmDialog>
+
+      <Dialog
+        open={
+          Boolean(
+            resetTarget
+          ) &&
+          Boolean(
+            resetTemporaryPassword
+          )
+        }
+        onClose={
+          handleCloseReset
+        }
+        title="Password Reset Successful"
+        description={`A temporary password was generated for ${resetAccountName}.`}
+        tone="success"
+        size="md"
+        closeOnOverlay
+        closeOnEscape
+        showCloseButton
+        bodyClassName="space-y-5 p-6"
+        footer={
+          <div className="flex w-full flex-col-reverse justify-end gap-3 sm:flex-row">
+            <Button
+              type="button"
+              variant="secondary"
+              leftIcon={
+                <FiCopy
+                  aria-hidden="true"
+                />
+              }
+              onClick={
+                handleCopyResetPassword
+              }
+            >
+              Copy Password
+            </Button>
+
+            <Button
+              type="button"
+              variant="success"
+              onClick={
+                handleCloseReset
+              }
+            >
+              Done
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+          <FiCheckCircle
+            className="mt-0.5 shrink-0"
+            size={20}
+            aria-hidden="true"
+          />
+
+          <p className="text-sm leading-6">
+            The account password was reset successfully.
+          </p>
+        </div>
+
+        <div>
+          <label
+            htmlFor="super-admin-reset-password"
+            className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+          >
+            Temporary Password
+          </label>
+
+          <input
+            id="super-admin-reset-password"
+            type="text"
+            readOnly
+            value={
+              resetTemporaryPassword
+            }
+            className="ui-control font-mono font-bold"
+          />
+        </div>
+
+        {resetCopyMessage && (
+          <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+            {
+              resetCopyMessage
+            }
+          </p>
+        )}
+
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+          Provide this password securely to the account owner. Do not send it through public channels.
+        </div>
+      </Dialog>
+
+      <ConfirmDialog
+        open={
+          Boolean(
+            toggleTarget
+          )
+        }
+        title={
+          willActivate
+            ? "Activate Account"
+            : "Deactivate Account"
+        }
+        tone={
+          willActivate
+            ? "success"
+            : "danger"
+        }
+        confirmLabel={
+          willActivate
+            ? "Activate Account"
+            : "Deactivate Account"
+        }
+        cancelLabel="Cancel"
+        loading={
+          processingAction ===
+          "toggle"
+        }
+        disabled={
+          !toggleTarget?.id ||
+          isBusy ||
+          isProtectedAccount(
+            toggleTarget
+          )
+        }
+        closeOnBackdrop={
+          !isProcessing
+        }
+        onClose={
+          handleCloseToggle
+        }
+        onConfirm={
+          handleConfirmToggle
+        }
+      >
+        <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+          Are you sure you want to{" "}
+          <strong>
+            {willActivate
+              ? "activate"
+              : "deactivate"}
+          </strong>{" "}
+          the account of{" "}
+          <strong className="font-extrabold text-gray-900 dark:text-white">
+            {toggleAccountName}
+          </strong>
+          ?
+        </p>
+
+        <p className="mt-3 text-sm leading-6 text-gray-500 dark:text-gray-400">
+          {willActivate
+            ? "The user will regain access to the system."
+            : "The user will no longer be able to sign in until the account is activated again."}
+        </p>
+      </ConfirmDialog>
+
+      <SuccessToast
+        title="Account Status Updated"
+        message={
+          successMessage
+        }
+        duration={3500}
+        onClose={() =>
+          setSuccessMessage("")
+        }
+      />
     </main>
   );
 }
