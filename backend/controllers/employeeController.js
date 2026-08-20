@@ -98,9 +98,10 @@ function getActor(req) {
  *
  * Multer saves files before the controller runs.
  *
- * If a create/update DB transaction fails,
- * remove only files uploaded by that failed
- * request.
+ * If employee validation fails before a transaction
+ * begins, or if a create/update DB transaction
+ * fails and rolls back successfully, remove only
+ * files uploaded by that failed request.
  *
  * Pre-existing employee files are intentionally
  * never deleted by this helper.
@@ -152,6 +153,34 @@ async function cleanupUploadedFiles(
       }
     }
   }
+}
+
+/*
+ * EARLY EMPLOYEE VALIDATION REJECTION
+ *
+ * Employee document uploads are processed before
+ * the controller executes.
+ *
+ * If normal employee-field validation fails before
+ * a DB transaction begins, compensate by deleting
+ * only the files uploaded by the current request
+ * before returning HTTP 400.
+ */
+async function rejectEmployeeRequest(
+  req,
+  res,
+  message
+) {
+  await cleanupUploadedFiles(
+    req.files
+  );
+
+  return res
+    .status(400)
+    .json({
+      error:
+        message,
+    });
 }
 
 async function getEmployeeNameById(id) {
@@ -274,7 +303,12 @@ const extractDocumentsFromReq = (
  * +
  * employee_documents INSERT(s)
  *
- * On failure:
+ * On validation failure:
+ * remove newly uploaded request files
+ * +
+ * return HTTP 400
+ *
+ * On DB failure:
  * ROLLBACK
  * +
  * remove only newly uploaded request files
@@ -323,12 +357,11 @@ exports.createEmployee = async (
       );
 
     if (!finalName) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Employee name is required.",
-        });
+      return await rejectEmployeeRequest(
+        req,
+        res,
+        "Employee name is required."
+      );
     }
 
     if (
@@ -336,12 +369,11 @@ exports.createEmployee = async (
         "Deployed" &&
       !finalCompany
     ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Company is required for deployed employees.",
-        });
+      return await rejectEmployeeRequest(
+        req,
+        res,
+        "Company is required for deployed employees."
+      );
     }
 
     const documents =
@@ -627,7 +659,12 @@ exports.getEmployees = async (
  * +
  * employee_documents UPDATE/INSERT/DELETE
  *
- * On failure:
+ * On validation failure:
+ * remove newly uploaded request files
+ * +
+ * return HTTP 400
+ *
+ * On DB failure:
  * ROLLBACK
  * +
  * remove only newly uploaded request files
@@ -682,12 +719,11 @@ exports.updateEmployee = async (
       );
 
     if (!finalName) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Employee name is required.",
-        });
+      return await rejectEmployeeRequest(
+        req,
+        res,
+        "Employee name is required."
+      );
     }
 
     if (
@@ -695,12 +731,11 @@ exports.updateEmployee = async (
         "Deployed" &&
       !finalCompany
     ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Company is required for deployed employees.",
-        });
+      return await rejectEmployeeRequest(
+        req,
+        res,
+        "Company is required for deployed employees."
+      );
     }
 
     const frontendDocs =
@@ -1142,7 +1177,7 @@ exports.updateContractEnd = async (
 
     return res.status(500).json({
       error:
-          "Failed to update contract end date.",
+        "Failed to update contract end date.",
     });
   }
 };
@@ -1225,7 +1260,7 @@ exports.archiveEmployee = async (
 
     return res.status(500).json({
       error:
-          "Archive employee error",
+        "Archive employee error",
     });
   }
 };
@@ -1308,7 +1343,7 @@ exports.restoreEmployee = async (
 
     return res.status(500).json({
       error:
-          "Restore employee error",
+        "Restore employee error",
     });
   }
 };

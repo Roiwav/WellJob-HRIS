@@ -100,7 +100,19 @@ router.get(
  * - HR_STAFF
  *
  * Authentication and authorization intentionally
- * run BEFORE multer processes uploaded files.
+ * run BEFORE Multer processes uploaded files.
+ *
+ * Employee document uploads are restricted to:
+ *
+ * - documents[0] through documents[19]
+ * - maximum 1 file per document slot
+ * - maximum 20 files total
+ * - maximum 5 MB per file
+ * - PNG, JPEG, and PDF only
+ * - matching file extension and MIME declaration
+ * - validated physical file signature
+ *
+ * Unexpected multipart file fields are rejected.
  */
 router.post(
   "/employees",
@@ -109,7 +121,7 @@ router.post(
     "HR_MANAGER",
     "HR_STAFF"
   ),
-  upload.any(),
+  upload.employeeDocuments,
   createEmployee
 );
 
@@ -122,6 +134,9 @@ router.post(
  * Allowed:
  * - HR_MANAGER
  * - HR_STAFF
+ *
+ * Uses the same hardened employee-document upload
+ * rules as employee creation.
  */
 router.put(
   "/employees/:id",
@@ -130,7 +145,7 @@ router.put(
     "HR_MANAGER",
     "HR_STAFF"
   ),
-  upload.any(),
+  upload.employeeDocuments,
   updateEmployee
 );
 
@@ -143,7 +158,9 @@ router.put(
 router.put(
   "/employees/archive/:id",
   verifyToken,
-  authorizeRoles("HR_MANAGER"),
+  authorizeRoles(
+    "HR_MANAGER"
+  ),
   archiveEmployee
 );
 
@@ -156,7 +173,9 @@ router.put(
 router.put(
   "/employees/restore/:id",
   verifyToken,
-  authorizeRoles("HR_MANAGER"),
+  authorizeRoles(
+    "HR_MANAGER"
+  ),
   restoreEmployee
 );
 
@@ -170,7 +189,9 @@ router.put(
 router.delete(
   "/employees/:id",
   verifyToken,
-  authorizeRoles("HR_MANAGER"),
+  authorizeRoles(
+    "HR_MANAGER"
+  ),
   deleteEmployee
 );
 
@@ -178,6 +199,7 @@ router.delete(
  * END EMPLOYEE DEPLOYMENT CONTRACT
  *
  * Existing deployment workflow:
+ *
  * - HR_MANAGER may perform operational updates
  * - HR_STAFF may perform operational updates
  * - SUPER_ADMIN is explicitly view-only
