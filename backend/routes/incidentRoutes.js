@@ -15,6 +15,10 @@ const {
 } = require("../controllers/incidentController");
 
 const {
+  getIncidentEvidenceFile,
+} = require("../controllers/incidentEvidenceController");
+
+const {
   verifyToken,
 } = require("../middleware/authMiddleware");
 
@@ -196,6 +200,47 @@ router.get(
     "HR_STAFF"
   ),
   getIncidentsByEmployee
+);
+
+/*
+ * ==================================================
+ * PROTECTED INCIDENT EVIDENCE FILE
+ * ==================================================
+ *
+ * Persisted incident evidence must be retrieved
+ * through an authenticated API route instead of
+ * relying on the legacy public /documents mount.
+ *
+ * Access intentionally matches normal incident
+ * read access:
+ *
+ * - SUPER_ADMIN
+ * - HR_MANAGER
+ * - HR_STAFF
+ *
+ * IT_SUPPORT remains excluded from HR incident
+ * records and evidence.
+ *
+ * The controller validates both incidentId and
+ * evidenceId, retrieves the database-stored path,
+ * enforces filesystem containment, and streams
+ * only approved PDF/PNG/JPEG evidence.
+ *
+ * IMPORTANT:
+ * The legacy public /documents route remains
+ * temporarily available until the frontend
+ * evidence viewer is migrated to authenticated
+ * Blob/Object URLs.
+ */
+router.get(
+  "/incidents/:incidentId/evidence/:evidenceId/file",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN",
+    "HR_MANAGER",
+    "HR_STAFF"
+  ),
+  getIncidentEvidenceFile
 );
 
 /*
