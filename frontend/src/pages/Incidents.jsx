@@ -437,11 +437,14 @@ function normalizeBackendIncident(
 
           proofFiles:
             normalizeEvidenceFiles({
+              incidentId,
+
               proofFiles:
                 incident.proofFiles ||
                 incident.proof_files ||
                 incident.evidenceFiles ||
                 incident.evidence_files ||
+                incident.evidence ||
                 incident.attachments,
             }),
         }

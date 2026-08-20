@@ -1,4 +1,11 @@
 import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+import {
   FiAlertCircle,
   FiCheckCircle,
   FiClock,
@@ -9,8 +16,14 @@ import {
 import Button from "../../ui/Button";
 import Dialog from "../../ui/Dialog";
 
-import { formatDateTime } from "../../../utils/incidents/incidentHelpers";
-import { formatFileSize } from "../../../utils/incidents/evidenceFiles";
+import {
+  formatDateTime,
+} from "../../../utils/incidents/incidentHelpers";
+
+import {
+  fetchIncidentEvidencePreview,
+  formatFileSize,
+} from "../../../utils/incidents/evidenceFiles";
 
 const DIALOG_TONE_BY_COLOR = {
   red: "danger",
@@ -26,17 +39,32 @@ const DIALOG_SIZE_MAP = {
   xl: "xl",
 };
 
-function getDisplayValue(value, fallback = "-") {
-  if (value === null || value === undefined) {
+const EVIDENCE_OBJECT_URL_LIFETIME_MS =
+  5 * 60 * 1000;
+
+function getDisplayValue(
+  value,
+  fallback = "-"
+) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
     return fallback;
   }
 
-  const normalizedValue = String(value).trim();
+  const normalizedValue =
+    String(value).trim();
 
-  return normalizedValue || fallback;
+  return (
+    normalizedValue ||
+    fallback
+  );
 }
 
-function getTimelineEventAction(event) {
+function getTimelineEventAction(
+  event
+) {
   return String(
     event?.actionType ||
       event?.action_type ||
@@ -47,7 +75,9 @@ function getTimelineEventAction(event) {
     .toUpperCase();
 }
 
-function getTimelineEventDate(event) {
+function getTimelineEventDate(
+  event
+) {
   return (
     event?.createdAt ||
     event?.created_at ||
@@ -57,7 +87,9 @@ function getTimelineEventDate(event) {
   );
 }
 
-function getTimelineEventCreator(event) {
+function getTimelineEventCreator(
+  event
+) {
   return (
     event?.createdByName ||
     event?.created_by_name ||
@@ -67,101 +99,192 @@ function getTimelineEventCreator(event) {
   );
 }
 
-function getTimelineEventDescription(event) {
+function getTimelineEventDescription(
+  event
+) {
   if (event?.description) {
     return event.description;
   }
 
-  const action = getTimelineEventAction(event);
-  const createdBy = getTimelineEventCreator(event);
+  const action =
+    getTimelineEventAction(
+      event
+    );
 
-  if (action === "CREATE_INCIDENT") {
+  const createdBy =
+    getTimelineEventCreator(
+      event
+    );
+
+  if (
+    action ===
+    "CREATE_INCIDENT"
+  ) {
     return `Reported by ${createdBy}.`;
   }
 
-  if (action === "START_INVESTIGATION") {
+  if (
+    action ===
+    "START_INVESTIGATION"
+  ) {
     return `${createdBy} started the investigation.`;
   }
 
   if (
-    action === "SUBMIT_RESOLUTION" ||
-    action === "SUBMIT_INVESTIGATION"
+    action ===
+      "SUBMIT_RESOLUTION" ||
+    action ===
+      "SUBMIT_INVESTIGATION"
   ) {
     return `${createdBy} submitted proof for Super Admin review.`;
   }
 
-  if (action === "RETURN_INCIDENT") {
+  if (
+    action ===
+    "RETURN_INCIDENT"
+  ) {
     return `${createdBy} returned the case for correction.`;
   }
 
-  if (action === "CLOSE_INCIDENT") {
+  if (
+    action ===
+    "CLOSE_INCIDENT"
+  ) {
     return `${createdBy} approved and closed the case.`;
   }
 
   return `Updated by ${createdBy}.`;
 }
 
-function getTimelineEventTitle(event) {
+function getTimelineEventTitle(
+  event
+) {
   if (event?.title) {
     return event.title;
   }
 
-  const action = getTimelineEventAction(event);
+  const action =
+    getTimelineEventAction(
+      event
+    );
 
-  if (action === "CREATE_INCIDENT") {
+  if (
+    action ===
+    "CREATE_INCIDENT"
+  ) {
     return "Reported";
   }
 
-  if (action === "START_INVESTIGATION") {
+  if (
+    action ===
+    "START_INVESTIGATION"
+  ) {
     return "Investigation Started";
   }
 
   if (
-    action === "SUBMIT_RESOLUTION" ||
-    action === "SUBMIT_INVESTIGATION"
+    action ===
+      "SUBMIT_RESOLUTION" ||
+    action ===
+      "SUBMIT_INVESTIGATION"
   ) {
     return "Proof Submitted";
   }
 
-  if (action === "RETURN_INCIDENT") {
+  if (
+    action ===
+    "RETURN_INCIDENT"
+  ) {
     return "Returned by Super Admin";
   }
 
-  if (action === "CLOSE_INCIDENT") {
+  if (
+    action ===
+    "CLOSE_INCIDENT"
+  ) {
     return "Approved and Closed";
   }
 
   return "Timeline Event";
 }
 
-function getTimelineEventState(event) {
-  const action = getTimelineEventAction(event);
-
-  if (action === "RETURN_INCIDENT") {
-    return "rejected";
-  }
-
-  if (action === "CLOSE_INCIDENT") {
-    return "closed";
-  }
-
-  const title = String(event?.title || "").toLowerCase();
+function getTimelineEventState(
+  event
+) {
+  const action =
+    getTimelineEventAction(
+      event
+    );
 
   if (
-    title.includes("return") ||
-    title.includes("reject")
+    action ===
+    "RETURN_INCIDENT"
   ) {
     return "rejected";
   }
 
   if (
-    title.includes("closed") ||
-    title.includes("approved")
+    action ===
+    "CLOSE_INCIDENT"
+  ) {
+    return "closed";
+  }
+
+  const title =
+    String(
+      event?.title || ""
+    ).toLowerCase();
+
+  if (
+    title.includes(
+      "return"
+    ) ||
+    title.includes(
+      "reject"
+    )
+  ) {
+    return "rejected";
+  }
+
+  if (
+    title.includes(
+      "closed"
+    ) ||
+    title.includes(
+      "approved"
+    )
   ) {
     return "closed";
   }
 
   return "done";
+}
+
+function hasValidNumericId(
+  value
+) {
+  const normalized =
+    String(
+      value ?? ""
+    ).trim();
+
+  if (
+    !/^\d+$/.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+
+  const numericValue =
+    Number(normalized);
+
+  return (
+    Number.isSafeInteger(
+      numericValue
+    ) &&
+    numericValue > 0
+  );
 }
 
 export function BaseModal({
@@ -175,23 +298,45 @@ export function BaseModal({
   initialFocusRef,
 }) {
   const dialogTone =
-    DIALOG_TONE_BY_COLOR[color] || "default";
+    DIALOG_TONE_BY_COLOR[
+      color
+    ] || "default";
 
   const dialogSize =
-    DIALOG_SIZE_MAP[size] || "xl";
+    DIALOG_SIZE_MAP[
+      size
+    ] || "xl";
 
   return (
     <Dialog
       open
-      onClose={onClose}
-      title={title}
-      description={subtitle}
-      tone={dialogTone}
-      size={dialogSize}
-      preventClose={preventClose}
-      closeOnOverlay={!preventClose}
-      closeOnEscape={!preventClose}
-      initialFocusRef={initialFocusRef}
+      onClose={
+        onClose
+      }
+      title={
+        title
+      }
+      description={
+        subtitle
+      }
+      tone={
+        dialogTone
+      }
+      size={
+        dialogSize
+      }
+      preventClose={
+        preventClose
+      }
+      closeOnOverlay={
+        !preventClose
+      }
+      closeOnEscape={
+        !preventClose
+      }
+      initialFocusRef={
+        initialFocusRef
+      }
     >
       {children}
 
@@ -207,25 +352,51 @@ export function NoticeModal({
   onClose,
   preventClose = false,
 }) {
-  const isSuccess = type === "success";
+  const isSuccess =
+    type ===
+    "success";
 
   return (
     <Dialog
       open
-      onClose={onClose}
-      title={title}
-      description={message}
-      tone={isSuccess ? "success" : "danger"}
+      onClose={
+        onClose
+      }
+      title={
+        title
+      }
+      description={
+        message
+      }
+      tone={
+        isSuccess
+          ? "success"
+          : "danger"
+      }
       size="md"
-      preventClose={preventClose}
-      closeOnOverlay={!preventClose}
-      closeOnEscape={!preventClose}
+      preventClose={
+        preventClose
+      }
+      closeOnOverlay={
+        !preventClose
+      }
+      closeOnEscape={
+        !preventClose
+      }
       footer={
         <Button
           type="button"
-          variant={isSuccess ? "success" : "danger"}
-          disabled={preventClose}
-          onClick={onClose}
+          variant={
+            isSuccess
+              ? "success"
+              : "danger"
+          }
+          disabled={
+            preventClose
+          }
+          onClick={
+            onClose
+          }
         >
           Close
         </Button>
@@ -272,7 +443,11 @@ export function AlertBox({
 
   return (
     <div
-      role={type === "error" ? "alert" : "status"}
+      role={
+        type === "error"
+          ? "alert"
+          : "status"
+      }
       className={`flex items-start gap-4 rounded-2xl border p-5 ${style}`}
     >
       <div className="rounded-full bg-white/50 p-3">
@@ -295,60 +470,96 @@ export function AlertBox({
   );
 }
 
-export function CaseTimeline({ incident }) {
-  const status = String(
-    incident?.status || "Open"
-  ).trim();
+export function CaseTimeline({
+  incident,
+}) {
+  const status =
+    String(
+      incident?.status ||
+        "Open"
+    ).trim();
 
-  const timelineEvents = Array.isArray(
-    incident?.timelineEvents
-  )
-    ? incident.timelineEvents
-    : Array.isArray(incident?.timeline_events)
-      ? incident.timeline_events
-      : Array.isArray(incident?.timeline)
-        ? incident.timeline
-        : [];
-
-  const databaseSteps = timelineEvents
-    .filter(
-      (event) =>
-        event &&
-        (event.title ||
-          getTimelineEventAction(event))
+  const timelineEvents =
+    Array.isArray(
+      incident?.timelineEvents
     )
-    .map((event, index) => ({
-      id:
-        event.id ||
-        `${
-          getTimelineEventAction(event) ||
-          "timeline"
-        }-${
-          getTimelineEventDate(event) ||
+      ? incident.timelineEvents
+      : Array.isArray(
+            incident?.timeline_events
+          )
+        ? incident.timeline_events
+        : Array.isArray(
+              incident?.timeline
+            )
+          ? incident.timeline
+          : [];
+
+  const databaseSteps =
+    timelineEvents
+      .filter(
+        (
+          event
+        ) =>
+          event &&
+          (
+            event.title ||
+            getTimelineEventAction(
+              event
+            )
+          )
+      )
+      .map(
+        (
+          event,
           index
-        }`,
+        ) => ({
+          id:
+            event.id ||
+            `${
+              getTimelineEventAction(
+                event
+              ) ||
+              "timeline"
+            }-${
+              getTimelineEventDate(
+                event
+              ) ||
+              index
+            }`,
 
-      title:
-        getTimelineEventTitle(event),
+          title:
+            getTimelineEventTitle(
+              event
+            ),
 
-      description:
-        getTimelineEventDescription(event),
+          description:
+            getTimelineEventDescription(
+              event
+            ),
 
-      createdAt:
-        getTimelineEventDate(event),
+          createdAt:
+            getTimelineEventDate(
+              event
+            ),
 
-      state:
-        getTimelineEventState(event),
-    }));
+          state:
+            getTimelineEventState(
+              event
+            ),
+        })
+      );
 
   const investigation =
-    incident?.investigation || null;
+    incident?.investigation ||
+    null;
 
   const resolution =
-    incident?.resolution || null;
+    incident?.resolution ||
+    null;
 
   const review =
-    incident?.review || null;
+    incident?.review ||
+    null;
 
   const reportedBy =
     incident?.reportedByName ||
@@ -405,71 +616,116 @@ export function CaseTimeline({ incident }) {
     review?.decision ||
     incident?.reviewDecision ||
     incident?.review_decision ||
-    (status === "Closed"
-      ? "Approved"
-      : "");
+    (
+      status ===
+      "Closed"
+        ? "Approved"
+        : ""
+    );
 
-  const normalizedDecision = String(
-    reviewDecision
-  )
-    .trim()
-    .toLowerCase();
+  const normalizedDecision =
+    String(
+      reviewDecision
+    )
+      .trim()
+      .toLowerCase();
 
   const isReturned =
-    normalizedDecision === "returned" ||
-    normalizedDecision === "rejected";
+    normalizedDecision ===
+      "returned" ||
+    normalizedDecision ===
+      "rejected";
 
   const fallbackSteps = [
     {
-      id: "reported",
-      title: "Reported",
-      description: `Reported by ${reportedBy}`,
-      createdAt: reportedAt,
-      state: "done",
+      id:
+        "reported",
+
+      title:
+        "Reported",
+
+      description:
+        `Reported by ${reportedBy}`,
+
+      createdAt:
+        reportedAt,
+
+      state:
+        "done",
     },
     {
-      id: "investigation",
-      title: "Investigation Started",
-      description: investigationStartedAt
-        ? `Started by ${investigationStartedBy}`
-        : "Waiting for HR action",
-      createdAt: investigationStartedAt,
-      state: investigationStartedAt
-        ? "done"
-        : "pending",
-    },
-    {
-      id: "proof",
-      title: "Proof Submitted",
-      description: resolutionSubmittedAt
-        ? `Submitted by ${resolutionSubmittedBy}`
-        : "Waiting for resolution proof",
-      createdAt: resolutionSubmittedAt,
-      state: resolutionSubmittedAt
-        ? "done"
-        : "pending",
-    },
-    {
-      id: "review",
-      title: isReturned
-        ? "Returned by Super Admin"
-        : "Approved and Closed",
-      description: reviewedAt
-        ? `${
-            reviewDecision || "Reviewed"
-          } by ${reviewedBy}`
-        : "Waiting for Super Admin review",
-      createdAt: reviewedAt,
-      state: isReturned
-        ? "rejected"
-        : status === "Closed"
-          ? "closed"
+      id:
+        "investigation",
+
+      title:
+        "Investigation Started",
+
+      description:
+        investigationStartedAt
+          ? `Started by ${investigationStartedBy}`
+          : "Waiting for HR action",
+
+      createdAt:
+        investigationStartedAt,
+
+      state:
+        investigationStartedAt
+          ? "done"
           : "pending",
+    },
+    {
+      id:
+        "proof",
+
+      title:
+        "Proof Submitted",
+
+      description:
+        resolutionSubmittedAt
+          ? `Submitted by ${resolutionSubmittedBy}`
+          : "Waiting for resolution proof",
+
+      createdAt:
+        resolutionSubmittedAt,
+
+      state:
+        resolutionSubmittedAt
+          ? "done"
+          : "pending",
+    },
+    {
+      id:
+        "review",
+
+      title:
+        isReturned
+          ? "Returned by Super Admin"
+          : "Approved and Closed",
+
+      description:
+        reviewedAt
+          ? `${
+              reviewDecision ||
+              "Reviewed"
+            } by ${reviewedBy}`
+          : "Waiting for Super Admin review",
+
+      createdAt:
+        reviewedAt,
+
+      state:
+        isReturned
+          ? "rejected"
+          : status ===
+              "Closed"
+            ? "closed"
+            : "pending",
     },
   ];
 
   const steps =
-    databaseSteps.length > 0
+    databaseSteps.length >
+    0
       ? databaseSteps
       : fallbackSteps;
 
@@ -480,72 +736,86 @@ export function CaseTimeline({ incident }) {
       </p>
 
       <div className="space-y-5">
-        {steps.map((item, index) => {
-          const isCompleted =
-            item.state === "done" ||
-            item.state === "closed";
+        {steps.map(
+          (
+            item,
+            index
+          ) => {
+            const isCompleted =
+              item.state ===
+                "done" ||
+              item.state ===
+                "closed";
 
-          const iconStyle =
-            item.state === "rejected"
-              ? "border-red-300 bg-red-100 text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300"
-              : isCompleted
-                ? "border-green-300 bg-green-100 text-green-700 dark:border-green-500/40 dark:bg-green-500/15 dark:text-green-300"
-                : "border-slate-300 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400";
+            const iconStyle =
+              item.state ===
+              "rejected"
+                ? "border-red-300 bg-red-100 text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300"
+                : isCompleted
+                  ? "border-green-300 bg-green-100 text-green-700 dark:border-green-500/40 dark:bg-green-500/15 dark:text-green-300"
+                  : "border-slate-300 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400";
 
-          return (
-            <div
-              key={item.id}
-              className="relative flex gap-3"
-            >
-              {index !==
-                steps.length - 1 && (
-                <span
-                  aria-hidden="true"
-                  className="absolute left-[15px] top-8 h-full w-px bg-gray-200 dark:bg-white/10"
-                />
-              )}
-
+            return (
               <div
-                className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${iconStyle}`}
+                key={
+                  item.id
+                }
+                className="relative flex gap-3"
               >
-                {item.state ===
-                "rejected" ? (
-                  <FiXCircle
+                {index !==
+                  steps.length -
+                    1 && (
+                  <span
                     aria-hidden="true"
-                  />
-                ) : isCompleted ? (
-                  <FiCheckCircle
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <FiClock
-                    aria-hidden="true"
+                    className="absolute left-[15px] top-8 h-full w-px bg-gray-200 dark:bg-white/10"
                   />
                 )}
-              </div>
 
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-gray-900 dark:text-white">
-                  {item.title}
-                </p>
-
-                <p className="mt-0.5 break-words text-xs text-gray-500">
-                  {item.description || "-"}
-                </p>
-
-                <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
-                  <FiClock
-                    aria-hidden="true"
-                  />
-
-                  {formatDateTime(
-                    item.createdAt
+                <div
+                  className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${iconStyle}`}
+                >
+                  {item.state ===
+                  "rejected" ? (
+                    <FiXCircle
+                      aria-hidden="true"
+                    />
+                  ) : isCompleted ? (
+                    <FiCheckCircle
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <FiClock
+                      aria-hidden="true"
+                    />
                   )}
-                </p>
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 dark:text-white">
+                    {
+                      item.title
+                    }
+                  </p>
+
+                  <p className="mt-0.5 break-words text-xs text-gray-500">
+                    {item.description ||
+                      "-"}
+                  </p>
+
+                  <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
+                    <FiClock
+                      aria-hidden="true"
+                    />
+
+                    {formatDateTime(
+                      item.createdAt
+                    )}
+                  </p>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          }
+        )}
       </div>
     </div>
   );
@@ -558,7 +828,8 @@ export function ProofReview({
     return (
       <InfoCard title="Resolution Proof Review">
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          No resolution proof was submitted.
+          No resolution proof was
+          submitted.
         </p>
       </InfoCard>
     );
@@ -585,41 +856,54 @@ export function ProofReview({
     resolution.resolution_notes ||
     "-";
 
-  const proofFiles = Array.isArray(
-    resolution.proofFiles
-  )
-    ? resolution.proofFiles
-    : Array.isArray(
-          resolution.proof_files
-        )
-      ? resolution.proof_files
-      : [];
+  const proofFiles =
+    Array.isArray(
+      resolution.proofFiles
+    )
+      ? resolution.proofFiles
+      : Array.isArray(
+            resolution.proof_files
+          )
+        ? resolution.proof_files
+        : [];
 
   return (
     <InfoCard title="Resolution Proof Review">
       <Detail
         label="Submitted By"
-        value={submittedBy}
+        value={
+          submittedBy
+        }
       />
 
       <Detail
         label="Submitted Date"
-        value={formatDateTime(
-          submittedAt
-        )}
+        value={
+          formatDateTime(
+            submittedAt
+          )
+        }
       />
 
       <TextDetail
         label="Action Taken"
-        value={actionTaken}
+        value={
+          actionTaken
+        }
       />
 
       <TextDetail
         label="Remarks"
-        value={remarks}
+        value={
+          remarks
+        }
       />
 
-      <ProofList files={proofFiles} />
+      <ProofList
+        files={
+          proofFiles
+        }
+      />
     </InfoCard>
   );
 }
@@ -635,8 +919,391 @@ export function TextDetail({
       </p>
 
       <p className="mt-1 whitespace-pre-line break-words text-sm leading-6">
-        {getDisplayValue(value)}
+        {getDisplayValue(
+          value
+        )}
       </p>
+    </div>
+  );
+}
+
+function ProofFileCard({
+  file,
+  index,
+  onRemove,
+}) {
+  const [
+    isOpening,
+    setIsOpening,
+  ] =
+    useState(false);
+
+  const [
+    openError,
+    setOpenError,
+  ] =
+    useState("");
+
+  const abortControllerRef =
+    useRef(null);
+
+  const fileId =
+    file?.id ||
+    file?.name ||
+    `proof-${index}`;
+
+  const fileName =
+    file?.name ||
+    file?.fileName ||
+    "Uploaded file";
+
+  const localUrl =
+    file?.isLocal
+      ? file?.localUrl ||
+        null
+      : null;
+
+  const incidentId =
+    file?.incidentId ??
+    file?.incident_id ??
+    null;
+
+  const evidenceId =
+    file?.evidenceId ??
+    file?.evidence_id ??
+    file?.id ??
+    null;
+
+  const hasProtectedReference =
+    !file?.isLocal &&
+    hasValidNumericId(
+      incidentId
+    ) &&
+    hasValidNumericId(
+      evidenceId
+    );
+
+  useEffect(
+    () => {
+      return () => {
+        if (
+          abortControllerRef.current
+        ) {
+          abortControllerRef.current.abort();
+
+          abortControllerRef.current =
+            null;
+        }
+      };
+    },
+    []
+  );
+
+  const handleOpenProtectedEvidence =
+    useCallback(
+      async () => {
+        if (
+          isOpening ||
+          file?.isLocal
+        ) {
+          return;
+        }
+
+        setOpenError(
+          ""
+        );
+
+        if (
+          !hasProtectedReference
+        ) {
+          setOpenError(
+            "The saved evidence reference is unavailable."
+          );
+
+          return;
+        }
+
+        /*
+         * Open the target window synchronously
+         * from the user click.
+         *
+         * This prevents browsers from treating
+         * the eventual Blob preview as an
+         * unsolicited popup after the async
+         * authenticated fetch completes.
+         */
+        const previewWindow =
+          window.open(
+            "about:blank",
+            "_blank"
+          );
+
+        if (
+          !previewWindow
+        ) {
+          setOpenError(
+            "The evidence preview was blocked by the browser. Allow pop-ups for this site and try again."
+          );
+
+          return;
+        }
+
+        try {
+          previewWindow.opener =
+            null;
+        } catch {
+          // Browser may restrict opener assignment.
+        }
+
+        if (
+          abortControllerRef.current
+        ) {
+          abortControllerRef.current.abort();
+        }
+
+        const controller =
+          new AbortController();
+
+        abortControllerRef.current =
+          controller;
+
+        setIsOpening(
+          true
+        );
+
+        try {
+          const preview =
+            await fetchIncidentEvidencePreview({
+              incidentId,
+              evidenceId,
+              signal:
+                controller.signal,
+            });
+
+          if (
+            controller.signal
+              .aborted
+          ) {
+            if (
+              preview?.url
+            ) {
+              URL.revokeObjectURL(
+                preview.url
+              );
+            }
+
+            if (
+              !previewWindow.closed
+            ) {
+              previewWindow.close();
+            }
+
+            return;
+          }
+
+          if (
+            previewWindow.closed
+          ) {
+            URL.revokeObjectURL(
+              preview.url
+            );
+
+            return;
+          }
+
+          /*
+           * The protected binary has now been
+           * retrieved through authenticatedFetch.
+           *
+           * The new tab receives only the temporary
+           * Blob URL — never the legacy public
+           * /documents URL.
+           */
+          previewWindow.location.replace(
+            preview.url
+          );
+
+          /*
+           * Blob URLs consume browser memory.
+           *
+           * Keep the URL alive long enough for the
+           * new tab/browser PDF viewer to consume
+           * it, then release the parent page's URL
+           * reference.
+           */
+          window.setTimeout(
+            () => {
+              URL.revokeObjectURL(
+                preview.url
+              );
+            },
+            EVIDENCE_OBJECT_URL_LIFETIME_MS
+          );
+        } catch (error) {
+          if (
+            !previewWindow.closed
+          ) {
+            previewWindow.close();
+          }
+
+          if (
+            error?.name ===
+            "AbortError"
+          ) {
+            return;
+          }
+
+          setOpenError(
+            error?.message ||
+              "Unable to open the incident evidence file."
+          );
+        } finally {
+          if (
+            abortControllerRef.current ===
+            controller
+          ) {
+            abortControllerRef.current =
+              null;
+          }
+
+          setIsOpening(
+            false
+          );
+        }
+      },
+      [
+        evidenceId,
+        file?.isLocal,
+        hasProtectedReference,
+        incidentId,
+        isOpening,
+      ]
+    );
+
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+      <div className="flex items-start gap-3">
+        <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
+          <FiFileText
+            aria-hidden="true"
+          />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="break-all text-sm font-bold text-gray-900 dark:text-white">
+            {fileName}
+          </p>
+
+          <p className="mt-1 text-xs text-gray-500">
+            {file?.type ||
+              "Uploaded file"}
+          </p>
+
+          <p className="text-xs text-gray-500">
+            {formatFileSize(
+              file?.size
+            )}{" "}
+            •{" "}
+            {file?.status ||
+              "Uploaded"}
+          </p>
+
+          <p className="text-xs text-gray-400">
+            {file?.uploadedAt
+              ? formatDateTime(
+                  file.uploadedAt
+                )
+              : "-"}
+          </p>
+
+          {file?.error && (
+            <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-300">
+              {file.error}
+            </p>
+          )}
+
+          {openError && (
+            <p
+              role="alert"
+              className="mt-2 text-xs font-semibold leading-5 text-red-600 dark:text-red-300"
+            >
+              {openError}
+            </p>
+          )}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {file?.isLocal &&
+              localUrl && (
+                <a
+                  href={
+                    localUrl
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-9 items-center justify-center rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-indigo-500/30 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                >
+                  Open local preview
+                </a>
+              )}
+
+            {!file?.isLocal && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={
+                  isOpening
+                }
+                disabled={
+                  isOpening ||
+                  !hasProtectedReference
+                }
+                onClick={
+                  handleOpenProtectedEvidence
+                }
+              >
+                {isOpening
+                  ? "Opening..."
+                  : "Open"}
+              </Button>
+            )}
+
+            {onRemove && (
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={() =>
+                  onRemove(
+                    fileId
+                  )
+                }
+              >
+                Remove
+              </Button>
+            )}
+          </div>
+
+          {!file?.isLocal &&
+            !hasProtectedReference &&
+            !openError && (
+              <p className="mt-2 text-[11px] leading-4 text-amber-700 dark:text-amber-300">
+                This saved evidence record
+                does not contain a valid
+                protected file reference.
+              </p>
+            )}
+
+          {file?.isLocal && (
+            <p className="mt-2 text-[11px] leading-4 text-amber-700 dark:text-amber-300">
+              Local preview only.
+              Cross-device access begins
+              after the server stores and
+              returns this file.
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -645,11 +1312,17 @@ export function ProofList({
   files = [],
   onRemove,
 }) {
-  const safeFiles = Array.isArray(files)
-    ? files
-    : [];
+  const safeFiles =
+    Array.isArray(
+      files
+    )
+      ? files
+      : [];
 
-  if (safeFiles.length === 0) {
+  if (
+    safeFiles.length ===
+    0
+  ) {
     return (
       <p className="mt-3 text-sm text-gray-500">
         No proof uploaded.
@@ -659,108 +1332,29 @@ export function ProofList({
 
   return (
     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-      {safeFiles.map((file, index) => {
-        const fileId =
-          file?.id ||
-          file?.name ||
-          `proof-${index}`;
-
-        const fileName =
-          file?.name ||
-          file?.fileName ||
-          "Uploaded file";
-
-        const fileUrl =
-          file?.localUrl ||
-          file?.url ||
-          null;
-
-        return (
-          <div
-            key={fileId}
-            className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900"
-          >
-            <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
-                <FiFileText
-                  aria-hidden="true"
-                />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="break-all text-sm font-bold text-gray-900 dark:text-white">
-                  {fileName}
-                </p>
-
-                <p className="mt-1 text-xs text-gray-500">
-                  {file?.type ||
-                    "Uploaded file"}
-                </p>
-
-                <p className="text-xs text-gray-500">
-                  {formatFileSize(
-                    file?.size
-                  )}{" "}
-                  •{" "}
-                  {file?.status ||
-                    "Uploaded"}
-                </p>
-
-                <p className="text-xs text-gray-400">
-                  {file?.uploadedAt
-                    ? formatDateTime(
-                        file.uploadedAt
-                      )
-                    : "-"}
-                </p>
-
-                {file?.error && (
-                  <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-300">
-                    {file.error}
-                  </p>
-                )}
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {fileUrl && (
-                    <a
-                      href={fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex min-h-9 items-center justify-center rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-indigo-500/30 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
-                    >
-                      {file?.isLocal
-                        ? "Open local preview"
-                        : "Open / Download"}
-                    </a>
-                  )}
-
-                  {onRemove && (
-                    <Button
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      onClick={() =>
-                        onRemove(fileId)
-                      }
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </div>
-
-                {file?.isLocal && (
-                  <p className="mt-2 text-[11px] leading-4 text-amber-700 dark:text-amber-300">
-                    Local preview only.
-                    Cross-device access begins
-                    after the server stores and
-                    returns this file.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+      {safeFiles.map(
+        (
+          file,
+          index
+        ) => (
+          <ProofFileCard
+            key={
+              file?.id ||
+              file?.name ||
+              `proof-${index}`
+            }
+            file={
+              file
+            }
+            index={
+              index
+            }
+            onRemove={
+              onRemove
+            }
+          />
+        )
+      )}
     </div>
   );
 }
@@ -793,7 +1387,9 @@ export function Detail({
       </span>
 
       <span className="min-w-0 break-words font-medium text-gray-900 dark:text-white">
-        {getDisplayValue(value)}
+        {getDisplayValue(
+          value
+        )}
       </span>
     </div>
   );
