@@ -5,10 +5,7 @@ import {
   toProperName,
 } from "../../components/employees/employeeConstants";
 
-import {
-  API_BASE,
-  documentUrl,
-} from "../../config/api";
+import { API_BASE } from "../../config/api";
 
 export const EMPLOYEE_API_URL =
   `${API_BASE}/employees`;
@@ -201,6 +198,8 @@ export function createEmployeeDocuments(
         );
 
       return {
+        id: matchedDocument?.id,
+
         name: option.name,
         expirable:
           option.expirable,
@@ -819,26 +818,7 @@ export function getDocumentPreviewUrl(
     );
   }
 
-  const filePath =
-    getExistingDocumentPath(
-      document
-    );
-
-  if (!filePath) {
-    return "";
-  }
-
-  if (
-    /^(https?:|blob:|data:)/i.test(
-      filePath
-    )
-  ) {
-    return filePath;
-  }
-
-  return documentUrl(
-    filePath
-  );
+  return "";
 }
 
 export function getDocumentFileName(
@@ -876,6 +856,9 @@ export function getDocumentPreviewType(
 ) {
   if (
     isFile(
+      document?.file
+    ) ||
+    isBlob(
       document?.file
     )
   ) {

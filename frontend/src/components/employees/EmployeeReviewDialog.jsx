@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FiAlertTriangle,
   FiCheck,
@@ -11,6 +11,7 @@ import {
   getDocumentPreviewUrl,
   getSelectedDocuments,
 } from "../../utils/employees/employeeFormHelpers";
+import { fetchEmployeeDocumentPreview } from "../../utils/employees/employeeDocumentPreview";
 
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
@@ -27,24 +28,103 @@ import {
 } from "./EmployeeComponents";
 
 function DocumentPreview({ document }) {
-  const previewUrl = useMemo(
+  const localPreviewUrl = useMemo(
     () => getDocumentPreviewUrl(document),
     [document]
   );
 
-  const previewType = getDocumentPreviewType(document);
+  const localPreviewType = getDocumentPreviewType(document);
+
+  useEffect(() => {
+    return () => {
+      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    };
+  }, [localPreviewUrl]);
+
+  if (localPreviewUrl) {
+    return (
+      <PreviewContent
+        previewUrl={localPreviewUrl}
+        previewType={localPreviewType}
+        fileName={getDocumentFileName(document) || "Employee document"}
+      />
+    );
+  }
+
+  return <PersistedDocumentPreview document={document} />;
+}
+
+function PersistedDocumentPreview({ document }) {
+  const [preview, setPreview] = useState({
+    url: "",
+    type: "",
+    loading: true,
+    error: "",
+  });
   const fileName =
     getDocumentFileName(document) || "Employee document";
 
   useEffect(() => {
-    return () => {
-      if (previewUrl?.startsWith("blob:")) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
-  }, [previewUrl]);
+    const controller = new AbortController();
+    let previewUrl = "";
 
-  if (!previewUrl) {
+    async function loadPersistedPreview() {
+      try {
+        const result = await fetchEmployeeDocumentPreview(document?.id, {
+          signal: controller.signal,
+        });
+
+        previewUrl = result.url;
+
+        if (controller.signal.aborted) {
+          URL.revokeObjectURL(previewUrl);
+          previewUrl = "";
+          return;
+        }
+
+        setPreview({
+          url: result.url,
+          type: result.type,
+          loading: false,
+          error: "",
+        });
+      } catch (error) {
+        if (error?.name === "AbortError" || controller.signal.aborted) return;
+
+        setPreview({
+          url: "",
+          type: "",
+          loading: false,
+          error: error?.message || "Unable to load this document preview.",
+        });
+      }
+    }
+
+    void loadPersistedPreview();
+
+    return () => {
+      controller.abort();
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [document]);
+
+  if (preview.loading) {
+    return (
+      <p className="mt-3 text-xs text-gray-400" role="status">
+        Loading protected document preview...
+      </p>
+    );
+  }
+
+  if (preview.error) {
+    return (
+      <p className="mt-3 text-xs text-red-600 dark:text-red-300" role="alert">
+        {preview.error}
+      </p>
+    );
+  }
+
+  if (!preview.url) {
     return (
       <p className="mt-3 text-xs text-gray-400">
         No file preview available.
@@ -52,6 +132,16 @@ function DocumentPreview({ document }) {
     );
   }
 
+  return (
+    <PreviewContent
+      previewUrl={preview.url}
+      previewType={preview.type}
+      fileName={fileName}
+    />
+  );
+}
+
+function PreviewContent({ previewUrl, previewType, fileName }) {
   if (previewType === "image") {
     return (
       <img

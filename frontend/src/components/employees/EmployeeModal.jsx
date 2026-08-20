@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FiAlertTriangle,
   FiBriefcase,
@@ -21,7 +21,8 @@ import {
   parseEmployeeDocuments,
 } from "../../utils/employees/employeeFormHelpers";
 import authenticatedFetch from "../../utils/authenticatedFetch";
-import { API_BASE, documentUrl } from "../../config/api";
+import { fetchEmployeeDocumentPreview } from "../../utils/employees/employeeDocumentPreview";
+import { API_BASE } from "../../config/api";
 
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
@@ -347,8 +348,6 @@ function normalizeIncident(incident = {}) {
 }
 
 function buildDocumentFile(document = {}) {
-  if (document.file?.url) return document.file;
-
   const rawPath =
     document.filePath ||
     document.file_path ||
@@ -358,14 +357,11 @@ function buildDocumentFile(document = {}) {
   if (!rawPath) return null;
 
   const normalizedPath = String(rawPath).replace(/\\/g, "/");
-  const url = /^(https?:|blob:|data:)/i.test(normalizedPath)
-    ? normalizedPath
-    : documentUrl(normalizedPath);
 
   const cleanPath = normalizedPath.toLowerCase().split("?")[0];
 
   return {
-    url,
+    documentId: document.id,
     name:
       document.fileName ||
       document.file_name ||
@@ -415,9 +411,13 @@ function getSeverityKPILevel(severity) {
 
 export default function EmployeeModal({ employee, onClose }) {
   const [previewFile, setPreviewFile] = useState(null);
+  const [previewLoadingId, setPreviewLoadingId] = useState(null);
+  const [previewError, setPreviewError] = useState("");
   const [employeeIncidents, setEmployeeIncidents] = useState([]);
   const [incidentLoading, setIncidentLoading] = useState(false);
   const [incidentError, setIncidentError] = useState("");
+  const previewControllerRef = useRef(null);
+  const previewUrlRef = useRef("");
 
   const employeeName = getEmployeeName(employee);
   const employeeId = getEmployeeId(employee);
@@ -484,6 +484,17 @@ export default function EmployeeModal({ employee, onClose }) {
 
     return () => controller.abort();
   }, [employee]);
+
+  useEffect(() => {
+    return () => {
+      previewControllerRef.current?.abort();
+
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = "";
+      }
+    };
+  }, []);
 
   const documentSummary = useMemo(() => {
     const documents = parseEmployeeDocuments(employee?.documents).map(
@@ -595,6 +606,60 @@ export default function EmployeeModal({ employee, onClose }) {
 
   const handleCloseEmployee = () => {
     if (!previewFile) onClose?.();
+  };
+
+  const handleClosePreview = () => {
+    previewControllerRef.current?.abort();
+    previewControllerRef.current = null;
+
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = "";
+    }
+
+    setPreviewFile(null);
+    setPreviewLoadingId(null);
+  };
+
+  const handleViewDocument = async (file) => {
+    previewControllerRef.current?.abort();
+
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = "";
+    }
+
+    const controller = new AbortController();
+    previewControllerRef.current = controller;
+    setPreviewFile(null);
+    setPreviewError("");
+    setPreviewLoadingId(file.documentId);
+
+    try {
+      const result = await fetchEmployeeDocumentPreview(file.documentId, {
+        signal: controller.signal,
+      });
+
+      if (controller.signal.aborted) {
+        URL.revokeObjectURL(result.url);
+        return;
+      }
+
+      previewUrlRef.current = result.url;
+
+      setPreviewFile({
+        url: result.url,
+        type: result.mimeType,
+        name: file.name,
+      });
+    } catch (error) {
+      if (error?.name === "AbortError" || controller.signal.aborted) return;
+      setPreviewError(error?.message || "Unable to load this document preview.");
+    } finally {
+      if (!controller.signal.aborted) {
+        setPreviewLoadingId(null);
+      }
+    }
   };
 
   return (
@@ -710,6 +775,15 @@ export default function EmployeeModal({ employee, onClose }) {
                 className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
               >
                 {incidentError}
+              </div>
+            )}
+
+            {previewError && (
+              <div
+                role="alert"
+                className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+              >
+                {previewError}
               </div>
             )}
 
@@ -1055,7 +1129,13 @@ export default function EmployeeModal({ employee, onClose }) {
                                 variant="secondary"
                                 size="sm"
                                 leftIcon={<FiEye aria-hidden="true" />}
-                                onClick={() => setPreviewFile(document.file)}
+                                loading={
+                                  previewLoadingId === document.file.documentId
+                                }
+                                disabled={previewLoadingId !== null}
+                                onClick={() =>
+                                  void handleViewDocument(document.file)
+                                }
                               >
                                 View File
                               </Button>
@@ -1100,7 +1180,7 @@ export default function EmployeeModal({ employee, onClose }) {
 
       <Dialog
         open={Boolean(previewFile)}
-        onClose={() => setPreviewFile(null)}
+        onClose={handleClosePreview}
         title="File Preview"
         description={previewFile?.name || "Uploaded compliance document"}
         size="xl"
@@ -1111,7 +1191,7 @@ export default function EmployeeModal({ employee, onClose }) {
         scrollBody={false}
         bodyClassName="min-h-0 flex-1 p-4"
         footer={
-          <Button variant="secondary" onClick={() => setPreviewFile(null)}>
+          <Button variant="secondary" onClick={handleClosePreview}>
             Close Preview
           </Button>
         }
