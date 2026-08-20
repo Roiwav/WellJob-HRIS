@@ -17,6 +17,10 @@ const {
 } = require("../controllers/employeeController");
 
 const {
+  getEmployeeDocumentFile,
+} = require("../controllers/employeeDocumentController");
+
+const {
   verifyToken,
 } = require("../middleware/authMiddleware");
 
@@ -48,6 +52,41 @@ router.get(
     "HR_STAFF"
   ),
   getEmployees
+);
+
+/*
+ * PROTECTED EMPLOYEE DOCUMENT FILE
+ *
+ * The client provides only the employee document
+ * database ID.
+ *
+ * The controller resolves the physical file path
+ * from employee_documents.file_path and verifies
+ * that the file remains inside the approved
+ * employee document directory.
+ *
+ * Allowed:
+ * - SUPER_ADMIN
+ * - HR_MANAGER
+ * - HR_STAFF
+ *
+ * Denied:
+ * - IT_SUPPORT
+ * - unauthenticated users
+ *
+ * Because this route is mounted under /api,
+ * the existing application maintenance middleware
+ * also applies before this route executes.
+ */
+router.get(
+  "/employee-documents/:documentId/file",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN",
+    "HR_MANAGER",
+    "HR_STAFF"
+  ),
+  getEmployeeDocumentFile
 );
 
 /*
