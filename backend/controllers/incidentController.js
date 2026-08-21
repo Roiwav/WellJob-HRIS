@@ -2504,28 +2504,70 @@ exports.updateIncidentStatus =
       const evidenceFiles =
         buildEvidenceFromReq(req);
 
-      const [existingRows] =
+      /*
+       * Any workflow rejection after the
+       * transaction begins is raised here so the
+       * catch block can roll back before sending
+       * the original HTTP response.
+       */
+      const rejectLockedWorkflow = (
+        statusCode,
+        message
+      ) => {
+        const error =
+          new Error(message);
+
+        error.name =
+          "IncidentWorkflowRejection";
+
+        error.statusCode =
+          statusCode;
+
+        error.isWorkflowRejection =
+          true;
+
+        throw error;
+      };
+
+      /*
+       * Concurrency boundary:
+       *
+       * Start the transaction before reading any
+       * incident state used by workflow guards.
+       * The locking read ensures a competing
+       * transition must wait, then validate against
+       * the latest committed row instead of stale
+       * pre-transaction state.
+       */
+      connection =
         await db
           .promise()
-          .query(
-            `
-            SELECT *
-            FROM incidents
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [id]
-          );
+          .getConnection();
+
+      await connection
+        .beginTransaction();
+
+      transactionStarted = true;
+
+      const [existingRows] =
+        await connection.query(
+          `
+          SELECT *
+          FROM incidents
+          WHERE id = ?
+          LIMIT 1
+          FOR UPDATE
+          `,
+          [id]
+        );
 
       if (
         existingRows.length === 0
       ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Incident not found.",
-          });
+        rejectLockedWorkflow(
+          404,
+          "Incident not found."
+        );
       }
 
       const existingIncident =
@@ -2557,12 +2599,10 @@ exports.updateIncidentStatus =
       if (
         existingStatus === "Closed"
       ) {
-        return res
-          .status(409)
-          .json({
-            error:
-              "This case is already closed and can no longer be modified.",
-          });
+        rejectLockedWorkflow(
+          409,
+          "This case is already closed and can no longer be modified."
+        );
       }
 
       /*
@@ -2577,12 +2617,10 @@ exports.updateIncidentStatus =
             actor.role
           )
         ) {
-          return res
-            .status(403)
-            .json({
-              error:
-                "Only an HR Manager or HR Staff user can start an investigation.",
-            });
+          rejectLockedWorkflow(
+            403,
+            "Only an HR Manager or HR Staff user can start an investigation."
+          );
         }
 
         if (
@@ -2591,12 +2629,10 @@ exports.updateIncidentStatus =
           existingIncident
             .investigation_started_at
         ) {
-          return res
-            .status(409)
-            .json({
-              error:
-                "Only an Open case can begin investigation.",
-            });
+          rejectLockedWorkflow(
+            409,
+            "Only an Open case can begin investigation."
+          );
         }
       }
 
@@ -2617,36 +2653,30 @@ exports.updateIncidentStatus =
             actor.role
           )
         ) {
-          return res
-            .status(403)
-            .json({
-              error:
-                "Only an HR Manager or HR Staff user can submit investigation proof.",
-            });
+          rejectLockedWorkflow(
+            403,
+            "Only an HR Manager or HR Staff user can submit investigation proof."
+          );
         }
 
         if (
           existingStatus !==
           "Investigating"
         ) {
-          return res
-            .status(409)
-            .json({
-              error:
-                "Only an Investigating case can be submitted for review.",
-            });
+          rejectLockedWorkflow(
+            409,
+            "Only an Investigating case can be submitted for review."
+          );
         }
 
         if (
           investigatorValues.length ===
           0
         ) {
-          return res
-            .status(409)
-            .json({
-              error:
-                "This case has no assigned investigator. Start the investigation before submitting proof.",
-            });
+          rejectLockedWorkflow(
+            409,
+            "This case has no assigned investigator. Start the investigation before submitting proof."
+          );
         }
 
         if (
@@ -2655,43 +2685,35 @@ exports.updateIncidentStatus =
             investigatorValues
           )
         ) {
-          return res
-            .status(403)
-            .json({
-              error:
-                "Only the HR user assigned to this investigation can submit or resubmit proof.",
-            });
+          rejectLockedWorkflow(
+            403,
+            "Only the HR user assigned to this investigation can submit or resubmit proof."
+          );
         }
 
         if (!cleanActionTaken) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Action taken is required before submitting the case for review.",
-            });
+          rejectLockedWorkflow(
+            400,
+            "Action taken is required before submitting the case for review."
+          );
         }
 
         if (
           !cleanResolutionNotes
         ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Resolution remarks are required before submitting the case for review.",
-            });
+          rejectLockedWorkflow(
+            400,
+            "Resolution remarks are required before submitting the case for review."
+          );
         }
 
         if (
           evidenceFiles.length === 0
         ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "At least one valid proof file is required before submitting the case for review.",
-            });
+          rejectLockedWorkflow(
+            400,
+            "At least one valid proof file is required before submitting the case for review."
+          );
         }
       }
 
@@ -2709,24 +2731,20 @@ exports.updateIncidentStatus =
             actor.role
           )
         ) {
-          return res
-            .status(403)
-            .json({
-              error:
-                "Only an HR Manager or Super Admin can review submitted incident cases.",
-            });
+          rejectLockedWorkflow(
+            403,
+            "Only an HR Manager or Super Admin can review submitted incident cases."
+          );
         }
 
         if (
           existingStatus !==
           "For Review"
         ) {
-          return res
-            .status(409)
-            .json({
-              error:
-                "Only a case marked For Review can be approved or returned.",
-            });
+          rejectLockedWorkflow(
+            409,
+            "Only a case marked For Review can be approved or returned."
+          );
         }
 
         if (
@@ -2734,12 +2752,10 @@ exports.updateIncidentStatus =
             WORKFLOW_ACTION.RETURN &&
           !cleanResolutionNotes
         ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "A return comment is required before sending the case back.",
-            });
+          rejectLockedWorkflow(
+            400,
+            "A return comment is required before sending the case back."
+          );
         }
       }
 
@@ -2865,18 +2881,9 @@ exports.updateIncidentStatus =
       /*
        * Incident workflow mutation,
        * proof metadata, timeline and
-       * audit all commit together.
+       * audit all commit together while
+       * the incident row remains locked.
        */
-      connection =
-        await db
-          .promise()
-          .getConnection();
-
-      await connection
-        .beginTransaction();
-
-      transactionStarted = true;
-
       await connection.query(
         `
         UPDATE incidents
@@ -3003,6 +3010,9 @@ exports.updateIncidentStatus =
       ) {
         try {
           await connection.rollback();
+
+          transactionStarted =
+            false;
         } catch (rollbackError) {
           rollbackFailed = true;
 
@@ -3013,8 +3023,28 @@ exports.updateIncidentStatus =
         }
       }
 
+      /*
+       * If rollback state is uncertain, preserve
+       * uploaded files rather than risk deleting
+       * data that may have become referenced.
+       */
       if (rollbackFailed) {
         claimIncidentEvidenceFiles(req);
+      }
+
+      if (
+        error
+          ?.isWorkflowRejection &&
+        !rollbackFailed
+      ) {
+        return res
+          .status(
+            error.statusCode
+          )
+          .json({
+            error:
+              error.message,
+          });
       }
 
       console.error(
