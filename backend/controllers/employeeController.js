@@ -7,6 +7,10 @@ const {
   AUDIT_CATEGORY,
 } = require("../utils/auditLogger");
 
+const {
+  cleanupUnreferencedFileCandidates,
+} = require("../utils/fileReferenceService");
+
 function toNullable(value) {
   if (
     value === undefined ||
@@ -152,6 +156,45 @@ async function cleanupUploadedFiles(
         );
       }
     }
+  }
+}
+
+/*
+ * POST-COMMIT HISTORICAL FILE CLEANUP
+ *
+ * Historical/pre-existing files must only be
+ * considered for physical deletion after the
+ * database mutation has committed.
+ *
+ * Any cleanup failure is intentionally isolated
+ * from the already committed employee operation.
+ * The reference-aware service itself fails closed,
+ * but this wrapper prevents an unexpected cleanup
+ * exception from turning a successful DB mutation
+ * into an HTTP 500 response.
+ */
+async function cleanupHistoricalFileCandidates(
+  candidates,
+  source
+) {
+  try {
+    await cleanupUnreferencedFileCandidates(
+      candidates,
+      {
+        source,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "EMPLOYEE HISTORICAL FILE CLEANUP ERROR:",
+      {
+        source,
+
+        message:
+          error?.message ||
+          error,
+      }
+    );
   }
 }
 
@@ -669,7 +712,10 @@ exports.getEmployees = async (
  * +
  * remove only newly uploaded request files
  *
- * Old/pre-existing files remain untouched.
+ * Old/pre-existing files replaced or removed by a
+ * successfully committed update become cleanup
+ * candidates. Physical deletion is performed only
+ * after commit and only when no DB reference remains.
  */
 exports.updateEmployee = async (
   req,
@@ -686,6 +732,9 @@ exports.updateEmployee = async (
 
   let transactionCommitted =
     false;
+
+  const historicalFileCandidates =
+    [];
 
   try {
     const {
@@ -808,6 +857,17 @@ exports.updateEmployee = async (
             ? doc.filePath
             : existing.file_path;
 
+        if (
+          doc.hasNewFile &&
+          existing.file_path &&
+          existing.file_path !==
+            finalPath
+        ) {
+          historicalFileCandidates.push(
+            existing.file_path
+          );
+        }
+
         await connection.query(
           `
           UPDATE employee_documents
@@ -858,6 +918,12 @@ exports.updateEmployee = async (
         );
 
       if (!stillChecked) {
+        if (existing.file_path) {
+          historicalFileCandidates.push(
+            existing.file_path
+          );
+        }
+
         await connection.query(
           `
           DELETE FROM employee_documents
@@ -874,6 +940,20 @@ exports.updateEmployee = async (
 
     transactionCommitted =
       true;
+
+    /*
+     * Release the transaction connection before
+     * post-commit cleanup performs its own
+     * reference-count queries through the pool.
+     */
+    connection.release();
+
+    connection = null;
+
+    await cleanupHistoricalFileCandidates(
+      historicalFileCandidates,
+      "employee_update"
+    );
 
     await logAudit({
       userId:
@@ -1375,8 +1455,15 @@ exports.restoreEmployee = async (
  * kpi_decision_history has no FK to employees and
  * is intentionally preserved as historical data.
  *
- * Existing physical-file behavior is also preserved.
- * This transaction deals only with related DB state.
+ * Before destructive DB changes, historical
+ * employee-document and incident-evidence paths are
+ * captured as cleanup candidates.
+ *
+ * Physical deletion is considered only after a
+ * successful DB commit and only when the centralized
+ * reference-aware service proves that no DB reference
+ * remains anywhere in the active file-reference
+ * sources.
  */
 exports.deleteEmployee = async (
   req,
@@ -1396,6 +1483,9 @@ exports.deleteEmployee = async (
 
   let transactionCommitted =
     false;
+
+  const historicalFileCandidates =
+    [];
 
   try {
     connection =
@@ -1437,6 +1527,66 @@ exports.deleteEmployee = async (
         0
       ]?.name ||
       "Unknown Employee";
+
+    /*
+     * Capture every physical-file reference that
+     * will be removed by this transaction before
+     * deleting rows or triggering cascades.
+     *
+     * These are only candidates. Nothing is
+     * physically deleted inside the transaction.
+     */
+    const [
+      employeeDocumentRows,
+    ] =
+      await connection.query(
+        `
+        SELECT file_path
+        FROM employee_documents
+        WHERE employee_id = ?
+          AND file_path IS NOT NULL
+          AND TRIM(file_path) <> ''
+        `,
+        [
+          id,
+        ]
+      );
+
+    for (
+      const row of
+        employeeDocumentRows
+    ) {
+      historicalFileCandidates.push(
+        row.file_path
+      );
+    }
+
+    const [
+      incidentEvidenceRows,
+    ] =
+      await connection.query(
+        `
+        SELECT ie.file_path
+        FROM incident_evidence AS ie
+        INNER JOIN incidents AS i
+          ON i.id = ie.incident_id
+        WHERE i.employee_id = ?
+          AND ie.file_path IS NOT NULL
+          AND TRIM(ie.file_path) <> ''
+        `,
+        [
+          id,
+        ]
+      );
+
+    for (
+      const row of
+        incidentEvidenceRows
+    ) {
+      historicalFileCandidates.push(
+        row.file_path
+      );
+    }
 
     /*
      * employee_documents has no FK constraint,
@@ -1481,6 +1631,20 @@ exports.deleteEmployee = async (
 
     transactionCommitted =
       true;
+
+    /*
+     * Release the transaction connection before
+     * post-commit cleanup performs independent
+     * reference-count queries.
+     */
+    connection.release();
+
+    connection = null;
+
+    await cleanupHistoricalFileCandidates(
+      historicalFileCandidates,
+      "employee_delete"
+    );
 
     /*
      * Audit after successful commit only.
