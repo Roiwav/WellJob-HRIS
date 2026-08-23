@@ -19,16 +19,17 @@ const EMPTY_SUMMARY = {
   low: 0,
 };
 
-const SMART_ALERT_REFRESH_DOMAINS =
-  new Set([
-    "incident",
-    "incidents",
-    "employee",
-    "employees",
-    "deployment",
-    "deployments",
-    "dashboard",
-  ]);
+const DEFAULT_POLL_INTERVAL = 10000;
+
+const SMART_ALERT_REFRESH_DOMAINS = new Set([
+  "incident",
+  "incidents",
+  "employee",
+  "employees",
+  "deployment",
+  "deployments",
+  "dashboard",
+]);
 
 function normalizeDataDomain(value) {
   return String(value || "")
@@ -36,13 +37,10 @@ function normalizeDataDomain(value) {
     .toLowerCase();
 }
 
-function shouldRefreshForDataUpdated(
-  event
-) {
-  const domain =
-    normalizeDataDomain(
-      event?.detail?.domain
-    );
+function shouldRefreshForDataUpdated(event) {
+  const domain = normalizeDataDomain(
+    event?.detail?.domain
+  );
 
   /*
    * Preserve compatibility with older
@@ -104,20 +102,40 @@ export default function useSmartNotifications(
   user,
   options = {}
 ) {
-  const role =
-    user?.role || "USER";
+  const role = user?.role || "USER";
 
   const canView =
     canViewSmartAlerts(role);
 
+  const configuredPollInterval =
+    Number(
+      options.pollInterval ??
+        DEFAULT_POLL_INTERVAL
+    );
+
   const pollInterval =
-    options.pollInterval ??
-    60000;
+    Number.isFinite(
+      configuredPollInterval
+    )
+      ? configuredPollInterval
+      : DEFAULT_POLL_INTERVAL;
 
   const hasPolling =
-    Number(pollInterval) > 0;
+    pollInterval > 0;
 
+  /*
+   * Prevent overlapping network requests.
+   *
+   * If another refresh request arrives while
+   * a request is already running, we do not
+   * discard it. Instead, refreshQueuedRef
+   * remembers that another synchronization
+   * pass is required immediately afterwards.
+   */
   const requestInFlightRef =
+    useRef(false);
+
+  const refreshQueuedRef =
     useRef(false);
 
   const [alerts, setAlerts] =
@@ -241,103 +259,145 @@ export default function useSmartNotifications(
   const hasReadAlerts =
     readAlertCount > 0;
 
+  const resetAlertState =
+    useCallback(() => {
+      refreshQueuedRef.current =
+        false;
+
+      setAlerts([]);
+      setLatestAlerts([]);
+      setPopupAlert(null);
+      setSummary(
+        EMPTY_SUMMARY
+      );
+      setUnreadCount(0);
+      setIsLoading(false);
+      setIsFetching(false);
+      setError("");
+    }, []);
+
   const fetchAlerts =
     useCallback(
       async ({
         silent = false,
       } = {}) => {
         if (!canView) {
-          setAlerts([]);
-          setLatestAlerts([]);
-          setPopupAlert(null);
-
-          setSummary(
-            EMPTY_SUMMARY
-          );
-
-          setUnreadCount(0);
-          setIsLoading(false);
-          setIsFetching(false);
-          setError("");
-
+          resetAlertState();
           return;
         }
 
+        /*
+         * A refresh may be triggered by several
+         * sources at nearly the same time:
+         *
+         * - polling
+         * - local dataUpdated event
+         * - window focus
+         * - tab visibility
+         * - network reconnection
+         *
+         * Never run overlapping requests.
+         * Preserve one pending refresh instead.
+         */
         if (
           requestInFlightRef.current
         ) {
+          refreshQueuedRef.current =
+            true;
           return;
         }
 
         requestInFlightRef.current =
           true;
 
+        let nextRequestSilent =
+          silent;
+
         try {
-          if (!silent) {
-            setIsLoading(true);
-          }
+          do {
+            refreshQueuedRef.current =
+              false;
 
-          setIsFetching(true);
-          setError("");
+            if (
+              !nextRequestSilent
+            ) {
+              setIsLoading(true);
+            }
 
-          /*
-           * Authenticated identity and role are now
-           * derived exclusively from the JWT by the
-           * backend. No user/role query parameters
-           * are sent by the client.
-           */
-          const data =
-            await requestSmartAlertJson(
-              "/smart-alerts"
-            );
+            setIsFetching(true);
+            setError("");
 
-          const nextAlerts =
-            normalizeAlerts(
-              data?.alerts
-            );
+            try {
+              /*
+               * Authenticated identity and role
+               * are derived exclusively from
+               * the JWT by the backend.
+               */
+              const data =
+                await requestSmartAlertJson(
+                  "/smart-alerts"
+                );
 
-          const nextLatestAlerts =
-            normalizeAlerts(
-              data?.latestAlerts
-            );
+              const nextAlerts =
+                normalizeAlerts(
+                  data?.alerts
+                );
 
-          setAlerts(
-            nextAlerts
-          );
+              const nextLatestAlerts =
+                normalizeAlerts(
+                  data?.latestAlerts
+                );
 
-          setLatestAlerts(
-            nextLatestAlerts
-          );
+              setAlerts(
+                nextAlerts
+              );
 
-          setPopupAlert(
-            data?.popupAlert ||
-              null
-          );
+              setLatestAlerts(
+                nextLatestAlerts
+              );
 
-          setSummary({
-            ...EMPTY_SUMMARY,
-            ...(data?.summary ||
-              {}),
-          });
+              setPopupAlert(
+                data?.popupAlert ||
+                  null
+              );
 
-          setUnreadCount(
-            Math.max(
-              0,
-              Number(
-                data?.unreadCount ||
-                  0
-              )
-            )
-          );
-        } catch (err) {
-          console.error(
-            "Smart notification fetch error:",
-            err
-          );
+              setSummary({
+                ...EMPTY_SUMMARY,
+                ...(data?.summary ||
+                  {}),
+              });
 
-          setError(
-            err?.message ||
-              "Unable to load smart alerts."
+              setUnreadCount(
+                Math.max(
+                  0,
+                  Number(
+                    data?.unreadCount ||
+                      0
+                  )
+                )
+              );
+            } catch (err) {
+              console.error(
+                "Smart notification fetch error:",
+                err
+              );
+
+              setError(
+                err?.message ||
+                  "Unable to load smart alerts."
+              );
+            }
+
+            /*
+             * Any queued follow-up refresh is
+             * always silent to avoid showing
+             * the initial loading state again.
+             */
+            nextRequestSilent =
+              true;
+          } while (
+            refreshQueuedRef.current &&
+            canView
           );
         } finally {
           requestInFlightRef.current =
@@ -349,6 +409,7 @@ export default function useSmartNotifications(
       },
       [
         canView,
+        resetAlertState,
       ]
     );
 
@@ -772,8 +833,30 @@ export default function useSmartNotifications(
       visibleAlerts,
     ]);
 
+  /*
+   * Notification synchronization lifecycle.
+   *
+   * Cross-device updates cannot rely on the
+   * browser-local dataUpdated CustomEvent.
+   *
+   * We therefore combine:
+   *
+   * 1. Initial fetch
+   * 2. Local dataUpdated refresh
+   * 3. Periodic lightweight polling
+   * 4. Window focus refresh
+   * 5. Tab visibility refresh
+   * 6. Network reconnection refresh
+   */
   useEffect(() => {
     fetchAlerts();
+
+    const requestSilentRefresh =
+      () => {
+        fetchAlerts({
+          silent: true,
+        });
+      };
 
     const handleDataUpdated =
       (event) => {
@@ -785,9 +868,29 @@ export default function useSmartNotifications(
           return;
         }
 
-        fetchAlerts({
-          silent: true,
-        });
+        requestSilentRefresh();
+      };
+
+    const handleWindowFocus =
+      () => {
+        requestSilentRefresh();
+      };
+
+    const handleVisibilityChange =
+      () => {
+        if (
+          document.visibilityState !==
+          "visible"
+        ) {
+          return;
+        }
+
+        requestSilentRefresh();
+      };
+
+    const handleOnline =
+      () => {
+        requestSilentRefresh();
       };
 
     let intervalId = null;
@@ -795,13 +898,8 @@ export default function useSmartNotifications(
     if (hasPolling) {
       intervalId =
         window.setInterval(
-          () =>
-            fetchAlerts({
-              silent: true,
-            }),
-          Number(
-            pollInterval
-          )
+          requestSilentRefresh,
+          pollInterval
         );
     }
 
@@ -810,10 +908,40 @@ export default function useSmartNotifications(
       handleDataUpdated
     );
 
+    window.addEventListener(
+      "focus",
+      handleWindowFocus
+    );
+
+    window.addEventListener(
+      "online",
+      handleOnline
+    );
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
     return () => {
       window.removeEventListener(
         "dataUpdated",
         handleDataUpdated
+      );
+
+      window.removeEventListener(
+        "focus",
+        handleWindowFocus
+      );
+
+      window.removeEventListener(
+        "online",
+        handleOnline
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
       );
 
       if (
