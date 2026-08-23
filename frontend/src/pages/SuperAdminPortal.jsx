@@ -1073,36 +1073,118 @@ export default function SuperAdminPortal() {
     }, []);
 
   const handleCopyCredentials =
-    useCallback(async () => {
-      const credentials = [
-        `Full Name: ${createdAccount.name}`,
-        `Role: ${createdAccount.roleLabel}`,
-        `User ID: ${createdAccount.userId}`,
-        `Username: ${createdAccount.username}`,
-        `Temporary Password: ${createdAccount.temporaryPassword}`,
-      ].join("\n");
+  useCallback(async () => {
+    const credentials = [
+      `Full Name: ${createdAccount.name}`,
+      `Role: ${createdAccount.roleLabel}`,
+      `User ID: ${createdAccount.userId}`,
+      `Username: ${createdAccount.username}`,
+      `Temporary Password: ${createdAccount.temporaryPassword}`,
+    ].join("\n");
 
-      try {
-        await navigator.clipboard.writeText(
+    try {
+      const clipboard =
+        globalThis.navigator?.clipboard;
+
+      if (
+        clipboard &&
+        typeof clipboard.writeText ===
+          "function"
+      ) {
+        await clipboard.writeText(
           credentials
         );
 
         setCopyMessage(
           "Credentials copied to clipboard."
         );
-      } catch (error) {
-        console.error(
-          "Copy credentials error:",
-          error
+
+        return;
+      }
+
+      /*
+       * LAN HTTP fallback:
+       * navigator.clipboard may be unavailable
+       * outside a secure browser context.
+       */
+      const textarea =
+        document.createElement(
+          "textarea"
         );
 
-        setCopyMessage(
-          "Unable to copy automatically. Please copy the credentials manually."
+      const previouslyFocusedElement =
+        document.activeElement;
+
+      textarea.value =
+        credentials;
+
+      textarea.setAttribute(
+        "readonly",
+        ""
+      );
+
+      textarea.style.position =
+        "fixed";
+
+      textarea.style.top = "0";
+      textarea.style.left =
+        "-9999px";
+
+      textarea.style.opacity =
+        "0";
+
+      textarea.style.pointerEvents =
+        "none";
+
+      document.body.appendChild(
+        textarea
+      );
+
+      try {
+        textarea.focus();
+        textarea.select();
+
+        textarea.setSelectionRange(
+          0,
+          textarea.value.length
         );
+
+        const copied =
+          document.execCommand(
+            "copy"
+          );
+
+        if (!copied) {
+          throw new Error(
+            "Browser rejected the clipboard copy operation."
+          );
+        }
+      } finally {
+        textarea.remove();
+
+        if (
+          previouslyFocusedElement &&
+          typeof previouslyFocusedElement.focus ===
+            "function"
+        ) {
+          previouslyFocusedElement.focus();
+        }
       }
-    }, [
-      createdAccount,
-    ]);
+
+      setCopyMessage(
+        "Credentials copied to clipboard."
+      );
+    } catch (error) {
+      console.error(
+        "Copy credentials error:",
+        error
+      );
+
+      setCopyMessage(
+        "Unable to copy automatically. Please copy the credentials manually."
+      );
+    }
+  }, [createdAccount]);
 
   const handleOpenReset =
     useCallback(
