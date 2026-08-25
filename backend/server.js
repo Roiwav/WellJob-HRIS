@@ -2,10 +2,7 @@ const path = require("path");
 
 // LOAD ENVIRONMENT VARIABLES FIRST
 require("dotenv").config({
-  path: path.join(
-    __dirname,
-    ".env"
-  ),
+  path: path.join(__dirname, ".env"),
 });
 
 /*
@@ -51,13 +48,12 @@ const REQUIRED_ENVIRONMENT = [
   },
 ];
 
+const JSON_BODY_LIMIT = "1mb";
+
 function validateEnvironment() {
   const missingVariables = [];
 
-  for (
-    const requirement of
-    REQUIRED_ENVIRONMENT
-  ) {
+  for (const requirement of REQUIRED_ENVIRONMENT) {
     const exists =
       Object.prototype.hasOwnProperty.call(
         process.env,
@@ -72,12 +68,11 @@ function validateEnvironment() {
       continue;
     }
 
-    const value =
-      String(
-        process.env[
-          requirement.name
-        ] ?? ""
-      ).trim();
+    const value = String(
+      process.env[
+        requirement.name
+      ] ?? ""
+    ).trim();
 
     if (
       !requirement.allowEmpty &&
@@ -89,9 +84,7 @@ function validateEnvironment() {
     }
   }
 
-  if (
-    missingVariables.length > 0
-  ) {
+  if (missingVariables.length > 0) {
     throw new Error(
       `Missing required environment configuration: ${missingVariables.join(
         ", "
@@ -99,11 +92,10 @@ function validateEnvironment() {
     );
   }
 
-  const port =
-    Number.parseInt(
-      process.env.PORT,
-      10
-    );
+  const port = Number.parseInt(
+    process.env.PORT,
+    10
+  );
 
   if (
     !Number.isInteger(port) ||
@@ -115,11 +107,10 @@ function validateEnvironment() {
     );
   }
 
-  const dbPort =
-    Number.parseInt(
-      process.env.DB_PORT,
-      10
-    );
+  const dbPort = Number.parseInt(
+    process.env.DB_PORT,
+    10
+  );
 
   if (
     !Number.isInteger(dbPort) ||
@@ -134,11 +125,8 @@ function validateEnvironment() {
 
 validateEnvironment();
 
-const express =
-  require("express");
-
-const cors =
-  require("cors");
+const express = require("express");
+const cors = require("cors");
 
 // MAINTENANCE MIDDLEWARE
 const checkMaintenanceMode =
@@ -148,14 +136,10 @@ const checkMaintenanceMode =
 
 // ROUTES
 const authRoutes =
-  require(
-    "./routes/authRoutes"
-  );
+  require("./routes/authRoutes");
 
 const userRoutes =
-  require(
-    "./routes/userRoutes"
-  );
+  require("./routes/userRoutes");
 
 const employeeRoutes =
   require(
@@ -198,8 +182,7 @@ const settingsRoutes =
   );
 
 // INIT APP
-const app =
-  express();
+const app = express();
 
 /*
  * ==================================================
@@ -214,10 +197,9 @@ const app =
  * Postman-style clients, and health checks continue
  * to work normally.
  */
-const FRONTEND_ORIGIN =
-  String(
-    process.env.FRONTEND_ORIGIN
-  ).trim();
+const FRONTEND_ORIGIN = String(
+  process.env.FRONTEND_ORIGIN
+).trim();
 
 const corsOptions = {
   origin(
@@ -251,9 +233,6 @@ const corsOptions = {
     /*
      * Do not grant CORS permission to any other
      * browser origin.
-     *
-     * The request does not receive the required
-     * Access-Control-Allow-Origin permission.
      */
     return callback(
       null,
@@ -267,8 +246,25 @@ app.use(
   cors(corsOptions)
 );
 
+/*
+ * ==================================================
+ * JSON REQUEST BODY LIMIT
+ * ==================================================
+ *
+ * Express defaults JSON bodies to approximately
+ * 100 KB. The system-wide violation policy can
+ * legitimately exceed that size.
+ *
+ * Keep this limit aligned with the application-level
+ * configuration limit enforced by settingsRoutes.js.
+ *
+ * This remains intentionally bounded at 1 MB instead
+ * of accepting unlimited JSON payloads.
+ */
 app.use(
-  express.json()
+  express.json({
+    limit: JSON_BODY_LIMIT,
+  })
 );
 
 /*
@@ -381,11 +377,14 @@ app.use(
  * CENTRAL ERROR BOUNDARY
  * ==================================================
  *
- * This is the final safety boundary for errors
- * forwarded through Express middleware/routes.
+ * Final safety boundary for errors forwarded through
+ * Express middleware or application routes.
  *
- * Full technical details remain in backend logs.
- * Clients receive only a stable generic response.
+ * Known request parsing failures receive an
+ * appropriate client-facing HTTP status.
+ *
+ * Unexpected technical details remain only in the
+ * backend logs.
  */
 app.use(
   (
@@ -403,9 +402,63 @@ app.use(
       return next(err);
     }
 
+    /*
+     * Express/body-parser payload size rejection.
+     *
+     * A request exceeding the configured JSON limit
+     * is a client request-size problem, not an
+     * internal server failure.
+     */
+    if (
+      err?.type ===
+        "entity.too.large" ||
+      err?.status === 413 ||
+      err?.statusCode === 413
+    ) {
+      return res
+        .status(413)
+        .json({
+          success: false,
+
+          error:
+            "Request payload is too large.",
+
+          message:
+            `JSON request bodies must not exceed ${JSON_BODY_LIMIT}.`,
+        });
+    }
+
+    /*
+     * Malformed JSON should return HTTP 400 rather
+     * than being exposed as a generic server error.
+     */
+    if (
+      err instanceof
+        SyntaxError &&
+      err?.status === 400 &&
+      Object.prototype.hasOwnProperty.call(
+        err,
+        "body"
+      )
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+
+          error:
+            "Invalid JSON request body.",
+
+          message:
+            "Check the request body syntax and try again.",
+        });
+    }
+
     return res
       .status(500)
       .json({
+        success: false,
+
         error:
           "Internal server error.",
       });

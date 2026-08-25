@@ -12,34 +12,301 @@ const SLA_DAYS = {
   Critical: 2,
 };
 
+const CRITICAL_KEYWORDS = [
+  "injury",
+  "accident",
+  "hospital",
+  "unsafe",
+  "hazard",
+  "harassment",
+  "theft",
+  "fraud",
+  "violence",
+  "threat",
+  "cut",
+  "wound",
+  "bleeding",
+];
+
 function toDate(value) {
-  if (!value) return null;
+  if (!value) {
+    return null;
+  }
+
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
 }
 
 function normalizeText(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
-export function flattenViolationRules() {
-  return NORMALIZED_VIOLATION_RULES.flatMap((group) =>
-    group.rows.map((rule) => ({
-      ...rule,
-      category: group.category,
-      key: `${group.category}-${rule.section}-${rule.violation}`,
-    }))
+function normalizeSeverityList(value) {
+  const values = Array.isArray(value)
+    ? value
+    : value
+      ? [value]
+      : [];
+
+  return [
+    ...new Set(
+      values
+        .map((item) =>
+          String(item || "").trim()
+        )
+        .filter(
+          (item) =>
+            Object.hasOwn(
+              SEVERITY_SCORE,
+              item
+            )
+        )
+    ),
+  ];
+}
+
+function getHighestSeverity(value) {
+  const severities =
+    normalizeSeverityList(value);
+
+  if (!severities.length) {
+    return "";
+  }
+
+  return severities.reduce(
+    (highest, severity) =>
+      SEVERITY_SCORE[severity] >
+      SEVERITY_SCORE[highest]
+        ? severity
+        : highest,
+    severities[0]
   );
 }
 
-export function findViolationRule(violationName) {
-  const target = normalizeText(violationName);
-  return flattenViolationRules().find(
-    (rule) => normalizeText(rule.violation) === target
+function getOrdinalLabel(number) {
+  const numeric = Number(number);
+
+  if (numeric === 1) {
+    return "1st offense";
+  }
+
+  if (numeric === 2) {
+    return "2nd offense";
+  }
+
+  if (numeric === 3) {
+    return "3rd offense";
+  }
+
+  return `${numeric}th offense`;
+}
+
+function normalizePenalty(
+  penalty,
+  index
+) {
+  const offenseNo = index + 1;
+
+  if (
+    penalty &&
+    typeof penalty === "object" &&
+    !Array.isArray(penalty)
+  ) {
+    const storedOffenseNo =
+      Number(penalty.offenseNo);
+
+    return {
+      ...penalty,
+
+      offenseNo:
+        Number.isInteger(
+          storedOffenseNo
+        ) &&
+        storedOffenseNo > 0
+          ? storedOffenseNo
+          : offenseNo,
+
+      label:
+        String(
+          penalty.label ||
+            getOrdinalLabel(offenseNo)
+        ).trim(),
+
+      action:
+        String(
+          penalty.action || ""
+        ).trim(),
+    };
+  }
+
+  const text =
+    String(penalty || "").trim();
+
+  if (!text) {
+    return null;
+  }
+
+  const separatorIndex =
+    text.indexOf(":");
+
+  if (separatorIndex === -1) {
+    return {
+      offenseNo,
+      label:
+        getOrdinalLabel(offenseNo),
+      action: text,
+    };
+  }
+
+  const label =
+    text
+      .slice(
+        0,
+        separatorIndex
+      )
+      .trim();
+
+  const action =
+    text
+      .slice(
+        separatorIndex + 1
+      )
+      .trim();
+
+  return {
+    offenseNo,
+    label:
+      label ||
+      getOrdinalLabel(offenseNo),
+    action:
+      action || text,
+  };
+}
+
+function normalizePenalties(
+  penalties = []
+) {
+  if (!Array.isArray(penalties)) {
+    return [];
+  }
+
+  return penalties
+    .map(normalizePenalty)
+    .filter(Boolean);
+}
+
+function normalizePolicyGroups(
+  policyRules
+) {
+  return Array.isArray(policyRules) &&
+    policyRules.length > 0
+    ? policyRules
+    : NORMALIZED_VIOLATION_RULES;
+}
+
+function getHigherSeverity(
+  current,
+  next
+) {
+  const currentSeverity =
+    getHighestSeverity(current) ||
+    "Minor";
+
+  const nextSeverity =
+    getHighestSeverity(next) ||
+    "Minor";
+
+  return SEVERITY_SCORE[
+    nextSeverity
+  ] >
+    SEVERITY_SCORE[
+      currentSeverity
+    ]
+    ? nextSeverity
+    : currentSeverity;
+}
+
+/*
+ * Converts grouped policy rules into the flat
+ * structure used by incident creation.
+ *
+ * policyRules is optional so existing callers
+ * remain compatible. When omitted, the immutable
+ * default Code of Conduct remains the fallback.
+ */
+export function flattenViolationRules(
+  policyRules = NORMALIZED_VIOLATION_RULES
+) {
+  return normalizePolicyGroups(
+    policyRules
+  ).flatMap((group) =>
+    (group?.rows || []).map(
+      (rule, index) => {
+        const severityMapping =
+          normalizeSeverityList(
+            rule?.severity
+          );
+
+        return {
+          ...rule,
+
+          category:
+            String(
+              group?.category || ""
+            ).trim(),
+
+          severity:
+            getHighestSeverity(
+              severityMapping
+            ) || "Minor",
+
+          severityMapping,
+
+          penalties:
+            normalizePenalties(
+              rule?.penalties
+            ),
+
+          key:
+            rule?.id ||
+            `${group?.category || "category"}-${rule?.section || index}-${rule?.violation || "violation"}`,
+        };
+      }
+    )
   );
 }
 
-export function getIncidentEmployeeKey(incident) {
+export function findViolationRule(
+  violationName,
+  policyRules = NORMALIZED_VIOLATION_RULES
+) {
+  const target =
+    normalizeText(
+      violationName
+    );
+
+  if (!target) {
+    return undefined;
+  }
+
+  return flattenViolationRules(
+    policyRules
+  ).find(
+    (rule) =>
+      normalizeText(
+        rule.violation
+      ) === target
+  );
+}
+
+export function getIncidentEmployeeKey(
+  incident
+) {
   return String(
     incident?.employeeId ||
       incident?.employee_id ||
@@ -49,7 +316,9 @@ export function getIncidentEmployeeKey(incident) {
   ).trim();
 }
 
-export function getIncidentViolationKey(incident) {
+export function getIncidentViolationKey(
+  incident
+) {
   return String(
     incident?.violation ||
       incident?.violationType ||
@@ -64,20 +333,52 @@ export function getPreviousSameViolationCount(
   violationName,
   currentIncidentId = null
 ) {
-  const targetEmployee = String(employeeId || "").trim();
-  const targetViolation = String(violationName || "").trim();
+  const targetEmployee =
+    String(
+      employeeId || ""
+    ).trim();
 
-  if (!targetEmployee || !targetViolation) return 0;
+  const targetViolation =
+    String(
+      violationName || ""
+    ).trim();
 
-  return existingIncidents.filter((incident) => {
-    const sameEmployee = getIncidentEmployeeKey(incident) === targetEmployee;
-    const sameViolation = getIncidentViolationKey(incident) === targetViolation;
-    const notCurrent = currentIncidentId
-      ? String(incident.id) !== String(currentIncidentId)
-      : true;
+  if (
+    !targetEmployee ||
+    !targetViolation
+  ) {
+    return 0;
+  }
 
-    return sameEmployee && sameViolation && notCurrent;
-  }).length;
+  return existingIncidents.filter(
+    (incident) => {
+      const sameEmployee =
+        getIncidentEmployeeKey(
+          incident
+        ) === targetEmployee;
+
+      const sameViolation =
+        getIncidentViolationKey(
+          incident
+        ) === targetViolation;
+
+      const notCurrent =
+        currentIncidentId
+          ? String(
+              incident.id
+            ) !==
+            String(
+              currentIncidentId
+            )
+          : true;
+
+      return (
+        sameEmployee &&
+        sameViolation &&
+        notCurrent
+      );
+    }
+  ).length;
 }
 
 export function getNextOffenseCount(
@@ -96,26 +397,59 @@ export function getNextOffenseCount(
   );
 }
 
-export function getPenaltyByOffense(penalties = [], offenseCount = 1) {
-  if (!Array.isArray(penalties) || penalties.length === 0) return null;
+export function getPenaltyByOffense(
+  penalties = [],
+  offenseCount = 1
+) {
+  const normalizedPenalties =
+    normalizePenalties(
+      penalties
+    );
 
-  const exactPenalty = penalties.find(
-    (penalty) => Number(penalty?.offenseNo) === Number(offenseCount)
+  if (
+    normalizedPenalties.length ===
+    0
+  ) {
+    return null;
+  }
+
+  const targetOffense =
+    Number(offenseCount) || 1;
+
+  const exactPenalty =
+    normalizedPenalties.find(
+      (penalty) =>
+        Number(
+          penalty.offenseNo
+        ) === targetOffense
+    );
+
+  return (
+    exactPenalty ||
+    normalizedPenalties[
+      normalizedPenalties.length -
+        1
+    ]
   );
-
-  return exactPenalty || penalties[penalties.length - 1];
 }
 
-export function getPenaltyText(penalty) {
-  if (!penalty) return "";
-  if (typeof penalty === "string") return penalty;
-  return penalty.action || "";
-}
+export function getPenaltyText(
+  penalty
+) {
+  if (!penalty) {
+    return "";
+  }
 
-function getHigherSeverity(current, next) {
-  const currentScore = SEVERITY_SCORE[current] || 1;
-  const nextScore = SEVERITY_SCORE[next] || 1;
-  return nextScore > currentScore ? next : current;
+  if (
+    typeof penalty ===
+    "string"
+  ) {
+    return penalty.trim();
+  }
+
+  return String(
+    penalty.action || ""
+  ).trim();
 }
 
 export function computeAutoSeverity({
@@ -124,74 +458,160 @@ export function computeAutoSeverity({
   sanction = "",
   description = "",
 }) {
-  let severity = baseSeverity || "Minor";
-  const sanctionText = normalizeText(sanction);
-  const desc = normalizeText(description);
+  let severity =
+    getHighestSeverity(
+      baseSeverity
+    ) || "Minor";
+
+  const sanctionText =
+    normalizeText(
+      sanction
+    );
+
+  const descriptionText =
+    normalizeText(
+      description
+    );
 
   if (
-    sanctionText.includes("dismissal") ||
-    sanctionText.includes("rta") ||
-    sanctionText.includes("termination")
+    sanctionText.includes(
+      "dismissal"
+    ) ||
+    sanctionText.includes(
+      "rta"
+    ) ||
+    sanctionText.includes(
+      "termination"
+    )
   ) {
-    severity = getHigherSeverity(severity, "Critical");
+    severity =
+      getHigherSeverity(
+        severity,
+        "Critical"
+      );
   }
 
-  if (offenseCount >= 4) {
-    severity = getHigherSeverity(severity, "Critical");
-  } else if (offenseCount >= 3) {
-    severity = getHigherSeverity(severity, "Major");
+  if (
+    Number(offenseCount) >= 4
+  ) {
+    severity =
+      getHigherSeverity(
+        severity,
+        "Critical"
+      );
+  } else if (
+    Number(offenseCount) >= 3
+  ) {
+    severity =
+      getHigherSeverity(
+        severity,
+        "Major"
+      );
   }
 
-  const criticalKeywords = [
-    "injury",
-    "accident",
-    "hospital",
-    "unsafe",
-    "hazard",
-    "harassment",
-    "theft",
-    "fraud",
-    "violence",
-    "threat",
-    "cut",
-    "wound",
-    "bleeding",
-  ];
-
-  if (criticalKeywords.some((keyword) => desc.includes(keyword))) {
-    severity = getHigherSeverity(severity, "Critical");
+  if (
+    CRITICAL_KEYWORDS.some(
+      (keyword) =>
+        descriptionText.includes(
+          keyword
+        )
+    )
+  ) {
+    severity =
+      getHigherSeverity(
+        severity,
+        "Critical"
+      );
   }
 
   return severity;
 }
 
-export function getCaseAgeDays(incident) {
-  const startDate = toDate(incident?.reportedAt || incident?.date);
-  if (!startDate) return 0;
+export function getCaseAgeDays(
+  incident
+) {
+  const startDate =
+    toDate(
+      incident?.reportedAt ||
+        incident?.date
+    );
 
-  const now = new Date();
-  const diff = now.getTime() - startDate.getTime();
+  if (!startDate) {
+    return 0;
+  }
 
-  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+  const diff =
+    Date.now() -
+    startDate.getTime();
+
+  return Math.max(
+    0,
+    Math.floor(
+      diff /
+        (1000 *
+          60 *
+          60 *
+          24)
+    )
+  );
 }
 
-export function getCaseAging(incident) {
-  const ageDays = getCaseAgeDays(incident);
-  const severity = incident?.severity || "Minor";
-  const slaDays = SLA_DAYS[severity] || 7;
-  const isClosed = incident?.status === "Closed";
+export function getCaseAging(
+  incident
+) {
+  const ageDays =
+    getCaseAgeDays(
+      incident
+    );
 
-  let bucket = "0–2 days";
-  if (ageDays >= 3 && ageDays <= 7) bucket = "3–7 days";
-  if (ageDays >= 8 && ageDays <= 30) bucket = "8–30 days";
-  if (ageDays > 30) bucket = "30+ days";
+  const severity =
+    getHighestSeverity(
+      incident?.severity
+    ) || "Minor";
+
+  const slaDays =
+    SLA_DAYS[severity] || 7;
+
+  const isClosed =
+    incident?.status ===
+    "Closed";
+
+  let bucket =
+    "0–2 days";
+
+  if (
+    ageDays >= 3 &&
+    ageDays <= 7
+  ) {
+    bucket =
+      "3–7 days";
+  } else if (
+    ageDays >= 8 &&
+    ageDays <= 30
+  ) {
+    bucket =
+      "8–30 days";
+  } else if (
+    ageDays > 30
+  ) {
+    bucket =
+      "30+ days";
+  }
 
   return {
     ageDays,
     bucket,
     slaDays,
-    isOverdue: !isClosed && ageDays > slaDays,
-    remainingDays: Math.max(0, slaDays - ageDays),
+
+    isOverdue:
+      !isClosed &&
+      ageDays > slaDays,
+
+    remainingDays:
+      Math.max(
+        0,
+        slaDays - ageDays
+      ),
   };
 }
 
@@ -201,19 +621,34 @@ export function getRecommendation({
   sanction = "",
   status = "Open",
 }) {
-  if (status === "Closed") {
+  const normalizedSeverity =
+    getHighestSeverity(
+      severity
+    ) || "Minor";
+
+  if (
+    status === "Closed"
+  ) {
     return "Case is already closed. Keep record for audit and future reference.";
   }
 
-  if (severity === "Critical") {
+  if (
+    normalizedSeverity ===
+    "Critical"
+  ) {
     return "Immediate HR review required. Prioritize investigation, secure evidence, and escalate to Super Admin.";
   }
 
-  if (offenseCount >= 4) {
+  if (
+    Number(offenseCount) >= 4
+  ) {
     return "Repeated offense detected. Recommend management review and stronger disciplinary action based on policy.";
   }
 
-  if (severity === "Major") {
+  if (
+    normalizedSeverity ===
+    "Major"
+  ) {
     return "Start investigation promptly and prepare supporting documents before submitting for review.";
   }
 
@@ -224,87 +659,204 @@ export function getRecommendation({
   return "Review the case details and proceed with the standard disciplinary workflow.";
 }
 
-export function getSmartAlerts(incident) {
+export function getSmartAlerts(
+  incident
+) {
   const alerts = [];
-  const aging = getCaseAging(incident);
-  const severity = incident?.severity || "Minor";
-  const status = incident?.status || "Open";
 
-  if (severity === "Critical" && status !== "Closed") {
+  const aging =
+    getCaseAging(
+      incident
+    );
+
+  const severity =
+    getHighestSeverity(
+      incident?.severity
+    ) || "Minor";
+
+  const status =
+    incident?.status ||
+    "Open";
+
+  if (
+    severity === "Critical" &&
+    status !== "Closed"
+  ) {
     alerts.push({
       id: "critical-case",
       level: "critical",
       title: "Critical incident",
-      message: "This case requires immediate review and prioritization.",
+      message:
+        "This case requires immediate review and prioritization.",
     });
   }
 
-  if (aging.isOverdue) {
+  if (
+    aging.isOverdue
+  ) {
     alerts.push({
       id: "overdue-case",
       level: "warning",
       title: "Overdue case",
-      message: `This case is ${aging.ageDays} day(s) old and exceeded the ${aging.slaDays}-day target.`,
+
+      message:
+        `This case is ${aging.ageDays} day(s) old and exceeded the ${aging.slaDays}-day target.`,
     });
   }
 
-  if (status === "For Review") {
+  if (
+    status === "For Review"
+  ) {
     alerts.push({
       id: "for-review",
       level: "info",
-      title: "Pending Super Admin review",
-      message: "Resolution proof has been submitted and is waiting for final review.",
+      title:
+        "Pending Super Admin review",
+
+      message:
+        "Resolution proof has been submitted and is waiting for final review.",
     });
   }
 
-  if (Number(incident?.offenseCount || 1) >= 3) {
+  if (
+    Number(
+      incident?.offenseCount ||
+        1
+    ) >= 3
+  ) {
     alerts.push({
       id: "repeat-offense",
       level: "warning",
-      title: "Repeated offense",
-      message: `This is the employee's ${incident.offenseCount} offense for the same violation.`,
+      title:
+        "Repeated offense",
+
+      message:
+        `This is the employee's ${incident.offenseCount} offense for the same violation.`,
     });
   }
 
   return alerts;
 }
 
-export function enrichIncidentIntelligence(incident, existingIncidents = []) {
-  const rule = findViolationRule(incident?.violation);
-  const penalties = incident?.penalties || rule?.penalties || [];
-
-  const offenseCount =
-    incident?.offenseCount ||
-    getNextOffenseCount(
-      existingIncidents,
-      incident?.employeeId,
+/*
+ * Existing persisted incident fields always take
+ * precedence over the current policy.
+ *
+ * This prevents a later Code of Conduct change from
+ * silently rewriting the classification of historical
+ * incidents when they are rendered or enriched.
+ *
+ * policyRules is optional. Existing callers using only
+ * (incident, existingIncidents) remain compatible.
+ */
+export function enrichIncidentIntelligence(
+  incident,
+  existingIncidents = [],
+  policyRules = NORMALIZED_VIOLATION_RULES
+) {
+  const rule =
+    findViolationRule(
       incident?.violation,
-      incident?.id
+      policyRules
     );
 
+  const storedPenalties =
+    Array.isArray(
+      incident?.penalties
+    )
+      ? incident.penalties
+      : null;
+
+  const penalties =
+    storedPenalties !== null
+      ? normalizePenalties(
+          storedPenalties
+        )
+      : rule?.penalties || [];
+
+  const storedOffenseCount =
+    Number(
+      incident?.offenseCount
+    );
+
+  const offenseCount =
+    Number.isFinite(
+      storedOffenseCount
+    ) &&
+    storedOffenseCount > 0
+      ? storedOffenseCount
+      : getNextOffenseCount(
+          existingIncidents,
+          incident?.employeeId,
+          incident?.violation,
+          incident?.id
+        );
+
   const selectedPenalty =
-    incident?.selectedPenalty || getPenaltyByOffense(penalties, offenseCount);
+    incident?.selectedPenalty ||
+    getPenaltyByOffense(
+      penalties,
+      offenseCount
+    );
 
   const sanction =
-    incident?.sanction ||
-    getPenaltyText(selectedPenalty) ||
+    String(
+      incident?.sanction || ""
+    ).trim() ||
+    getPenaltyText(
+      selectedPenalty
+    ) ||
     rule?.penaltyLevel ||
     "";
 
-  const severity = computeAutoSeverity({
-    baseSeverity: rule?.severity || incident?.severity || "Minor",
-    offenseCount,
-    sanction,
-    description: incident?.description,
-  });
+  /*
+   * Preserve already-persisted severity.
+   *
+   * Only incidents without a stored valid severity
+   * are classified from the current policy.
+   */
+  const storedSeverity =
+    getHighestSeverity(
+      incident?.severity
+    );
+
+  const severity =
+    storedSeverity ||
+    computeAutoSeverity({
+      baseSeverity:
+        rule?.severity ||
+        "Minor",
+
+      offenseCount,
+      sanction,
+
+      description:
+        incident?.description,
+    });
 
   const enriched = {
     ...incident,
-    violationCategory: incident?.violationCategory || rule?.category || "",
-    violationSection: incident?.violationSection || rule?.section || "",
+
+    violationCategory:
+      incident?.violationCategory ||
+      rule?.category ||
+      "",
+
+    violationSection:
+      incident?.violationSection ||
+      rule?.section ||
+      "",
+
     violationDescription:
-      incident?.violationDescription || rule?.description || "",
-    penaltyLevel: incident?.penaltyLevel || rule?.penaltyLevel || "",
+      incident?.violationDescription ||
+      rule?.description ||
+      "",
+
+    penaltyLevel:
+      incident?.penaltyLevel ||
+      rule?.penaltyLevel ||
+      "",
+
     penalties,
     offenseCount,
     selectedPenalty,
@@ -312,15 +864,34 @@ export function enrichIncidentIntelligence(incident, existingIncidents = []) {
     severity,
   };
 
-  const aging = getCaseAging(enriched);
+  const aging =
+    getCaseAging(
+      enriched
+    );
 
   return {
     ...enriched,
-    caseAgeDays: aging.ageDays,
-    caseAgeBucket: aging.bucket,
-    slaDays: aging.slaDays,
-    isOverdue: aging.isOverdue,
-    recommendation: getRecommendation(enriched),
-    smartAlerts: getSmartAlerts(enriched),
+
+    caseAgeDays:
+      aging.ageDays,
+
+    caseAgeBucket:
+      aging.bucket,
+
+    slaDays:
+      aging.slaDays,
+
+    isOverdue:
+      aging.isOverdue,
+
+    recommendation:
+      getRecommendation(
+        enriched
+      ),
+
+    smartAlerts:
+      getSmartAlerts(
+        enriched
+      ),
   };
 }

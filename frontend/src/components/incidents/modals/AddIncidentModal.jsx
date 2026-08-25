@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+
 import {
   FiBriefcase,
   FiCalendar,
@@ -17,9 +18,10 @@ import {
   FiUser,
 } from "react-icons/fi";
 
+import useViolationPolicyOptions from "../../../hooks/useViolationPolicyOptions";
+
 import {
   computeAutoSeverity,
-  flattenViolationRules,
   getNextOffenseCount,
   getPenaltyByOffense,
   getPenaltyText,
@@ -54,6 +56,101 @@ import {
   NoticeModal,
 } from "../shared/ModalUI";
 
+const EMPTY_ALERT = {
+  show: false,
+  type: "error",
+  title: "",
+  message: "",
+};
+
+function createIncidentForm(
+  existingIncidents
+) {
+  const now =
+    new Date().toISOString();
+
+  return {
+    id: generateIncidentId(
+      existingIncidents
+    ),
+
+    employeeId: "",
+    employee: "",
+    company: "",
+
+    violation: "",
+    violationCategory: "",
+    violationSection: "",
+    violationDescription: "",
+
+    penaltyLevel: "",
+    penalties: [],
+    offenseCount: 1,
+    selectedPenalty: null,
+
+    severity: "",
+    sanction: "",
+
+    status: "Open",
+    date: getDateOnly(now),
+    reportedAt: now,
+
+    description: "",
+    actions: [],
+    reviewComments: [],
+
+    duplicateVerified: false,
+    duplicateVerificationNote: "",
+
+    timeline: [],
+  };
+}
+
+function getClearedViolationFields() {
+  return {
+    violation: "",
+    violationCategory: "",
+    violationSection: "",
+    violationDescription: "",
+    penaltyLevel: "",
+    penalties: [],
+    offenseCount: 1,
+    selectedPenalty: null,
+    severity: "",
+    sanction: "",
+    duplicateVerified: false,
+    duplicateVerificationNote: "",
+  };
+}
+
+function getClearedEmployeeFields() {
+  return {
+    employeeId: "",
+    employee: "",
+    company: "",
+    offenseCount: 1,
+    selectedPenalty: null,
+    sanction: "",
+    severity: "",
+    duplicateVerified: false,
+    duplicateVerificationNote: "",
+  };
+}
+
+function getPenaltySearchValue(
+  penalty
+) {
+  if (
+    typeof penalty === "string"
+  ) {
+    return penalty;
+  }
+
+  return `${penalty?.label || ""} ${
+    penalty?.action || ""
+  }`;
+}
+
 export default function AddIncidentModal({
   isOpen,
   onClose,
@@ -62,14 +159,32 @@ export default function AddIncidentModal({
   deployments = [],
   existingIncidents = [],
 }) {
-  const violationBoxRef = useRef(null);
-  const employeeBoxRef = useRef(null);
-  const employeeInputRef = useRef(null);
-  const closeTimerRef = useRef(null);
+  const violationBoxRef =
+    useRef(null);
 
-  const [formData, setFormData] = useState(null);
-  const [employeeSearch, setEmployeeSearch] = useState("");
-  const [violationSearch, setViolationSearch] = useState("");
+  const employeeBoxRef =
+    useRef(null);
+
+  const employeeInputRef =
+    useRef(null);
+
+  const closeTimerRef =
+    useRef(null);
+
+  const [
+    formData,
+    setFormData,
+  ] = useState(null);
+
+  const [
+    employeeSearch,
+    setEmployeeSearch,
+  ] = useState("");
+
+  const [
+    violationSearch,
+    setViolationSearch,
+  ] = useState("");
 
   const [
     showEmployeeDropdown,
@@ -81,176 +196,158 @@ export default function AddIncidentModal({
     setShowViolationDropdown,
   ] = useState(false);
 
-  const [isReviewing, setIsReviewing] =
-    useState(false);
+  const [
+    isReviewing,
+    setIsReviewing,
+  ] = useState(false);
 
   const [
     duplicateConfirmed,
     setDuplicateConfirmed,
   ] = useState(false);
 
-  const [isSaving, setIsSaving] =
-    useState(false);
+  const [
+    isSaving,
+    setIsSaving,
+  ] = useState(false);
 
-  const [customAlert, setCustomAlert] =
-    useState({
-      show: false,
-      type: "error",
-      title: "",
-      message: "",
-    });
+  const [
+    customAlert,
+    setCustomAlert,
+  ] = useState(EMPTY_ALERT);
 
-  const violationOptions = useMemo(
-    () => flattenViolationRules(),
-    []
+  const {
+    violationOptions,
+    violationPolicySource,
+    violationPolicyError,
+    isLoadingViolationPolicy,
+    reloadViolationPolicy,
+  } = useViolationPolicyOptions(
+    isOpen
   );
 
-  const employeeOptions = useMemo(() => {
-    return employees
-      .filter((employee) => {
-        const status = String(
-          employee?.status || ""
-        )
-          .trim()
-          .toLowerCase();
-
-        return (
-          status === "deployed" ||
-          status === "active deployed"
-        );
-      })
-      .map((employee) => ({
-        id:
-          employee?.id ||
-          employee?.employeeId ||
-          employee?.employee_id ||
-          employee?.name,
-
-        name:
-          employee?.name ||
-          employee?.full_name ||
-          employee?.fullName ||
-          "",
-
-        company:
-          employee?.company || "",
-      }));
-  }, [employees]);
+  const isViolationPolicyReady =
+    !isLoadingViolationPolicy &&
+    !violationPolicyError &&
+    violationOptions.length > 0;
 
   const createInitialFormData =
-    useCallback(() => {
-      const now =
-        new Date().toISOString();
-
-      return {
-        id: generateIncidentId(
+    useCallback(
+      () =>
+        createIncidentForm(
           existingIncidents
         ),
+      [existingIncidents]
+    );
 
-        employeeId: "",
-        employee: "",
-        company: "",
-
-        violation: "",
-        violationCategory: "",
-        violationSection: "",
-        violationDescription: "",
-
-        penaltyLevel: "",
-        penalties: [],
-        offenseCount: 1,
-        selectedPenalty: null,
-
-        severity: "",
-        sanction: "",
-
-        status: "Open",
-        date: getDateOnly(now),
-        reportedAt: now,
-
-        description: "",
-        actions: [],
-        reviewComments: [],
-
-        duplicateVerified: false,
-        duplicateVerificationNote: "",
-
-        timeline: [],
-      };
-    }, [existingIncidents]);
-
-  const showCustomAlert = useCallback(
-    ({
-      type = "error",
-      title,
-      message,
-    }) => {
-      setCustomAlert({
-        show: true,
-        type,
+  const showCustomAlert =
+    useCallback(
+      ({
+        type = "error",
         title,
         message,
-      });
-    },
-    []
-  );
+      }) => {
+        setCustomAlert({
+          show: true,
+          type,
+          title,
+          message,
+        });
+      },
+      []
+    );
 
   const closeCustomAlert =
     useCallback(() => {
-      setCustomAlert((current) => ({
-        ...current,
-        show: false,
-      }));
+      setCustomAlert(
+        (current) => ({
+          ...current,
+          show: false,
+        })
+      );
     }, []);
 
-  const handleClose = useCallback(() => {
-    if (isSaving) {
-      return;
+  const resetDuplicateVerification =
+    useCallback(() => {
+      setDuplicateConfirmed(
+        false
+      );
+    }, []);
+
+  const handleClose =
+    useCallback(() => {
+      if (isSaving) {
+        return;
+      }
+
+      setShowEmployeeDropdown(
+        false
+      );
+
+      setShowViolationDropdown(
+        false
+      );
+
+      closeCustomAlert();
+      onClose();
+    }, [
+      closeCustomAlert,
+      isSaving,
+      onClose,
+    ]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
     }
 
-    setShowEmployeeDropdown(false);
-    setShowViolationDropdown(false);
-    closeCustomAlert();
-    onClose();
+    const resetTimerId =
+      window.setTimeout(
+        () => {
+          setFormData(
+            createInitialFormData()
+          );
+
+          setEmployeeSearch("");
+          setViolationSearch("");
+
+          setShowEmployeeDropdown(
+            false
+          );
+
+          setShowViolationDropdown(
+            false
+          );
+
+          setIsReviewing(false);
+
+          setDuplicateConfirmed(
+            false
+          );
+
+          setIsSaving(false);
+
+          closeCustomAlert();
+        },
+        0
+      );
+
+    return () => {
+      window.clearTimeout(
+        resetTimerId
+      );
+    };
   }, [
     closeCustomAlert,
-    isSaving,
-    onClose,
+    createInitialFormData,
+    isOpen,
   ]);
-
-useEffect(() => {
-  if (!isOpen) {
-    return undefined;
-  }
-
-  const resetTimerId = window.setTimeout(() => {
-    setFormData(createInitialFormData());
-
-    setEmployeeSearch("");
-    setViolationSearch("");
-
-    setShowEmployeeDropdown(false);
-    setShowViolationDropdown(false);
-
-    setIsReviewing(false);
-    setDuplicateConfirmed(false);
-    setIsSaving(false);
-
-    closeCustomAlert();
-  }, 0);
-
-  return () => {
-    window.clearTimeout(resetTimerId);
-  };
-}, [
-  closeCustomAlert,
-  createInitialFormData,
-  isOpen,
-]);
 
   useEffect(() => {
     return () => {
-      if (closeTimerRef.current) {
+      if (
+        closeTimerRef.current
+      ) {
         window.clearTimeout(
           closeTimerRef.current
         );
@@ -302,27 +399,68 @@ useEffect(() => {
     };
   }, [isOpen]);
 
+  const employeeOptions =
+    useMemo(
+      () =>
+        employees
+          .filter((employee) => {
+            const status =
+              String(
+                employee?.status ||
+                  ""
+              )
+                .trim()
+                .toLowerCase();
+
+            return (
+              status ===
+                "deployed" ||
+              status ===
+                "active deployed"
+            );
+          })
+          .map((employee) => ({
+            id:
+              employee?.id ||
+              employee?.employeeId ||
+              employee?.employee_id ||
+              employee?.name,
+
+            name:
+              employee?.name ||
+              employee?.full_name ||
+              employee?.fullName ||
+              "",
+
+            company:
+              employee?.company ||
+              "",
+          })),
+      [employees]
+    );
+
   const filteredEmployees =
     useMemo(() => {
-      const keyword = employeeSearch
-        .trim()
-        .toLowerCase();
+      const keyword =
+        employeeSearch
+          .trim()
+          .toLowerCase();
 
       if (!keyword) {
         return [];
       }
 
       return employeeOptions
-        .filter((employee) => {
-          return [
+        .filter((employee) =>
+          [
             employee.name,
             employee.id,
             employee.company,
           ]
             .join(" ")
             .toLowerCase()
-            .includes(keyword);
-        })
+            .includes(keyword)
+        )
         .slice(0, 8);
     }, [
       employeeOptions,
@@ -331,9 +469,16 @@ useEffect(() => {
 
   const filteredViolations =
     useMemo(() => {
-      const keyword = violationSearch
-        .trim()
-        .toLowerCase();
+      if (
+        !isViolationPolicyReady
+      ) {
+        return [];
+      }
+
+      const keyword =
+        violationSearch
+          .trim()
+          .toLowerCase();
 
       if (!keyword) {
         return violationOptions.slice(
@@ -344,34 +489,28 @@ useEffect(() => {
 
       return violationOptions
         .filter((item) => {
-          const searchableText = [
-            item.category,
-            item.section,
-            item.violation,
-            item.description,
-            item.penaltyLevel,
-            item.severity,
+          const searchableText =
+            [
+              item.category,
+              item.section,
+              item.violation,
+              item.description,
+              item.penaltyLevel,
+              item.severity,
 
-            ...(item.penalties || []).map(
-              (penalty) => {
-                if (
-                  typeof penalty ===
-                  "string"
-                ) {
-                  return penalty;
-                }
-
-                return `${
-                  penalty?.label || ""
-                } ${
-                  penalty?.action || ""
-                }`;
-              }
-            ),
-          ]
-            .join(" ")
-            .replace(/<[^>]*>/g, "")
-            .toLowerCase();
+              ...(
+                item.penalties ||
+                []
+              ).map(
+                getPenaltySearchValue
+              ),
+            ]
+              .join(" ")
+              .replace(
+                /<[^>]*>/g,
+                ""
+              )
+              .toLowerCase();
 
           return searchableText.includes(
             keyword
@@ -379,6 +518,7 @@ useEffect(() => {
         })
         .slice(0, 12);
     }, [
+      isViolationPolicyReady,
       violationOptions,
       violationSearch,
     ]);
@@ -399,7 +539,8 @@ useEffect(() => {
     ]);
 
   const needsDuplicateVerification =
-    duplicateCandidates.length > 0;
+    duplicateCandidates.length >
+    0;
 
   const computePenaltyData =
     useCallback(
@@ -467,11 +608,6 @@ useEffect(() => {
       ]
     );
 
-  const resetDuplicateVerification =
-    useCallback(() => {
-      setDuplicateConfirmed(false);
-    }, []);
-
   const handleSelectEmployee =
     useCallback(
       (selectedEmployee) => {
@@ -481,37 +617,44 @@ useEffect(() => {
             selectedEmployee
           );
 
-        setFormData((current) => ({
-          ...current,
+        setFormData(
+          (current) => ({
+            ...current,
 
-          employeeId:
-            selectedEmployee.id,
+            employeeId:
+              selectedEmployee.id,
 
-          employee:
-            selectedEmployee.name,
+            employee:
+              selectedEmployee.name,
 
-          company:
-            activeDeployment?.company ||
-            activeDeployment
-              ?.clientCompany ||
-            selectedEmployee.company ||
-            "",
+            company:
+              activeDeployment
+                ?.company ||
+              activeDeployment
+                ?.clientCompany ||
+              selectedEmployee
+                .company ||
+              "",
 
-          offenseCount: 1,
-          selectedPenalty: null,
-          sanction: "",
-          severity: "",
-
-          duplicateVerified: false,
-          duplicateVerificationNote:
-            "",
-        }));
+            offenseCount: 1,
+            selectedPenalty: null,
+            sanction: "",
+            severity: "",
+            duplicateVerified:
+              false,
+            duplicateVerificationNote:
+              "",
+          })
+        );
 
         setEmployeeSearch(
           `${selectedEmployee.name} (${selectedEmployee.id})`
         );
 
-        setShowEmployeeDropdown(false);
+        setShowEmployeeDropdown(
+          false
+        );
+
         setIsReviewing(false);
 
         resetDuplicateVerification();
@@ -525,98 +668,107 @@ useEffect(() => {
   const handleEmployeeInputChange =
     useCallback(
       (event) => {
-        const value =
-          event.target.value;
+        setEmployeeSearch(
+          event.target.value
+        );
 
-        setEmployeeSearch(value);
-        setShowEmployeeDropdown(true);
+        setShowEmployeeDropdown(
+          true
+        );
+
         setIsReviewing(false);
 
         resetDuplicateVerification();
 
-        setFormData((current) => ({
-          ...current,
-
-          employeeId: "",
-          employee: "",
-          company: "",
-
-          offenseCount: 1,
-          selectedPenalty: null,
-          sanction: "",
-          severity: "",
-
-          duplicateVerified: false,
-          duplicateVerificationNote:
-            "",
-        }));
+        setFormData(
+          (current) => ({
+            ...current,
+            ...getClearedEmployeeFields(),
+          })
+        );
       },
-      [resetDuplicateVerification]
+      [
+        resetDuplicateVerification,
+      ]
     );
 
   const handleSelectViolation =
     useCallback(
       (selectedRule) => {
-        setFormData((current) => {
-          const penalties =
-            selectedRule.penalties ||
-            [];
+        if (
+          !isViolationPolicyReady
+        ) {
+          return;
+        }
 
-          const penaltyData =
-            computePenaltyData({
-              employeeId:
-                current.employeeId,
+        setFormData(
+          (current) => {
+            const penalties =
+              selectedRule.penalties ||
+              [];
+
+            const penaltyData =
+              computePenaltyData({
+                employeeId:
+                  current.employeeId,
+
+                violation:
+                  selectedRule.violation,
+
+                penalties,
+
+                description:
+                  current.description,
+              });
+
+            return {
+              ...current,
 
               violation:
                 selectedRule.violation,
 
+              violationCategory:
+                selectedRule.category,
+
+              violationSection:
+                selectedRule.section,
+
+              violationDescription:
+                selectedRule.description ||
+                "",
+
+              penaltyLevel:
+                selectedRule.penaltyLevel ||
+                "",
+
               penalties,
 
-              description:
-                current.description,
-            });
+              duplicateVerified:
+                false,
 
-          return {
-            ...current,
+              duplicateVerificationNote:
+                "",
 
-            violation:
-              selectedRule.violation,
-
-            violationCategory:
-              selectedRule.category,
-
-            violationSection:
-              selectedRule.section,
-
-            violationDescription:
-              selectedRule.description ||
-              "",
-
-            penaltyLevel:
-              selectedRule.penaltyLevel ||
-              "",
-
-            penalties,
-
-            duplicateVerified: false,
-            duplicateVerificationNote:
-              "",
-
-            ...penaltyData,
-          };
-        });
+              ...penaltyData,
+            };
+          }
+        );
 
         setViolationSearch(
           `${selectedRule.section} — ${selectedRule.violation}`
         );
 
-        setShowViolationDropdown(false);
+        setShowViolationDropdown(
+          false
+        );
+
         setIsReviewing(false);
 
         resetDuplicateVerification();
       },
       [
         computePenaltyData,
+        isViolationPolicyReady,
         resetDuplicateVerification,
       ]
     );
@@ -624,82 +776,77 @@ useEffect(() => {
   const handleViolationInputChange =
     useCallback(
       (event) => {
-        const value =
-          event.target.value;
+        setViolationSearch(
+          event.target.value
+        );
 
-        setViolationSearch(value);
-        setShowViolationDropdown(true);
+        setShowViolationDropdown(
+          true
+        );
+
         setIsReviewing(false);
 
         resetDuplicateVerification();
 
-        setFormData((current) => ({
-          ...current,
-
-          violation: "",
-          violationCategory: "",
-          violationSection: "",
-          violationDescription: "",
-
-          penaltyLevel: "",
-          penalties: [],
-
-          offenseCount: 1,
-          selectedPenalty: null,
-
-          severity: "",
-          sanction: "",
-
-          duplicateVerified: false,
-          duplicateVerificationNote:
-            "",
-        }));
+        setFormData(
+          (current) => ({
+            ...current,
+            ...getClearedViolationFields(),
+          })
+        );
       },
-      [resetDuplicateVerification]
+      [
+        resetDuplicateVerification,
+      ]
     );
 
-  const handleChange = useCallback(
-    (event) => {
-      const { name, value } =
-        event.target;
+  const handleChange =
+    useCallback(
+      (event) => {
+        const {
+          name,
+          value,
+        } = event.target;
 
-      setIsReviewing(false);
+        setIsReviewing(false);
 
-      setFormData((current) => {
-        const updated = {
-          ...current,
-          [name]: value,
-        };
+        setFormData(
+          (current) => {
+            const updated = {
+              ...current,
+              [name]: value,
+            };
 
-        if (
-          name === "description" &&
-          updated.violation
-        ) {
-          const penaltyData =
-            computePenaltyData({
-              employeeId:
-                updated.employeeId,
+            if (
+              name ===
+                "description" &&
+              updated.violation
+            ) {
+              return {
+                ...updated,
 
-              violation:
-                updated.violation,
+                ...computePenaltyData({
+                  employeeId:
+                    updated.employeeId,
 
-              penalties:
-                updated.penalties,
+                  violation:
+                    updated.violation,
 
-              description: value,
-            });
+                  penalties:
+                    updated.penalties,
 
-          return {
-            ...updated,
-            ...penaltyData,
-          };
-        }
+                  description:
+                    value,
+                }),
+              };
+            }
 
-        return updated;
-      });
-    },
-    [computePenaltyData]
-  );
+            return updated;
+          }
+        );
+      },
+      [computePenaltyData]
+    );
 
   const validateForm =
     useCallback(() => {
@@ -709,9 +856,44 @@ useEffect(() => {
       ) {
         showCustomAlert({
           type: "error",
-          title: "Employee Required",
+          title:
+            "Employee Required",
+
           message:
             "Please select an employee from the suggested list.",
+        });
+
+        return false;
+      }
+
+      if (
+        isLoadingViolationPolicy
+      ) {
+        showCustomAlert({
+          type: "error",
+          title:
+            "Violation Policy Loading",
+
+          message:
+            "Please wait until the current violation policy finishes loading.",
+        });
+
+        return false;
+      }
+
+      if (
+        violationPolicyError ||
+        violationOptions.length ===
+          0
+      ) {
+        showCustomAlert({
+          type: "error",
+          title:
+            "Violation Policy Unavailable",
+
+          message:
+            violationPolicyError ||
+            "The current violation policy could not be loaded. Please retry before creating an incident.",
         });
 
         return false;
@@ -720,9 +902,31 @@ useEffect(() => {
       if (!formData?.violation) {
         showCustomAlert({
           type: "error",
-          title: "Violation Required",
+          title:
+            "Violation Required",
+
           message:
             "Please select a violation type from the suggested list.",
+        });
+
+        return false;
+      }
+
+      const selectedRuleExists =
+        violationOptions.some(
+          (rule) =>
+            rule.violation ===
+            formData.violation
+        );
+
+      if (!selectedRuleExists) {
+        showCustomAlert({
+          type: "error",
+          title:
+            "Violation Policy Changed",
+
+          message:
+            "The selected violation is no longer available in the current policy. Please select a violation again.",
         });
 
         return false;
@@ -733,6 +937,7 @@ useEffect(() => {
       ) {
         showCustomAlert({
           type: "error",
+
           title:
             "Incident Description Required",
 
@@ -746,57 +951,70 @@ useEffect(() => {
       return true;
     }, [
       formData,
+      isLoadingViolationPolicy,
       showCustomAlert,
+      violationOptions,
+      violationPolicyError,
     ]);
 
-  const handleReview = useCallback(
-    (event) => {
-      event.preventDefault();
+  const handleReview =
+    useCallback(
+      (event) => {
+        event.preventDefault();
 
-      if (!validateForm()) {
-        return;
-      }
+        if (!validateForm()) {
+          return;
+        }
 
-      const penaltyData =
-        computePenaltyData({
-          employeeId:
-            formData.employeeId,
+        const penaltyData =
+          computePenaltyData({
+            employeeId:
+              formData.employeeId,
 
-          violation:
-            formData.violation,
+            violation:
+              formData.violation,
 
-          penalties:
-            formData.penalties,
+            penalties:
+              formData.penalties,
 
-          description:
-            formData.description,
+            description:
+              formData.description,
+          });
+
+        setFormData(
+          (current) => ({
+            ...current,
+            ...penaltyData,
+          })
+        );
+
+        setShowEmployeeDropdown(
+          false
+        );
+
+        setShowViolationDropdown(
+          false
+        );
+
+        setIsReviewing(true);
+
+        showCustomAlert({
+          type: "success",
+
+          title:
+            "Report Ready for Review",
+
+          message:
+            "Incident details have been validated. Please review the report before final saving.",
         });
-
-      setFormData((current) => ({
-        ...current,
-        ...penaltyData,
-      }));
-
-      setShowEmployeeDropdown(false);
-      setShowViolationDropdown(false);
-      setIsReviewing(true);
-
-      showCustomAlert({
-        type: "success",
-        title:
-          "Report Ready for Review",
-
-        message:
-          "Incident details have been validated. Please review the report before final saving.",
-      });
-    },
-    [
-      computePenaltyData,
-      formData,
-      showCustomAlert,
-      validateForm,
-    ]
-  );
+      },
+      [
+        computePenaltyData,
+        formData,
+        showCustomAlert,
+        validateForm,
+      ]
+    );
 
   const handleFinalSave =
     useCallback(async () => {
@@ -822,7 +1040,9 @@ useEffect(() => {
       if (!activeDeployment) {
         showCustomAlert({
           type: "error",
-          title: "Invalid Employee",
+
+          title:
+            "Invalid Employee",
 
           message:
             "Only employees with an active deployment record can be reported in incidents.",
@@ -885,6 +1105,7 @@ useEffect(() => {
 
       try {
         setIsSaving(true);
+
         closeCustomAlert();
 
         const saved =
@@ -892,7 +1113,9 @@ useEffect(() => {
             finalIncident
           );
 
-        if (saved === false) {
+        if (
+          saved === false
+        ) {
           setIsSaving(false);
           return;
         }
@@ -908,11 +1131,18 @@ useEffect(() => {
         });
 
         closeTimerRef.current =
-          window.setTimeout(() => {
-            closeCustomAlert();
-            setIsSaving(false);
-            onClose();
-          }, 900);
+          window.setTimeout(
+            () => {
+              closeCustomAlert();
+
+              setIsSaving(
+                false
+              );
+
+              onClose();
+            },
+            900
+          );
       } catch (error) {
         console.error(
           "Final save incident error:",
@@ -979,12 +1209,16 @@ useEffect(() => {
       >
         {!isReviewing ? (
           <form
-            onSubmit={handleReview}
+            onSubmit={
+              handleReview
+            }
             className="space-y-6"
           >
             <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950/50">
               <SectionTitle
-                icon={<FiFileText />}
+                icon={
+                  <FiFileText />
+                }
                 title="Incident Information"
               />
 
@@ -995,7 +1229,9 @@ useEffect(() => {
                 >
                   <input
                     type="text"
-                    value={formData.id}
+                    value={
+                      formData.id
+                    }
                     disabled
                     className="input-field bg-gray-100 text-gray-500 dark:bg-slate-800"
                   />
@@ -1003,7 +1239,9 @@ useEffect(() => {
 
                 <Field
                   label="Reported Date and Time"
-                  icon={<FiCalendar />}
+                  icon={
+                    <FiCalendar />
+                  }
                 >
                   <input
                     type="text"
@@ -1034,7 +1272,9 @@ useEffect(() => {
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div
-                  ref={employeeBoxRef}
+                  ref={
+                    employeeBoxRef
+                  }
                   className="relative"
                 >
                   <label
@@ -1056,10 +1296,14 @@ useEffect(() => {
                     )}
 
                     <input
-                      ref={employeeInputRef}
+                      ref={
+                        employeeInputRef
+                      }
                       id="incident-employee-search"
                       type="text"
-                      value={employeeSearch}
+                      value={
+                        employeeSearch
+                      }
                       onChange={
                         handleEmployeeInputChange
                       }
@@ -1069,7 +1313,9 @@ useEffect(() => {
                         )
                       }
                       autoComplete="off"
-                      disabled={isSaving}
+                      disabled={
+                        isSaving
+                      }
                       placeholder="Search deployed employee name, ID number, or company..."
                       className="input-field"
                       style={{
@@ -1090,7 +1336,9 @@ useEffect(() => {
                         className="absolute z-30 mt-2 max-h-60 w-full overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
                       >
                         {filteredEmployees.map(
-                          (employee) => (
+                          (
+                            employee
+                          ) => (
                             <button
                               key={
                                 employee.id
@@ -1138,15 +1386,17 @@ useEffect(() => {
                     filteredEmployees.length ===
                       0 && (
                       <div className="absolute z-30 mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-                        No deployed employee
-                        found.
+                        No deployed
+                        employee found.
                       </div>
                     )}
                 </div>
 
                 <Field
                   label="Company / Client"
-                  icon={<FiBriefcase />}
+                  icon={
+                    <FiBriefcase />
+                  }
                 >
                   <input
                     type="text"
@@ -1164,13 +1414,69 @@ useEffect(() => {
 
             <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950/50">
               <SectionTitle
-                icon={<FiShield />}
+                icon={
+                  <FiShield />
+                }
                 title="Violation Classification"
               />
 
+              {isLoadingViolationPolicy && (
+                <div
+                  role="status"
+                  className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm font-semibold text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+                >
+                  Loading the current violation policy...
+                </div>
+              )}
+
+              {violationPolicyError && (
+                <div
+                  role="alert"
+                  className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                >
+                  <p className="font-bold">
+                    Violation policy unavailable
+                  </p>
+
+                  <p className="mt-1 leading-6">
+                    {
+                      violationPolicyError
+                    }
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={
+                      reloadViolationPolicy
+                    }
+                    className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:border-red-500/40 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-500/10"
+                  >
+                    Retry Policy
+                  </button>
+                </div>
+              )}
+
+              {isViolationPolicyReady &&
+                violationPolicySource && (
+                  <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 text-sm text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
+                    <p className="font-bold">
+                      Policy source:{" "}
+                      {
+                        violationPolicySource
+                      }
+                    </p>
+
+                    <p className="mt-1 text-xs leading-5">
+                      New incident classification uses the current policy loaded from the server.
+                    </p>
+                  </div>
+                )}
+
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div
-                  ref={violationBoxRef}
+                  ref={
+                    violationBoxRef
+                  }
                   className="relative"
                 >
                   <label
@@ -1200,14 +1506,27 @@ useEffect(() => {
                       onChange={
                         handleViolationInputChange
                       }
-                      onFocus={() =>
-                        setShowViolationDropdown(
-                          true
-                        )
-                      }
+                      onFocus={() => {
+                        if (
+                          isViolationPolicyReady
+                        ) {
+                          setShowViolationDropdown(
+                            true
+                          );
+                        }
+                      }}
                       autoComplete="off"
-                      disabled={isSaving}
-                      placeholder="Search by section, number, category, or violation..."
+                      disabled={
+                        isSaving ||
+                        !isViolationPolicyReady
+                      }
+                      placeholder={
+                        isLoadingViolationPolicy
+                          ? "Loading violation policy..."
+                          : violationPolicyError
+                            ? "Violation policy unavailable"
+                            : "Search by section, number, category, or violation..."
+                      }
                       className="input-field"
                       style={{
                         paddingLeft:
@@ -1277,10 +1596,11 @@ useEffect(() => {
                   {showViolationDropdown &&
                     violationSearch &&
                     filteredViolations.length ===
-                      0 && (
+                      0 &&
+                    isViolationPolicyReady && (
                       <div className="absolute z-30 mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-                        No matching violation
-                        found.
+                        No matching
+                        violation found.
                       </div>
                     )}
                 </div>
@@ -1317,7 +1637,9 @@ useEffect(() => {
               {formData.violation && (
                 <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <PolicyCard
-                    formData={formData}
+                    formData={
+                      formData
+                    }
                   />
 
                   <PenaltiesCard
@@ -1382,8 +1704,12 @@ useEffect(() => {
                   value={
                     formData.description
                   }
-                  onChange={handleChange}
-                  disabled={isSaving}
+                  onChange={
+                    handleChange
+                  }
+                  disabled={
+                    isSaving
+                  }
                   placeholder="Write specific incident details, context, and supporting notes..."
                   className="input-field resize-none"
                 />
@@ -1393,8 +1719,12 @@ useEffect(() => {
             <FooterButtons>
               <button
                 type="button"
-                onClick={handleClose}
-                disabled={isSaving}
+                onClick={
+                  handleClose
+                }
+                disabled={
+                  isSaving
+                }
                 className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:text-gray-300 dark:hover:bg-slate-800"
               >
                 Cancel
@@ -1402,12 +1732,16 @@ useEffect(() => {
 
               <button
                 type="submit"
-                disabled={isSaving}
+                disabled={
+                  isSaving ||
+                  !isViolationPolicyReady
+                }
                 className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <FiCheckCircle
                   aria-hidden="true"
                 />
+
                 Review Report
               </button>
             </FooterButtons>
@@ -1423,14 +1757,11 @@ useEffect(() => {
 
                 <div>
                   <h3 className="font-bold">
-                    Review Incident
-                    Report
+                    Review Incident Report
                   </h3>
 
                   <p className="mt-1 text-sm">
-                    Please check all
-                    details carefully
-                    before final saving.
+                    Please check all details carefully before final saving.
                   </p>
                 </div>
               </div>
@@ -1454,7 +1785,9 @@ useEffect(() => {
             <section className="grid gap-4 md:grid-cols-2">
               <ReviewItem
                 label="Incident ID"
-                value={formData.id}
+                value={
+                  formData.id
+                }
               />
 
               <ReviewItem
@@ -1517,7 +1850,9 @@ useEffect(() => {
 
             <section className="grid gap-4 lg:grid-cols-2">
               <PolicyCard
-                formData={formData}
+                formData={
+                  formData
+                }
               />
 
               <PenaltiesCard
@@ -1536,7 +1871,9 @@ useEffect(() => {
               </p>
 
               <p className="mt-3 whitespace-pre-line text-sm leading-6 text-gray-700 dark:text-gray-300">
-                {formData.description}
+                {
+                  formData.description
+                }
               </p>
             </section>
 
@@ -1544,14 +1881,19 @@ useEffect(() => {
               <button
                 type="button"
                 onClick={() =>
-                  setIsReviewing(false)
+                  setIsReviewing(
+                    false
+                  )
                 }
-                disabled={isSaving}
+                disabled={
+                  isSaving
+                }
                 className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:text-gray-300 dark:hover:bg-slate-800"
               >
                 <FiChevronLeft
                   aria-hidden="true"
                 />
+
                 Back
               </button>
 
@@ -1560,7 +1902,10 @@ useEffect(() => {
                 onClick={
                   handleFinalSave
                 }
-                disabled={isSaving}
+                disabled={
+                  isSaving ||
+                  !isViolationPolicyReady
+                }
                 className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <FiCheckCircle
@@ -1585,10 +1930,18 @@ useEffect(() => {
 
       {customAlert.show && (
         <NoticeModal
-          type={customAlert.type}
-          title={customAlert.title}
-          message={customAlert.message}
-          preventClose={isSaving}
+          type={
+            customAlert.type
+          }
+          title={
+            customAlert.title
+          }
+          message={
+            customAlert.message
+          }
+          preventClose={
+            isSaving
+          }
           onClose={
             isSaving
               ? undefined
