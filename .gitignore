@@ -2,7 +2,16 @@
 # WELLJOB HRIS - Git Ignore Rules
 # ============================================================
 
-# Backend environment secrets
+# ============================================================
+# DEPENDENCIES
+# ============================================================
+# Dependencies must be restored using package-lock.json.
+# Never commit node_modules.
+node_modules/
+
+# ============================================================
+# BACKEND ENVIRONMENT SECRETS
+# ============================================================
 backend/.env
 
 # ============================================================
