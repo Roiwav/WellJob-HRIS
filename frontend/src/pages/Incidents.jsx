@@ -2102,6 +2102,14 @@ export default function Incidents() {
                   violationType:
                     normalizedIncident.violation,
 
+                  violationSection:
+                    normalizedIncident.violationSection ||
+                    "",
+
+                  violationCategory:
+                    normalizedIncident.violationCategory ||
+                    "",
+
                   severity:
                     normalizedIncident.severity,
 

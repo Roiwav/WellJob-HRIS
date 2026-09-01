@@ -1,9 +1,21 @@
 const db = require("../config/db");
-const { logAudit, AUDIT_CATEGORY } = require("../utils/auditLogger");
+
+const {
+  logAudit,
+  AUDIT_CATEGORY,
+} = require("../utils/auditLogger");
 
 const {
   cleanupUnreferencedFileCandidates,
 } = require("../utils/fileReferenceService");
+
+const {
+  ViolationPolicyError,
+  getViolationRulesConfiguration,
+  resolveViolationRule,
+  getHighestSeverity,
+  computeIncidentClassification,
+} = require("../utils/violationPolicyService");
 
 const API_BASE =
   process.env.API_BASE_URL ||
@@ -11,8 +23,10 @@ const API_BASE =
 
 const WORKFLOW_ACTION = {
   START: "START_INVESTIGATION",
-  SUBMIT_RESOLUTION: "SUBMIT_RESOLUTION",
-  SUBMIT_INVESTIGATION: "SUBMIT_INVESTIGATION",
+  SUBMIT_RESOLUTION:
+    "SUBMIT_RESOLUTION",
+  SUBMIT_INVESTIGATION:
+    "SUBMIT_INVESTIGATION",
   RETURN: "RETURN_INCIDENT",
   CLOSE: "CLOSE_INCIDENT",
 };
@@ -179,14 +193,6 @@ function normalizeStatus(value) {
   }
 
   return status;
-}
-
-function normalizeSeverity(value) {
-  return (
-    String(value || "")
-      .trim() ||
-    "Minor"
-  );
 }
 
 function normalizeText(value) {
@@ -510,6 +516,324 @@ async function getActiveDeploymentForEmployee(
     ) ||
     null
   );
+}
+
+/*
+ * ==================================================
+ * SERVER-AUTHORITATIVE INCIDENT CLASSIFICATION
+ * ==================================================
+ */
+
+async function getRequiredViolationPolicy(
+  connection
+) {
+  const configuration =
+    await getViolationRulesConfiguration(
+      {
+        connection,
+      }
+    );
+
+  if (!configuration) {
+    throw new ViolationPolicyError(
+      "The current violation policy is not configured. Incident classification is temporarily unavailable.",
+      {
+        statusCode: 503,
+
+        code:
+          "VIOLATION_POLICY_NOT_CONFIGURED",
+      }
+    );
+  }
+
+  return configuration;
+}
+
+async function lockEmployeeForClassification(
+  connection,
+  employeeId
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT id
+      FROM employees
+      WHERE id = ?
+      LIMIT 1
+      FOR UPDATE
+      `,
+      [
+        employeeId,
+      ]
+    );
+
+  if (!rows.length) {
+    throw new ViolationPolicyError(
+      "Selected employee not found.",
+      {
+        statusCode: 404,
+
+        code:
+          "EMPLOYEE_NOT_FOUND",
+      }
+    );
+  }
+}
+
+async function getIncidentHistoryCounts({
+  connection,
+  employeeId,
+  violation,
+  excludeIncidentId = null,
+}) {
+  const normalizedEmployeeId =
+    String(
+      employeeId || ""
+    ).trim();
+
+  const normalizedViolation =
+    normalizeText(
+      violation
+    );
+
+  const params = [
+    normalizedViolation,
+    normalizedEmployeeId,
+  ];
+
+  let excludeClause = "";
+
+  if (
+    excludeIncidentId !==
+      null &&
+    excludeIncidentId !==
+      undefined &&
+    String(
+      excludeIncidentId
+    ).trim() !== ""
+  ) {
+    excludeClause =
+      "AND id <> ?";
+
+    params.push(
+      excludeIncidentId
+    );
+  }
+
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS totalEmployeeCases,
+
+        SUM(
+          CASE
+            WHEN LOWER(
+              TRIM(
+                violation_type
+              )
+            ) = ?
+            THEN 1
+            ELSE 0
+          END
+        ) AS sameViolationCases
+
+      FROM incidents
+
+      WHERE CAST(
+        employee_id AS CHAR
+      ) = ?
+
+      ${excludeClause}
+      `,
+      params
+    );
+
+  const row =
+    rows[0] ||
+    {};
+
+  const totalEmployeeCases =
+    Number(
+      row.totalEmployeeCases ||
+        0
+    );
+
+  const sameViolationCases =
+    Number(
+      row.sameViolationCases ||
+        0
+    );
+
+  return {
+    totalEmployeeCases,
+
+    sameViolationCases,
+
+    offenseCount:
+      sameViolationCases +
+      1,
+  };
+}
+
+async function buildAuthoritativeIncidentClassification({
+  connection,
+  employeeId,
+  violation,
+  violationSection = "",
+  violationCategory = "",
+  description = "",
+  excludeIncidentId = null,
+}) {
+  const configuration =
+    await getRequiredViolationPolicy(
+      connection
+    );
+
+  const rule =
+    resolveViolationRule({
+      rules:
+        configuration.rules,
+
+      violation,
+
+      section:
+        violationSection,
+
+      category:
+        violationCategory,
+    });
+
+  const history =
+    await getIncidentHistoryCounts({
+      connection,
+
+      employeeId,
+
+      violation:
+        rule.violation,
+
+      excludeIncidentId,
+    });
+
+  return computeIncidentClassification(
+    {
+      rule,
+
+      offenseCount:
+        history.offenseCount,
+
+      totalEmployeeCases:
+        history.totalEmployeeCases,
+
+      description,
+    }
+  );
+}
+
+function hasSubmittedValue(
+  value
+) {
+  return (
+    value !== undefined &&
+    value !== null &&
+    String(value).trim() !==
+      ""
+  );
+}
+
+function assertSubmittedSeverityMatches(
+  submittedSeverity,
+  expectedSeverity
+) {
+  if (
+    !hasSubmittedValue(
+      submittedSeverity
+    )
+  ) {
+    return;
+  }
+
+  const normalizedSubmittedSeverity =
+    getHighestSeverity(
+      submittedSeverity
+    );
+
+  if (
+    !normalizedSubmittedSeverity ||
+    normalizedSubmittedSeverity !==
+      expectedSeverity
+  ) {
+    throw new ViolationPolicyError(
+      "The submitted incident severity does not match the server-authoritative classification. Refresh the incident form and try again.",
+      {
+        statusCode: 409,
+
+        code:
+          "INCIDENT_SEVERITY_MISMATCH",
+      }
+    );
+  }
+}
+
+function assertSubmittedSanctionMatches(
+  submittedSanction,
+  expectedSanction
+) {
+  if (
+    !hasSubmittedValue(
+      submittedSanction
+    )
+  ) {
+    return;
+  }
+
+  if (
+    normalizeText(
+      submittedSanction
+    ) !==
+    normalizeText(
+      expectedSanction
+    )
+  ) {
+    throw new ViolationPolicyError(
+      "The submitted incident sanction does not match the current server policy. Refresh the incident form and try again.",
+      {
+        statusCode: 409,
+
+        code:
+          "INCIDENT_SANCTION_MISMATCH",
+      }
+    );
+  }
+}
+
+function respondToViolationPolicyError(
+  res,
+  error
+) {
+  const statusCode =
+    Number(
+      error?.statusCode
+    ) || 400;
+
+  const publicMessage =
+    statusCode >= 500 &&
+    error?.code !==
+      "VIOLATION_POLICY_NOT_CONFIGURED"
+      ? "The violation policy configuration is unavailable or invalid. Please contact an authorized administrator."
+      : error.message;
+
+  return res
+    .status(statusCode)
+    .json({
+      error:
+        publicMessage,
+
+      code:
+        error?.code ||
+        "VIOLATION_POLICY_ERROR",
+    });
 }
 
 function serializeEvidenceItem(
@@ -1977,6 +2301,8 @@ exports.createIncident =
         company,
         violation,
         violationType,
+        violationSection,
+        violationCategory,
         severity,
         date,
         incidentDate,
@@ -2075,12 +2401,12 @@ exports.createIncident =
           ?.client_company ||
         null;
 
-      const finalViolation =
+      const submittedViolation =
         violationType ||
         violation;
 
       if (
-        !finalViolation
+        !submittedViolation
       ) {
         return res
           .status(400)
@@ -2127,6 +2453,60 @@ exports.createIncident =
       transactionStarted =
         true;
 
+      /*
+       * Lock the employee row while computing
+       * offense history so two simultaneous
+       * incident submissions for the same employee
+       * cannot independently classify themselves
+       * using the same previous count.
+       */
+      await lockEmployeeForClassification(
+        connection,
+        finalEmployeeId
+      );
+
+      const classification =
+        await buildAuthoritativeIncidentClassification(
+          {
+            connection,
+
+            employeeId:
+              finalEmployeeId,
+
+            violation:
+              submittedViolation,
+
+            violationSection:
+              violationSection ||
+              "",
+
+            violationCategory:
+              violationCategory ||
+              "",
+
+            description:
+              description ||
+              "",
+          }
+        );
+
+      /*
+       * The frontend may still send its calculated
+       * severity/sanction for immediate UX.
+       *
+       * They are treated only as consistency checks.
+       * The server policy remains authoritative.
+       */
+      assertSubmittedSeverityMatches(
+        severity,
+        classification.severity
+      );
+
+      assertSubmittedSanctionMatches(
+        actionTaken,
+        classification.sanction
+      );
+
       const [result] =
         await connection.query(
           `
@@ -2160,26 +2540,38 @@ exports.createIncident =
             finalEmployeeId,
             finalEmployeeName,
             finalCompany,
-            finalViolation,
-            normalizeSeverity(
-              severity
-            ),
+
+            classification
+              .violation,
+
+            classification
+              .severity,
+
             "Open",
             finalDate,
+
             location ||
               null,
+
             description ||
               null,
+
             finalReportedBy,
-            actionTaken ||
+
+            classification
+              .sanction ||
               null,
+
             recommendation ||
               null,
+
             resolutionNotes ||
               null,
+
             actor.userId,
             actor.username,
             actor.fullName,
+
             "CREATE_INCIDENT",
           ]
         );
@@ -2324,6 +2716,17 @@ exports.createIncident =
         );
       }
 
+      if (
+        error
+          ?.isViolationPolicyError &&
+        !rollbackFailed
+      ) {
+        return respondToViolationPolicyError(
+          res,
+          error
+        );
+      }
+
       console.error(
         "CREATE INCIDENT ERROR:",
         error
@@ -2449,9 +2852,7 @@ exports.updateIncident =
           .promise()
           .query(
             `
-            SELECT
-              id,
-              status
+            SELECT *
             FROM incidents
             WHERE id = ?
             LIMIT 1
@@ -2472,11 +2873,13 @@ exports.updateIncident =
           });
       }
 
+      const existingIncident =
+        existingIncidentRows[0];
+
       if (
         normalizeStatus(
-          existingIncidentRows[
-            0
-          ].status
+          existingIncident
+            .status
         ) ===
         "Closed"
       ) {
@@ -2496,6 +2899,8 @@ exports.updateIncident =
         company,
         violation,
         violationType,
+        violationSection,
+        violationCategory,
         severity,
         date,
         incidentDate,
@@ -2591,12 +2996,12 @@ exports.updateIncident =
           ?.client_company ||
         null;
 
-      const finalViolation =
+      const submittedViolation =
         violationType ||
         violation;
 
       if (
-        !finalViolation
+        !submittedViolation
       ) {
         return res
           .status(400)
@@ -2643,6 +3048,108 @@ exports.updateIncident =
       transactionStarted =
         true;
 
+      let finalViolation =
+        existingIncident
+          .violation_type;
+
+      let finalSeverity =
+        getHighestSeverity(
+          existingIncident
+            .severity
+        );
+
+      let finalActionTaken =
+        existingIncident
+          .action_taken ||
+        null;
+
+      const sameViolation =
+        normalizeText(
+          existingIncident
+            .violation_type
+        ) ===
+        normalizeText(
+          submittedViolation
+        );
+
+      /*
+       * Historical integrity rule:
+       *
+       * If the violation itself did not change and
+       * the stored severity is valid, preserve the
+       * historical severity exactly.
+       *
+       * A later Code of Conduct change must not
+       * silently rewrite an older incident.
+       */
+      if (
+        sameViolation &&
+        finalSeverity
+      ) {
+        assertSubmittedSeverityMatches(
+          severity,
+          finalSeverity
+        );
+      } else {
+        /*
+         * Reclassification is allowed only when the
+         * selected violation actually changed, or
+         * when an old record has no valid persisted
+         * severity.
+         */
+        await lockEmployeeForClassification(
+          connection,
+          finalEmployeeId
+        );
+
+        const classification =
+          await buildAuthoritativeIncidentClassification(
+            {
+              connection,
+
+              employeeId:
+                finalEmployeeId,
+
+              violation:
+                submittedViolation,
+
+              violationSection:
+                violationSection ||
+                "",
+
+              violationCategory:
+                violationCategory ||
+                "",
+
+              description:
+                description ||
+                "",
+
+              excludeIncidentId:
+                id,
+            }
+          );
+
+        assertSubmittedSeverityMatches(
+          severity,
+          classification
+            .severity
+        );
+
+        finalViolation =
+          classification
+            .violation;
+
+        finalSeverity =
+          classification
+            .severity;
+
+        finalActionTaken =
+          classification
+            .sanction ||
+          null;
+      }
+
       await connection.query(
         `
         UPDATE incidents
@@ -2656,6 +3163,7 @@ exports.updateIncident =
           location = ?,
           description = ?,
           reported_by = ?,
+          action_taken = ?,
           updated_at = NOW()
         WHERE id = ?
         `,
@@ -2664,15 +3172,19 @@ exports.updateIncident =
           finalEmployeeName,
           finalCompany,
           finalViolation,
-          normalizeSeverity(
-            severity
-          ),
+          finalSeverity,
           finalDate,
+
           location ||
             null,
+
           description ||
             null,
+
           finalReportedBy,
+
+          finalActionTaken,
+
           id,
         ]
       );
@@ -2778,6 +3290,17 @@ exports.updateIncident =
       ) {
         claimIncidentEvidenceFiles(
           req
+        );
+      }
+
+      if (
+        error
+          ?.isViolationPolicyError &&
+        !rollbackFailed
+      ) {
+        return respondToViolationPolicyError(
+          res,
+          error
         );
       }
 
