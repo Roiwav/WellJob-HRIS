@@ -25,7 +25,6 @@ function normalizeRole(value) {
   const aliases = {
     SUPERADMIN: "SUPER_ADMIN",
     SUPER_ADMIN: "SUPER_ADMIN",
-    ADMIN: "SUPER_ADMIN",
 
     HRMANAGER: "HR_MANAGER",
     HR_MANAGER: "HR_MANAGER",
@@ -228,7 +227,7 @@ function getVerifiedTokenIdentity(
  * SECURITY FLOW:
  *
  * 1. Require Authorization: Bearer <token>
- * 2. Verify JWT signature / expiry
+ * 2. Verify JWT signature / expiry using HS256 only
  * 3. Validate session identity
  * 4. Reload CURRENT user from MySQL
  * 5. Confirm account still exists
@@ -296,12 +295,23 @@ async function verifyToken(
      * - expiration claim
      * - not-before claim, when present
      *
-     * Never replace this with jwt.decode().
+     * SECURITY:
+     *
+     * Authentication tokens issued by authController
+     * use HS256. Accept that algorithm only instead
+     * of allowing other HMAC JWT algorithms.
+     *
+     * Never replace jwt.verify() with jwt.decode().
      */
     payload =
       jwt.verify(
         token,
-        jwtSecret
+        jwtSecret,
+        {
+          algorithms: [
+            "HS256",
+          ],
+        }
       );
   } catch (error) {
     if (

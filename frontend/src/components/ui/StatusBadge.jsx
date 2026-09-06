@@ -23,6 +23,20 @@ const STATUS_CONFIG = {
       "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
   },
 
+  editable: {
+    label: "Editable",
+    icon: FiCheckCircle,
+    className:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
+  },
+
+  "view only": {
+    label: "View Only",
+    icon: FiInfo,
+    className:
+      "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300",
+  },
+
   inactive: {
     label: "Inactive",
     icon: FiMinusCircle,

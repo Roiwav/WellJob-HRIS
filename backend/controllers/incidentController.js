@@ -215,7 +215,6 @@ function normalizeRole(value) {
     [
       "SUPERADMIN",
       "SUPER_ADMIN",
-      "ADMIN",
     ].includes(role)
   ) {
     return "SUPER_ADMIN";
@@ -1892,68 +1891,6 @@ async function getActor(req) {
   };
 }
 
-function looksLikeUsername(
-  value
-) {
-  const cleanValue =
-    String(value || "")
-      .trim()
-      .toLowerCase();
-
-  return (
-    /^(hm|hr|it)\d+$/i.test(
-      cleanValue
-    ) ||
-    cleanValue ===
-      "admin" ||
-    cleanValue ===
-      "superadmin"
-  );
-}
-
-function getSafePersonName(
-  inputName,
-  actor
-) {
-  const value =
-    toNullable(
-      inputName
-    );
-
-  const username =
-    toNullable(
-      actor?.username
-    );
-
-  const fullName =
-    toNullable(
-      actor?.fullName
-    );
-
-  if (!value) {
-    return (
-      fullName ||
-      username ||
-      "Unknown User"
-    );
-  }
-
-  const sameAsUsername =
-    username &&
-    value.toLowerCase() ===
-      username.toLowerCase();
-
-  return (
-    sameAsUsername ||
-    looksLikeUsername(value)
-  )
-    ? (
-        fullName ||
-        value
-      )
-    : value;
-}
-
 exports.getIncidents =
   async (
     req,
@@ -2342,9 +2279,6 @@ exports.createIncident =
       const {
         employeeId,
         employee_id,
-        employee,
-        employeeName,
-        company,
         violation,
         violationType,
         violationSection,
@@ -2367,7 +2301,6 @@ exports.createIncident =
         incidentDate,
         location,
         description,
-        reportedBy,
         recommendation,
         resolutionNotes,
       } =
@@ -2443,20 +2376,31 @@ exports.createIncident =
           finalEmployeeId
         );
 
+      /*
+       * DATA INTEGRITY:
+       *
+       * Employee identity is server-authoritative.
+       * Client-supplied employee names are ignored so
+       * a direct API request cannot attach a valid
+       * employee_id to a forged display name.
+       */
       const finalEmployeeName =
-        employeeName ||
-        employee ||
         employeeRecord.name ||
         null;
 
+      /*
+       * DATA INTEGRITY:
+       *
+       * Company assignment comes from trusted server
+       * records rather than req.body.company.
+       */
       const finalCompany =
-        company ||
         activeDeployment
           ?.company ||
-        employeeRecord
-          .company ||
         activeDeployment
           ?.client_company ||
+        employeeRecord
+          .company ||
         null;
 
       const submittedViolation =
@@ -2507,11 +2451,18 @@ exports.createIncident =
           });
       }
 
+      /*
+       * DATA INTEGRITY:
+       *
+       * The reporter identity is derived from the
+       * verified authenticated principal. A caller
+       * cannot forge reportedBy through the request
+       * body.
+       */
       const finalReportedBy =
-        getSafePersonName(
-          reportedBy,
-          actor
-        );
+        actor.fullName ||
+        actor.username ||
+        "Unknown User";
 
       const evidenceFiles =
         buildEvidenceFromReq(

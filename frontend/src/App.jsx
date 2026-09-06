@@ -1,10 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, {
+  useEffect,
+  useState,
+} from "react";
+
 import {
   Navigate,
   Route,
   Routes,
 } from "react-router-dom";
+
 import axios from "axios";
+
 import {
   QueryClient,
   QueryClientProvider,
@@ -32,10 +38,19 @@ import TechnicalAuditLogs from "./pages/TechnicalAuditLogs";
 import OperationalAuditLogs from "./pages/OperationalAuditLogs";
 
 // Authentication
-import { AuthProvider } from "./context/AuthContext";
-import { useAuth } from "./context/useAuth";
+import {
+  AuthProvider,
+} from "./context/AuthContext";
+
+import {
+  useAuth,
+} from "./context/useAuth";
+
 import ProtectedRoute from "./components/auth/ProtectedRoute";
-import { ROLES } from "./constants/roles";
+
+import {
+  ROLES,
+} from "./constants/roles";
 
 import {
   AUTH_SESSION_INVALID_EVENT,
@@ -55,19 +70,34 @@ const HR_MODULE_ROLES = [
   ROLES.HR_STAFF,
 ];
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30 * 1000,
-      refetchOnWindowFocus: true,
-      refetchOnReconnect: true,
-      retry: 1,
+const SYSTEM_CONFIGURATION_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.HR_MANAGER,
+];
+
+const queryClient =
+  new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime:
+          30 * 1000,
+
+        refetchOnWindowFocus:
+          true,
+
+        refetchOnReconnect:
+          true,
+
+        retry:
+          1,
+      },
+
+      mutations: {
+        retry:
+          0,
+      },
     },
-    mutations: {
-      retry: 0,
-    },
-  },
-});
+  });
 
 /*
  * Axios JWT transport.
@@ -78,9 +108,12 @@ const queryClient = new QueryClient({
  */
 axios.interceptors.request.use(
   (config) => {
-    const token = String(
-      localStorage.getItem("token") || ""
-    ).trim();
+    const token =
+      String(
+        localStorage.getItem(
+          "token"
+        ) || ""
+      ).trim();
 
     if (token) {
       config.headers =
@@ -92,15 +125,22 @@ axios.interceptors.request.use(
 
     return config;
   },
-  (error) => Promise.reject(error)
+
+  (error) =>
+    Promise.reject(
+      error
+    )
 );
 
-function getAxiosResponseMessage(error) {
+function getAxiosResponseMessage(
+  error
+) {
   const responseData =
     error?.response?.data;
 
   if (
-    typeof responseData === "string"
+    typeof responseData ===
+    "string"
   ) {
     return responseData.trim();
   }
@@ -112,7 +152,9 @@ function getAxiosResponseMessage(error) {
   ).trim();
 }
 
-function getAxiosAuthorizationHeader(error) {
+function getAxiosAuthorizationHeader(
+  error
+) {
   const headers =
     error?.config?.headers;
 
@@ -121,11 +163,16 @@ function getAxiosAuthorizationHeader(error) {
   }
 
   if (
-    typeof headers.get === "function"
+    typeof headers.get ===
+    "function"
   ) {
     return String(
-      headers.get("Authorization") ||
-        headers.get("authorization") ||
+      headers.get(
+        "Authorization"
+      ) ||
+        headers.get(
+          "authorization"
+        ) ||
         ""
     ).trim();
   }
@@ -137,46 +184,70 @@ function getAxiosAuthorizationHeader(error) {
   ).trim();
 }
 
-function isAuthenticatedAxiosRequest(error) {
-  return getAxiosAuthorizationHeader(error)
+function isAuthenticatedAxiosRequest(
+  error
+) {
+  return getAxiosAuthorizationHeader(
+    error
+  )
     .toLowerCase()
-    .startsWith("bearer ");
+    .startsWith(
+      "bearer "
+    );
 }
 
-function isAxiosMaintenanceError(error) {
+function isAxiosMaintenanceError(
+  error
+) {
   if (
-    error?.response?.status !== 503
+    error?.response?.status !==
+    503
   ) {
     return false;
   }
 
-  return getAxiosResponseMessage(error)
+  return getAxiosResponseMessage(
+    error
+  )
     .toLowerCase()
-    .includes("maintenance");
+    .includes(
+      "maintenance"
+    );
 }
 
-function isAxiosSessionInvalidError(error) {
+function isAxiosSessionInvalidError(
+  error
+) {
   return (
-    error?.response?.status === 401 &&
-    isAuthenticatedAxiosRequest(error)
+    error?.response?.status ===
+      401 &&
+    isAuthenticatedAxiosRequest(
+      error
+    )
   );
 }
 
-function dispatchSessionInvalidEvent(error) {
+function dispatchSessionInvalidEvent(
+  error
+) {
   window.dispatchEvent(
     new CustomEvent(
       AUTH_SESSION_INVALID_EVENT,
       {
         detail: {
           status:
-            error?.response?.status ||
+            error?.response
+              ?.status ||
             401,
+
           message:
             getAxiosResponseMessage(
               error
             ) ||
             "Authentication session is no longer valid.",
-          detectedAt: Date.now(),
+
+          detectedAt:
+            Date.now(),
         },
       }
     )
@@ -189,14 +260,18 @@ function MaintenanceScreen() {
     setIsChecking,
   ] = useState(false);
 
-  const handleCheckSystemStatus = () => {
-    if (isChecking) {
-      return;
-    }
+  const handleCheckSystemStatus =
+    () => {
+      if (isChecking) {
+        return;
+      }
 
-    setIsChecking(true);
-    window.location.reload();
-  };
+      setIsChecking(
+        true
+      );
+
+      window.location.reload();
+    };
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
@@ -212,11 +287,13 @@ function MaintenanceScreen() {
 
             <div>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-amber-300">
-                Temporary Service Notice
+                Temporary
+                Service Notice
               </p>
 
               <h1 className="mt-1 text-2xl font-black text-white sm:text-3xl">
-                System Under Maintenance
+                System Under
+                Maintenance
               </h1>
             </div>
           </div>
@@ -225,47 +302,70 @@ function MaintenanceScreen() {
         <div className="space-y-6 px-6 py-7 sm:px-8 sm:py-8">
           <div>
             <p className="text-base leading-7 text-slate-300">
-              The Welljob HRIS is temporarily
-              unavailable while authorized IT
-              Support performs system
+              The Welljob HRIS
+              is temporarily
+              unavailable while
+              authorized IT
+              Support performs
+              system
               maintenance.
             </p>
 
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Normal HR operations are
-              temporarily restricted to protect
-              system data while technical
-              maintenance, validation, or
-              recovery activities are being
-              completed.
+              Normal HR
+              operations are
+              temporarily
+              restricted to
+              protect system
+              data while
+              technical
+              maintenance,
+              validation, or
+              recovery
+              activities are
+              being completed.
             </p>
           </div>
 
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5">
             <p className="font-bold text-amber-200">
-              What should I do?
+              What should I
+              do?
             </p>
 
             <p className="mt-2 text-sm leading-6 text-amber-100/80">
-              Please wait until IT Support
-              completes the maintenance
-              activity. Use the button below
-              to check whether normal system
-              access has already been restored.
+              Please wait
+              until IT Support
+              completes the
+              maintenance
+              activity. Use
+              the button below
+              to check whether
+              normal system
+              access has
+              already been
+              restored.
             </p>
           </div>
 
           <div className="flex flex-col-reverse gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs leading-5 text-slate-500">
-              Your account and existing HR
-              records are not modified by this
-              maintenance notice.
+              Your account and
+              existing HR
+              records are not
+              modified by this
+              maintenance
+              notice.
             </p>
 
             <button
               type="button"
-              disabled={isChecking}
-              aria-busy={isChecking}
+              disabled={
+                isChecking
+              }
+              aria-busy={
+                isChecking
+              }
               onClick={
                 handleCheckSystemStatus
               }
@@ -273,7 +373,7 @@ function MaintenanceScreen() {
             >
               {isChecking
                 ? "Checking System Status..."
-                : "Check System Status"}
+                : "Reload"}
             </button>
           </div>
         </div>
@@ -285,10 +385,13 @@ function MaintenanceScreen() {
 function ApplicationContent({
   isMaintenance,
 }) {
-  const { user } = useAuth();
+  const {
+    user,
+  } = useAuth();
 
   const isITSupport =
-    user?.role === ROLES.IT_SUPPORT;
+    user?.role ===
+    ROLES.IT_SUPPORT;
 
   /*
    * During maintenance, normal authenticated HR
@@ -299,7 +402,9 @@ function ApplicationContent({
     user &&
     !isITSupport
   ) {
-    return <MaintenanceScreen />;
+    return (
+      <MaintenanceScreen />
+    );
   }
 
   return (
@@ -307,7 +412,9 @@ function ApplicationContent({
       {/* Public */}
       <Route
         path="/login"
-        element={<Login />}
+        element={
+          <Login />
+        }
       />
 
       {/* All authenticated users */}
@@ -326,7 +433,9 @@ function ApplicationContent({
          */}
         <Route
           path="/change-password"
-          element={<ChangePassword />}
+          element={
+            <ChangePassword />
+          }
         />
 
         {/*
@@ -335,7 +444,11 @@ function ApplicationContent({
          * Navbar, Sidebar, and global widgets
          * mount only after authentication succeeds.
          */}
-        <Route element={<MainLayout />}>
+        <Route
+          element={
+            <MainLayout />
+          }
+        >
           {/* Dashboard */}
           <Route
             element={
@@ -348,7 +461,9 @@ function ApplicationContent({
           >
             <Route
               path="/"
-              element={<Dashboard />}
+              element={
+                <Dashboard />
+              }
             />
           </Route>
 
@@ -364,22 +479,30 @@ function ApplicationContent({
           >
             <Route
               path="/employees"
-              element={<Employees />}
+              element={
+                <Employees />
+              }
             />
 
             <Route
               path="/deployments"
-              element={<Deployments />}
+              element={
+                <Deployments />
+              }
             />
 
             <Route
               path="/incidents"
-              element={<Incidents />}
+              element={
+                <Incidents />
+              }
             />
 
             <Route
               path="/notifications"
-              element={<Notifications />}
+              element={
+                <Notifications />
+              }
             />
           </Route>
 
@@ -414,7 +537,27 @@ function ApplicationContent({
           >
             <Route
               path="/kpi"
-              element={<KPIReports />}
+              element={
+                <KPIReports />
+              }
+            />
+          </Route>
+
+          {/* System Configuration */}
+          <Route
+            element={
+              <ProtectedRoute
+                allowedRoles={
+                  SYSTEM_CONFIGURATION_ROLES
+                }
+              />
+            }
+          >
+            <Route
+              path="/system-configuration"
+              element={
+                <SystemConfiguration />
+              }
             />
           </Route>
 
@@ -430,7 +573,9 @@ function ApplicationContent({
           >
             <Route
               path="/settings"
-              element={<Settings />}
+              element={
+                <Settings />
+              }
             />
 
             <Route
@@ -466,13 +611,6 @@ function ApplicationContent({
             />
 
             <Route
-              path="/system-configuration"
-              element={
-                <SystemConfiguration />
-              }
-            />
-
-            <Route
               path="/operational-audit-logs"
               element={
                 <OperationalAuditLogs />
@@ -503,9 +641,12 @@ function App() {
   ] = useState(false);
 
   useEffect(() => {
-    const handleFetchMaintenance = () => {
-      setIsMaintenance(true);
-    };
+    const handleFetchMaintenance =
+      () => {
+        setIsMaintenance(
+          true
+        );
+      };
 
     window.addEventListener(
       MAINTENANCE_MODE_DETECTED_EVENT,
@@ -526,14 +667,18 @@ function App() {
      */
     const responseInterceptor =
       axios.interceptors.response.use(
-        (response) => response,
+        (response) =>
+          response,
+
         (error) => {
           if (
             isAxiosMaintenanceError(
               error
             )
           ) {
-            setIsMaintenance(true);
+            setIsMaintenance(
+              true
+            );
           }
 
           if (
@@ -546,7 +691,9 @@ function App() {
             );
           }
 
-          return Promise.reject(error);
+          return Promise.reject(
+            error
+          );
         }
       );
 
@@ -564,7 +711,9 @@ function App() {
 
   return (
     <QueryClientProvider
-      client={queryClient}
+      client={
+        queryClient
+      }
     >
       <AuthProvider>
         <ApplicationContent

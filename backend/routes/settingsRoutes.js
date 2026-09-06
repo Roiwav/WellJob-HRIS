@@ -3,6 +3,7 @@
 const express = require("express");
 
 const db = require("../config/db");
+
 const {
   logAudit,
   AUDIT_CATEGORY,
@@ -65,11 +66,7 @@ function getCurrentUserName(
 }
 
 function getAuditCategory() {
-  return (
-    AUDIT_CATEGORY
-      .SYSTEM_CONFIGURATION ||
-    AUDIT_CATEGORY.TECHNICAL
-  );
+  return AUDIT_CATEGORY.OPERATIONAL;
 }
 
 async function getSystemSetting(

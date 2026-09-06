@@ -25,19 +25,25 @@ function isBypassRequest(req) {
     return true;
   }
 
-  const path = String(
-    req.path || req.originalUrl || ""
+  const requestPath = String(
+    req.path ||
+      req.originalUrl ||
+      ""
   )
     .split("?")[0]
     .trim();
 
-  return BYPASS_PATHS.has(path);
+  return BYPASS_PATHS.has(
+    requestPath
+  );
 }
 
 function getBearerToken(req) {
   const authorizationHeader =
     String(
-      req.headers?.authorization || ""
+      req.headers
+        ?.authorization ||
+        ""
     ).trim();
 
   if (!authorizationHeader) {
@@ -45,17 +51,23 @@ function getBearerToken(req) {
   }
 
   const parts =
-    authorizationHeader.split(/\s+/);
+    authorizationHeader.split(
+      /\s+/
+    );
 
   if (parts.length !== 2) {
     return null;
   }
 
-  const [scheme, token] =
-    parts;
+  const [
+    scheme,
+    token,
+  ] = parts;
 
   if (
-    scheme.toLowerCase() !== "bearer" ||
+    String(scheme)
+      .toLowerCase() !==
+      "bearer" ||
     !token
   ) {
     return null;
@@ -70,8 +82,211 @@ function isMaintenanceEnabled(
   return (
     settingValue === 1 ||
     settingValue === true ||
-    String(settingValue) === "1"
+    String(settingValue) ===
+      "1"
   );
+}
+
+function normalizeTokenVersion(
+  value
+) {
+  const numericValue =
+    Number(value);
+
+  if (
+    !Number.isSafeInteger(
+      numericValue
+    ) ||
+    numericValue < 1
+  ) {
+    return null;
+  }
+
+  return numericValue;
+}
+
+function parsePositiveUserId(
+  value
+) {
+  const normalized =
+    String(
+      value ?? ""
+    ).trim();
+
+  if (
+    !/^\d+$/.test(
+      normalized
+    )
+  ) {
+    return null;
+  }
+
+  const numericValue =
+    Number(normalized);
+
+  if (
+    !Number.isSafeInteger(
+      numericValue
+    ) ||
+    numericValue <= 0
+  ) {
+    return null;
+  }
+
+  return numericValue;
+}
+
+/*
+ * ==================================================
+ * VERIFY CURRENT IT SUPPORT MAINTENANCE ACCESS
+ * ==================================================
+ *
+ * A JWT role alone is not trusted.
+ *
+ * The token establishes the original authenticated
+ * session identity, while the current database
+ * record remains authoritative for:
+ *
+ * - account existence
+ * - account status
+ * - current role
+ * - token/session version
+ *
+ * This mirrors the security model used by the main
+ * authentication middleware.
+ */
+async function hasCurrentItSupportAccess(
+  token,
+  jwtSecret
+) {
+  let payload;
+
+  try {
+    payload = jwt.verify(
+      token,
+      jwtSecret,
+      {
+        algorithms: [
+          "HS256",
+        ],
+      }
+    );
+  } catch {
+    return false;
+  }
+
+  if (
+    !payload ||
+    typeof payload !==
+      "object" ||
+    Array.isArray(payload)
+  ) {
+    return false;
+  }
+
+  const databaseUserId =
+    parsePositiveUserId(
+      payload.id ??
+        payload.userId ??
+        payload.user_id
+    );
+
+  const tokenVersion =
+    normalizeTokenVersion(
+      payload.tokenVersion
+    );
+
+  if (
+    !databaseUserId ||
+    !tokenVersion
+  ) {
+    return false;
+  }
+
+  try {
+    const [users] =
+      await db
+        .promise()
+        .query(
+          `
+          SELECT
+            id,
+            role,
+            status,
+            token_version
+          FROM users
+          WHERE id = ?
+          LIMIT 1
+          `,
+          [
+            databaseUserId,
+          ]
+        );
+
+    if (
+      users.length === 0
+    ) {
+      return false;
+    }
+
+    const user =
+      users[0];
+
+    const currentRole =
+      normalizeRole(
+        user.role
+      );
+
+    const currentStatus =
+      String(
+        user.status || ""
+      )
+        .trim()
+        .toUpperCase();
+
+    const currentTokenVersion =
+      normalizeTokenVersion(
+        user.token_version
+      );
+
+    if (
+      currentStatus !==
+      "ACTIVE"
+    ) {
+      return false;
+    }
+
+    if (
+      currentRole !==
+      "IT_SUPPORT"
+    ) {
+      return false;
+    }
+
+    if (
+      !currentTokenVersion ||
+      tokenVersion !==
+        currentTokenVersion
+    ) {
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    /*
+     * A failure while verifying the bypass principal
+     * must fail closed.
+     *
+     * Maintenance remains active and this session is
+     * not granted an exception.
+     */
+    console.error(
+      "Maintenance IT Support verification error:",
+      error
+    );
+
+    return false;
+  }
 }
 
 async function checkMaintenanceMode(
@@ -94,14 +309,16 @@ async function checkMaintenanceMode(
 
   try {
     const [rows] =
-      await db.promise().query(
-        `
-        SELECT setting_value
-        FROM system_settings
-        WHERE setting_name = 'maintenance_mode'
-        LIMIT 1
-        `
-      );
+      await db
+        .promise()
+        .query(
+          `
+          SELECT setting_value
+          FROM system_settings
+          WHERE setting_name = 'maintenance_mode'
+          LIMIT 1
+          `
+        );
 
     const maintenanceEnabled =
       rows.length > 0 &&
@@ -118,45 +335,44 @@ async function checkMaintenanceMode(
     }
 
     /*
-     * During maintenance, only a VALID,
-     * SIGNATURE-VERIFIED IT_SUPPORT JWT
-     * may bypass the maintenance block.
+     * ==================================================
+     * MAINTENANCE BYPASS
+     * ==================================================
+     *
+     * During maintenance, only an ACTIVE IT_SUPPORT
+     * account with:
+     *
+     * - valid HS256 JWT
+     * - existing database account
+     * - current IT_SUPPORT database role
+     * - matching token_version
+     *
+     * may proceed.
+     *
+     * The role embedded inside the JWT is never used
+     * as the authoritative maintenance-bypass role.
      */
     const token =
       getBearerToken(req);
 
     const jwtSecret =
       String(
-        process.env.JWT_SECRET || ""
+        process.env.JWT_SECRET ||
+          ""
       ).trim();
 
     if (
       token &&
       jwtSecret
     ) {
-      try {
-        const payload =
-          jwt.verify(
-            token,
-            jwtSecret
-          );
+      const allowed =
+        await hasCurrentItSupportAccess(
+          token,
+          jwtSecret
+        );
 
-        const role =
-          normalizeRole(
-            payload?.role
-          );
-
-        if (
-          role === "IT_SUPPORT"
-        ) {
-          return next();
-        }
-      } catch (error) {
-        /*
-         * Invalid, expired, malformed, or
-         * otherwise unverifiable JWTs must
-         * never bypass maintenance mode.
-         */
+      if (allowed) {
+        return next();
       }
     }
 
@@ -178,10 +394,17 @@ async function checkMaintenanceMode(
     );
 
     /*
-     * Preserve the existing fail-open behavior
-     * for database-check failures so a temporary
-     * settings-query problem does not lock the
-     * entire application.
+     * Preserve the existing fail-open behavior for
+     * the maintenance-setting lookup itself.
+     *
+     * This avoids locking the entire application
+     * solely because the maintenance configuration
+     * cannot temporarily be queried.
+     *
+     * NOTE:
+     * IT Support bypass verification above still
+     * fails closed once maintenance mode has been
+     * successfully confirmed as active.
      */
     return next();
   }

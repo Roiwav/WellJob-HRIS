@@ -14,6 +14,7 @@ import PageHeader from "../components/ui/PageHeader";
 import StatusBadge from "../components/ui/StatusBadge";
 
 import { PERMISSIONS } from "../constants/permissions";
+import { ROLES } from "../constants/roles";
 import { useAuth } from "../context/useAuth";
 
 const TAB_KEYS = {
@@ -47,8 +48,11 @@ export default function SystemConfiguration() {
     currentUserRole ||
     "Unknown Role";
 
-  const tabs = useMemo(
-    () => [
+  const canAccessKPIThresholds =
+    currentUserRole === ROLES.SUPER_ADMIN;
+
+  const tabs = useMemo(() => {
+    const availableTabs = [
       {
         key: TAB_KEYS.VIOLATION_RULES,
         label: "Violation Rules",
@@ -56,16 +60,20 @@ export default function SystemConfiguration() {
           "Manage Code of Conduct classifications, penalties, and severity mapping.",
         icon: FiShield,
       },
-      {
+    ];
+
+    if (canAccessKPIThresholds) {
+      availableTabs.push({
         key: TAB_KEYS.KPI_THRESHOLDS,
         label: "KPI Thresholds",
         description:
           "Manage performance rating ranges, KPI factors, and percentage weights.",
         icon: FiBarChart2,
-      },
-    ],
-    []
-  );
+      });
+    }
+
+    return availableTabs;
+  }, [canAccessKPIThresholds]);
 
   const activeTabDetails =
     tabs.find(
@@ -77,7 +85,11 @@ export default function SystemConfiguration() {
       <PageHeader
         eyebrow="Policy Administration"
         title="System Configuration"
-        description="Manage the organizational policies and threshold rules used for incident classification, employee evaluation, and decision support."
+        description={
+          canAccessKPIThresholds
+            ? "Manage the organizational policies and threshold rules used for incident classification, employee evaluation, and decision support."
+            : "Manage the Code of Conduct violation policies used for incident classification and disciplinary guidance."
+        }
         icon={
           <FiSettings size={22} />
         }
@@ -152,8 +164,10 @@ export default function SystemConfiguration() {
               ].join(" ")}
             >
               {canEditConfiguration
-                ? "You are authorized to review and update KPI thresholds and violation policies. All changes must be reviewed and confirmed before they are applied."
-                : "You may review the current KPI thresholds and violation policies, but your assigned role cannot modify system configuration."}
+                ? canAccessKPIThresholds
+                  ? "You are authorized to review and update KPI thresholds and violation policies. All changes must be reviewed and confirmed before they are applied."
+                  : "You are authorized to review and update violation policies. All changes must be reviewed and confirmed before they are applied."
+                : "You may review the available configuration policies, but your assigned role cannot modify system configuration."}
             </p>
           </div>
         </div>
@@ -175,7 +189,12 @@ export default function SystemConfiguration() {
         </div>
 
         <div
-          className="grid gap-4 p-5 md:grid-cols-2 sm:p-6"
+          className={[
+            "grid gap-4 p-5 sm:p-6",
+            tabs.length > 1
+              ? "md:grid-cols-2"
+              : "md:grid-cols-1",
+          ].join(" ")}
           role="tablist"
           aria-label="System configuration categories"
         >
@@ -244,9 +263,9 @@ export default function SystemConfiguration() {
       </section>
 
       <section
-        id={`configuration-panel-${activeTab}`}
+        id={`configuration-panel-${activeTabDetails.key}`}
         role="tabpanel"
-        aria-labelledby={`configuration-tab-${activeTab}`}
+        aria-labelledby={`configuration-tab-${activeTabDetails.key}`}
         className="min-w-0"
       >
         <div className="mb-4">
@@ -259,7 +278,7 @@ export default function SystemConfiguration() {
           </p>
         </div>
 
-        {activeTab ===
+        {activeTabDetails.key ===
         TAB_KEYS.VIOLATION_RULES ? (
           <ViolationRulesTab
             canEdit={

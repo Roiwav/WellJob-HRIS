@@ -5,6 +5,26 @@ const {
   logAudit,
 } = require("../utils/auditLogger");
 
+/*
+ * ==================================================
+ * LOGIN TIMING PROTECTION
+ * ==================================================
+ *
+ * When a username does not exist, bcrypt comparison
+ * is still performed against a valid dummy hash.
+ *
+ * This helps reduce observable timing differences
+ * between:
+ *
+ * - unknown usernames
+ * - known usernames with incorrect passwords
+ *
+ * The dummy hash is not an application credential
+ * and is never used to authenticate a real account.
+ */
+const DUMMY_PASSWORD_HASH =
+  "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
 /**
  * Returns the JWT secret loaded from backend/.env.
  *
@@ -174,12 +194,29 @@ exports.login =
           );
 
       /*
-       * FAILED LOGIN:
-       * Username does not exist.
+       * ==================================================
+       * UNKNOWN USERNAME
+       * ==================================================
+       *
+       * SECURITY:
+       *
+       * Perform a dummy bcrypt comparison so unknown
+       * usernames do not immediately return before a
+       * password verification operation.
+       *
+       * The client receives the same authentication
+       * failure response used for an incorrect password.
+       * This prevents username/account enumeration
+       * through response messages.
        */
       if (
         users.length === 0
       ) {
+        await bcrypt.compare(
+          password,
+          DUMMY_PASSWORD_HASH
+        );
+
         await logAudit({
           userId:
             "-",
@@ -203,7 +240,7 @@ exports.login =
           .status(401)
           .json({
             message:
-              "User not found",
+              "Invalid username or password",
           });
       }
 
@@ -211,10 +248,70 @@ exports.login =
         users[0];
 
       /*
-       * ACCOUNT SECURITY:
+       * ==================================================
+       * PASSWORD VERIFICATION
+       * ==================================================
        *
-       * An inactive account must never receive
-       * a new authenticated JWT.
+       * Verify the submitted password before exposing
+       * account-state information such as whether the
+       * account is inactive.
+       */
+      const match =
+        await bcrypt.compare(
+          password,
+          user.password
+        );
+
+      /*
+       * FAILED LOGIN:
+       *
+       * Username exists but password verification
+       * failed.
+       *
+       * SECURITY:
+       *
+       * Use the same client-facing response returned
+       * for an unknown username.
+       */
+      if (!match) {
+        await logAudit({
+          userId:
+            user.user_id,
+
+          username:
+            user.username,
+
+          full_name:
+            user.full_name,
+
+          role:
+            user.role,
+
+          action:
+            "LOGIN_FAILED",
+
+          description:
+            `Failed login attempt for ${user.full_name} (Incorrect Password)`,
+        });
+
+        return res
+          .status(401)
+          .json({
+            message:
+              "Invalid username or password",
+          });
+      }
+
+      /*
+       * ==================================================
+       * ACCOUNT STATUS
+       * ==================================================
+       *
+       * Only disclose inactive-account status after the
+       * submitted password has been successfully verified.
+       *
+       * This prevents unauthenticated callers from using
+       * the login endpoint to discover inactive accounts.
        */
       if (
         isInactiveAccount(
@@ -246,46 +343,6 @@ exports.login =
           .json({
             message:
               "Account is inactive. Please contact IT Support.",
-          });
-      }
-
-      const match =
-        await bcrypt.compare(
-          password,
-          user.password
-        );
-
-      /*
-       * FAILED LOGIN:
-       * Username exists but password
-       * verification failed.
-       */
-      if (!match) {
-        await logAudit({
-          userId:
-            user.user_id,
-
-          username:
-            user.username,
-
-          full_name:
-            user.full_name,
-
-          role:
-            user.role,
-
-          action:
-            "LOGIN_FAILED",
-
-          description:
-            `Failed login attempt for ${user.full_name} (Incorrect Password)`,
-        });
-
-        return res
-          .status(401)
-          .json({
-            message:
-              "Invalid password",
           });
       }
 

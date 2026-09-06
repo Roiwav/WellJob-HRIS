@@ -16,7 +16,9 @@ const {
 } = require("../middleware/roleMiddleware");
 
 /*
+ * ==================================================
  * CATEGORY-SPECIFIC AUDIT ACCESS
+ * ==================================================
  *
  * TECHNICAL:
  * - IT_SUPPORT only
@@ -24,38 +26,52 @@ const {
  * OPERATIONAL:
  * - SUPER_ADMIN only
  *
- * Invalid categories continue to the
- * controller so its existing 400
- * validation response is preserved.
+ * SECURITY:
+ *
+ * Unknown categories fail closed here.
+ *
+ * The authorization layer must never allow an
+ * unrecognized audit category to reach a controller
+ * merely because the category was not explicitly
+ * matched by this middleware.
  */
 function authorizeAuditCategory(
   req,
   res,
   next
 ) {
-  const category = String(
-    req.params.category || ""
-  )
-    .trim()
-    .toUpperCase();
+  const category =
+    String(
+      req.params?.category ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
 
-  const role = String(
-    req.user?.role || ""
-  )
-    .trim()
-    .toUpperCase();
+  const role =
+    String(
+      req.user?.role ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
 
   if (
-    category === "TECHNICAL"
+    category ===
+    "TECHNICAL"
   ) {
     if (
-      role !== "IT_SUPPORT"
+      role !==
+      "IT_SUPPORT"
     ) {
       return res
         .status(403)
         .json({
           success: false,
-          error: "Forbidden",
+
+          error:
+            "Forbidden",
+
           message:
             "You do not have permission to view technical audit logs.",
         });
@@ -65,16 +81,21 @@ function authorizeAuditCategory(
   }
 
   if (
-    category === "OPERATIONAL"
+    category ===
+    "OPERATIONAL"
   ) {
     if (
-      role !== "SUPER_ADMIN"
+      role !==
+      "SUPER_ADMIN"
     ) {
       return res
         .status(403)
         .json({
           success: false,
-          error: "Forbidden",
+
+          error:
+            "Forbidden",
+
           message:
             "You do not have permission to view operational audit logs.",
         });
@@ -83,9 +104,30 @@ function authorizeAuditCategory(
     return next();
   }
 
-  return next();
+  /*
+   * Fail closed for any category that is not part
+   * of the approved audit-log access model.
+   */
+  return res
+    .status(400)
+    .json({
+      success: false,
+
+      error:
+        "Invalid audit category",
+
+      message:
+        "The requested audit log category is not supported.",
+    });
 }
 
+/*
+ * ==================================================
+ * ALL AUDIT LOGS
+ * ==================================================
+ *
+ * SUPER_ADMIN only.
+ */
 router.get(
   "/audit-logs",
   verifyToken,
@@ -95,6 +137,14 @@ router.get(
   getAllLogs
 );
 
+/*
+ * ==================================================
+ * CATEGORY-SPECIFIC AUDIT LOGS
+ * ==================================================
+ *
+ * Authentication executes before category-specific
+ * authorization.
+ */
 router.get(
   "/audit-logs/:category",
   verifyToken,

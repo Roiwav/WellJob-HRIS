@@ -36,6 +36,46 @@ const HR_ACTION_WORKFLOW = {
   TERMINATION: "Termination Review",
 };
 
+const SEVERITY_LABELS = {
+  NONE: "None",
+  MINOR: "Minor",
+  MAJOR: "Major",
+  CRITICAL: "Critical",
+};
+
+const SEVERITY_WEIGHTS = Object.freeze({
+  [SEVERITY_LABELS.MINOR]: 1,
+  [SEVERITY_LABELS.MAJOR]: 3,
+  [SEVERITY_LABELS.CRITICAL]: 5,
+});
+
+const RECOMMENDATION_LABELS = {
+  RETAIN: "Retain / Maintain Good Standing",
+};
+
+const WELLJOB_LOW_KPI_ACTIONS = [
+  {
+    title: "Verbal Counseling",
+    code: "VERBAL_COUNSELING",
+  },
+  {
+    title: "Performance Improvement Plan",
+    code: "PERFORMANCE_IMPROVEMENT_PLAN",
+  },
+  {
+    title: "Reassignment of Position",
+    code: "REASSIGNMENT_OF_POSITION",
+  },
+  {
+    title: "Seminar & Webinar",
+    code: "SEMINAR_WEBINAR",
+  },
+  {
+    title: "Employee Training",
+    code: "EMPLOYEE_TRAINING",
+  },
+];
+
 const ALLOWED_DECISION_TYPES = new Set([
   "Accepted",
   "Modified",
@@ -59,12 +99,11 @@ const ALLOWED_SUGGESTED_HR_ACTIONS = new Set(
 );
 
 const ALLOWED_SYSTEM_RECOMMENDATIONS = new Set([
-  "Retain / Maintain Good Standing",
-  "Verbal Counseling",
-  "Performance Improvement Plan",
-  "Reassignment of Position",
-  "Seminar & Webinar",
-  "Employee Training",
+  RECOMMENDATION_LABELS.RETAIN,
+
+  ...WELLJOB_LOW_KPI_ACTIONS.map(
+    (action) => action.title
+  ),
 ]);
 
 const ALLOWED_FINAL_ACTIONS = new Set([
@@ -193,6 +232,28 @@ function cleanValue(
   return cleaned || fallback;
 }
 
+function normalizeText(value) {
+  return String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeComparableText(
+  value
+) {
+  return normalizeText(value)
+    .replace(
+      /[_-]+/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    );
+}
+
 function getTrustedActor(req) {
   const username =
     cleanValue(
@@ -292,15 +353,46 @@ function isAllowedValue(
   );
 }
 
-/*
- * These functions mirror the existing frontend KPI decision rules.
- *
- * They do NOT calculate severityScore because severity weights
- * currently come from frontend-local configurable settings.
- *
- * They only validate downstream KPI fields against the submitted
- * severity score plus trusted database incident counts.
- */
+function normalizeSeverityLabel(
+  level
+) {
+  const value =
+    normalizeComparableText(
+      level
+    );
+
+  switch (value) {
+    case "minor":
+    case "low":
+      return SEVERITY_LABELS.MINOR;
+
+    case "major":
+    case "medium":
+      return SEVERITY_LABELS.MAJOR;
+
+    case "critical":
+    case "high":
+      return SEVERITY_LABELS.CRITICAL;
+
+    default:
+      return SEVERITY_LABELS.NONE;
+  }
+}
+
+function getSeverityWeight(
+  severity
+) {
+  const normalizedSeverity =
+    normalizeSeverityLabel(
+      severity
+    );
+
+  return (
+    SEVERITY_WEIGHTS[
+      normalizedSeverity
+    ] || 0
+  );
+}
 
 function getExpectedKPILevel(
   severityScore,
@@ -440,6 +532,751 @@ function getExpectedSuggestedHRAction({
   return HR_ACTION_WORKFLOW.MONITOR;
 }
 
+function getDecisionConfidenceReason({
+  confidence,
+  violationCount,
+  criticalIncidentCount,
+  severityScore,
+  riskLevel,
+}) {
+  if (
+    confidence ===
+    DECISION_CONFIDENCE.HIGH
+  ) {
+    return `High confidence because the employee record shows strong decision indicators such as ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), ${severityScore} severity score, and ${riskLevel} status. HR review is required before final action.`;
+  }
+
+  if (
+    confidence ===
+    DECISION_CONFIDENCE.MODERATE
+  ) {
+    return `Moderate confidence because the employee has enough recorded concern for HR validation, including ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), and ${severityScore} severity score.`;
+  }
+
+  if (
+    violationCount >= 1
+  ) {
+    return "Low confidence because the record shows an early concern only. Human review is recommended before applying any corrective action.";
+  }
+
+  return "Low confidence because there is no negative KPI pattern requiring corrective action. The employee may continue under regular monitoring.";
+}
+
+function getSuggestedHRActionReason({
+  suggestedHRAction,
+  violationCount,
+  criticalIncidentCount,
+  severityScore,
+  riskLevel,
+}) {
+  switch (suggestedHRAction) {
+    case HR_ACTION_WORKFLOW.TERMINATION:
+      return `Termination review is suggested because the employee has severe indicators such as ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), and ${severityScore} severity score. This is only for HR Manager validation and not an automatic termination decision.`;
+
+    case HR_ACTION_WORKFLOW.SUSPENSION:
+      return "Suspension review is suggested because the employee has a critical incident or high-risk evaluation. Final action must still be validated by HR management.";
+
+    case HR_ACTION_WORKFLOW.ESCALATION:
+      return "Priority HR escalation is suggested because the employee has repeated concerns with strong decision indicators. The case should be reviewed immediately.";
+
+    case HR_ACTION_WORKFLOW.INVESTIGATION:
+      return "HR investigation is suggested because the employee has repeated or moderate KPI concerns that require validation and documentation.";
+
+    case HR_ACTION_WORKFLOW.HR_VALIDATION:
+      return "HR validation is suggested because the system detected a moderate concern that needs confirmation before final action.";
+
+    case HR_ACTION_WORKFLOW.HUMAN_REVIEW:
+      return "Human review is suggested because the employee has an early concern but the record is not yet strong enough for a higher-level action.";
+
+    case HR_ACTION_WORKFLOW.PIP:
+      return "Performance improvement review is suggested because the employee has KPI concerns that may require structured monitoring and improvement targets.";
+
+    case HR_ACTION_WORKFLOW.MONITOR:
+    default:
+      return `Continue monitoring is suggested because the employee does not currently show a strong negative KPI or risk pattern. Current risk level: ${riskLevel}.`;
+  }
+}
+
+function getViolationText(
+  incident
+) {
+  return normalizeText(
+    incident?.violation_type ||
+      incident?.violation ||
+      incident?.violationType ||
+      incident?.description ||
+      ""
+  );
+}
+
+function toTitleCase(
+  value = ""
+) {
+  return String(value)
+    .replace(
+      /_/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .trim()
+    .toLowerCase()
+    .replace(
+      /\b\w/g,
+      (character) =>
+        character.toUpperCase()
+    );
+}
+
+function getReadableViolationName(
+  value = ""
+) {
+  if (!value) {
+    return "Recorded Violation";
+  }
+
+  return toTitleCase(value);
+}
+
+function getSafeIncidents(
+  incidents
+) {
+  return Array.isArray(
+    incidents
+  )
+    ? incidents.filter(Boolean)
+    : [];
+}
+
+function countByViolation(
+  relatedIncidents = []
+) {
+  const counts =
+    new Map();
+
+  const safeIncidents =
+    getSafeIncidents(
+      relatedIncidents
+    );
+
+  safeIncidents.forEach(
+    (incident) => {
+      const key =
+        getViolationText(
+          incident
+        );
+
+      if (!key) {
+        return;
+      }
+
+      counts.set(
+        key,
+        (counts.get(key) || 0) +
+          1
+      );
+    }
+  );
+
+  return counts;
+}
+
+function hasRepeatedSameViolation(
+  relatedIncidents = []
+) {
+  const counts =
+    countByViolation(
+      relatedIncidents
+    );
+
+  return Array.from(
+    counts.values()
+  ).some(
+    (count) =>
+      count >= 2
+  );
+}
+
+function getMostCommonViolation(
+  relatedIncidents = []
+) {
+  const counts =
+    countByViolation(
+      relatedIncidents
+    );
+
+  let selected = "";
+  let selectedCount = 0;
+
+  counts.forEach(
+    (
+      count,
+      violation
+    ) => {
+      if (
+        count >
+        selectedCount
+      ) {
+        selected =
+          violation;
+
+        selectedCount =
+          count;
+      }
+    }
+  );
+
+  return {
+    violation:
+      selected,
+
+    count:
+      selectedCount,
+  };
+}
+
+function hasAttendanceOrPolicyConcern(
+  relatedIncidents = []
+) {
+  return getSafeIncidents(
+    relatedIncidents
+  ).some(
+    (incident) => {
+      const text =
+        getViolationText(
+          incident
+        );
+
+      return (
+        text.includes(
+          "tardiness"
+        ) ||
+        text.includes(
+          "late"
+        ) ||
+        text.includes(
+          "absence"
+        ) ||
+        text.includes(
+          "absenteeism"
+        ) ||
+        text.includes(
+          "awol"
+        ) ||
+        text.includes(
+          "uniform"
+        ) ||
+        text.includes(
+          "mobile"
+        ) ||
+        text.includes(
+          "policy"
+        ) ||
+        text.includes(
+          "attendance"
+        )
+      );
+    }
+  );
+}
+
+function hasSkillsOrQualityConcern(
+  relatedIncidents = []
+) {
+  return getSafeIncidents(
+    relatedIncidents
+  ).some(
+    (incident) => {
+      const text =
+        getViolationText(
+          incident
+        );
+
+      return (
+        text.includes(
+          "quality"
+        ) ||
+        text.includes(
+          "negligence"
+        ) ||
+        text.includes(
+          "instruction"
+        ) ||
+        text.includes(
+          "safety"
+        ) ||
+        text.includes(
+          "task"
+        ) ||
+        text.includes(
+          "productivity"
+        ) ||
+        text.includes(
+          "performance"
+        )
+      );
+    }
+  );
+}
+
+function hasPossibleRoleMismatchConcern(
+  relatedIncidents = []
+) {
+  const safeIncidents =
+    getSafeIncidents(
+      relatedIncidents
+    );
+
+  const repeatedSameViolation =
+    hasRepeatedSameViolation(
+      safeIncidents
+    );
+
+  return safeIncidents.some(
+    (incident) => {
+      const text =
+        getViolationText(
+          incident
+        );
+
+      return (
+        repeatedSameViolation &&
+        (
+          text.includes(
+            "negligence"
+          ) ||
+          text.includes(
+            "instruction"
+          ) ||
+          text.includes(
+            "task"
+          ) ||
+          text.includes(
+            "quality"
+          ) ||
+          text.includes(
+            "performance"
+          )
+        )
+      );
+    }
+  );
+}
+
+function getSeverityBreakdown(
+  relatedIncidents = []
+) {
+  return getSafeIncidents(
+    relatedIncidents
+  ).reduce(
+    (
+      accumulator,
+      incident
+    ) => {
+      const severity =
+        normalizeSeverityLabel(
+          incident?.severity
+        );
+
+      if (
+        severity ===
+        SEVERITY_LABELS.CRITICAL
+      ) {
+        accumulator.critical +=
+          1;
+      } else if (
+        severity ===
+        SEVERITY_LABELS.MAJOR
+      ) {
+        accumulator.major +=
+          1;
+      } else if (
+        severity ===
+        SEVERITY_LABELS.MINOR
+      ) {
+        accumulator.minor +=
+          1;
+      } else {
+        accumulator.none +=
+          1;
+      }
+
+      return accumulator;
+    },
+    {
+      critical: 0,
+      major: 0,
+      minor: 0,
+      none: 0,
+    }
+  );
+}
+
+function buildSeveritySummary(
+  relatedIncidents = []
+) {
+  const breakdown =
+    getSeverityBreakdown(
+      relatedIncidents
+    );
+
+  const parts = [];
+
+  if (
+    breakdown.critical >
+    0
+  ) {
+    parts.push(
+      `${breakdown.critical} critical`
+    );
+  }
+
+  if (
+    breakdown.major >
+    0
+  ) {
+    parts.push(
+      `${breakdown.major} major`
+    );
+  }
+
+  if (
+    breakdown.minor >
+    0
+  ) {
+    parts.push(
+      `${breakdown.minor} minor`
+    );
+  }
+
+  if (
+    parts.length === 0
+  ) {
+    return "no severity-bearing incident";
+  }
+
+  return parts.join(", ");
+}
+
+function buildDynamicBasis({
+  violationCount,
+  criticalIncidentCount,
+  severityScore,
+  normalizedRisk,
+  normalizedKPI,
+  relatedIncidents,
+  commonViolation,
+}) {
+  const severitySummary =
+    buildSeveritySummary(
+      relatedIncidents
+    );
+
+  const commonViolationName =
+    getReadableViolationName(
+      commonViolation.violation
+    );
+
+  if (
+    violationCount === 0
+  ) {
+    return "No recorded incident, no severity score, and good standing KPI status.";
+  }
+
+  if (
+    commonViolation.count >=
+    2
+  ) {
+    return `${violationCount} recorded violation(s), including ${commonViolation.count} recurring ${commonViolationName} case(s), with ${severitySummary} classification and a total severity score of ${severityScore}.`;
+  }
+
+  if (
+    criticalIncidentCount >=
+    1
+  ) {
+    return `${criticalIncidentCount} critical incident(s), ${violationCount} total recorded violation(s), and a severity score of ${severityScore}.`;
+  }
+
+  return `${violationCount} recorded violation(s), ${severitySummary} classification, KPI level of ${normalizedKPI}, risk level of ${normalizedRisk}, and total severity score of ${severityScore}.`;
+}
+
+function buildDynamicReason({
+  primaryCode,
+  violationCount,
+  criticalIncidentCount,
+  severityScore,
+  normalizedRisk,
+  normalizedKPI,
+  relatedIncidents,
+  commonViolation,
+  repeatedSameViolation,
+  attendanceOrPolicyConcern,
+}) {
+  const commonViolationName =
+    getReadableViolationName(
+      commonViolation.violation
+    );
+
+  const severitySummary =
+    buildSeveritySummary(
+      relatedIncidents
+    );
+
+  if (
+    primaryCode ===
+    "PERFORMANCE_IMPROVEMENT_PLAN"
+  ) {
+    if (
+      criticalIncidentCount >=
+        1 ||
+      severityScore >= 8
+    ) {
+      return `Employee requires a structured Performance Improvement Plan because the record shows ${severitySummary} classification with a total severity score of ${severityScore}, placing the employee under ${normalizedKPI} and ${normalizedRisk}.`;
+    }
+
+    if (
+      repeatedSameViolation &&
+      commonViolation.count >=
+        2
+    ) {
+      return `Employee requires a Performance Improvement Plan because recurring ${commonViolationName} was detected ${commonViolation.count} time(s), showing a repeated KPI standing concern.`;
+    }
+
+    return `Employee requires a Performance Improvement Plan because there are ${violationCount} recorded violation(s), resulting in ${normalizedKPI} and ${normalizedRisk} status.`;
+  }
+
+  if (
+    primaryCode ===
+    "REASSIGNMENT_OF_POSITION"
+  ) {
+    const baseViolation =
+      commonViolation.count >=
+      2
+        ? `recurring ${commonViolationName} was detected ${commonViolation.count} time(s)`
+        : "repeated task, quality, or performance-related concern was detected";
+
+    return `Employee may need reassignment review because ${baseViolation}. This may indicate possible role mismatch in the current assignment.`;
+  }
+
+  if (
+    primaryCode ===
+    "EMPLOYEE_TRAINING"
+  ) {
+    return "Employee is recommended for training because the recorded concern is related to task quality, productivity, safety, or competency improvement. Training can help correct the issue before it becomes repeated.";
+  }
+
+  if (
+    primaryCode ===
+    "SEMINAR_WEBINAR"
+  ) {
+    if (
+      repeatedSameViolation &&
+      commonViolation.count >=
+        2
+    ) {
+      return `Employee is recommended for a refresher seminar or webinar because recurring ${commonViolationName} was detected ${commonViolation.count} time(s), indicating the need for policy awareness reinforcement.`;
+    }
+
+    if (
+      attendanceOrPolicyConcern
+    ) {
+      return "Employee is recommended for a refresher seminar or webinar because the recorded violation is related to attendance, policy compliance, or workplace behavior awareness.";
+    }
+
+    return "Employee is recommended for a seminar or webinar to reinforce company policies and prevent repeated KPI standing concerns.";
+  }
+
+  if (
+    primaryCode ===
+    "VERBAL_COUNSELING"
+  ) {
+    return `Employee is recommended for verbal counseling because there is an early KPI standing concern with ${violationCount} recorded violation(s), allowing HR to correct the issue before it becomes repeated.`;
+  }
+
+  return "Employee recommendation is based on the recorded violation pattern, KPI level, risk level, and severity score.";
+}
+
+function getActionByCode(
+  code
+) {
+  return (
+    WELLJOB_LOW_KPI_ACTIONS.find(
+      (action) =>
+        action.code ===
+        code
+    ) ||
+    WELLJOB_LOW_KPI_ACTIONS[0]
+  );
+}
+
+function getCorrectiveActionRecommendation({
+  violationCount,
+  criticalIncidentCount,
+  severityScore,
+  riskLevel,
+  kpiLevel,
+  relatedIncidents,
+}) {
+  const safeRelatedIncidents =
+    getSafeIncidents(
+      relatedIncidents
+    );
+
+  const isGoodStanding =
+    violationCount === 0 &&
+    criticalIncidentCount ===
+      0 &&
+    severityScore === 0 &&
+    riskLevel ===
+      RISK_LEVELS.LOW_RISK &&
+    kpiLevel ===
+      KPI_LEVELS.GOOD_STANDING;
+
+  if (isGoodStanding) {
+    return {
+      recommendation:
+        RECOMMENDATION_LABELS.RETAIN,
+
+      recommendationReason:
+        "Employee has no recorded violation, no active incident severity score, and may maintain good standing under regular HR monitoring.",
+
+      correctiveActionBasis:
+        "No violation, no critical incident, zero severity score, and good standing KPI status.",
+    };
+  }
+
+  const repeatedSameViolation =
+    hasRepeatedSameViolation(
+      safeRelatedIncidents
+    );
+
+  const commonViolation =
+    getMostCommonViolation(
+      safeRelatedIncidents
+    );
+
+  const attendanceOrPolicyConcern =
+    hasAttendanceOrPolicyConcern(
+      safeRelatedIncidents
+    );
+
+  const skillsOrQualityConcern =
+    hasSkillsOrQualityConcern(
+      safeRelatedIncidents
+    );
+
+  const possibleRoleMismatch =
+    hasPossibleRoleMismatchConcern(
+      safeRelatedIncidents
+    );
+
+  let primaryCode =
+    "VERBAL_COUNSELING";
+
+  if (
+    criticalIncidentCount >=
+      1 ||
+    severityScore >= 8 ||
+    riskLevel ===
+      RISK_LEVELS.HIGH_RISK ||
+    kpiLevel ===
+      KPI_LEVELS.CRITICAL_CONCERN
+  ) {
+    primaryCode =
+      "PERFORMANCE_IMPROVEMENT_PLAN";
+  } else if (
+    possibleRoleMismatch
+  ) {
+    primaryCode =
+      "REASSIGNMENT_OF_POSITION";
+  } else if (
+    skillsOrQualityConcern
+  ) {
+    primaryCode =
+      violationCount >= 3 ||
+      repeatedSameViolation
+        ? "REASSIGNMENT_OF_POSITION"
+        : "EMPLOYEE_TRAINING";
+  } else if (
+    attendanceOrPolicyConcern
+  ) {
+    primaryCode =
+      violationCount >= 3 ||
+      repeatedSameViolation
+        ? "SEMINAR_WEBINAR"
+        : "VERBAL_COUNSELING";
+  } else if (
+    repeatedSameViolation
+  ) {
+    primaryCode =
+      "SEMINAR_WEBINAR";
+  } else if (
+    violationCount >= 3 ||
+    riskLevel ===
+      RISK_LEVELS.REPEAT ||
+    kpiLevel ===
+      KPI_LEVELS.NEEDS_IMPROVEMENT
+  ) {
+    primaryCode =
+      "PERFORMANCE_IMPROVEMENT_PLAN";
+  }
+
+  const primaryAction =
+    getActionByCode(
+      primaryCode
+    );
+
+  const recommendationReason =
+    buildDynamicReason({
+      primaryCode,
+      violationCount,
+      criticalIncidentCount,
+      severityScore,
+
+      normalizedRisk:
+        riskLevel,
+
+      normalizedKPI:
+        kpiLevel,
+
+      relatedIncidents:
+        safeRelatedIncidents,
+
+      commonViolation,
+      repeatedSameViolation,
+      attendanceOrPolicyConcern,
+    });
+
+  const correctiveActionBasis =
+    buildDynamicBasis({
+      violationCount,
+      criticalIncidentCount,
+      severityScore,
+
+      normalizedRisk:
+        riskLevel,
+
+      normalizedKPI:
+        kpiLevel,
+
+      relatedIncidents:
+        safeRelatedIncidents,
+
+      commonViolation,
+    });
+
+  return {
+    recommendation:
+      primaryAction.title,
+
+    recommendationReason,
+
+    correctiveActionBasis,
+  };
+}
+
 async function getTrustedEmployee(
   employeeId
 ) {
@@ -468,7 +1305,7 @@ async function getTrustedEmployee(
   );
 }
 
-async function getTrustedIncidentSummary(
+async function getTrustedIncidents(
   employeeId
 ) {
   const [rows] =
@@ -477,45 +1314,174 @@ async function getTrustedIncidentSummary(
       .query(
         `
         SELECT
-          COUNT(*) AS violation_count,
-
-          SUM(
-            CASE
-              WHEN LOWER(
-                TRIM(severity)
-              ) IN (
-                'critical',
-                'high'
-              )
-              THEN 1
-              ELSE 0
-            END
-          ) AS critical_incident_count
-
+          id,
+          violation_type,
+          severity,
+          description
         FROM incidents
         WHERE employee_id = ?
+        ORDER BY id ASC
         `,
         [
           employeeId,
         ]
       );
 
-  const row =
-    rows[0] || {};
+  return Array.isArray(
+    rows
+  )
+    ? rows
+    : [];
+}
+
+function buildTrustedDecisionSnapshot(
+  incidents
+) {
+  const relatedIncidents =
+    getSafeIncidents(
+      incidents
+    );
+
+  const violationCount =
+    relatedIncidents.length;
+
+  const severityScore =
+    relatedIncidents.reduce(
+      (
+        sum,
+        incident
+      ) =>
+        sum +
+        getSeverityWeight(
+          incident?.severity
+        ),
+      0
+    );
+
+  const criticalIncidentCount =
+    relatedIncidents.filter(
+      (incident) =>
+        normalizeSeverityLabel(
+          incident?.severity
+        ) ===
+        SEVERITY_LABELS.CRITICAL
+    ).length;
+
+  const kpiLevel =
+    getExpectedKPILevel(
+      severityScore,
+      violationCount
+    );
+
+  const riskLevel =
+    getExpectedRiskLevel(
+      kpiLevel,
+      violationCount,
+      criticalIncidentCount
+    );
+
+  const decisionConfidence =
+    getExpectedDecisionConfidence({
+      violationCount,
+      criticalIncidentCount,
+      severityScore,
+      riskLevel,
+    });
+
+  const suggestedHRAction =
+    getExpectedSuggestedHRAction({
+      confidence:
+        decisionConfidence,
+
+      violationCount,
+      criticalIncidentCount,
+      severityScore,
+      riskLevel,
+    });
+
+  const correctiveAction =
+    getCorrectiveActionRecommendation({
+      violationCount,
+      criticalIncidentCount,
+      severityScore,
+      riskLevel,
+      kpiLevel,
+      relatedIncidents,
+    });
+
+  const decisionConfidenceReason =
+    getDecisionConfidenceReason({
+      confidence:
+        decisionConfidence,
+
+      violationCount,
+      criticalIncidentCount,
+      severityScore,
+      riskLevel,
+    });
+
+  const suggestedHRActionReason =
+    getSuggestedHRActionReason({
+      suggestedHRAction,
+      violationCount,
+      criticalIncidentCount,
+      severityScore,
+      riskLevel,
+    });
 
   return {
-    violationCount:
-      Number(
-        row.violation_count ||
-          0
-      ),
+    violationCount,
+    severityScore,
+    criticalIncidentCount,
+    kpiLevel,
+    riskLevel,
+    decisionConfidence,
+    suggestedHRAction,
 
-    criticalIncidentCount:
-      Number(
-        row.critical_incident_count ||
-          0
-      ),
+    systemRecommendation:
+      correctiveAction.recommendation,
+
+    recommendationReason:
+      correctiveAction.recommendationReason,
+
+    decisionConfidenceReason,
+
+    suggestedHRActionReason,
+
+    correctiveActionBasis:
+      correctiveAction.correctiveActionBasis,
   };
+}
+
+function hasSnapshotMismatch({
+  submitted,
+  trusted,
+}) {
+  return (
+    submitted.violationCount !==
+      trusted.violationCount ||
+
+    submitted.severityScore !==
+      trusted.severityScore ||
+
+    submitted.criticalIncidentCount !==
+      trusted.criticalIncidentCount ||
+
+    submitted.kpiLevel !==
+      trusted.kpiLevel ||
+
+    submitted.riskLevel !==
+      trusted.riskLevel ||
+
+    submitted.decisionConfidence !==
+      trusted.decisionConfidence ||
+
+    submitted.suggestedHRAction !==
+      trusted.suggestedHRAction ||
+
+    submitted.systemRecommendation !==
+      trusted.systemRecommendation
+  );
 }
 
 exports.getKpiDecisionHistory =
@@ -603,11 +1569,6 @@ exports.createKpiDecision =
         finalAction,
         decisionType,
         notes,
-
-        recommendationReason,
-        decisionConfidenceReason,
-        suggestedHRActionReason,
-        correctiveActionBasis,
       } = req.body || {};
 
       const parsedEmployeeId =
@@ -837,64 +1798,60 @@ exports.createKpiDecision =
           });
       }
 
-      const trustedIncidentSummary =
-        await getTrustedIncidentSummary(
+      const trustedIncidents =
+        await getTrustedIncidents(
           trustedEmployee.id
         );
 
-      if (
-        parsedViolationCount !==
-          trustedIncidentSummary.violationCount ||
-        parsedCriticalIncidentCount !==
-          trustedIncidentSummary.criticalIncidentCount
-      ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            error:
-              "KPI source data is out of date.",
-
-            message:
-              "Employee incident data changed after this KPI recommendation was calculated. Synchronize KPI data and review the recommendation again.",
-          });
-      }
-
-      const cleanedKpiLevel =
-        cleanValue(
-          kpiLevel
+      const trustedSnapshot =
+        buildTrustedDecisionSnapshot(
+          trustedIncidents
         );
 
-      const cleanedRiskLevel =
-        cleanValue(
-          riskLevel
-        );
+      const submittedSnapshot = {
+        violationCount:
+          parsedViolationCount,
 
-      const cleanedDecisionConfidence =
-        cleanValue(
-          decisionConfidence
-        );
-
-      const cleanedSuggestedHRAction =
-        cleanValue(
-          suggestedHRAction
-        );
-
-      const cleanedSystemRecommendation =
-        cleanValue(
-          systemRecommendation
-        );
-
-      const expectedKpiLevel =
-        getExpectedKPILevel(
+        severityScore:
           parsedSeverityScore,
-          trustedIncidentSummary.violationCount
-        );
+
+        criticalIncidentCount:
+          parsedCriticalIncidentCount,
+
+        kpiLevel:
+          cleanValue(
+            kpiLevel
+          ),
+
+        riskLevel:
+          cleanValue(
+            riskLevel
+          ),
+
+        decisionConfidence:
+          cleanValue(
+            decisionConfidence
+          ),
+
+        suggestedHRAction:
+          cleanValue(
+            suggestedHRAction
+          ),
+
+        systemRecommendation:
+          cleanValue(
+            systemRecommendation
+          ),
+      };
 
       if (
-        cleanedKpiLevel !==
-        expectedKpiLevel
+        hasSnapshotMismatch({
+          submitted:
+            submittedSnapshot,
+
+          trusted:
+            trustedSnapshot,
+        })
       ) {
         return res
           .status(409)
@@ -902,101 +1859,10 @@ exports.createKpiDecision =
             success: false,
 
             error:
-              "KPI decision snapshot is inconsistent.",
+              "KPI decision snapshot is out of date or inconsistent.",
 
             message:
-              "The KPI level does not match the current severity score and incident count. Synchronize KPI data and review the recommendation again.",
-          });
-      }
-
-      const expectedRiskLevel =
-        getExpectedRiskLevel(
-          expectedKpiLevel,
-          trustedIncidentSummary.violationCount,
-          trustedIncidentSummary.criticalIncidentCount
-        );
-
-      if (
-        cleanedRiskLevel !==
-        expectedRiskLevel
-      ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            error:
-              "KPI decision snapshot is inconsistent.",
-
-            message:
-              "The risk level does not match the current KPI decision rules. Synchronize KPI data and review the recommendation again.",
-          });
-      }
-
-      const expectedDecisionConfidence =
-        getExpectedDecisionConfidence({
-          violationCount:
-            trustedIncidentSummary.violationCount,
-
-          criticalIncidentCount:
-            trustedIncidentSummary.criticalIncidentCount,
-
-          severityScore:
-            parsedSeverityScore,
-
-          riskLevel:
-            expectedRiskLevel,
-        });
-
-      if (
-        cleanedDecisionConfidence !==
-        expectedDecisionConfidence
-      ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            error:
-              "KPI decision snapshot is inconsistent.",
-
-            message:
-              "The decision confidence does not match the current KPI decision rules. Synchronize KPI data and review the recommendation again.",
-          });
-      }
-
-      const expectedSuggestedHRAction =
-        getExpectedSuggestedHRAction({
-          confidence:
-            expectedDecisionConfidence,
-
-          violationCount:
-            trustedIncidentSummary.violationCount,
-
-          criticalIncidentCount:
-            trustedIncidentSummary.criticalIncidentCount,
-
-          severityScore:
-            parsedSeverityScore,
-
-          riskLevel:
-            expectedRiskLevel,
-        });
-
-      if (
-        cleanedSuggestedHRAction !==
-        expectedSuggestedHRAction
-      ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            error:
-              "KPI decision snapshot is inconsistent.",
-
-            message:
-              "The suggested HR action does not match the current KPI decision rules. Synchronize KPI data and review the recommendation again.",
+              "The system-generated KPI recommendation no longer matches the current server data and decision rules. Refresh the KPI data and review the recommendation again.",
           });
       }
 
@@ -1004,7 +1870,7 @@ exports.createKpiDecision =
         cleanedDecisionType ===
           "Accepted" &&
         cleanedFinalAction !==
-          expectedSuggestedHRAction
+          trustedSnapshot.suggestedHRAction
       ) {
         return res
           .status(400)
@@ -1083,21 +1949,21 @@ exports.createKpiDecision =
 
               trustedCompany,
 
-              expectedRiskLevel,
+              trustedSnapshot.riskLevel,
 
-              expectedKpiLevel,
+              trustedSnapshot.kpiLevel,
 
-              trustedIncidentSummary.violationCount,
+              trustedSnapshot.violationCount,
 
-              parsedSeverityScore,
+              trustedSnapshot.severityScore,
 
-              trustedIncidentSummary.criticalIncidentCount,
+              trustedSnapshot.criticalIncidentCount,
 
-              expectedDecisionConfidence,
+              trustedSnapshot.decisionConfidence,
 
-              expectedSuggestedHRAction,
+              trustedSnapshot.suggestedHRAction,
 
-              cleanedSystemRecommendation,
+              trustedSnapshot.systemRecommendation,
 
               cleanedFinalAction,
 
@@ -1111,21 +1977,13 @@ exports.createKpiDecision =
 
               "Recorded",
 
-              cleanValue(
-                recommendationReason
-              ),
+              trustedSnapshot.recommendationReason,
 
-              cleanValue(
-                decisionConfidenceReason
-              ),
+              trustedSnapshot.decisionConfidenceReason,
 
-              cleanValue(
-                suggestedHRActionReason
-              ),
+              trustedSnapshot.suggestedHRActionReason,
 
-              cleanValue(
-                correctiveActionBasis
-              ),
+              trustedSnapshot.correctiveActionBasis,
             ]
           );
 
