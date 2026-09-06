@@ -57,10 +57,14 @@ const DEFAULT_CASE_COUNTS = {
 };
 
 function normalizeValue(value) {
-  return String(value ?? "").trim();
+  return String(
+    value ?? ""
+  ).trim();
 }
 
-function getIncidentEmployeeName(incident) {
+function getIncidentEmployeeName(
+  incident
+) {
   return (
     incident?.employee ||
     incident?.employeeName ||
@@ -69,7 +73,9 @@ function getIncidentEmployeeName(incident) {
   );
 }
 
-function getIncidentEmployeeId(incident) {
+function getIncidentEmployeeId(
+  incident
+) {
   return (
     incident?.employeeId ||
     incident?.employee_id ||
@@ -77,7 +83,9 @@ function getIncidentEmployeeId(incident) {
   );
 }
 
-function getIncidentViolation(incident) {
+function getIncidentViolation(
+  incident
+) {
   return (
     incident?.violation ||
     incident?.violationType ||
@@ -86,7 +94,9 @@ function getIncidentViolation(incident) {
   );
 }
 
-function getIncidentCompany(incident) {
+function getIncidentCompany(
+  incident
+) {
   return (
     incident?.company ||
     incident?.clientCompany ||
@@ -95,7 +105,9 @@ function getIncidentCompany(incident) {
   );
 }
 
-function getIncidentTimestamp(incident) {
+function getIncidentTimestamp(
+  incident
+) {
   const value =
     incident?.date ||
     incident?.incidentDate ||
@@ -110,16 +122,25 @@ function getIncidentTimestamp(incident) {
     return 0;
   }
 
-  const timestamp = new Date(value).getTime();
+  const timestamp =
+    new Date(
+      value
+    ).getTime();
 
-  return Number.isFinite(timestamp)
+  return Number.isFinite(
+    timestamp
+  )
     ? timestamp
     : 0;
 }
 
-function formatIncidentDate(incident) {
+function formatIncidentDate(
+  incident
+) {
   const timestamp =
-    getIncidentTimestamp(incident);
+    getIncidentTimestamp(
+      incident
+    );
 
   if (!timestamp) {
     return "-";
@@ -132,22 +153,34 @@ function formatIncidentDate(incident) {
       day: "numeric",
       year: "numeric",
     }
-  ).format(new Date(timestamp));
+  ).format(
+    new Date(
+      timestamp
+    )
+  );
 }
 
-function buildIncidentGroupKey(incident) {
+function buildIncidentGroupKey(
+  incident
+) {
   const employeeIdentifier =
     normalizeValue(
-      getIncidentEmployeeId(incident)
+      getIncidentEmployeeId(
+        incident
+      )
     ).toLowerCase() ||
     normalizeValue(
-      getIncidentEmployeeName(incident)
+      getIncidentEmployeeName(
+        incident
+      )
     ).toLowerCase() ||
     "unknown-employee";
 
   const violationIdentifier =
     normalizeValue(
-      getIncidentViolation(incident)
+      getIncidentViolation(
+        incident
+      )
     ).toLowerCase() ||
     "unknown-violation";
 
@@ -177,15 +210,24 @@ function getTabStyle(
     return "border-gray-200 bg-white text-gray-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 focus-visible:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-indigo-700/50 dark:hover:bg-indigo-950/20 dark:hover:text-indigo-300";
   }
 
-  if (tabKey === "CLOSED") {
+  if (
+    tabKey ===
+    "CLOSED"
+  ) {
     return "border-emerald-300 bg-emerald-50 text-emerald-700 shadow-sm focus-visible:ring-emerald-500/30 dark:border-emerald-700/50 dark:bg-emerald-950/30 dark:text-emerald-300";
   }
 
-  if (tabKey === "FOR_REVIEW") {
+  if (
+    tabKey ===
+    "FOR_REVIEW"
+  ) {
     return "border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm focus-visible:ring-indigo-500/30 dark:border-indigo-700/50 dark:bg-indigo-950/30 dark:text-indigo-300";
   }
 
-  if (tabKey === "ACTIVE") {
+  if (
+    tabKey ===
+    "ACTIVE"
+  ) {
     return "border-amber-300 bg-amber-50 text-amber-700 shadow-sm focus-visible:ring-amber-500/30 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-300";
   }
 
@@ -199,18 +241,29 @@ function getEmptyStateContent({
   severityFilter,
 }) {
   const hasSearch =
-    Boolean(String(search || "").trim());
+    Boolean(
+      String(
+        search || ""
+      ).trim()
+    );
 
   const hasSeverityFilter =
-    severityFilter !== "ALL";
+    severityFilter !==
+    "ALL";
 
   const hasCaseFilter =
     caseTab !== "ALL";
 
-  if (totalIncidentCount === 0) {
+  if (
+    totalIncidentCount ===
+    0
+  ) {
     return {
       icon: "records",
-      title: "No incident records",
+
+      title:
+        "No incident records",
+
       description:
         "Incident records will appear here after an authorized HR user reports a case.",
     };
@@ -219,16 +272,24 @@ function getEmptyStateContent({
   if (hasSearch) {
     return {
       icon: "search",
-      title: "No search results",
+
+      title:
+        "No search results",
+
       description:
         "No incident matched the current search. Try another incident ID, employee, company, or violation.",
     };
   }
 
-  if (hasSeverityFilter) {
+  if (
+    hasSeverityFilter
+  ) {
     return {
       icon: "filter",
-      title: "No severity-filter results",
+
+      title:
+        "No severity-filter results",
+
       description:
         "Incident records exist, but none match the selected severity level.",
     };
@@ -237,12 +298,18 @@ function getEmptyStateContent({
   if (hasCaseFilter) {
     const tabLabel =
       CASE_TABS.find(
-        (tab) => tab.key === caseTab
-      )?.label || "selected case category";
+        (tab) =>
+          tab.key ===
+          caseTab
+      )?.label ||
+      "selected case category";
 
     return {
       icon: "records",
-      title: `No ${tabLabel.toLowerCase()}`,
+
+      title:
+        `No ${tabLabel.toLowerCase()}`,
+
       description:
         "No incident records currently belong to this case category.",
     };
@@ -250,7 +317,10 @@ function getEmptyStateContent({
 
   return {
     icon: "records",
-    title: "No incident records found",
+
+    title:
+      "No incident records found",
+
     description:
       "No incident records are currently available.",
   };
@@ -281,36 +351,61 @@ export default function IncidentTable({
   const [
     expandedGroups,
     setExpandedGroups,
-  ] = useState({});
+  ] =
+    useState({});
 
-  const safeIncidents = useMemo(() => {
-    return Array.isArray(incidents)
-      ? incidents.filter(Boolean)
-      : [];
-  }, [incidents]);
+  const safeIncidents =
+    useMemo(
+      () => {
+        return Array.isArray(
+          incidents
+        )
+          ? incidents.filter(
+              Boolean
+            )
+          : [];
+      },
+      [
+        incidents,
+      ]
+    );
 
   const safeTotalIncidentCount =
     Number.isFinite(
-      Number(totalIncidentCount)
+      Number(
+        totalIncidentCount
+      )
     )
-      ? Number(totalIncidentCount)
+      ? Number(
+          totalIncidentCount
+        )
       : safeIncidents.length;
 
   const hasSearch =
-    Boolean(String(search || "").trim());
+    Boolean(
+      String(
+        search || ""
+      ).trim()
+    );
 
   const controlsDisabled =
-    isLoading || isRefreshing;
+    isLoading ||
+    isRefreshing;
 
   const hasActiveFilters =
     hasSearch ||
-    severityFilter !== "ALL" ||
+    severityFilter !==
+      "ALL" ||
     caseTab !== "ALL";
 
   const getIncidentDisplayId =
     useCallback(
-      (incident) => {
-        if (incident?.displayId) {
+      (
+        incident
+      ) => {
+        if (
+          incident?.displayId
+        ) {
           return incident.displayId;
         }
 
@@ -323,112 +418,217 @@ export default function IncidentTable({
           );
         }
 
-        if (!incident?.id) {
+        if (
+          !incident?.id
+        ) {
           return "-";
         }
 
-        const numericId = Number(
-          incident.id
-        );
+        const numericId =
+          Number(
+            incident.id
+          );
 
         if (
-          Number.isFinite(numericId)
+          Number.isFinite(
+            numericId
+          )
         ) {
           return `INC-${String(
             numericId
-          ).padStart(4, "0")}`;
+          ).padStart(
+            4,
+            "0"
+          )}`;
         }
 
-        return String(incident.id);
+        return String(
+          incident.id
+        );
       },
-      [formatIncidentCode]
+      [
+        formatIncidentCode,
+      ]
     );
 
-  const toggleGroup = useCallback(
-    (groupKey) => {
-      setExpandedGroups(
-        (currentGroups) => ({
-          ...currentGroups,
-          [groupKey]:
-            !currentGroups[groupKey],
-        })
-      );
-    },
-    []
-  );
+  const toggleGroup =
+    useCallback(
+      (
+        groupKey
+      ) => {
+        setExpandedGroups(
+          (
+            currentGroups
+          ) => ({
+            ...currentGroups,
+
+            [groupKey]:
+              !currentGroups[
+                groupKey
+              ],
+          })
+        );
+      },
+      []
+    );
+
+  const openIncidentDetails =
+    useCallback(
+      (
+        incident
+      ) => {
+        if (
+          !incident ||
+          typeof onView !==
+            "function"
+        ) {
+          return;
+        }
+
+        onView(
+          incident
+        );
+      },
+      [
+        onView,
+      ]
+    );
+
+  const handleIncidentRowKeyDown =
+    useCallback(
+      (
+        event,
+        incident
+      ) => {
+        if (
+          event.key !==
+            "Enter" &&
+          event.key !==
+            " "
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+
+        openIncidentDetails(
+          incident
+        );
+      },
+      [
+        openIncidentDetails,
+      ]
+    );
+
+  const stopRowInteraction =
+    useCallback(
+      (
+        event
+      ) => {
+        event.stopPropagation();
+      },
+      []
+    );
 
   const groupedIncidents =
-    useMemo(() => {
-      const groups = new Map();
+    useMemo(
+      () => {
+        const groups =
+          new Map();
 
-      safeIncidents.forEach(
-        (incident) => {
-          const groupKey =
-            buildIncidentGroupKey(
+        safeIncidents.forEach(
+          (
+            incident
+          ) => {
+            const groupKey =
+              buildIncidentGroupKey(
+                incident
+              );
+
+            const currentGroup =
+              groups.get(
+                groupKey
+              ) ||
+              [];
+
+            currentGroup.push(
               incident
             );
 
-          const currentGroup =
-            groups.get(groupKey) || [];
-
-          currentGroup.push(incident);
-
-          groups.set(
-            groupKey,
-            currentGroup
-          );
-        }
-      );
-
-      return Array.from(
-        groups.entries()
-      )
-        .map(
-          ([
-            groupKey,
-            groupRecords,
-          ]) => {
-            const sortedRecords = [
-              ...groupRecords,
-            ].sort(
-              (
-                firstRecord,
-                secondRecord
-              ) =>
-                getIncidentTimestamp(
-                  secondRecord
-                ) -
-                getIncidentTimestamp(
-                  firstRecord
-                )
+            groups.set(
+              groupKey,
+              currentGroup
             );
-
-            return {
-              key: groupKey,
-              latest:
-                sortedRecords[0],
-              history:
-                sortedRecords.slice(1),
-            };
           }
-        )
-        .sort(
-          (firstGroup, secondGroup) =>
-            getIncidentTimestamp(
-              secondGroup.latest
-            ) -
-            getIncidentTimestamp(
-              firstGroup.latest
-            )
         );
-    }, [safeIncidents]);
+
+        return Array.from(
+          groups.entries()
+        )
+          .map(
+            ([
+              groupKey,
+              groupRecords,
+            ]) => {
+              const sortedRecords =
+                [
+                  ...groupRecords,
+                ].sort(
+                  (
+                    firstRecord,
+                    secondRecord
+                  ) =>
+                    getIncidentTimestamp(
+                      secondRecord
+                    ) -
+                    getIncidentTimestamp(
+                      firstRecord
+                    )
+                );
+
+              return {
+                key:
+                  groupKey,
+
+                latest:
+                  sortedRecords[
+                    0
+                  ],
+
+                history:
+                  sortedRecords.slice(
+                    1
+                  ),
+              };
+            }
+          )
+          .sort(
+            (
+              firstGroup,
+              secondGroup
+            ) =>
+              getIncidentTimestamp(
+                secondGroup.latest
+              ) -
+              getIncidentTimestamp(
+                firstGroup.latest
+              )
+          );
+      },
+      [
+        safeIncidents,
+      ]
+    );
 
   const emptyStateContent =
     getEmptyStateContent({
       totalIncidentCount:
         safeTotalIncidentCount,
+
       search,
+
       caseTab,
+
       severityFilter,
     });
 
@@ -443,50 +643,69 @@ export default function IncidentTable({
           aria-label="Incident case filters"
           className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4"
         >
-          {CASE_TABS.map((tab) => {
-            const isActive =
-              caseTab === tab.key;
+          {CASE_TABS.map(
+            (
+              tab
+            ) => {
+              const isActive =
+                caseTab ===
+                tab.key;
 
-            const count = Number(
-              caseCounts?.[tab.key] || 0
-            );
-
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                aria-controls="incident-records-table"
-                disabled={controlsDisabled}
-                onClick={() =>
-                  onCaseTabChange?.(
+              const count =
+                Number(
+                  caseCounts?.[
                     tab.key
-                  )
-                }
-                className={`rounded-2xl border px-4 py-3 text-left transition focus:outline-none focus-visible:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${getTabStyle(
-                  isActive,
-                  tab.key
-                )}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-extrabold">
-                      {tab.label}
-                    </p>
+                  ] ||
+                    0
+                );
 
-                    <p className="mt-0.5 truncate text-xs font-semibold opacity-70">
-                      {tab.description}
-                    </p>
+              return (
+                <button
+                  key={
+                    tab.key
+                  }
+                  type="button"
+                  role="tab"
+                  aria-selected={
+                    isActive
+                  }
+                  aria-controls="incident-records-table"
+                  disabled={
+                    controlsDisabled
+                  }
+                  onClick={() =>
+                    onCaseTabChange?.(
+                      tab.key
+                    )
+                  }
+                  className={`rounded-2xl border px-4 py-3 text-left transition focus:outline-none focus-visible:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${getTabStyle(
+                    isActive,
+                    tab.key
+                  )}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-extrabold">
+                        {
+                          tab.label
+                        }
+                      </p>
+
+                      <p className="mt-0.5 truncate text-xs font-semibold opacity-70">
+                        {
+                          tab.description
+                        }
+                      </p>
+                    </div>
+
+                    <span className="shrink-0 rounded-full bg-white/70 px-2.5 py-1 text-xs font-black dark:bg-slate-950/30">
+                      {count}
+                    </span>
                   </div>
-
-                  <span className="shrink-0 rounded-full bg-white/70 px-2.5 py-1 text-xs font-black dark:bg-slate-950/30">
-                    {count}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
+                </button>
+              );
+            }
+          )}
         </div>
       </div>
 
@@ -503,7 +722,9 @@ export default function IncidentTable({
               !hasActiveFilters ||
               controlsDisabled
             }
-            onClick={onClearFilters}
+            onClick={
+              onClearFilters
+            }
           >
             Clear Filters
           </Button>
@@ -514,11 +735,18 @@ export default function IncidentTable({
             label="Search incident records"
             hideLabel
             placeholder="Search incident ID, employee, company, or violation..."
-            value={search}
-            disabled={controlsDisabled}
-            onChange={(event) =>
+            value={
+              search
+            }
+            disabled={
+              controlsDisabled
+            }
+            onChange={(
+              event
+            ) =>
               onSearchChange?.(
-                event.target.value
+                event.target
+                  .value
               )
             }
             onClear={
@@ -526,14 +754,18 @@ export default function IncidentTable({
               "function"
                 ? onClearSearch
                 : () =>
-                    onSearchChange?.("")
+                    onSearchChange?.(
+                      ""
+                    )
             }
           />
         </div>
 
         <div className="min-w-0 xl:w-52">
           <FilterSelect
-            value={severityFilter}
+            value={
+              severityFilter
+            }
             onChange={
               onSeverityFilterChange
             }
@@ -544,17 +776,24 @@ export default function IncidentTable({
               "Critical",
             ]}
             labels={{
-              ALL: "All Severity",
+              ALL:
+                "All Severity",
             }}
-            disabled={controlsDisabled}
+            disabled={
+              controlsDisabled
+            }
           />
         </div>
       </FilterBar>
 
       {isLoading ? (
         <LoadingSkeleton
-          rows={6}
-          columns={7}
+          rows={
+            6
+          }
+          columns={
+            7
+          }
           showHeader
         />
       ) : groupedIncidents.length ===
@@ -595,7 +834,7 @@ export default function IncidentTable({
 
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Cases are grouped by employee and violation.
-              Expand a record to view its related history.
+              Expand records with multiple cases to view each related incident.
             </p>
           </div>
 
@@ -656,7 +895,9 @@ export default function IncidentTable({
 
               <tbody className="text-gray-700 dark:text-gray-200">
                 {groupedIncidents.map(
-                  (group) => {
+                  (
+                    group
+                  ) => {
                     const isExpanded =
                       Boolean(
                         expandedGroups[
@@ -666,7 +907,8 @@ export default function IncidentTable({
 
                     const hasHistory =
                       group.history
-                        .length > 0;
+                        .length >
+                      0;
 
                     const employeeName =
                       getIncidentEmployeeName(
@@ -683,21 +925,73 @@ export default function IncidentTable({
                         group.latest
                       );
 
+                    const latestDisplayId =
+                      getIncidentDisplayId(
+                        group.latest
+                      );
+
+                    const canView =
+                      typeof onView ===
+                      "function";
+
                     return (
                       <Fragment
-                        key={group.key}
+                        key={
+                          group.key
+                        }
                       >
-                        <tr className="border-t border-gray-200 transition hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-900/40">
+                        <tr
+                          tabIndex={
+                            canView
+                              ? 0
+                              : undefined
+                          }
+                          aria-label={
+                            canView
+                              ? `View details for incident ${latestDisplayId}`
+                              : undefined
+                          }
+                          title={
+                            canView
+                              ? `View ${latestDisplayId} case details`
+                              : undefined
+                          }
+                          onClick={
+                            canView
+                              ? () =>
+                                  openIncidentDetails(
+                                    group.latest
+                                  )
+                              : undefined
+                          }
+                          onKeyDown={
+                            canView
+                              ? (
+                                  event
+                                ) =>
+                                  handleIncidentRowKeyDown(
+                                    event,
+                                    group.latest
+                                  )
+                              : undefined
+                          }
+                          className={`border-t border-gray-200 transition dark:border-slate-700 ${
+                            canView
+                              ? "cursor-pointer hover:bg-indigo-50/50 focus-visible:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500/40 dark:hover:bg-indigo-950/20 dark:focus-visible:bg-indigo-950/30"
+                              : "hover:bg-gray-50 dark:hover:bg-slate-900/40"
+                          }`}
+                        >
                           <td className="px-4 py-4 align-top">
                             <p className="truncate font-extrabold text-gray-900 dark:text-white">
-                              {getIncidentDisplayId(
-                                group.latest
-                              )}
+                              {
+                                latestDisplayId
+                              }
                             </p>
 
                             {hasHistory && (
                               <span className="mt-1 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">
-                                {group.history
+                                {group
+                                  .history
                                   .length +
                                   1}{" "}
                                 records
@@ -720,9 +1014,13 @@ export default function IncidentTable({
 
                               <p
                                 className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
-                                title={company}
+                                title={
+                                  company
+                                }
                               >
-                                {company}
+                                {
+                                  company
+                                }
                               </p>
                             </div>
                           </td>
@@ -735,7 +1033,9 @@ export default function IncidentTable({
                                   violation
                                 }
                               >
-                                {violation}
+                                {
+                                  violation
+                                }
                               </p>
 
                               <SeverityBadge
@@ -783,27 +1083,39 @@ export default function IncidentTable({
                           </td>
 
                           <td className="px-4 py-4 text-right align-top">
-                            <div className="flex items-center justify-end gap-2">
+                            <div
+                              className="flex items-center justify-end gap-2"
+                              onClick={
+                                stopRowInteraction
+                              }
+                              onKeyDown={
+                                stopRowInteraction
+                              }
+                            >
                               {hasHistory && (
                                 <button
                                   type="button"
                                   aria-label={
                                     isExpanded
-                                      ? `Hide incident history for ${employeeName}`
-                                      : `Show incident history for ${employeeName}`
+                                      ? `Hide related incidents for ${employeeName}`
+                                      : `Show related incidents for ${employeeName}`
                                   }
                                   aria-expanded={
                                     isExpanded
                                   }
-                                  onClick={() =>
+                                  onClick={(
+                                    event
+                                  ) => {
+                                    event.stopPropagation();
+
                                     toggleGroup(
                                       group.key
-                                    )
-                                  }
+                                    );
+                                  }}
                                   title={
                                     isExpanded
-                                      ? "Hide history"
-                                      : "View history"
+                                      ? "Hide related incidents"
+                                      : "View related incidents"
                                   }
                                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 hover:text-indigo-800 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/30 dark:border-indigo-800/30 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
                                 >
@@ -857,102 +1169,155 @@ export default function IncidentTable({
                             (
                               historyItem,
                               historyIndex
-                            ) => (
-                              <tr
-                                key={getIncidentRecordKey(
-                                  historyItem,
-                                  historyIndex
-                                )}
-                                className="bg-gray-50/50 transition hover:bg-gray-100 dark:bg-slate-800/50 dark:hover:bg-slate-800"
-                              >
-                                <td className="px-4 py-3 align-top pl-8">
-                                  <div className="flex items-center gap-2">
-                                    <FiCornerDownRight
-                                      className="shrink-0 text-gray-400"
-                                      aria-hidden="true"
-                                    />
+                            ) => {
+                              const historyDisplayId =
+                                getIncidentDisplayId(
+                                  historyItem
+                                );
 
-                                    <p className="truncate font-semibold text-gray-700 dark:text-gray-300">
-                                      {getIncidentDisplayId(
+                              return (
+                                <tr
+                                  key={getIncidentRecordKey(
+                                    historyItem,
+                                    historyIndex
+                                  )}
+                                  tabIndex={
+                                    canView
+                                      ? 0
+                                      : undefined
+                                  }
+                                  aria-label={
+                                    canView
+                                      ? `View details for incident ${historyDisplayId}`
+                                      : undefined
+                                  }
+                                  title={
+                                    canView
+                                      ? `View ${historyDisplayId} case details`
+                                      : undefined
+                                  }
+                                  onClick={
+                                    canView
+                                      ? () =>
+                                          openIncidentDetails(
+                                            historyItem
+                                          )
+                                      : undefined
+                                  }
+                                  onKeyDown={
+                                    canView
+                                      ? (
+                                          event
+                                        ) =>
+                                          handleIncidentRowKeyDown(
+                                            event,
+                                            historyItem
+                                          )
+                                      : undefined
+                                  }
+                                  className={`bg-gray-50/50 transition dark:bg-slate-800/50 ${
+                                    canView
+                                      ? "cursor-pointer hover:bg-indigo-50/70 focus-visible:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500/40 dark:hover:bg-indigo-950/20 dark:focus-visible:bg-indigo-950/30"
+                                      : "hover:bg-gray-100 dark:hover:bg-slate-800"
+                                  }`}
+                                >
+                                  <td className="px-4 py-3 align-top pl-8">
+                                    <div className="flex items-center gap-2">
+                                      <FiCornerDownRight
+                                        className="shrink-0 text-gray-400"
+                                        aria-hidden="true"
+                                      />
+
+                                      <p className="truncate font-semibold text-gray-700 dark:text-gray-300">
+                                        {
+                                          historyDisplayId
+                                        }
+                                      </p>
+                                    </div>
+                                  </td>
+
+                                  <td className="px-4 py-3 align-top">
+                                    <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                                      {formatIncidentDate(
                                         historyItem
                                       )}
                                     </p>
-                                  </div>
-                                </td>
+                                  </td>
 
-                                <td className="px-4 py-3 align-top">
-                                  <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                                    {formatIncidentDate(
-                                      historyItem
-                                    )}
-                                  </p>
-                                </td>
+                                  <td className="px-4 py-3 align-top">
+                                    <SeverityBadge
+                                      level={
+                                        historyItem.severity
+                                      }
+                                    />
+                                  </td>
 
-                                <td className="px-4 py-3 align-top">
-                                  <SeverityBadge
-                                    level={
-                                      historyItem.severity
-                                    }
-                                  />
-                                </td>
+                                  <td className="px-4 py-3 align-top">
+                                    <StatusBadge
+                                      status={
+                                        historyItem.status
+                                      }
+                                    />
+                                  </td>
 
-                                <td className="px-4 py-3 align-top">
-                                  <StatusBadge
-                                    status={
-                                      historyItem.status
-                                    }
-                                  />
-                                </td>
-
-                                <td className="px-4 py-3 align-top">
-                                  <CaseAgeBadge
-                                    incident={
-                                      historyItem
-                                    }
-                                  />
-                                </td>
-
-                                <td className="px-4 py-3 align-top">
-                                  <SmartAlertBadge
-                                    alerts={
-                                      Array.isArray(
-                                        historyItem.smartAlerts
-                                      )
-                                        ? historyItem.smartAlerts
-                                        : []
-                                    }
-                                  />
-                                </td>
-
-                                <td className="px-4 py-3 text-right align-top">
-                                  <div className="flex justify-end">
-                                    <ActionButtons
+                                  <td className="px-4 py-3 align-top">
+                                    <CaseAgeBadge
                                       incident={
                                         historyItem
                                       }
-                                      isSuperAdmin={
-                                        isSuperAdmin
-                                      }
-                                      currentUser={
-                                        currentUser
-                                      }
-                                      onView={
-                                        onView
-                                      }
-                                      onStartReview={
-                                        onStartReview
-                                      }
-                                      onResolve={
-                                        onResolve
-                                      }
-                                      onReview={
-                                        onReview
+                                    />
+                                  </td>
+
+                                  <td className="px-4 py-3 align-top">
+                                    <SmartAlertBadge
+                                      alerts={
+                                        Array.isArray(
+                                          historyItem.smartAlerts
+                                        )
+                                          ? historyItem.smartAlerts
+                                          : []
                                       }
                                     />
-                                  </div>
-                                </td>
-                              </tr>
-                            )
+                                  </td>
+
+                                  <td className="px-4 py-3 text-right align-top">
+                                    <div
+                                      className="flex justify-end"
+                                      onClick={
+                                        stopRowInteraction
+                                      }
+                                      onKeyDown={
+                                        stopRowInteraction
+                                      }
+                                    >
+                                      <ActionButtons
+                                        incident={
+                                          historyItem
+                                        }
+                                        isSuperAdmin={
+                                          isSuperAdmin
+                                        }
+                                        currentUser={
+                                          currentUser
+                                        }
+                                        onView={
+                                          onView
+                                        }
+                                        onStartReview={
+                                          onStartReview
+                                        }
+                                        onResolve={
+                                          onResolve
+                                        }
+                                        onReview={
+                                          onReview
+                                        }
+                                      />
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            }
                           )}
                       </Fragment>
                     );

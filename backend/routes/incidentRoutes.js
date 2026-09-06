@@ -5,7 +5,6 @@ const {
   getIncidentsByEmployee,
   getIncidentById,
   createIncident,
-  updateIncident,
   updateIncidentStatus,
   deleteIncident,
 } = require("../controllers/incidentController");
@@ -57,10 +56,9 @@ function allowWorkflowEvidenceOnlyForSubmission(
   res,
   next
 ) {
-  const files =
-    Array.isArray(req.files)
-      ? req.files
-      : [];
+  const files = Array.isArray(req.files)
+    ? req.files
+    : [];
 
   if (files.length === 0) {
     return next();
@@ -80,12 +78,10 @@ function allowWorkflowEvidenceOnlyForSubmission(
     return next();
   }
 
-  return res
-    .status(400)
-    .json({
-      error:
-        "Evidence files may only be uploaded when submitting investigation proof for review.",
-    });
+  return res.status(400).json({
+    error:
+      "Evidence files may only be uploaded when submitting investigation proof for review.",
+  });
 }
 
 /*
@@ -186,6 +182,11 @@ router.get(
  *
  * Incident evidence is validated by the hardened
  * upload.incidentEvidence middleware.
+ *
+ * Saved incident core details are intentionally
+ * immutable after creation. Investigation and review
+ * changes are handled exclusively by the dedicated
+ * workflow endpoint below.
  */
 router.post(
   "/incidents",
@@ -196,31 +197,6 @@ router.post(
   ),
   upload.incidentEvidence,
   createIncident
-);
-
-/*
- * ==================================================
- * EDIT INCIDENT DETAILS
- * ==================================================
- *
- * HR_MANAGER / HR_STAFF only.
- *
- * General incident editing continues to support
- * evidence attachments as part of the established
- * workflow.
- *
- * Workflow status transitions remain restricted to:
- * PATCH /incidents/:id/status
- */
-router.put(
-  "/incidents/:id",
-  verifyToken,
-  authorizeRoles(
-    "HR_MANAGER",
-    "HR_STAFF"
-  ),
-  upload.incidentEvidence,
-  updateIncident
 );
 
 /*
@@ -249,6 +225,10 @@ router.put(
  *
  * Evidence files are accepted only for proof
  * submission/resubmission actions.
+ *
+ * This route handles workflow state only. It does not
+ * expose general post-save editing of incident core
+ * details.
  */
 router.patch(
   "/incidents/:id/status",

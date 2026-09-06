@@ -1177,9 +1177,62 @@ function serializeIncident(
       .employeeNameFromEmployee ||
     "Unknown Employee";
 
-  const actionTaken =
-    incident.action_taken ||
+  const hasResolutionSubmission =
+    Boolean(
+      incident
+        .resolution_submitted_at
+    );
+
+  /*
+   * ==================================================
+   * POLICY SANCTION / ACTION TAKEN SEPARATION
+   * ==================================================
+   *
+   * policy_sanction:
+   * - server-authoritative prescribed sanction
+   * - captured when the incident is created
+   * - historical / immutable
+   *
+   * action_taken:
+   * - actual action recorded by the investigator
+   * - populated only during proof submission
+   *
+   * Legacy records created before policy_sanction
+   * existed stored the prescribed sanction inside
+   * action_taken.
+   *
+   * The fallback below is used only when no proof
+   * has ever been submitted.
+   *
+   * Once proof exists, action_taken is investigation
+   * data and must never be presented as policy
+   * sanction.
+   */
+  const legacyPolicySanction =
+    !incident
+      .policy_sanction &&
+    !hasResolutionSubmission
+      ? (
+          incident
+            .action_taken ||
+          ""
+        )
+      : "";
+
+  const policySanction =
+    incident
+      .policy_sanction ||
+    legacyPolicySanction ||
     "";
+
+  const actionTaken =
+    hasResolutionSubmission
+      ? (
+          incident
+            .action_taken ||
+          ""
+        )
+      : "";
 
   const investigation =
     incident
@@ -1204,8 +1257,7 @@ function serializeIncident(
       : null;
 
   const resolution =
-    incident
-      .resolution_submitted_at
+    hasResolutionSubmission
       ? {
           submittedAt:
             incident
@@ -1223,9 +1275,7 @@ function serializeIncident(
             incident
               .resolution_submitted_by_name,
 
-          actionTaken:
-            incident.action_taken ||
-            "",
+          actionTaken,
 
           remarks:
             incident
@@ -1354,13 +1404,24 @@ function serializeIncident(
       incident.reported_by ||
       "",
 
+    /*
+     * Actual investigator action.
+     */
     actionTaken,
 
     action_taken:
       actionTaken,
 
+    /*
+     * Immutable historical prescribed sanction.
+     */
+    policySanction,
+
+    policy_sanction:
+      policySanction,
+
     sanction:
-      actionTaken,
+      policySanction,
 
     recommendation:
       incident
@@ -1893,21 +1954,6 @@ function getSafePersonName(
     : value;
 }
 
-async function safeLogAudit(
-  payload
-) {
-  try {
-    await logAudit(
-      payload
-    );
-  } catch (error) {
-    console.error(
-      "AUDIT LOG ERROR:",
-      error
-    );
-  }
-}
-
 exports.getIncidents =
   async (
     req,
@@ -2304,12 +2350,24 @@ exports.createIncident =
         violationSection,
         violationCategory,
         severity,
+
+        /*
+         * New canonical prescribed-sanction fields.
+         *
+         * sanction/actionTaken remain accepted below
+         * only as compatibility aliases while the
+         * frontend migration is completed.
+         */
+        policySanction,
+        policy_sanction,
+        sanction,
+        actionTaken,
+
         date,
         incidentDate,
         location,
         description,
         reportedBy,
-        actionTaken,
         recommendation,
         resolutionNotes,
       } =
@@ -2416,6 +2474,24 @@ exports.createIncident =
           });
       }
 
+      /*
+       * Compatibility order:
+       *
+       * 1. policySanction
+       * 2. policy_sanction
+       * 3. sanction
+       * 4. actionTaken (legacy frontend create payload)
+       *
+       * This value is never trusted. It remains only
+       * a consistency check against the authoritative
+       * server calculation.
+       */
+      const submittedPolicySanction =
+        policySanction ||
+        policy_sanction ||
+        sanction ||
+        actionTaken;
+
       const finalDate =
         normalizeDate(
           incidentDate ||
@@ -2455,10 +2531,10 @@ exports.createIncident =
 
       /*
        * Lock the employee row while computing
-       * offense history so two simultaneous
-       * incident submissions for the same employee
-       * cannot independently classify themselves
-       * using the same previous count.
+       * offense history so simultaneous incident
+       * submissions for the same employee cannot
+       * classify themselves against the same stale
+       * previous offense count.
        */
       await lockEmployeeForClassification(
         connection,
@@ -2491,11 +2567,11 @@ exports.createIncident =
         );
 
       /*
-       * The frontend may still send its calculated
-       * severity/sanction for immediate UX.
+       * Client values are consistency checks only.
        *
-       * They are treated only as consistency checks.
-       * The server policy remains authoritative.
+       * The server remains authoritative for:
+       * - severity
+       * - prescribed policy sanction
        */
       assertSubmittedSeverityMatches(
         severity,
@@ -2503,10 +2579,23 @@ exports.createIncident =
       );
 
       assertSubmittedSanctionMatches(
-        actionTaken,
+        submittedPolicySanction,
         classification.sanction
       );
 
+      /*
+       * IMPORTANT DATA MODEL:
+       *
+       * action_taken:
+       *   Actual investigation action.
+       *   Starts NULL at incident creation.
+       *
+       * policy_sanction:
+       *   Prescribed sanction calculated from the
+       *   server-wide violation policy.
+       *   Stored once at creation and never changed
+       *   by workflow transitions.
+       */
       const [result] =
         await connection.query(
           `
@@ -2523,6 +2612,7 @@ exports.createIncident =
             description,
             reported_by,
             action_taken,
+            policy_sanction,
             recommendation,
             resolution_notes,
             last_action_by_id,
@@ -2533,7 +2623,7 @@ exports.createIncident =
           )
           VALUES (
             ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?, NOW()
+            ?, NULL, ?, ?, ?, ?, ?, ?, ?, NOW()
           )
           `,
           [
@@ -2646,6 +2736,7 @@ exports.createIncident =
         },
         {
           connection,
+
           throwOnError:
             true,
         }
@@ -2822,505 +2913,6 @@ function getAssignedInvestigatorValues(
       : null,
   ].filter(Boolean);
 }
-
-exports.updateIncident =
-  async (
-    req,
-    res
-  ) => {
-    let connection =
-      null;
-
-    let transactionStarted =
-      false;
-
-    let transactionCommitted =
-      false;
-
-    try {
-      await ensureIncidentTimelineTable();
-
-      const {
-        id,
-      } =
-        req.params;
-
-      const [
-        existingIncidentRows,
-      ] =
-        await db
-          .promise()
-          .query(
-            `
-            SELECT *
-            FROM incidents
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [
-              id,
-            ]
-          );
-
-      if (
-        !existingIncidentRows.length
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Incident not found.",
-          });
-      }
-
-      const existingIncident =
-        existingIncidentRows[0];
-
-      if (
-        normalizeStatus(
-          existingIncident
-            .status
-        ) ===
-        "Closed"
-      ) {
-        return res
-          .status(409)
-          .json({
-            error:
-              "This case is already closed and can no longer be modified.",
-          });
-      }
-
-      const {
-        employeeId,
-        employee_id,
-        employee,
-        employeeName,
-        company,
-        violation,
-        violationType,
-        violationSection,
-        violationCategory,
-        severity,
-        date,
-        incidentDate,
-        location,
-        description,
-        reportedBy,
-      } =
-        req.body ||
-        {};
-
-      const actor =
-        await getActor(
-          req
-        );
-
-      const finalEmployeeId =
-        employeeId ||
-        employee_id;
-
-      if (
-        !finalEmployeeId
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Employee is required.",
-          });
-      }
-
-      const [
-        employeeRows,
-      ] =
-        await db
-          .promise()
-          .query(
-            `
-            SELECT *
-            FROM employees
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [
-              finalEmployeeId,
-            ]
-          );
-
-      if (
-        !employeeRows.length
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Selected employee not found.",
-          });
-      }
-
-      const employeeRecord =
-        employeeRows[0];
-
-      if (
-        !isDeployedEmployee(
-          employeeRecord
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Incident cannot be assigned to floating or standby employees. Please select a deployed employee.",
-          });
-      }
-
-      const activeDeployment =
-        await getActiveDeploymentForEmployee(
-          finalEmployeeId
-        );
-
-      const finalEmployeeName =
-        employeeName ||
-        employee ||
-        employeeRecord.name ||
-        null;
-
-      const finalCompany =
-        company ||
-        activeDeployment
-          ?.company ||
-        employeeRecord
-          .company ||
-        activeDeployment
-          ?.client_company ||
-        null;
-
-      const submittedViolation =
-        violationType ||
-        violation;
-
-      if (
-        !submittedViolation
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Violation type is required.",
-          });
-      }
-
-      const finalDate =
-        normalizeDate(
-          incidentDate ||
-          date
-        );
-
-      if (!finalDate) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Incident date is required.",
-          });
-      }
-
-      const finalReportedBy =
-        getSafePersonName(
-          reportedBy,
-          actor
-        );
-
-      const evidenceFiles =
-        buildEvidenceFromReq(
-          req
-        );
-
-      connection =
-        await db
-          .promise()
-          .getConnection();
-
-      await connection
-        .beginTransaction();
-
-      transactionStarted =
-        true;
-
-      let finalViolation =
-        existingIncident
-          .violation_type;
-
-      let finalSeverity =
-        getHighestSeverity(
-          existingIncident
-            .severity
-        );
-
-      let finalActionTaken =
-        existingIncident
-          .action_taken ||
-        null;
-
-      const sameViolation =
-        normalizeText(
-          existingIncident
-            .violation_type
-        ) ===
-        normalizeText(
-          submittedViolation
-        );
-
-      /*
-       * Historical integrity rule:
-       *
-       * If the violation itself did not change and
-       * the stored severity is valid, preserve the
-       * historical severity exactly.
-       *
-       * A later Code of Conduct change must not
-       * silently rewrite an older incident.
-       */
-      if (
-        sameViolation &&
-        finalSeverity
-      ) {
-        assertSubmittedSeverityMatches(
-          severity,
-          finalSeverity
-        );
-      } else {
-        /*
-         * Reclassification is allowed only when the
-         * selected violation actually changed, or
-         * when an old record has no valid persisted
-         * severity.
-         */
-        await lockEmployeeForClassification(
-          connection,
-          finalEmployeeId
-        );
-
-        const classification =
-          await buildAuthoritativeIncidentClassification(
-            {
-              connection,
-
-              employeeId:
-                finalEmployeeId,
-
-              violation:
-                submittedViolation,
-
-              violationSection:
-                violationSection ||
-                "",
-
-              violationCategory:
-                violationCategory ||
-                "",
-
-              description:
-                description ||
-                "",
-
-              excludeIncidentId:
-                id,
-            }
-          );
-
-        assertSubmittedSeverityMatches(
-          severity,
-          classification
-            .severity
-        );
-
-        finalViolation =
-          classification
-            .violation;
-
-        finalSeverity =
-          classification
-            .severity;
-
-        finalActionTaken =
-          classification
-            .sanction ||
-          null;
-      }
-
-      await connection.query(
-        `
-        UPDATE incidents
-        SET
-          employee_id = ?,
-          employee_name = ?,
-          company = ?,
-          violation_type = ?,
-          severity = ?,
-          incident_date = ?,
-          location = ?,
-          description = ?,
-          reported_by = ?,
-          action_taken = ?,
-          updated_at = NOW()
-        WHERE id = ?
-        `,
-        [
-          finalEmployeeId,
-          finalEmployeeName,
-          finalCompany,
-          finalViolation,
-          finalSeverity,
-          finalDate,
-
-          location ||
-            null,
-
-          description ||
-            null,
-
-          finalReportedBy,
-
-          finalActionTaken,
-
-          id,
-        ]
-      );
-
-      for (
-        const file of
-        evidenceFiles
-      ) {
-        await connection.query(
-          `
-          INSERT INTO incident_evidence
-          (
-            incident_id,
-            file_name,
-            file_path
-          )
-          VALUES (?, ?, ?)
-          `,
-          [
-            id,
-            file.fileName,
-            file.filePath,
-          ]
-        );
-      }
-
-      await connection
-        .commit();
-
-      transactionCommitted =
-        true;
-
-      claimIncidentEvidenceFiles(
-        req
-      );
-
-      await safeLogAudit({
-        userId:
-          actor.userId,
-
-        username:
-          actor.username,
-
-        fullName:
-          actor.fullName,
-
-        role:
-          actor.role,
-
-        category:
-          AUDIT_CATEGORY
-            .OPERATIONAL,
-
-        action:
-          "UPDATE_INCIDENT",
-
-        description:
-          `${actor.fullName} updated incident record for ${finalEmployeeName}.`,
-      });
-
-      const updatedIncident =
-        await getIncidentWithEvidence(
-          id
-        );
-
-      return res.json({
-        success:
-          true,
-
-        message:
-          "Incident updated successfully",
-
-        incident:
-          updatedIncident,
-      });
-    } catch (error) {
-      let rollbackFailed =
-        false;
-
-      if (
-        connection &&
-        transactionStarted &&
-        !transactionCommitted
-      ) {
-        try {
-          await connection
-            .rollback();
-        } catch (
-          rollbackError
-        ) {
-          rollbackFailed =
-            true;
-
-          console.error(
-            "UPDATE INCIDENT ROLLBACK ERROR:",
-            rollbackError
-          );
-        }
-      }
-
-      if (
-        rollbackFailed
-      ) {
-        claimIncidentEvidenceFiles(
-          req
-        );
-      }
-
-      if (
-        error
-          ?.isViolationPolicyError &&
-        !rollbackFailed
-      ) {
-        return respondToViolationPolicyError(
-          res,
-          error
-        );
-      }
-
-      console.error(
-        "UPDATE INCIDENT ERROR:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          error:
-            "Failed to update incident",
-        });
-    } finally {
-      if (connection) {
-        connection.release();
-      }
-    }
-  };
 
 exports.updateIncidentStatus =
   async (
@@ -3627,29 +3219,58 @@ exports.updateIncidentStatus =
         }
       }
 
+      /*
+       * ==================================================
+       * WORKFLOW DATA INTEGRITY
+       * ==================================================
+       *
+       * policy_sanction is intentionally absent from
+       * every workflow UPDATE.
+       *
+       * It is immutable historical policy data.
+       *
+       * action_taken is written only when proof is
+       * submitted/resubmitted by the assigned
+       * investigator.
+       *
+       * Reviewer CLOSE / RETURN actions must never
+       * overwrite the investigator's action_taken.
+       */
       const updateFields =
         [
           "status = ?",
+
           "resolution_notes = COALESCE(?, resolution_notes)",
-          "action_taken = COALESCE(?, action_taken)",
+
           "recommendation = COALESCE(?, recommendation)",
+
           "last_action_by_id = ?",
+
           "last_action_by_username = ?",
+
           "last_action_by_name = ?",
+
           "last_action_type = ?",
+
           "last_action_at = NOW()",
+
           "updated_at = NOW()",
         ];
 
       const params =
         [
           normalizedStatus,
+
           cleanResolutionNotes,
-          cleanActionTaken,
+
           cleanRecommendation,
+
           actor.userId,
+
           actor.username,
+
           actor.fullName,
+
           actionType,
         ];
 
@@ -3681,21 +3302,39 @@ exports.updateIncidentStatus =
         isProofSubmission
       ) {
         updateFields.push(
+          /*
+           * Actual action taken is captured only here.
+           */
+          "action_taken = ?",
+
           "resolution_submitted_by_id = ?",
+
           "resolution_submitted_by_username = ?",
+
           "resolution_submitted_by_name = ?",
+
           "resolution_submitted_at = NOW()",
+
           "reviewed_by_id = NULL",
+
           "reviewed_by_username = NULL",
+
           "reviewed_by_name = NULL",
+
           "reviewed_at = NULL",
+
           "review_decision = NULL",
+
           "review_comments = NULL"
         );
 
         params.push(
+          cleanActionTaken,
+
           actor.userId,
+
           actor.username,
+
           actor.fullName
         );
       }
@@ -3718,6 +3357,7 @@ exports.updateIncidentStatus =
           actor.username,
           actor.fullName,
           "Approved",
+
           cleanResolutionNotes ||
             "Proof reviewed and approved."
         );
@@ -3841,6 +3481,7 @@ exports.updateIncidentStatus =
         },
         {
           connection,
+
           throwOnError:
             true,
         }

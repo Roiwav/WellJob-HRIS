@@ -46,6 +46,33 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
+function hasPersistedIncidentId(
+  incident
+) {
+  const id =
+    incident?.id ??
+    incident?.incidentId ??
+    incident?.incident_id;
+
+  return (
+    id !== undefined &&
+    id !== null &&
+    String(id).trim() !==
+      ""
+  );
+}
+
+function getPersistedPolicySanction(
+  incident
+) {
+  return String(
+    incident?.policySanction ||
+      incident?.policy_sanction ||
+      incident?.sanction ||
+      ""
+  ).trim();
+}
+
 function normalizeSeverityList(value) {
   const values = Array.isArray(value)
     ? value
@@ -110,15 +137,21 @@ function normalizePenalty(
   penalty,
   index
 ) {
-  const offenseNo = index + 1;
+  const offenseNo =
+    index + 1;
 
   if (
     penalty &&
-    typeof penalty === "object" &&
-    !Array.isArray(penalty)
+    typeof penalty ===
+      "object" &&
+    !Array.isArray(
+      penalty
+    )
   ) {
     const storedOffenseNo =
-      Number(penalty.offenseNo);
+      Number(
+        penalty.offenseNo
+      );
 
     return {
       ...penalty,
@@ -134,32 +167,47 @@ function normalizePenalty(
       label:
         String(
           penalty.label ||
-            getOrdinalLabel(offenseNo)
+            getOrdinalLabel(
+              offenseNo
+            )
         ).trim(),
 
       action:
         String(
-          penalty.action || ""
+          penalty.action ||
+            ""
         ).trim(),
     };
   }
 
   const text =
-    String(penalty || "").trim();
+    String(
+      penalty || ""
+    ).trim();
 
   if (!text) {
     return null;
   }
 
   const separatorIndex =
-    text.indexOf(":");
+    text.indexOf(
+      ":"
+    );
 
-  if (separatorIndex === -1) {
+  if (
+    separatorIndex ===
+    -1
+  ) {
     return {
       offenseNo,
+
       label:
-        getOrdinalLabel(offenseNo),
-      action: text,
+        getOrdinalLabel(
+          offenseNo
+        ),
+
+      action:
+        text,
     };
   }
 
@@ -180,33 +228,49 @@ function normalizePenalty(
 
   return {
     offenseNo,
+
     label:
       label ||
-      getOrdinalLabel(offenseNo),
+      getOrdinalLabel(
+        offenseNo
+      ),
+
     action:
-      action || text,
+      action ||
+      text,
   };
 }
 
 function normalizePenalties(
   penalties = []
 ) {
-  if (!Array.isArray(penalties)) {
+  if (
+    !Array.isArray(
+      penalties
+    )
+  ) {
     return [];
   }
 
   return penalties
-    .map(normalizePenalty)
+    .map(
+      normalizePenalty
+    )
     .filter(Boolean);
 }
 
 function normalizePolicyGroups(
   policyRules
 ) {
-  return Array.isArray(policyRules) &&
-    policyRules.length > 0
-    ? policyRules
-    : NORMALIZED_VIOLATION_RULES;
+  return (
+    Array.isArray(
+      policyRules
+    ) &&
+    policyRules.length >
+      0
+      ? policyRules
+      : NORMALIZED_VIOLATION_RULES
+  );
 }
 
 function getHigherSeverity(
@@ -214,11 +278,15 @@ function getHigherSeverity(
   next
 ) {
   const currentSeverity =
-    getHighestSeverity(current) ||
+    getHighestSeverity(
+      current
+    ) ||
     "Minor";
 
   const nextSeverity =
-    getHighestSeverity(next) ||
+    getHighestSeverity(
+      next
+    ) ||
     "Minor";
 
   return SEVERITY_SCORE[
@@ -240,50 +308,61 @@ function getHigherSeverity(
  * default Code of Conduct remains the fallback.
  */
 export function flattenViolationRules(
-  policyRules = NORMALIZED_VIOLATION_RULES
+  policyRules =
+    NORMALIZED_VIOLATION_RULES
 ) {
   return normalizePolicyGroups(
     policyRules
-  ).flatMap((group) =>
-    (group?.rows || []).map(
-      (rule, index) => {
-        const severityMapping =
-          normalizeSeverityList(
-            rule?.severity
-          );
+  ).flatMap(
+    (group) =>
+      (
+        group?.rows ||
+        []
+      ).map(
+        (
+          rule,
+          index
+        ) => {
+          const severityMapping =
+            normalizeSeverityList(
+              rule?.severity
+            );
 
-        return {
-          ...rule,
+          return {
+            ...rule,
 
-          category:
-            String(
-              group?.category || ""
-            ).trim(),
+            category:
+              String(
+                group?.category ||
+                  ""
+              ).trim(),
 
-          severity:
-            getHighestSeverity(
-              severityMapping
-            ) || "Minor",
+            severity:
+              getHighestSeverity(
+                severityMapping
+              ) ||
+              "Minor",
 
-          severityMapping,
+            severityMapping,
 
-          penalties:
-            normalizePenalties(
-              rule?.penalties
-            ),
+            penalties:
+              normalizePenalties(
+                rule?.penalties
+              ),
 
-          key:
-            rule?.id ||
-            `${group?.category || "category"}-${rule?.section || index}-${rule?.violation || "violation"}`,
-        };
-      }
-    )
+            key:
+              rule?.id ||
+              `${group?.category || "category"}-${rule?.section || index}-${rule?.violation || "violation"}`,
+          };
+        }
+      )
   );
 }
 
 export function findViolationRule(
   violationName,
-  policyRules = NORMALIZED_VIOLATION_RULES
+  policyRules =
+    NORMALIZED_VIOLATION_RULES
 ) {
   const target =
     normalizeText(
@@ -335,12 +414,14 @@ export function getPreviousSameViolationCount(
 ) {
   const targetEmployee =
     String(
-      employeeId || ""
+      employeeId ||
+        ""
     ).trim();
 
   const targetViolation =
     String(
-      violationName || ""
+      violationName ||
+        ""
     ).trim();
 
   if (
@@ -355,12 +436,14 @@ export function getPreviousSameViolationCount(
       const sameEmployee =
         getIncidentEmployeeKey(
           incident
-        ) === targetEmployee;
+        ) ===
+        targetEmployee;
 
       const sameViolation =
         getIncidentViolationKey(
           incident
-        ) === targetViolation;
+        ) ===
+        targetViolation;
 
       const notCurrent =
         currentIncidentId
@@ -414,14 +497,18 @@ export function getPenaltyByOffense(
   }
 
   const targetOffense =
-    Number(offenseCount) || 1;
+    Number(
+      offenseCount
+    ) ||
+    1;
 
   const exactPenalty =
     normalizedPenalties.find(
       (penalty) =>
         Number(
           penalty.offenseNo
-        ) === targetOffense
+        ) ===
+        targetOffense
     );
 
   return (
@@ -448,7 +535,8 @@ export function getPenaltyText(
   }
 
   return String(
-    penalty.action || ""
+    penalty.action ||
+      ""
   ).trim();
 }
 
@@ -461,7 +549,8 @@ export function computeAutoSeverity({
   let severity =
     getHighestSeverity(
       baseSeverity
-    ) || "Minor";
+    ) ||
+    "Minor";
 
   const sanctionText =
     normalizeText(
@@ -492,7 +581,10 @@ export function computeAutoSeverity({
   }
 
   if (
-    Number(offenseCount) >= 4
+    Number(
+      offenseCount
+    ) >=
+    4
   ) {
     severity =
       getHigherSeverity(
@@ -500,7 +592,10 @@ export function computeAutoSeverity({
         "Critical"
       );
   } else if (
-    Number(offenseCount) >= 3
+    Number(
+      offenseCount
+    ) >=
+    3
   ) {
     severity =
       getHigherSeverity(
@@ -548,10 +643,12 @@ export function getCaseAgeDays(
     0,
     Math.floor(
       diff /
-        (1000 *
+        (
+          1000 *
           60 *
           60 *
-          24)
+          24
+        )
     )
   );
 }
@@ -567,10 +664,14 @@ export function getCaseAging(
   const severity =
     getHighestSeverity(
       incident?.severity
-    ) || "Minor";
+    ) ||
+    "Minor";
 
   const slaDays =
-    SLA_DAYS[severity] || 7;
+    SLA_DAYS[
+      severity
+    ] ||
+    7;
 
   const isClosed =
     incident?.status ===
@@ -605,12 +706,14 @@ export function getCaseAging(
 
     isOverdue:
       !isClosed &&
-      ageDays > slaDays,
+      ageDays >
+        slaDays,
 
     remainingDays:
       Math.max(
         0,
-        slaDays - ageDays
+        slaDays -
+          ageDays
       ),
   };
 }
@@ -624,10 +727,12 @@ export function getRecommendation({
   const normalizedSeverity =
     getHighestSeverity(
       severity
-    ) || "Minor";
+    ) ||
+    "Minor";
 
   if (
-    status === "Closed"
+    status ===
+    "Closed"
   ) {
     return "Case is already closed. Keep record for audit and future reference.";
   }
@@ -640,7 +745,10 @@ export function getRecommendation({
   }
 
   if (
-    Number(offenseCount) >= 4
+    Number(
+      offenseCount
+    ) >=
+    4
   ) {
     return "Repeated offense detected. Recommend management review and stronger disciplinary action based on policy.";
   }
@@ -662,7 +770,8 @@ export function getRecommendation({
 export function getSmartAlerts(
   incident
 ) {
-  const alerts = [];
+  const alerts =
+    [];
 
   const aging =
     getCaseAging(
@@ -672,20 +781,29 @@ export function getSmartAlerts(
   const severity =
     getHighestSeverity(
       incident?.severity
-    ) || "Minor";
+    ) ||
+    "Minor";
 
   const status =
     incident?.status ||
     "Open";
 
   if (
-    severity === "Critical" &&
-    status !== "Closed"
+    severity ===
+      "Critical" &&
+    status !==
+      "Closed"
   ) {
     alerts.push({
-      id: "critical-case",
-      level: "critical",
-      title: "Critical incident",
+      id:
+        "critical-case",
+
+      level:
+        "critical",
+
+      title:
+        "Critical incident",
+
       message:
         "This case requires immediate review and prioritization.",
     });
@@ -695,9 +813,14 @@ export function getSmartAlerts(
     aging.isOverdue
   ) {
     alerts.push({
-      id: "overdue-case",
-      level: "warning",
-      title: "Overdue case",
+      id:
+        "overdue-case",
+
+      level:
+        "warning",
+
+      title:
+        "Overdue case",
 
       message:
         `This case is ${aging.ageDays} day(s) old and exceeded the ${aging.slaDays}-day target.`,
@@ -705,11 +828,16 @@ export function getSmartAlerts(
   }
 
   if (
-    status === "For Review"
+    status ===
+    "For Review"
   ) {
     alerts.push({
-      id: "for-review",
-      level: "info",
+      id:
+        "for-review",
+
+      level:
+        "info",
+
       title:
         "Pending Super Admin review",
 
@@ -722,11 +850,16 @@ export function getSmartAlerts(
     Number(
       incident?.offenseCount ||
         1
-    ) >= 3
+    ) >=
+    3
   ) {
     alerts.push({
-      id: "repeat-offense",
-      level: "warning",
+      id:
+        "repeat-offense",
+
+      level:
+        "warning",
+
       title:
         "Repeated offense",
 
@@ -739,20 +872,39 @@ export function getSmartAlerts(
 }
 
 /*
- * Existing persisted incident fields always take
- * precedence over the current policy.
+ * ==================================================
+ * INCIDENT DECISION-SUPPORT ENRICHMENT
+ * ==================================================
  *
- * This prevents a later Code of Conduct change from
- * silently rewriting the classification of historical
- * incidents when they are rendered or enriched.
+ * Persisted historical incident values always take
+ * precedence over the current violation policy.
  *
- * policyRules is optional. Existing callers using only
- * (incident, existingIncidents) remain compatible.
+ * This is critical because Code of Conduct rules may
+ * change after an incident has already been created.
+ *
+ * A persisted incident must therefore never silently
+ * receive a new sanction or severity just because the
+ * current policy configuration changed.
+ *
+ * Current policy fallback is permitted only for an
+ * unsaved/new incident draft that does not yet have a
+ * database identity.
+ *
+ * policyRules remains optional so existing callers
+ * using:
+ *
+ *   enrichIncidentIntelligence(
+ *     incident,
+ *     existingIncidents
+ *   )
+ *
+ * remain compatible.
  */
 export function enrichIncidentIntelligence(
   incident,
   existingIncidents = [],
-  policyRules = NORMALIZED_VIOLATION_RULES
+  policyRules =
+    NORMALIZED_VIOLATION_RULES
 ) {
   const rule =
     findViolationRule(
@@ -768,11 +920,13 @@ export function enrichIncidentIntelligence(
       : null;
 
   const penalties =
-    storedPenalties !== null
+    storedPenalties !==
+    null
       ? normalizePenalties(
           storedPenalties
         )
-      : rule?.penalties || [];
+      : rule?.penalties ||
+        [];
 
   const storedOffenseCount =
     Number(
@@ -783,7 +937,8 @@ export function enrichIncidentIntelligence(
     Number.isFinite(
       storedOffenseCount
     ) &&
-    storedOffenseCount > 0
+    storedOffenseCount >
+      0
       ? storedOffenseCount
       : getNextOffenseCount(
           existingIncidents,
@@ -799,15 +954,40 @@ export function enrichIncidentIntelligence(
       offenseCount
     );
 
+  const isPersistedIncident =
+    hasPersistedIncidentId(
+      incident
+    );
+
+  const persistedPolicySanction =
+    getPersistedPolicySanction(
+      incident
+    );
+
+  /*
+   * IMPORTANT:
+   *
+   * Persisted DB records do NOT fall back to the
+   * current policy.
+   *
+   * If an older historical record has no preserved
+   * policy sanction, leaving it blank is safer than
+   * incorrectly assigning today's policy value.
+   *
+   * Unsaved incident drafts may still derive the
+   * sanction from the currently configured policy.
+   */
   const sanction =
-    String(
-      incident?.sanction || ""
-    ).trim() ||
-    getPenaltyText(
-      selectedPenalty
-    ) ||
-    rule?.penaltyLevel ||
-    "";
+    isPersistedIncident
+      ? persistedPolicySanction
+      : (
+          persistedPolicySanction ||
+          getPenaltyText(
+            selectedPenalty
+          ) ||
+          rule?.penaltyLevel ||
+          ""
+        );
 
   /*
    * Preserve already-persisted severity.
@@ -858,9 +1038,25 @@ export function enrichIncidentIntelligence(
       "",
 
     penalties,
+
     offenseCount,
+
     selectedPenalty,
+
+    /*
+     * Canonical frontend policy-sanction fields.
+     *
+     * sanction remains supported because the current
+     * incident UI already uses that property.
+     */
     sanction,
+
+    policySanction:
+      sanction,
+
+    policy_sanction:
+      sanction,
+
     severity,
   };
 

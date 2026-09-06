@@ -359,6 +359,36 @@ function normalizeBackendIncident(
     incident.reviewed_at ||
     null;
 
+  /*
+   * ==================================================
+   * POLICY SANCTION / ACTION TAKEN SEPARATION
+   * ==================================================
+   *
+   * policySanction:
+   * Prescribed sanction saved by the backend when
+   * the incident is created.
+   *
+   * actionTaken:
+   * Actual action entered by the investigator when
+   * proof is submitted.
+   *
+   * These values must never fall back to each other.
+   */
+  const policySanction =
+    incident.policySanction ||
+    incident.policy_sanction ||
+    incident.sanction ||
+    "";
+
+  const actionTaken =
+    incident.actionTaken ||
+    incident.action_taken ||
+    incident.resolution
+      ?.actionTaken ||
+    incident.resolution
+      ?.action_taken ||
+    "";
+
   const timelineEvents =
     Array.isArray(
       incident.timelineEvents
@@ -424,15 +454,13 @@ function normalizeBackendIncident(
             incident.resolution_submitted_by_username ||
             "",
 
-          actionTaken:
-            incident.actionTaken ||
-            incident.action_taken ||
-            incident.sanction ||
-            "",
+          actionTaken,
 
           remarks:
             incident.resolutionNotes ||
             incident.resolution_notes ||
+            incident.resolution
+              ?.remarks ||
             "",
 
           proofFiles:
@@ -445,7 +473,9 @@ function normalizeBackendIncident(
                 incident.evidenceFiles ||
                 incident.evidence_files ||
                 incident.evidence ||
-                incident.attachments,
+                incident.attachments ||
+                incident.resolution
+                  ?.proofFiles,
             }),
         }
       : null;
@@ -646,17 +676,24 @@ function normalizeBackendIncident(
       incident.description ||
       "",
 
-    sanction:
-      incident.sanction ||
-      incident.actionTaken ||
-      incident.action_taken ||
-      "",
+    /*
+     * Prescribed policy sanction.
+     */
+    policySanction,
 
-    actionTaken:
-      incident.actionTaken ||
-      incident.action_taken ||
-      incident.sanction ||
-      "",
+    policy_sanction:
+      policySanction,
+
+    sanction:
+      policySanction,
+
+    /*
+     * Actual investigation action.
+     */
+    actionTaken,
+
+    action_taken:
+      actionTaken,
 
     recommendation:
       incident.recommendation ||
@@ -2133,7 +2170,15 @@ export default function Incidents() {
                   reportedBy:
                     actorFullName,
 
-                  actionTaken:
+                  /*
+                   * This is only a client preview /
+                   * consistency check.
+                   *
+                   * Backend remains authoritative and
+                   * stores its own computed value into
+                   * incidents.policy_sanction.
+                   */
+                  policySanction:
                     normalizedIncident.sanction ||
                     "",
 
@@ -2343,6 +2388,12 @@ export default function Incidents() {
         "SUBMIT_RESOLUTION"
       );
 
+      /*
+       * Actual investigation action.
+       *
+       * This is the workflow where action_taken is
+       * intentionally populated by the backend.
+       */
       formData.append(
         "actionTaken",
         resolutionData.actionTaken
@@ -2429,6 +2480,9 @@ export default function Incidents() {
             },
 
             actionTaken:
+              resolutionData.actionTaken,
+
+            action_taken:
               resolutionData.actionTaken,
 
             resolutionNotes:
@@ -2572,13 +2626,12 @@ export default function Incidents() {
                 ?.remarks ||
               "Proof reviewed and approved.",
 
-            actionTaken:
-              incident.actionTaken ||
-              incident.resolution
-                ?.actionTaken ||
-              incident.sanction ||
-              "",
-
+            /*
+             * Do not send actionTaken here.
+             *
+             * Reviewer approval changes review state,
+             * not the investigator's recorded action.
+             */
             recommendation:
               incident.recommendation ||
               "",
@@ -2694,11 +2747,12 @@ export default function Incidents() {
             resolutionNotes:
               comments,
 
-            actionTaken:
-              incident.actionTaken ||
-              incident.sanction ||
-              "",
-
+            /*
+             * Do not send actionTaken here.
+             *
+             * Returning a case must preserve the
+             * investigator's existing action_taken.
+             */
             recommendation:
               incident.recommendation ||
               "",
