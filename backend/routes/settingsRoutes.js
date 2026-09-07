@@ -792,6 +792,9 @@ router.get(
             configured:
               false,
 
+            schemaVersion:
+              defaultConfiguration.schemaVersion,
+
             ratingScale:
               defaultConfiguration.ratingScale,
 
@@ -810,6 +813,9 @@ router.get(
 
           configured:
             true,
+
+          schemaVersion:
+            configuration.schemaVersion,
 
           ratingScale:
             configuration.ratingScale,
@@ -1112,6 +1118,10 @@ router.put(
 
           configured:
             true,
+
+          schemaVersion:
+            persistedConfiguration
+              .schemaVersion,
 
           ratingScale:
             persistedConfiguration
