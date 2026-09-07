@@ -36,6 +36,7 @@ import {
   buildViolationTrend,
   buildComplianceTrend,
   buildUtilizationTrend,
+  hasCurrentKPIDecisionReview,
 } from "../utils/kpi/kpiHelpers";
 
 import {
@@ -142,11 +143,12 @@ function KPIReportTabIcon({
 
 function isPendingForReview(
   employee,
-  decidedEmployeeIds
+  decisionHistory
 ) {
   if (
-    decidedEmployeeIds.has(
-      String(employee.id)
+    hasCurrentKPIDecisionReview(
+      employee,
+      decisionHistory
     )
   ) {
     return false;
@@ -343,25 +345,6 @@ export default function KPIReports() {
       ]
     );
 
-  const decidedEmployeeIds =
-    useMemo(
-      () => {
-        return new Set(
-          decisionHistory.map(
-            (
-              record
-            ) =>
-              String(
-                record.employeeId
-              )
-          )
-        );
-      },
-      [
-        decisionHistory,
-      ]
-    );
-
   const totalEmployees =
     employees.length;
 
@@ -498,13 +481,13 @@ export default function KPIReports() {
           ) =>
             isPendingForReview(
               employee,
-              decidedEmployeeIds
+              decisionHistory
             )
         ).length;
       },
       [
         employees,
-        decidedEmployeeIds,
+        decisionHistory,
       ]
     );
 

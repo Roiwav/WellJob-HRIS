@@ -29,6 +29,7 @@ import {
   WELLJOB_LOW_KPI_ACTIONS,
   getDecisionConfidenceClasses,
   getSuggestedHRActionClasses,
+  hasCurrentKPIDecisionReview,
 } from "../../../utils/kpi/kpiHelpers";
 
 import {
@@ -786,25 +787,6 @@ export default function RecommendationReviewSection({
       ]
     );
 
-  const decidedEmployeeIds =
-    useMemo(
-      () => {
-        return new Set(
-          decisionHistory.map(
-            (
-              record
-            ) =>
-              String(
-                record.employeeId
-              )
-          )
-        );
-      },
-      [
-        decisionHistory,
-      ]
-    );
-
   const allPendingEmployees =
     useMemo(
       () => {
@@ -816,10 +798,9 @@ export default function RecommendationReviewSection({
             (
               employee
             ) =>
-              !decidedEmployeeIds.has(
-                String(
-                  employee.id
-                )
+              !hasCurrentKPIDecisionReview(
+                employee,
+                decisionHistory
               )
           )
           .sort(
@@ -865,7 +846,7 @@ export default function RecommendationReviewSection({
           );
       },
       [
-        decidedEmployeeIds,
+        decisionHistory,
         safeEmployees,
       ]
     );

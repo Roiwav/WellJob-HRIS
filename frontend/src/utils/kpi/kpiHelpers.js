@@ -228,6 +228,165 @@ export function normalizeRecommendation(recommendation) {
   return recommendation || RECOMMENDATION_LABELS.RETAIN;
 }
 
+function getDecisionTimestamp(record) {
+  const candidates = [
+    record?.decidedAt,
+    record?.createdAt,
+    record?.updatedAt,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    const timestamp = new Date(candidate).getTime();
+
+    if (!Number.isNaN(timestamp)) {
+      return timestamp;
+    }
+  }
+
+  return -1;
+}
+
+export function getLatestKPIDecisionForEmployee(
+  decisionHistory = [],
+  employeeId
+) {
+  if (!Array.isArray(decisionHistory)) {
+    return null;
+  }
+
+  const normalizedEmployeeId = String(
+    employeeId ?? ""
+  ).trim();
+
+  if (!normalizedEmployeeId) {
+    return null;
+  }
+
+  let latestDecision = null;
+
+  decisionHistory.forEach((record) => {
+    if (
+      String(
+        record?.employeeId ?? ""
+      ).trim() !== normalizedEmployeeId
+    ) {
+      return;
+    }
+
+    if (!latestDecision) {
+      latestDecision = record;
+      return;
+    }
+
+    const currentTimestamp =
+      getDecisionTimestamp(record);
+
+    const latestTimestamp =
+      getDecisionTimestamp(latestDecision);
+
+    if (currentTimestamp > latestTimestamp) {
+      latestDecision = record;
+      return;
+    }
+
+    if (
+      currentTimestamp === latestTimestamp &&
+      Number(record?.id || 0) >
+        Number(latestDecision?.id || 0)
+    ) {
+      latestDecision = record;
+    }
+  });
+
+  return latestDecision;
+}
+
+export function isKPIDecisionSnapshotCurrent(
+  employee,
+  decision
+) {
+  if (!employee || !decision) {
+    return false;
+  }
+
+  const currentRecommendation =
+    normalizeComparableText(
+      employee?.recommendation
+    );
+
+  const recordedRecommendation =
+    normalizeComparableText(
+      decision?.systemRecommendation
+    );
+
+  return (
+    Number(
+      employee?.violationCount || 0
+    ) ===
+      Number(
+        decision?.violationCount || 0
+      ) &&
+    Number(
+      employee?.severityScore || 0
+    ) ===
+      Number(
+        decision?.severityScore || 0
+      ) &&
+    Number(
+      employee?.criticalIncidentCount || 0
+    ) ===
+      Number(
+        decision?.criticalIncidentCount || 0
+      ) &&
+    normalizeComparableText(
+      employee?.kpiLevel
+    ) ===
+      normalizeComparableText(
+        decision?.kpiLevel
+      ) &&
+    normalizeComparableText(
+      employee?.riskLevel
+    ) ===
+      normalizeComparableText(
+        decision?.riskLevel
+      ) &&
+    normalizeComparableText(
+      employee?.decisionConfidence
+    ) ===
+      normalizeComparableText(
+        decision?.decisionConfidence
+      ) &&
+    normalizeComparableText(
+      employee?.suggestedHRAction
+    ) ===
+      normalizeComparableText(
+        decision?.suggestedHRAction
+      ) &&
+    currentRecommendation ===
+      recordedRecommendation
+  );
+}
+
+export function hasCurrentKPIDecisionReview(
+  employee,
+  decisionHistory = []
+) {
+  const latestDecision =
+    getLatestKPIDecisionForEmployee(
+      decisionHistory,
+      employee?.id
+    );
+
+  return isKPIDecisionSnapshotCurrent(
+    employee,
+    latestDecision
+  );
+}
+
 export function getEmployeeId(employee, index = 0) {
   return (
     employee?.id ||
