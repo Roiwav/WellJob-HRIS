@@ -33,9 +33,11 @@ import DecisionHistorySection from "../components/kpi/sections/DecisionHistorySe
 
 import {
   buildKPIEmployees,
-  buildViolationTrend,
-  buildComplianceTrend,
-  buildUtilizationTrend,
+  buildKPILevelDistribution,
+  buildRiskLevelDistribution,
+  buildDecisionConfidenceDistribution,
+  buildSuggestedHRActionDistribution,
+  buildSystemRecommendationDistribution,
   hasCurrentKPIDecisionReview,
 } from "../utils/kpi/kpiHelpers";
 
@@ -87,7 +89,7 @@ const TABS = [
     label:
       "Analytics",
     description:
-      "Trend visualization",
+      "KPI & DSS distribution",
   },
 ];
 
@@ -577,45 +579,63 @@ export default function KPIReports() {
       ]
     );
 
-  const violationTrend =
+  const kpiLevelDistribution =
     useMemo(
       () => {
-        return buildViolationTrend(
-          incidentsRaw
+        return buildKPILevelDistribution(
+          employees
         );
       },
       [
-        incidentsRaw,
+        employees,
       ]
     );
 
-  const complianceTrend =
+  const riskLevelDistribution =
     useMemo(
       () => {
-        return buildComplianceTrend({
-          employees,
-          incidentsRaw,
-          totalEmployees,
-        });
+        return buildRiskLevelDistribution(
+          employees
+        );
       },
       [
         employees,
-        incidentsRaw,
-        totalEmployees,
       ]
     );
 
-  const utilizationTrend =
+  const decisionConfidenceDistribution =
     useMemo(
       () => {
-        return buildUtilizationTrend({
-          totalEmployees,
-          deployedEmployees,
-        });
+        return buildDecisionConfidenceDistribution(
+          employees
+        );
       },
       [
-        totalEmployees,
-        deployedEmployees,
+        employees,
+      ]
+    );
+
+  const suggestedHRActionDistribution =
+    useMemo(
+      () => {
+        return buildSuggestedHRActionDistribution(
+          employees
+        );
+      },
+      [
+        employees,
+      ]
+    );
+
+  const systemRecommendationDistribution =
+    useMemo(
+      () => {
+        return buildSystemRecommendationDistribution(
+          employees
+        );
+      },
+      [
+        employees,
       ]
     );
 
@@ -1101,14 +1121,20 @@ export default function KPIReports() {
           {activeTab ===
             "analytics" && (
             <AnalyticsTrendsSection
-              violationTrend={
-                violationTrend
+              kpiLevelDistribution={
+                kpiLevelDistribution
               }
-              complianceTrend={
-                complianceTrend
+              riskLevelDistribution={
+                riskLevelDistribution
               }
-              utilizationTrend={
-                utilizationTrend
+              decisionConfidenceDistribution={
+                decisionConfidenceDistribution
+              }
+              suggestedHRActionDistribution={
+                suggestedHRActionDistribution
+              }
+              systemRecommendationDistribution={
+                systemRecommendationDistribution
               }
             />
           )}

@@ -50,20 +50,6 @@ export const RECOMMENDATION_LABELS = {
   RETAIN: "Retain / Maintain Good Standing",
 };
 
-export const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 
 export const WELLJOB_LOW_KPI_ACTIONS = [
   {
@@ -226,6 +212,224 @@ export function normalizeRecommendation(recommendation) {
   }
 
   return recommendation || RECOMMENDATION_LABELS.RETAIN;
+}
+
+function buildDistribution(
+  records = [],
+  getLabel,
+  preferredOrder = []
+) {
+  const safeRecords =
+    Array.isArray(records)
+      ? records.filter(Boolean)
+      : [];
+
+  if (safeRecords.length === 0) {
+    return [];
+  }
+
+  const counts = new Map();
+
+  safeRecords.forEach((record) => {
+    const rawLabel =
+      typeof getLabel === "function"
+        ? getLabel(record)
+        : "";
+
+    const label =
+      String(
+        rawLabel ||
+          "Unspecified"
+      ).trim() ||
+      "Unspecified";
+
+    counts.set(
+      label,
+      (counts.get(label) || 0) + 1
+    );
+  });
+
+  const orderIndex =
+    new Map(
+      preferredOrder.map(
+        (label, index) => [
+          label,
+          index,
+        ]
+      )
+    );
+
+  return Array.from(
+    counts.entries()
+  )
+    .sort(
+      (
+        [firstLabel, firstCount],
+        [secondLabel, secondCount]
+      ) => {
+        const firstOrder =
+          orderIndex.has(
+            firstLabel
+          )
+            ? orderIndex.get(
+                firstLabel
+              )
+            : Number.MAX_SAFE_INTEGER;
+
+        const secondOrder =
+          orderIndex.has(
+            secondLabel
+          )
+            ? orderIndex.get(
+                secondLabel
+              )
+            : Number.MAX_SAFE_INTEGER;
+
+        if (
+          firstOrder !==
+          secondOrder
+        ) {
+          return (
+            firstOrder -
+            secondOrder
+          );
+        }
+
+        if (
+          firstCount !==
+          secondCount
+        ) {
+          return (
+            secondCount -
+            firstCount
+          );
+        }
+
+        return firstLabel.localeCompare(
+          secondLabel
+        );
+      }
+    )
+    .map(
+      ([name, value]) => ({
+        name,
+        value,
+        percentage:
+          Math.round(
+            (
+              (
+                value /
+                safeRecords.length
+              ) * 100
+            ) * 10
+          ) / 10,
+      })
+    );
+}
+
+export function buildKPILevelDistribution(
+  employees = []
+) {
+  return buildDistribution(
+    employees,
+    (employee) =>
+      normalizeKPILevel(
+        employee?.kpiLevel
+      ),
+    [
+      KPI_LEVELS.GOOD_STANDING,
+      KPI_LEVELS.MINOR_CONCERN,
+      KPI_LEVELS.NEEDS_IMPROVEMENT,
+      KPI_LEVELS.CRITICAL_CONCERN,
+    ]
+  );
+}
+
+export function buildRiskLevelDistribution(
+  employees = []
+) {
+  return buildDistribution(
+    employees,
+    (employee) =>
+      normalizeRiskLevel(
+        employee?.riskLevel
+      ),
+    [
+      RISK_LEVELS.LOW_RISK,
+      RISK_LEVELS.MONITOR,
+      RISK_LEVELS.REPEAT,
+      RISK_LEVELS.HIGH_RISK,
+    ]
+  );
+}
+
+export function buildDecisionConfidenceDistribution(
+  employees = []
+) {
+  return buildDistribution(
+    employees,
+    (employee) =>
+      employee?.decisionConfidence ||
+      "Unspecified Confidence",
+    [
+      DECISION_CONFIDENCE.LOW,
+      DECISION_CONFIDENCE.MODERATE,
+      DECISION_CONFIDENCE.HIGH,
+      "Unspecified Confidence",
+    ]
+  );
+}
+
+export function buildSuggestedHRActionDistribution(
+  employees = []
+) {
+  return buildDistribution(
+    employees,
+    (employee) =>
+      employee?.suggestedHRAction ||
+      "Unspecified Suggested Action",
+    [
+      HR_ACTION_WORKFLOW.MONITOR,
+      HR_ACTION_WORKFLOW.HUMAN_REVIEW,
+      HR_ACTION_WORKFLOW.HR_VALIDATION,
+      HR_ACTION_WORKFLOW.INVESTIGATION,
+      HR_ACTION_WORKFLOW.PIP,
+      HR_ACTION_WORKFLOW.ESCALATION,
+      HR_ACTION_WORKFLOW.SUSPENSION,
+      HR_ACTION_WORKFLOW.TERMINATION,
+      "Unspecified Suggested Action",
+    ]
+  );
+}
+
+export function buildSystemRecommendationDistribution(
+  employees = []
+) {
+  const preferredOrder = [
+    RECOMMENDATION_LABELS.RETAIN,
+    ...WELLJOB_LOW_KPI_ACTIONS.map(
+      (action) => action.title
+    ),
+    "Unspecified Recommendation",
+  ];
+
+  return buildDistribution(
+    employees,
+    (employee) => {
+      const recommendation =
+        String(
+          employee?.recommendation ||
+            ""
+        ).trim();
+
+      return recommendation
+        ? normalizeRecommendation(
+            recommendation
+          )
+        : "Unspecified Recommendation";
+    },
+    preferredOrder
+  );
 }
 
 function getDecisionTimestamp(record) {
@@ -1266,21 +1470,6 @@ export function getAlertClasses(level) {
   }
 }
 
-export function getMonthLabel(dateString) {
-  if (!dateString) {
-    return "N/A";
-  }
-
-  const date = new Date(dateString);
-
-  if (Number.isNaN(date.getTime())) {
-    return "N/A";
-  }
-
-  return date.toLocaleString("en-US", {
-    month: "short",
-  });
-}
 
 function getIncidentDateValue(incident) {
   return (
@@ -1548,152 +1737,4 @@ export function buildKPIEmployees(
       };
     }
   );
-}
-
-export function buildViolationTrend(
-  incidentsRaw = []
-) {
-  const safeIncidents =
-    Array.isArray(incidentsRaw)
-      ? incidentsRaw.filter(Boolean)
-      : [];
-
-  const monthMap = MONTHS.reduce(
-    (accumulator, month) => {
-      accumulator[month] = 0;
-      return accumulator;
-    },
-    {}
-  );
-
-  safeIncidents.forEach((incident) => {
-    const month = getMonthLabel(
-      getIncidentDateValue(incident)
-    );
-
-    if (monthMap[month] !== undefined) {
-      monthMap[month] += 1;
-    }
-  });
-
-  return MONTHS.map((month) => ({
-    month,
-    violations: monthMap[month],
-  }));
-}
-
-export function buildComplianceTrend({
-  employees = [],
-  incidentsRaw = [],
-  totalEmployees = 0,
-}) {
-  const safeEmployees =
-    Array.isArray(employees)
-      ? employees.filter(Boolean)
-      : [];
-
-  const safeIncidents =
-    Array.isArray(incidentsRaw)
-      ? incidentsRaw.filter(Boolean)
-      : [];
-
-  const safeTotalEmployees = Math.max(
-    0,
-    Number(totalEmployees || 0)
-  );
-
-  return MONTHS.map((month) => {
-    const monthIncidentEmployeeIds =
-      new Set();
-
-    safeIncidents.forEach((incident) => {
-      const incidentMonth = getMonthLabel(
-        getIncidentDateValue(incident)
-      );
-
-      if (incidentMonth !== month) {
-        return;
-      }
-
-      const matchedEmployeeIndex =
-        safeEmployees.findIndex(
-          (employee, index) =>
-            isSameEmployee(
-              employee,
-              incident,
-              index
-            )
-        );
-
-      if (matchedEmployeeIndex < 0) {
-        return;
-      }
-
-      monthIncidentEmployeeIds.add(
-        String(
-          getEmployeeId(
-            safeEmployees[
-              matchedEmployeeIndex
-            ],
-            matchedEmployeeIndex
-          )
-        )
-      );
-    });
-
-    const goodStandingEmployees = Math.max(
-      safeTotalEmployees -
-        monthIncidentEmployeeIds.size,
-      0
-    );
-
-    return {
-      month,
-
-      compliance:
-        safeTotalEmployees > 0
-          ? Math.round(
-              (goodStandingEmployees /
-                safeTotalEmployees) *
-                100
-            )
-          : 0,
-    };
-  });
-}
-
-export function buildUtilizationTrend({
-  totalEmployees = 0,
-  deployedEmployees = 0,
-}) {
-  const safeTotalEmployees = Math.max(
-    0,
-    Number(totalEmployees || 0)
-  );
-
-  const safeDeployedEmployees = Math.max(
-    0,
-    Number(deployedEmployees || 0)
-  );
-
-  const currentMonth = new Date().toLocaleString(
-    "en-US",
-    {
-      month: "short",
-    }
-  );
-
-  return MONTHS.map((month) => ({
-    month,
-
-    utilization:
-      month === currentMonth &&
-      safeTotalEmployees > 0
-        ? Math.round(
-            (safeDeployedEmployees /
-              safeTotalEmployees) *
-              100
-          )
-        : 0,
-  }));
 }
