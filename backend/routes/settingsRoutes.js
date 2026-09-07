@@ -17,6 +17,13 @@ const {
 } = require("../utils/violationPolicyService");
 
 const {
+  PERFORMANCE_EVALUATION_SETTING_NAME,
+  getDefaultPerformanceEvaluationConfiguration,
+  normalizePerformanceEvaluationConfiguration,
+  getPerformanceEvaluationConfiguration,
+} = require("../utils/performanceEvaluationService");
+
+const {
   verifyToken,
 } = require("../middleware/authMiddleware");
 
@@ -36,6 +43,16 @@ const VIOLATION_RULES_READ_ROLES = [
 ];
 
 const VIOLATION_RULES_WRITE_ROLES = [
+  "SUPER_ADMIN",
+  "HR_MANAGER",
+];
+
+const PERFORMANCE_EVALUATION_READ_ROLES = [
+  "SUPER_ADMIN",
+  "HR_MANAGER",
+];
+
+const PERFORMANCE_EVALUATION_WRITE_ROLES = [
   "SUPER_ADMIN",
   "HR_MANAGER",
 ];
@@ -735,6 +752,392 @@ router.put(
 
           error:
             "Failed to update violation rules configuration.",
+        });
+    }
+  }
+);
+
+/*
+ * ==================================================
+ * PERFORMANCE EVALUATION CONFIGURATION
+ * ==================================================
+ */
+
+router.get(
+  "/settings/performance-evaluation",
+
+  verifyToken,
+
+  authorizeRoles(
+    ...PERFORMANCE_EVALUATION_READ_ROLES
+  ),
+
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const configuration =
+        await getPerformanceEvaluationConfiguration();
+
+      if (!configuration) {
+        const defaultConfiguration =
+          getDefaultPerformanceEvaluationConfiguration();
+
+        return res
+          .status(200)
+          .json({
+            success: true,
+
+            configured:
+              false,
+
+            ratingScale:
+              defaultConfiguration.ratingScale,
+
+            kpiFactors:
+              defaultConfiguration.kpiFactors,
+
+            metadata:
+              defaultConfiguration.metadata,
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          configured:
+            true,
+
+          ratingScale:
+            configuration.ratingScale,
+
+          kpiFactors:
+            configuration.kpiFactors,
+
+          metadata:
+            configuration.metadata,
+        });
+    } catch (error) {
+      console.error(
+        "Performance evaluation fetch error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          error:
+            "Failed to fetch performance evaluation configuration.",
+        });
+    }
+  }
+);
+
+router.put(
+  "/settings/performance-evaluation",
+
+  verifyToken,
+
+  authorizeRoles(
+    ...PERFORMANCE_EVALUATION_WRITE_ROLES
+  ),
+
+  async (
+    req,
+    res
+  ) => {
+    const normalizedResult =
+      normalizePerformanceEvaluationConfiguration({
+        ratingScale:
+          req.body?.ratingScale,
+
+        kpiFactors:
+          req.body?.kpiFactors,
+      });
+
+    if (
+      !normalizedResult.valid
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+
+          error:
+            normalizedResult.error,
+        });
+    }
+
+    const nextConfiguration = {
+      ...normalizedResult.configuration,
+
+      metadata: {
+        updatedAt:
+          new Date()
+            .toISOString(),
+
+        updatedBy:
+          getCurrentUserName(
+            req.user
+          ),
+
+        updatedByRole:
+          req.user?.role ||
+          "Authorized User",
+      },
+    };
+
+    let serializedConfiguration;
+
+    try {
+      serializedConfiguration =
+        JSON.stringify(
+          nextConfiguration
+        );
+    } catch {
+      return res
+        .status(400)
+        .json({
+          success: false,
+
+          error:
+            "Performance evaluation configuration could not be serialized.",
+        });
+    }
+
+    if (
+      Buffer.byteLength(
+        serializedConfiguration,
+        "utf8"
+      ) >
+      MAX_CONFIGURATION_BYTES
+    ) {
+      return res
+        .status(413)
+        .json({
+          success: false,
+
+          error:
+            "Performance evaluation configuration is too large.",
+        });
+    }
+
+    try {
+      const previousConfiguration =
+        await getPerformanceEvaluationConfiguration();
+
+      const [
+        saveResult,
+      ] =
+        await db
+          .promise()
+          .query(
+            `
+            INSERT INTO system_settings (
+              setting_name,
+              setting_value
+            )
+            VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE
+              setting_value =
+                VALUES(setting_value)
+            `,
+            [
+              PERFORMANCE_EVALUATION_SETTING_NAME,
+
+              serializedConfiguration,
+            ]
+          );
+
+      if (
+        Number(
+          saveResult
+            ?.affectedRows ||
+            0
+        ) < 1
+      ) {
+        console.error(
+          "Performance evaluation save did not affect a settings row:",
+          saveResult
+        );
+
+        return res
+          .status(500)
+          .json({
+            success: false,
+
+            error:
+              "Performance evaluation update could not be confirmed.",
+          });
+      }
+
+      const persistedConfiguration =
+        await getPerformanceEvaluationConfiguration();
+
+      if (
+        !persistedConfiguration
+      ) {
+        return res
+          .status(500)
+          .json({
+            success: false,
+
+            error:
+              "Performance evaluation configuration could not be verified after saving.",
+          });
+      }
+
+      const requestedSnapshot =
+        JSON.stringify({
+          ratingScale:
+            normalizedResult
+              .configuration
+              .ratingScale,
+
+          kpiFactors:
+            normalizedResult
+              .configuration
+              .kpiFactors,
+        });
+
+      const persistedSnapshot =
+        JSON.stringify({
+          ratingScale:
+            persistedConfiguration
+              .ratingScale,
+
+          kpiFactors:
+            persistedConfiguration
+              .kpiFactors,
+        });
+
+      if (
+        requestedSnapshot !==
+        persistedSnapshot
+      ) {
+        console.error(
+          "Performance evaluation persistence verification mismatch."
+        );
+
+        return res
+          .status(500)
+          .json({
+            success: false,
+
+            error:
+              "Performance evaluation persistence verification failed.",
+          });
+      }
+
+      const ratingRangeCount =
+        persistedConfiguration
+          .ratingScale
+          .length;
+
+      const factorCount =
+        persistedConfiguration
+          .kpiFactors
+          .length;
+
+      const previousRatingRangeCount =
+        previousConfiguration
+          ?.ratingScale
+          ?.length ||
+        0;
+
+      const previousFactorCount =
+        previousConfiguration
+          ?.kpiFactors
+          ?.length ||
+        0;
+
+      await logAudit({
+        userId:
+          req.user?.userId ??
+          req.user?.id,
+
+        username:
+          req.user
+            ?.username,
+
+        role:
+          req.user?.role,
+
+        category:
+          getAuditCategory(),
+
+        action:
+          "UPDATE_PERFORMANCE_EVALUATION",
+
+        description:
+          `Updated performance evaluation framework: ${ratingRangeCount} rating range${
+            ratingRangeCount ===
+            1
+              ? ""
+              : "s"
+          } and ${factorCount} KPI factor${
+            factorCount ===
+            1
+              ? ""
+              : "s"
+          }${
+            previousConfiguration
+              ? ` (previously ${previousRatingRangeCount} rating range${
+                  previousRatingRangeCount ===
+                  1
+                    ? ""
+                    : "s"
+                } and ${previousFactorCount} KPI factor${
+                  previousFactorCount ===
+                  1
+                    ? ""
+                    : "s"
+                })`
+              : ""
+          }.`,
+      });
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Performance evaluation framework was updated successfully.",
+
+          configured:
+            true,
+
+          ratingScale:
+            persistedConfiguration
+              .ratingScale,
+
+          kpiFactors:
+            persistedConfiguration
+              .kpiFactors,
+
+          metadata:
+            persistedConfiguration
+              .metadata,
+        });
+    } catch (error) {
+      console.error(
+        "Performance evaluation update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          error:
+            "Failed to update performance evaluation configuration.",
         });
     }
   }

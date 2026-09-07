@@ -19,7 +19,7 @@ import { useAuth } from "../context/useAuth";
 
 const TAB_KEYS = {
   VIOLATION_RULES: "violationRules",
-  KPI_THRESHOLDS: "kpiThresholds",
+  PERFORMANCE_EVALUATION: "performanceEvaluation",
 };
 
 const ROLE_LABELS = {
@@ -28,6 +28,11 @@ const ROLE_LABELS = {
   HR_STAFF: "HR Staff",
   IT_SUPPORT: "IT Support",
 };
+
+const PERFORMANCE_EVALUATION_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.HR_MANAGER,
+];
 
 export default function SystemConfiguration() {
   const { user, hasPermission } = useAuth();
@@ -48,8 +53,10 @@ export default function SystemConfiguration() {
     currentUserRole ||
     "Unknown Role";
 
-  const canAccessKPIThresholds =
-    currentUserRole === ROLES.SUPER_ADMIN;
+  const canAccessPerformanceEvaluation =
+    PERFORMANCE_EVALUATION_ROLES.includes(
+      currentUserRole
+    );
 
   const tabs = useMemo(() => {
     const availableTabs = [
@@ -62,18 +69,18 @@ export default function SystemConfiguration() {
       },
     ];
 
-    if (canAccessKPIThresholds) {
+    if (canAccessPerformanceEvaluation) {
       availableTabs.push({
-        key: TAB_KEYS.KPI_THRESHOLDS,
-        label: "KPI Thresholds",
+        key: TAB_KEYS.PERFORMANCE_EVALUATION,
+        label: "Performance Evaluation",
         description:
-          "Manage performance rating ranges, KPI factors, and percentage weights.",
+          "Manage organization-wide performance rating ranges, KPI factors, and percentage weights.",
         icon: FiBarChart2,
       });
     }
 
     return availableTabs;
-  }, [canAccessKPIThresholds]);
+  }, [canAccessPerformanceEvaluation]);
 
   const activeTabDetails =
     tabs.find(
@@ -86,8 +93,8 @@ export default function SystemConfiguration() {
         eyebrow="Policy Administration"
         title="System Configuration"
         description={
-          canAccessKPIThresholds
-            ? "Manage the organizational policies and threshold rules used for incident classification, employee evaluation, and decision support."
+          canAccessPerformanceEvaluation
+            ? "Manage organizational policies used for incident classification and employee performance evaluation."
             : "Manage the Code of Conduct violation policies used for incident classification and disciplinary guidance."
         }
         icon={
@@ -164,8 +171,8 @@ export default function SystemConfiguration() {
               ].join(" ")}
             >
               {canEditConfiguration
-                ? canAccessKPIThresholds
-                  ? "You are authorized to review and update KPI thresholds and violation policies. All changes must be reviewed and confirmed before they are applied."
+                ? canAccessPerformanceEvaluation
+                  ? "You are authorized to review and update violation policies and the organization-wide performance evaluation framework. All changes must be reviewed and confirmed before they are applied."
                   : "You are authorized to review and update violation policies. All changes must be reviewed and confirmed before they are applied."
                 : "You may review the available configuration policies, but your assigned role cannot modify system configuration."}
             </p>
@@ -200,6 +207,7 @@ export default function SystemConfiguration() {
         >
           {tabs.map((tab) => {
             const Icon = tab.icon;
+
             const isActive =
               activeTab === tab.key;
 
@@ -293,10 +301,6 @@ export default function SystemConfiguration() {
           <KPIThresholdsTab
             canEdit={
               canEditConfiguration
-            }
-            currentUser={user}
-            currentUserRole={
-              currentUserRole
             }
           />
         )}
