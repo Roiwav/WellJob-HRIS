@@ -1,5 +1,3 @@
-import { getSeverityWeight } from "../configStorage";
-
 export const EMPLOYEES_KEY = "legacy_employees_disabled";
 export const INCIDENTS_KEY = "legacy_incidents_disabled";
 
@@ -40,6 +38,13 @@ export const SEVERITY_LABELS = {
   MAJOR: "Major",
   CRITICAL: "Critical",
 };
+
+const SEVERITY_WEIGHTS = Object.freeze({
+  [SEVERITY_LABELS.NONE]: 0,
+  [SEVERITY_LABELS.MINOR]: 1,
+  [SEVERITY_LABELS.MAJOR]: 3,
+  [SEVERITY_LABELS.CRITICAL]: 5,
+});
 
 export const RECOMMENDATION_LABELS = {
   RETAIN: "Retain / Maintain Good Standing",
@@ -1210,11 +1215,9 @@ export function buildKPIEmployees(
 
             return (
               sum +
-              (Number(
-                getSeverityWeight(
-                  normalizedSeverity
-                )
-              ) || 0)
+              (SEVERITY_WEIGHTS[
+                normalizedSeverity
+              ] ?? 0)
             );
           },
           0
