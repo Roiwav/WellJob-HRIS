@@ -115,14 +115,14 @@ function normalizeComparableText(value) {
 export function normalizeStatus(status) {
   const value = normalizeComparableText(status);
 
-  if (
-    value === "resolved" ||
-    value === "for review"
-  ) {
+  if (value === "for review") {
     return "For Review";
   }
 
-  if (value === "closed") {
+  if (
+    value === "resolved" ||
+    value === "closed"
+  ) {
     return "Closed";
   }
 
