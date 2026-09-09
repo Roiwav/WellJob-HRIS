@@ -3,7 +3,6 @@ const db = require("../config/db");
 function mapKpiEmployee(row) {
   return {
     id: row.id,
-    employeeId: row.id,
 
     name:
       row.name ||
@@ -16,37 +15,10 @@ function mapKpiEmployee(row) {
     status:
       row.status ||
       "Unknown",
-
-    contractStart:
-      row.contractStart ||
-      null,
-
-    contractEnd:
-      row.contractEnd ||
-      null,
-
-    archived: false,
-
-    documents: [],
   };
 }
 
 function mapKpiIncident(row) {
-  const employeeId =
-    row.employeeId;
-
-  const employeeName =
-    row.employeeName ||
-    "Unknown Employee";
-
-  const policySanction =
-    row.policySanction ||
-    "";
-
-  const actionTaken =
-    row.actionTaken ||
-    "";
-
   const reportedAt =
     row.createdAt ||
     row.incidentDate ||
@@ -56,28 +28,18 @@ function mapKpiIncident(row) {
     id:
       row.id,
 
-    employeeId,
-    employee_id:
-      employeeId,
+    employeeId:
+      row.employeeId,
 
-    employee:
-      employeeName,
-
-    employeeName,
+    employeeName:
+      row.employeeName ||
+      "Unknown Employee",
 
     company:
       row.company ||
       "",
 
     violation:
-      row.violation ||
-      "",
-
-    violationType:
-      row.violation ||
-      "",
-
-    violation_type:
       row.violation ||
       "",
 
@@ -89,36 +51,11 @@ function mapKpiIncident(row) {
       row.status ||
       "Open",
 
-    date:
-      row.incidentDate ||
-      reportedAt,
-
     incidentDate:
       row.incidentDate ||
       null,
 
     reportedAt,
-
-    createdAt:
-      row.createdAt ||
-      null,
-
-    recommendation:
-      row.recommendation ||
-      "",
-
-    sanction:
-      policySanction,
-
-    policySanction,
-
-    policy_sanction:
-      policySanction,
-
-    actionTaken,
-
-    action_taken:
-      actionTaken,
 
     description:
       row.description ||
@@ -143,9 +80,7 @@ exports.getKpiData = async (
               e.id,
               e.name,
               e.company,
-              e.status,
-              e.contractStart,
-              e.contractEnd
+              e.status
             FROM employees AS e
             WHERE e.archived = 0
             ORDER BY
@@ -185,9 +120,6 @@ exports.getKpiData = async (
               i.status,
               i.incident_date AS incidentDate,
               i.created_at AS createdAt,
-              i.recommendation,
-              i.policy_sanction AS policySanction,
-              i.action_taken AS actionTaken,
               i.description
 
             FROM incidents AS i

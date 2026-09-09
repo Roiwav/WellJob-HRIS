@@ -616,6 +616,12 @@ export default function Deployments() {
   const isFetchingRef =
     useRef(false);
 
+  const latestRequestIdRef =
+    useRef(0);
+
+  const hasInitialLoadStartedRef =
+    useRef(false);
+
   const dataUpdateTimerRef =
     useRef(null);
 
@@ -703,11 +709,12 @@ export default function Deployments() {
         showError =
           true,
       } = {}) => {
-        if (
-          isFetchingRef.current
-        ) {
-          return false;
-        }
+        const requestId =
+          latestRequestIdRef.current +
+          1;
+
+        latestRequestIdRef.current =
+          requestId;
 
         isFetchingRef.current =
           true;
@@ -771,7 +778,9 @@ export default function Deployments() {
             );
 
           if (
-            !isMountedRef.current
+            !isMountedRef.current ||
+            requestId !==
+              latestRequestIdRef.current
           ) {
             return false;
           }
@@ -905,6 +914,13 @@ export default function Deployments() {
         } catch (
           error
         ) {
+          if (
+            requestId !==
+              latestRequestIdRef.current
+          ) {
+            return false;
+          }
+
           console.error(
             "Fetch deployments error:",
             error
@@ -924,23 +940,20 @@ export default function Deployments() {
 
           return false;
         } finally {
-          isFetchingRef.current =
-            false;
-
           if (
-            isMountedRef.current
+            requestId ===
+            latestRequestIdRef.current
           ) {
+            isFetchingRef.current =
+              false;
+
             if (
-              showInitialLoading
+              isMountedRef.current
             ) {
               setIsLoading(
                 false
               );
-            }
 
-            if (
-              showRefreshing
-            ) {
               setIsRefreshing(
                 false
               );
@@ -957,9 +970,14 @@ export default function Deployments() {
     );
 
   useEffect(() => {
+    const showInitialLoading =
+      !hasInitialLoadStartedRef.current;
+
+    hasInitialLoadStartedRef.current =
+      true;
+
     void fetchDeployments({
-      showInitialLoading:
-        true,
+      showInitialLoading,
     });
   }, [
     fetchDeployments,

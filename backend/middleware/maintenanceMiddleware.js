@@ -17,6 +17,17 @@ const BYPASS_PATHS = new Set([
   "/api/settings/maintenance-status",
 ]);
 
+const MAINTENANCE_CACHE_TTL_MS =
+  1000;
+
+let maintenanceCache = {
+  value: null,
+  expiresAt: 0,
+};
+
+let maintenanceLookupPromise =
+  null;
+
 function isBypassRequest(req) {
   /*
    * Allow CORS preflight requests.
@@ -134,6 +145,57 @@ function parsePositiveUserId(
   }
 
   return numericValue;
+}
+
+async function getMaintenanceEnabled() {
+  const now = Date.now();
+
+  if (
+    maintenanceCache.value !==
+      null &&
+    now <
+      maintenanceCache.expiresAt
+  ) {
+    return maintenanceCache.value;
+  }
+
+  if (maintenanceLookupPromise) {
+    return maintenanceLookupPromise;
+  }
+
+  maintenanceLookupPromise =
+    db
+      .promise()
+      .query(
+        `
+        SELECT setting_value
+        FROM system_settings
+        WHERE setting_name = 'maintenance_mode'
+        LIMIT 1
+        `
+      )
+      .then(([rows]) => {
+        const enabled =
+          rows.length > 0 &&
+          isMaintenanceEnabled(
+            rows[0].setting_value
+          );
+
+        maintenanceCache = {
+          value: enabled,
+          expiresAt:
+            Date.now() +
+            MAINTENANCE_CACHE_TTL_MS,
+        };
+
+        return enabled;
+      })
+      .finally(() => {
+        maintenanceLookupPromise =
+          null;
+      });
+
+  return maintenanceLookupPromise;
 }
 
 /*
@@ -308,23 +370,8 @@ async function checkMaintenanceMode(
   }
 
   try {
-    const [rows] =
-      await db
-        .promise()
-        .query(
-          `
-          SELECT setting_value
-          FROM system_settings
-          WHERE setting_name = 'maintenance_mode'
-          LIMIT 1
-          `
-        );
-
     const maintenanceEnabled =
-      rows.length > 0 &&
-      isMaintenanceEnabled(
-        rows[0].setting_value
-      );
+      await getMaintenanceEnabled();
 
     /*
      * Normal operation:
@@ -397,13 +444,11 @@ async function checkMaintenanceMode(
      * Preserve the existing fail-open behavior for
      * the maintenance-setting lookup itself.
      *
-     * This avoids locking the entire application
-     * solely because the maintenance configuration
-     * cannot temporarily be queried.
+     * Failed maintenance-setting reads are not cached,
+     * so the next request retries the database lookup.
      *
-     * NOTE:
-     * IT Support bypass verification above still
-     * fails closed once maintenance mode has been
+     * IT Support bypass verification still fails
+     * closed once maintenance mode has been
      * successfully confirmed as active.
      */
     return next();

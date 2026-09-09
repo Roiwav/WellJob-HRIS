@@ -127,6 +127,7 @@ validateEnvironment();
 
 const express = require("express");
 const cors = require("cors");
+const compression = require("compression");
 
 // MAINTENANCE MIDDLEWARE
 const checkMaintenanceMode =
@@ -254,6 +255,10 @@ const corsOptions = {
 // CORE MIDDLEWARE
 app.use(
   cors(corsOptions)
+);
+
+app.use(
+  compression()
 );
 
 /*

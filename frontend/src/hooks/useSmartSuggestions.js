@@ -356,19 +356,13 @@ export default function useSmartSuggestions(
           );
 
           /*
-           * Re-fetch from backend so the UI is
-           * synchronized with persisted state.
+           * The mutation response already contains
+           * the persisted backend state needed to
+           * update this suggestion immediately.
            *
-           * If another GET is already running,
-           * the local state above still keeps
-           * the mutation visible immediately,
-           * while the existing poll/event refresh
-           * will retrieve the persisted state later.
+           * The regular poll/event refresh remains
+           * responsible for later synchronization.
            */
-          await fetchSuggestions({
-            silent: true,
-          });
-
           return data;
         } catch (err) {
           console.error(
@@ -395,7 +389,6 @@ export default function useSmartSuggestions(
       [
         applyMutationState,
         canView,
-        fetchSuggestions,
         user,
       ]
     );
@@ -450,12 +443,13 @@ export default function useSmartSuggestions(
           );
 
           /*
-           * Fresh backend synchronization.
+           * The persisted dismissal state returned
+           * by the backend is already applied above.
+           *
+           * Avoid an immediate full suggestions GET;
+           * the regular poll/event refresh will
+           * synchronize later changes.
            */
-          await fetchSuggestions({
-            silent: true,
-          });
-
           return data;
         } catch (err) {
           console.error(
@@ -482,7 +476,6 @@ export default function useSmartSuggestions(
       [
         applyMutationState,
         canView,
-        fetchSuggestions,
         user,
       ]
     );

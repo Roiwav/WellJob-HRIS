@@ -1516,6 +1516,174 @@ function getLatestIncidentDate(
   return latestValue;
 }
 
+function buildIncidentLookup(
+  incidents = []
+) {
+  const byEmployeeId =
+    new Map();
+
+  const byEmployeeName =
+    new Map();
+
+  incidents.forEach(
+    (incident, index) => {
+      const employeeId =
+        String(
+          incident?.employeeId ||
+            incident?.employee_id ||
+            incident?.empId ||
+            ""
+        );
+
+      const employeeName =
+        normalizeText(
+          incident?.employee ||
+            incident?.employeeName ||
+            incident?.name
+        );
+
+      if (employeeId) {
+        if (
+          !byEmployeeId.has(
+            employeeId
+          )
+        ) {
+          byEmployeeId.set(
+            employeeId,
+            []
+          );
+        }
+
+        byEmployeeId
+          .get(employeeId)
+          .push(index);
+      }
+
+      if (employeeName) {
+        if (
+          !byEmployeeName.has(
+            employeeName
+          )
+        ) {
+          byEmployeeName.set(
+            employeeName,
+            []
+          );
+        }
+
+        byEmployeeName
+          .get(employeeName)
+          .push(index);
+      }
+    }
+  );
+
+  return {
+    byEmployeeId,
+    byEmployeeName,
+  };
+}
+
+function mergeIncidentIndexes(
+  first = [],
+  second = []
+) {
+  const merged = [];
+
+  let firstIndex = 0;
+  let secondIndex = 0;
+
+  while (
+    firstIndex < first.length ||
+    secondIndex < second.length
+  ) {
+    const firstValue =
+      firstIndex < first.length
+        ? first[firstIndex]
+        : Number.POSITIVE_INFINITY;
+
+    const secondValue =
+      secondIndex < second.length
+        ? second[secondIndex]
+        : Number.POSITIVE_INFINITY;
+
+    if (
+      firstValue ===
+      secondValue
+    ) {
+      merged.push(
+        firstValue
+      );
+
+      firstIndex += 1;
+      secondIndex += 1;
+      continue;
+    }
+
+    if (
+      firstValue <
+      secondValue
+    ) {
+      merged.push(
+        firstValue
+      );
+
+      firstIndex += 1;
+      continue;
+    }
+
+    merged.push(
+      secondValue
+    );
+
+    secondIndex += 1;
+  }
+
+  return merged;
+}
+
+function getRelatedIncidentsFromLookup({
+  employee,
+  index,
+  incidents,
+  lookup,
+}) {
+  const employeeId =
+    String(
+      getEmployeeId(
+        employee,
+        index
+      )
+    );
+
+  const employeeName =
+    normalizeText(
+      getEmployeeName(
+        employee
+      )
+    );
+
+  const idMatches =
+    lookup.byEmployeeId.get(
+      employeeId
+    ) || [];
+
+  const nameMatches =
+    lookup.byEmployeeName.get(
+      employeeName
+    ) || [];
+
+  return mergeIncidentIndexes(
+    idMatches,
+    nameMatches
+  ).map(
+    (incidentIndex) =>
+      incidents[
+        incidentIndex
+      ]
+  );
+}
+
 export function buildKPIEmployees(
   employeesRaw = [],
   incidentsRaw = []
@@ -1530,6 +1698,11 @@ export function buildKPIEmployees(
       ? incidentsRaw.filter(Boolean)
       : [];
 
+  const incidentLookup =
+    buildIncidentLookup(
+      safeIncidents
+    );
+
   return safeEmployees.map(
     (employee, index) => {
       const employeeId = getEmployeeId(
@@ -1541,17 +1714,18 @@ export function buildKPIEmployees(
         getEmployeeName(employee);
 
       const relatedIncidents =
-        safeIncidents.filter((incident) =>
-          isSameEmployee(
-            {
-              ...employee,
-              id: employeeId,
-              name: employeeName,
-            },
-            incident,
-            index
-          )
-        );
+        getRelatedIncidentsFromLookup({
+          employee: {
+            ...employee,
+            id: employeeId,
+            name: employeeName,
+          },
+          index,
+          incidents:
+            safeIncidents,
+          lookup:
+            incidentLookup,
+        });
 
       const totalSeverityScore =
         relatedIncidents.reduce(

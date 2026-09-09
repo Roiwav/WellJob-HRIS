@@ -27,6 +27,12 @@ const AUDIT_LOGS_API_URL =
   `${API_BASE}/audit-logs`;
 
 const REQUEST_TIMEOUT_MS = 15000;
+const AUDIT_PAGE_SIZE = 25;
+const SEARCH_DEBOUNCE_MS = 350;
+const DATA_UPDATE_DEBOUNCE_MS = 300;
+
+const activeAuditRequests =
+  new Map();
 
 const ROLE_LABELS = {
   SUPER_ADMIN: "Super Admin",
@@ -304,13 +310,34 @@ async function requestJson(
   }
 }
 
-function normalizeSearchText(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ");
+function getSharedAuditRequest(
+  url
+) {
+  if (
+    !activeAuditRequests.has(
+      url
+    )
+  ) {
+    const requestPromise =
+      requestJson(url).finally(
+        () => {
+          activeAuditRequests.delete(
+            url
+          );
+        }
+      );
+
+    activeAuditRequests.set(
+      url,
+      requestPromise
+    );
+  }
+
+  return activeAuditRequests.get(
+    url
+  );
 }
+
 
 function SummaryCard({
   icon,
@@ -356,8 +383,36 @@ export default function AuditLogsPage({
   const [search, setSearch] =
     useState("");
 
+  const [
+    debouncedSearch,
+    setDebouncedSearch,
+  ] = useState("");
+
   const [role, setRole] =
-    useState("All");
+    useState("ALL");
+
+  const [page, setPage] =
+    useState(1);
+
+  const [
+    pagination,
+    setPagination,
+  ] = useState({
+    page: 1,
+    pageSize:
+      AUDIT_PAGE_SIZE,
+    total: 0,
+    totalPages: 1,
+  });
+
+  const [summary, setSummary] =
+    useState({
+      total: 0,
+      superAdmin: 0,
+      hrManager: 0,
+      hrStaff: 0,
+      itSupport: 0,
+    });
 
   const [isLoading, setIsLoading] =
     useState(true);
@@ -373,7 +428,16 @@ export default function AuditLogsPage({
   const isMountedRef =
     useRef(true);
 
-  const isFetchingRef =
+  const requestIdRef =
+    useRef(0);
+
+  const searchTimerRef =
+    useRef(null);
+
+  const dataUpdateTimerRef =
+    useRef(null);
+
+  const initialLoadDoneRef =
     useRef(false);
 
   useEffect(() => {
@@ -381,8 +445,58 @@ export default function AuditLogsPage({
 
     return () => {
       isMountedRef.current = false;
+
+      if (
+        searchTimerRef.current
+      ) {
+        window.clearTimeout(
+          searchTimerRef.current
+        );
+      }
+
+      if (
+        dataUpdateTimerRef.current
+      ) {
+        window.clearTimeout(
+          dataUpdateTimerRef.current
+        );
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      searchTimerRef.current
+    ) {
+      window.clearTimeout(
+        searchTimerRef.current
+      );
+    }
+
+    searchTimerRef.current =
+      window.setTimeout(() => {
+        setDebouncedSearch(
+          String(search || "")
+            .trim()
+        );
+
+        searchTimerRef.current =
+          null;
+      }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      if (
+        searchTimerRef.current
+      ) {
+        window.clearTimeout(
+          searchTimerRef.current
+        );
+
+        searchTimerRef.current =
+          null;
+      }
+    };
+  }, [search]);
 
   const fetchLogs = useCallback(
     async ({
@@ -390,11 +504,11 @@ export default function AuditLogsPage({
       showRefreshing = false,
       showError = true,
     } = {}) => {
-      if (isFetchingRef.current) {
-        return false;
-      }
+      const requestId =
+        requestIdRef.current + 1;
 
-      isFetchingRef.current = true;
+      requestIdRef.current =
+        requestId;
 
       if (
         showInitialLoading &&
@@ -423,25 +537,128 @@ export default function AuditLogsPage({
             .trim()
             .toUpperCase();
 
+        const query =
+          new URLSearchParams({
+            view: "summary",
+            page:
+              String(page),
+            pageSize:
+              String(
+                AUDIT_PAGE_SIZE
+              ),
+            search:
+              debouncedSearch,
+            role,
+          });
+
         const endpoint =
           `${AUDIT_LOGS_API_URL}/${encodeURIComponent(
             selectedCategory
-          )}`;
+          )}?${query.toString()}`;
 
         const result =
-          await requestJson(
+          await getSharedAuditRequest(
             endpoint
           );
 
-        if (!isMountedRef.current) {
+        if (
+          !isMountedRef.current ||
+          requestId !==
+            requestIdRef.current
+        ) {
           return false;
         }
 
-        setLogs(
-          Array.isArray(result)
-            ? result
-            : []
-        );
+        const nextLogs =
+          Array.isArray(
+            result?.records
+          )
+            ? result.records
+            : [];
+
+        const nextPagination =
+          result?.pagination ||
+          {};
+
+        const nextSummary =
+          result?.summary ||
+          {};
+
+        setLogs(nextLogs);
+
+        setPagination({
+          page:
+            Number(
+              nextPagination.page
+            ) || page,
+
+          pageSize:
+            Number(
+              nextPagination.pageSize
+            ) ||
+            AUDIT_PAGE_SIZE,
+
+          total:
+            Math.max(
+              Number(
+                nextPagination.total
+              ) || 0,
+              0
+            ),
+
+          totalPages:
+            Math.max(
+              Number(
+                nextPagination.totalPages
+              ) || 1,
+              1
+            ),
+        });
+
+        setSummary({
+          total:
+            Math.max(
+              Number(
+                nextSummary.total
+              ) || 0,
+              0
+            ),
+
+          superAdmin:
+            Math.max(
+              Number(
+                nextSummary.superAdmin
+              ) || 0,
+              0
+            ),
+
+          hrManager:
+            Math.max(
+              Number(
+                nextSummary.hrManager
+              ) || 0,
+              0
+            ),
+
+          hrStaff:
+            Math.max(
+              Number(
+                nextSummary.hrStaff
+              ) || 0,
+              0
+            ),
+
+          itSupport:
+            Math.max(
+              Number(
+                nextSummary.itSupport
+              ) || 0,
+              0
+            ),
+        });
+
+        initialLoadDoneRef.current =
+          true;
 
         return true;
       } catch (error) {
@@ -452,7 +669,9 @@ export default function AuditLogsPage({
 
         if (
           showError &&
-          isMountedRef.current
+          isMountedRef.current &&
+          requestId ===
+            requestIdRef.current
         ) {
           setPageError(
             error?.message ||
@@ -462,9 +681,11 @@ export default function AuditLogsPage({
 
         return false;
       } finally {
-        isFetchingRef.current = false;
-
-        if (isMountedRef.current) {
+        if (
+          isMountedRef.current &&
+          requestId ===
+            requestIdRef.current
+        ) {
           if (showInitialLoading) {
             setIsLoading(false);
           }
@@ -475,20 +696,40 @@ export default function AuditLogsPage({
         }
       }
     },
-    [category]
+    [
+      category,
+      debouncedSearch,
+      page,
+      role,
+    ]
   );
 
   useEffect(() => {
     void fetchLogs({
-      showInitialLoading: true,
+      showInitialLoading:
+        !initialLoadDoneRef.current,
     });
   }, [fetchLogs]);
 
   useEffect(() => {
     const handleDataUpdated = () => {
-      void fetchLogs({
-        showError: false,
-      });
+      if (
+        dataUpdateTimerRef.current
+      ) {
+        window.clearTimeout(
+          dataUpdateTimerRef.current
+        );
+      }
+
+      dataUpdateTimerRef.current =
+        window.setTimeout(() => {
+          void fetchLogs({
+            showError: false,
+          });
+
+          dataUpdateTimerRef.current =
+            null;
+        }, DATA_UPDATE_DEBOUNCE_MS);
     };
 
     window.addEventListener(
@@ -497,92 +738,23 @@ export default function AuditLogsPage({
     );
 
     return () => {
+      if (
+        dataUpdateTimerRef.current
+      ) {
+        window.clearTimeout(
+          dataUpdateTimerRef.current
+        );
+
+        dataUpdateTimerRef.current =
+          null;
+      }
+
       window.removeEventListener(
         "dataUpdated",
         handleDataUpdated
       );
     };
   }, [fetchLogs]);
-
-  const filteredLogs =
-    useMemo(() => {
-      const normalizedSearch =
-        normalizeSearchText(search);
-
-      const searchTerms =
-        normalizedSearch
-          ? normalizedSearch.split(
-              /\s+/
-            )
-          : [];
-
-      return logs.filter(
-        (log) => {
-          const actorName =
-            getActorName(log);
-
-          const readableDescription =
-            getReadableAuditDescription(
-              log
-            );
-
-          const roleLabel =
-            ROLE_LABELS[
-              log?.role
-            ] ||
-            formatAction(
-              log?.role
-            );
-
-          const searchableText =
-            normalizeSearchText(
-              [
-                log?.id,
-                log?.audit_id,
-                log?.auditId,
-                log?.username,
-                log?.user_id,
-                log?.userId,
-                actorName,
-                log?.action,
-                formatAction(
-                  log?.action
-                ),
-                readableDescription,
-                log?.role,
-                roleLabel,
-                log?.created_at,
-                log?.createdAt,
-                formatDate(
-                  log?.created_at ||
-                    log?.createdAt
-                ),
-              ]
-                .filter(Boolean)
-                .join(" ")
-            );
-
-          const matchesSearch =
-            searchTerms.length ===
-              0 ||
-            searchTerms.every(
-              (term) =>
-                searchableText.includes(
-                  term
-                )
-            );
-
-          const matchesRole =
-            role === "All" ||
-            log?.role === role;
-
-          return (
-            matchesSearch &&
-            matchesRole
-          );
-        }
-      );
-    }, [logs, search, role]);
 
   const uniqueUsers =
     useMemo(() => {
@@ -604,23 +776,32 @@ export default function AuditLogsPage({
 
   const availableRoles =
     useMemo(() => {
-      const roles = logs
-        .map(
-          (log) =>
-            log?.role
-        )
-        .filter(Boolean);
+      const roleCounts = {
+        SUPER_ADMIN:
+          summary.superAdmin,
+        HR_MANAGER:
+          summary.hrManager,
+        HR_STAFF:
+          summary.hrStaff,
+        IT_SUPPORT:
+          summary.itSupport,
+      };
 
-      return [
-        ...new Set(roles),
-      ].sort();
-    }, [logs]);
+      return Object.keys(
+        ROLE_LABELS
+      ).filter(
+        (roleName) =>
+          Number(
+            roleCounts[roleName]
+          ) > 0
+      );
+    }, [summary]);
 
   const hasSearch =
     Boolean(search.trim());
 
   const hasRoleFilter =
-    role !== "All";
+    role !== "ALL";
 
   const hasActiveFilters =
     hasSearch ||
@@ -630,8 +811,7 @@ export default function AuditLogsPage({
     useCallback(async () => {
       if (
         isLoading ||
-        isRefreshing ||
-        isFetchingRef.current
+        isRefreshing
       ) {
         return;
       }
@@ -647,14 +827,27 @@ export default function AuditLogsPage({
 
   const handleClearFilters =
     useCallback(() => {
+      if (
+        searchTimerRef.current
+      ) {
+        window.clearTimeout(
+          searchTimerRef.current
+        );
+
+        searchTimerRef.current =
+          null;
+      }
+
       setSearch("");
-      setRole("All");
+      setDebouncedSearch("");
+      setRole("ALL");
+      setPage(1);
     }, []);
 
   const emptyStateContent =
     useMemo(() => {
       if (
-        logs.length === 0
+        summary.total === 0
       ) {
         return {
           icon: "records",
@@ -695,7 +888,7 @@ export default function AuditLogsPage({
     }, [
       hasRoleFilter,
       hasSearch,
-      logs.length,
+      summary.total,
     ]);
 
   return (
@@ -729,8 +922,7 @@ export default function AuditLogsPage({
             }
             disabled={
               isLoading ||
-              isRefreshing ||
-              isFetchingRef.current
+              isRefreshing
             }
             onClick={
               handleRefresh
@@ -763,7 +955,7 @@ export default function AuditLogsPage({
             />
           }
           label="Total Logs"
-          value={logs.length}
+          value={summary.total}
           helper="All audit records"
         />
 
@@ -777,7 +969,7 @@ export default function AuditLogsPage({
           value={
             uniqueUsers
           }
-          helper="Unique recorded actors"
+          helper="Unique actors on this page"
         />
 
         <SummaryCard
@@ -788,19 +980,15 @@ export default function AuditLogsPage({
           }
           label="Shown Records"
           value={
-            filteredLogs.length
+            logs.length
           }
-          helper={
-            hasActiveFilters
-              ? "Matching filters"
-              : "Currently displayed"
-          }
+          helper="Records on this page"
         />
       </div>
 
       <FilterBar
         resultCount={
-          filteredLogs.length
+          pagination.total
         }
         resultLabel="audit log"
         actions={
@@ -832,14 +1020,28 @@ export default function AuditLogsPage({
             }
             onChange={(
               event
-            ) =>
+            ) => {
               setSearch(
                 event.target.value
-              )
-            }
-            onClear={() =>
-              setSearch("")
-            }
+              );
+              setPage(1);
+            }}
+            onClear={() => {
+              if (
+                searchTimerRef.current
+              ) {
+                window.clearTimeout(
+                  searchTimerRef.current
+                );
+
+                searchTimerRef.current =
+                  null;
+              }
+
+              setSearch("");
+              setDebouncedSearch("");
+              setPage(1);
+            }}
           />
         </div>
 
@@ -860,16 +1062,17 @@ export default function AuditLogsPage({
             }
             onChange={(
               event
-            ) =>
+            ) => {
               setRole(
                 event.target.value
-              )
-            }
+              );
+              setPage(1);
+            }}
             className={
               SELECT_CLASS_NAME
             }
           >
-            <option value="All">
+            <option value="ALL">
               All Roles
             </option>
 
@@ -902,7 +1105,7 @@ export default function AuditLogsPage({
           columns={5}
           showHeader
         />
-      ) : filteredLogs.length ===
+      ) : logs.length ===
         0 ? (
         <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900 sm:p-6">
           <EmptyState
@@ -984,7 +1187,7 @@ export default function AuditLogsPage({
               </thead>
 
               <tbody className="divide-y divide-gray-100 text-gray-700 dark:divide-white/5 dark:text-gray-200">
-                {filteredLogs.map(
+                {logs.map(
                   (
                     log,
                     index
@@ -1078,6 +1281,69 @@ export default function AuditLogsPage({
             </table>
           </div>
         </section>
+      )}
+
+      {pagination.total > 0 && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-950">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Page{" "}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {pagination.page}
+            </span>
+            {" of "}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {pagination.totalPages}
+            </span>
+            {" • "}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {pagination.total}
+            </span>{" "}
+            matching audit log(s)
+          </p>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={
+                page <= 1 ||
+                isRefreshing
+              }
+              onClick={() =>
+                setPage(
+                  (currentPage) =>
+                    Math.max(
+                      1,
+                      currentPage - 1
+                    )
+                )
+              }
+            >
+              Previous
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={
+                page >=
+                  pagination.totalPages ||
+                isRefreshing
+              }
+              onClick={() =>
+                setPage(
+                  (currentPage) =>
+                    Math.min(
+                      pagination.totalPages,
+                      currentPage + 1
+                    )
+                )
+              }
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       )}
     </main>
   );

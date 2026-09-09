@@ -429,30 +429,6 @@ async function tableExists(
   return rows.length > 0;
 }
 
-async function ensureIncidentTimelineTable() {
-  await db
-    .promise()
-    .query(`
-      CREATE TABLE IF NOT EXISTS incident_timeline (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        incident_id INT NOT NULL,
-        action_type VARCHAR(80) NOT NULL,
-        title VARCHAR(150) NOT NULL,
-        description TEXT NULL,
-        created_by_id VARCHAR(50) NULL,
-        created_by_username VARCHAR(100) NULL,
-        created_by_name VARCHAR(150) NULL,
-        created_by_role VARCHAR(80) NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_incident_timeline_incident_id (incident_id),
-        CONSTRAINT fk_incident_timeline_incident
-          FOREIGN KEY (incident_id)
-          REFERENCES incidents(id)
-          ON DELETE CASCADE
-      )
-    `);
-}
-
 async function getActiveDeploymentForEmployee(
   employeeId
 ) {
@@ -1101,8 +1077,6 @@ function serializeTimelineItem(
 async function getTimelineByIncidentId(
   incidentId
 ) {
-  await ensureIncidentTimelineTable();
-
   const [rows] =
     await db
       .promise()
@@ -1126,15 +1100,8 @@ async function getTimelineByIncidentId(
 }
 
 async function getTimelineByIncidentIds(
-  incidentIds = [],
-  {
-    ensureTable = true,
-  } = {}
+  incidentIds = []
 ) {
-  if (ensureTable) {
-    await ensureIncidentTimelineTable();
-  }
-
   if (!incidentIds.length) {
     return new Map();
   }
@@ -1196,12 +1163,7 @@ async function addTimelineEvent({
   description,
   actor,
   connection = null,
-  ensureTable = true,
 }) {
-  if (ensureTable) {
-    await ensureIncidentTimelineTable();
-  }
-
   const queryTarget =
     connection ||
     db.promise();
@@ -2148,9 +2110,7 @@ exports.getIncidents =
         );
       }
 
-      await ensureIncidentTimelineTable();
-
-      const [incidents] =
+          const [incidents] =
         await db
           .promise()
           .query(`
@@ -2203,11 +2163,7 @@ exports.getIncidents =
             ),
 
           getTimelineByIncidentIds(
-            incidentIds,
-            {
-              ensureTable:
-                false,
-            }
+            incidentIds
           ),
         ]);
 
@@ -2276,9 +2232,7 @@ exports.getIncidentsByEmployee =
     res
   ) => {
     try {
-      await ensureIncidentTimelineTable();
-
-      const {
+          const {
         employeeId,
       } =
         req.params;
@@ -2398,11 +2352,7 @@ exports.getIncidentsByEmployee =
             ),
 
           getTimelineByIncidentIds(
-            incidentIds,
-            {
-              ensureTable:
-                false,
-            }
+            incidentIds
           ),
         ]);
 
@@ -2525,9 +2475,7 @@ exports.createIncident =
       false;
 
     try {
-      await ensureIncidentTimelineTable();
-
-      const {
+          const {
         employeeId,
         employee_id,
         violation,
@@ -2911,9 +2859,6 @@ exports.createIncident =
 
         actor,
         connection,
-
-        ensureTable:
-          false,
       });
 
       await logAudit(
@@ -3135,9 +3080,7 @@ exports.updateIncidentStatus =
       false;
 
     try {
-      await ensureIncidentTimelineTable();
-
-      const {
+          const {
         id,
       } =
         req.params;
@@ -3656,9 +3599,6 @@ exports.updateIncidentStatus =
 
         actor,
         connection,
-
-        ensureTable:
-          false,
       });
 
       await logAudit(
