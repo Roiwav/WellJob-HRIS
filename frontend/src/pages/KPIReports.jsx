@@ -50,7 +50,7 @@ import {
 } from "../hooks/useKPIQueries";
 
 import {
-  useKPIDecisionHistoryQuery,
+  useKPIDecisionLatestQuery,
 } from "../hooks/useKPIDecisionQueries";
 
 const AUTO_REFRESH_INTERVAL_MS =
@@ -269,18 +269,18 @@ export default function KPIReports() {
 
   const {
     data:
-      decisionHistoryData,
+      decisionSnapshotData,
 
     isLoading:
-      isDecisionHistoryLoading,
+      isDecisionSnapshotLoading,
 
     error:
-      decisionHistoryError,
+      decisionSnapshotError,
 
     refetch:
-      refetchDecisionHistory,
+      refetchDecisionSnapshot,
   } =
-    useKPIDecisionHistoryQuery({
+    useKPIDecisionLatestQuery({
       refetchInterval:
         AUTO_REFRESH_INTERVAL_MS,
     });
@@ -323,13 +323,15 @@ export default function KPIReports() {
     useMemo(
       () => {
         return Array.isArray(
-          decisionHistoryData
+          decisionSnapshotData
+            ?.decisions
         )
-          ? decisionHistoryData
+          ? decisionSnapshotData
+              .decisions
           : [];
       },
       [
-        decisionHistoryData,
+        decisionSnapshotData,
       ]
     );
 
@@ -641,7 +643,7 @@ export default function KPIReports() {
 
   const isLoading =
     isKpiLoading ||
-    isDecisionHistoryLoading;
+    isDecisionSnapshotLoading;
 
   const pageError =
     refreshError ||
@@ -650,7 +652,7 @@ export default function KPIReports() {
       ""
     ) ||
     getErrorMessage(
-      decisionHistoryError,
+      decisionSnapshotError,
       ""
     );
 
@@ -682,20 +684,20 @@ export default function KPIReports() {
       try {
         const [
           kpiResult,
-          historyResult,
+          decisionResult,
         ] =
           await Promise.all([
             refetchKPIData(),
-            refetchDecisionHistory(),
+            refetchDecisionSnapshot(),
           ]);
 
         const refetchError =
           kpiResult?.error ||
-          historyResult?.error;
+          decisionResult?.error;
 
         if (
           kpiResult?.isError ||
-          historyResult?.isError ||
+          decisionResult?.isError ||
           refetchError
         ) {
           setRefreshError(
@@ -731,56 +733,14 @@ export default function KPIReports() {
     };
 
   const handleDecisionSaved =
-    async () => {
+    () => {
       setRefreshError(
         ""
       );
 
-      try {
-        const [
-          kpiResult,
-          historyResult,
-        ] =
-          await Promise.all([
-            refetchKPIData(),
-            refetchDecisionHistory(),
-          ]);
-
-        const refetchError =
-          kpiResult?.error ||
-          historyResult?.error;
-
-        if (
-          kpiResult?.isError ||
-          historyResult?.isError ||
-          refetchError
-        ) {
-          setRefreshError(
-            getErrorMessage(
-              refetchError,
-              "The decision was saved, but the KPI data could not be refreshed."
-            )
-          );
-
-          return;
-        }
-
-        setSuccessMessage(
-          "The HR decision was saved and KPI data was updated."
-        );
-      } catch (error) {
-        console.error(
-          "Decision refresh error:",
-          error
-        );
-
-        setRefreshError(
-          getErrorMessage(
-            error,
-            "The decision was saved, but the KPI data could not be refreshed."
-          )
-        );
-      }
+      setSuccessMessage(
+        "The HR decision was saved and the review status was updated."
+      );
     };
 
   const handleExportPDF =

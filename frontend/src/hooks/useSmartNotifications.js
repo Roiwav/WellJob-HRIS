@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -19,7 +18,141 @@ const EMPTY_SUMMARY = {
   low: 0,
 };
 
-const DEFAULT_POLL_INTERVAL = 10000;
+const DEFAULT_POLL_INTERVAL = 30000;
+const SMART_ALERT_MIN_REFRESH_GAP_MS = 10000;
+
+const sharedSmartAlertRequests =
+  new Map();
+
+const sharedSmartAlertCaches =
+  new Map();
+
+function normalizeIdentityPart(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function getSmartAlertSessionKey(
+  user
+) {
+  const role =
+    normalizeIdentityPart(
+      user?.role
+    );
+
+  const identity =
+    normalizeIdentityPart(
+      user?.id ??
+        user?.user_id ??
+        user?.userId ??
+        user?.username ??
+        user?.email
+    );
+
+  if (!role || !identity) {
+    return "";
+  }
+
+  return `${role}:${identity}`;
+}
+
+function invalidateSharedSmartAlertCache(
+  sessionKey
+) {
+  if (!sessionKey) {
+    return;
+  }
+
+  sharedSmartAlertCaches.delete(
+    sessionKey
+  );
+}
+
+async function requestSharedSmartAlerts(
+  sessionKey
+) {
+  if (!sessionKey) {
+    return requestSmartAlertJson(
+      "/smart-alerts"
+    );
+  }
+
+  const now = Date.now();
+
+  const cachedEntry =
+    sharedSmartAlertCaches.get(
+      sessionKey
+    );
+
+  if (
+    cachedEntry &&
+    now - cachedEntry.fetchedAt <
+      SMART_ALERT_MIN_REFRESH_GAP_MS
+  ) {
+    return cachedEntry.data;
+  }
+
+  const existingRequest =
+    sharedSmartAlertRequests.get(
+      sessionKey
+    );
+
+  if (existingRequest) {
+    return existingRequest;
+  }
+
+  const request =
+    requestSmartAlertJson(
+      "/smart-alerts"
+    );
+
+  sharedSmartAlertRequests.set(
+    sessionKey,
+    request
+  );
+
+  try {
+    const data =
+      await request;
+
+    sharedSmartAlertCaches.set(
+      sessionKey,
+      {
+        data,
+        fetchedAt:
+          Date.now(),
+      }
+    );
+
+    return data;
+  } finally {
+    if (
+      sharedSmartAlertRequests.get(
+        sessionKey
+      ) === request
+    ) {
+      sharedSmartAlertRequests.delete(
+        sessionKey
+      );
+    }
+  }
+}
+
+function emitSmartAlertsUpdated(
+  sessionKey
+) {
+  window.dispatchEvent(
+    new CustomEvent(
+      "smartAlertsUpdated",
+      {
+        detail: {
+          sessionKey,
+        },
+      }
+    )
+  );
+}
 
 const SMART_ALERT_REFRESH_DOMAINS = new Set([
   "incident",
@@ -107,6 +240,11 @@ export default function useSmartNotifications(
   const canView =
     canViewSmartAlerts(role);
 
+  const sessionKey =
+    getSmartAlertSessionKey(
+      user
+    );
+
   const configuredPollInterval =
     Number(
       options.pollInterval ??
@@ -123,20 +261,6 @@ export default function useSmartNotifications(
   const hasPolling =
     pollInterval > 0;
 
-  /*
-   * Prevent overlapping network requests.
-   *
-   * If another refresh request arrives while
-   * a request is already running, we do not
-   * discard it. Instead, refreshQueuedRef
-   * remembers that another synchronization
-   * pass is required immediately afterwards.
-   */
-  const requestInFlightRef =
-    useRef(false);
-
-  const refreshQueuedRef =
-    useRef(false);
 
   const [alerts, setAlerts] =
     useState([]);
@@ -261,9 +385,6 @@ export default function useSmartNotifications(
 
   const resetAlertState =
     useCallback(() => {
-      refreshQueuedRef.current =
-        false;
-
       setAlerts([]);
       setLatestAlerts([]);
       setPopupAlert(null);
@@ -283,126 +404,75 @@ export default function useSmartNotifications(
       } = {}) => {
         if (!canView) {
           resetAlertState();
-          return;
+          return null;
         }
 
-        /*
-         * A refresh may be triggered by several
-         * sources at nearly the same time:
-         *
-         * - polling
-         * - local dataUpdated event
-         * - window focus
-         * - tab visibility
-         * - network reconnection
-         *
-         * Never run overlapping requests.
-         * Preserve one pending refresh instead.
-         */
-        if (
-          requestInFlightRef.current
-        ) {
-          refreshQueuedRef.current =
-            true;
-          return;
+        if (!silent) {
+          setIsLoading(true);
         }
 
-        requestInFlightRef.current =
-          true;
-
-        let nextRequestSilent =
-          silent;
+        setIsFetching(true);
+        setError("");
 
         try {
-          do {
-            refreshQueuedRef.current =
-              false;
+          const data =
+            await requestSharedSmartAlerts(
+              sessionKey
+            );
 
-            if (
-              !nextRequestSilent
-            ) {
-              setIsLoading(true);
-            }
+          const nextAlerts =
+            normalizeAlerts(
+              data?.alerts
+            );
 
-            setIsFetching(true);
-            setError("");
+          const nextLatestAlerts =
+            normalizeAlerts(
+              data?.latestAlerts
+            );
 
-            try {
-              /*
-               * Authenticated identity and role
-               * are derived exclusively from
-               * the JWT by the backend.
-               */
-              const data =
-                await requestSmartAlertJson(
-                  "/smart-alerts"
-                );
-
-              const nextAlerts =
-                normalizeAlerts(
-                  data?.alerts
-                );
-
-              const nextLatestAlerts =
-                normalizeAlerts(
-                  data?.latestAlerts
-                );
-
-              setAlerts(
-                nextAlerts
-              );
-
-              setLatestAlerts(
-                nextLatestAlerts
-              );
-
-              setPopupAlert(
-                data?.popupAlert ||
-                  null
-              );
-
-              setSummary({
-                ...EMPTY_SUMMARY,
-                ...(data?.summary ||
-                  {}),
-              });
-
-              setUnreadCount(
-                Math.max(
-                  0,
-                  Number(
-                    data?.unreadCount ||
-                      0
-                  )
-                )
-              );
-            } catch (err) {
-              console.error(
-                "Smart notification fetch error:",
-                err
-              );
-
-              setError(
-                err?.message ||
-                  "Unable to load smart alerts."
-              );
-            }
-
-            /*
-             * Any queued follow-up refresh is
-             * always silent to avoid showing
-             * the initial loading state again.
-             */
-            nextRequestSilent =
-              true;
-          } while (
-            refreshQueuedRef.current &&
-            canView
+          setAlerts(
+            nextAlerts
           );
-        } finally {
-          requestInFlightRef.current =
-            false;
 
+          setLatestAlerts(
+            nextLatestAlerts
+          );
+
+          setPopupAlert(
+            data?.popupAlert ||
+              null
+          );
+
+          setSummary({
+            ...EMPTY_SUMMARY,
+            ...(data?.summary ||
+              {}),
+          });
+
+          setUnreadCount(
+            Math.max(
+              0,
+              Number(
+                data?.unreadCount ||
+                  0
+              )
+            )
+          );
+
+          return data;
+        } catch (err) {
+          console.error(
+            "Smart notification fetch error:",
+            err
+          );
+
+          setError(
+            err?.message ||
+              "Unable to load smart alerts."
+          );
+
+          return null;
+        } finally {
           setIsLoading(false);
           setIsFetching(false);
         }
@@ -410,6 +480,7 @@ export default function useSmartNotifications(
       [
         canView,
         resetAlertState,
+        sessionKey,
       ]
     );
 
@@ -493,13 +564,22 @@ export default function useSmartNotifications(
           }
         );
 
+        invalidateSharedSmartAlertCache(
+          sessionKey
+        );
+
         await fetchAlerts({
           silent: true,
         });
+
+        emitSmartAlertsUpdated(
+          sessionKey
+        );
       },
       [
         canView,
         fetchAlerts,
+        sessionKey,
       ]
     );
 
@@ -587,9 +667,17 @@ export default function useSmartNotifications(
           if (
             refreshAfter
           ) {
+            invalidateSharedSmartAlertCache(
+              sessionKey
+            );
+
             await fetchAlerts({
               silent: true,
             });
+
+            emitSmartAlertsUpdated(
+              sessionKey
+            );
           }
         } catch (err) {
           setClearedAlertKeys(
@@ -613,6 +701,7 @@ export default function useSmartNotifications(
       [
         canView,
         fetchAlerts,
+        sessionKey,
       ]
     );
 
@@ -719,9 +808,17 @@ export default function useSmartNotifications(
           )
         );
 
+        invalidateSharedSmartAlertCache(
+          sessionKey
+        );
+
         await fetchAlerts({
           silent: true,
         });
+
+        emitSmartAlertsUpdated(
+          sessionKey
+        );
 
         return alertKeys.length;
       } catch (err) {
@@ -767,6 +864,7 @@ export default function useSmartNotifications(
       fetchAlerts,
       isClearingRead,
       readAlerts,
+      sessionKey,
     ]);
 
   const markAllAsRead =
@@ -824,36 +922,60 @@ export default function useSmartNotifications(
         }
       );
 
+      invalidateSharedSmartAlertCache(
+        sessionKey
+      );
+
       await fetchAlerts({
         silent: true,
       });
+
+      emitSmartAlertsUpdated(
+        sessionKey
+      );
     }, [
       canView,
       fetchAlerts,
+      sessionKey,
       visibleAlerts,
     ]);
 
+  const refreshAlerts =
+    useCallback(
+      async (
+        refreshOptions = {}
+      ) => {
+        invalidateSharedSmartAlertCache(
+          sessionKey
+        );
+
+        return fetchAlerts(
+          refreshOptions
+        );
+      },
+      [
+        fetchAlerts,
+        sessionKey,
+      ]
+    );
+
   /*
-   * Notification synchronization lifecycle.
-   *
-   * Cross-device updates cannot rely on the
-   * browser-local dataUpdated CustomEvent.
-   *
-   * We therefore combine:
-   *
-   * 1. Initial fetch
-   * 2. Local dataUpdated refresh
-   * 3. Periodic lightweight polling
-   * 4. Window focus refresh
-   * 5. Tab visibility refresh
-   * 6. Network reconnection refresh
+   * One shared GET request is reused by every
+   * mounted notification consumer.
    */
   useEffect(() => {
-    fetchAlerts();
+    void fetchAlerts();
 
     const requestSilentRefresh =
       () => {
-        fetchAlerts({
+        if (
+          document.visibilityState !==
+          "visible"
+        ) {
+          return;
+        }
+
+        void fetchAlerts({
           silent: true,
         });
       };
@@ -868,11 +990,28 @@ export default function useSmartNotifications(
           return;
         }
 
+        invalidateSharedSmartAlertCache(
+          sessionKey
+        );
         requestSilentRefresh();
       };
 
-    const handleWindowFocus =
-      () => {
+    const handleSmartAlertsUpdated =
+      (event) => {
+        const updatedSessionKey =
+          String(
+            event?.detail?.sessionKey ||
+              ""
+          );
+
+        if (
+          updatedSessionKey &&
+          updatedSessionKey !==
+            sessionKey
+        ) {
+          return;
+        }
+
         requestSilentRefresh();
       };
 
@@ -909,8 +1048,8 @@ export default function useSmartNotifications(
     );
 
     window.addEventListener(
-      "focus",
-      handleWindowFocus
+      "smartAlertsUpdated",
+      handleSmartAlertsUpdated
     );
 
     window.addEventListener(
@@ -930,8 +1069,8 @@ export default function useSmartNotifications(
       );
 
       window.removeEventListener(
-        "focus",
-        handleWindowFocus
+        "smartAlertsUpdated",
+        handleSmartAlertsUpdated
       );
 
       window.removeEventListener(
@@ -956,6 +1095,7 @@ export default function useSmartNotifications(
     fetchAlerts,
     hasPolling,
     pollInterval,
+    sessionKey,
   ]);
 
   return {
@@ -987,7 +1127,7 @@ export default function useSmartNotifications(
     error,
 
     refresh:
-      fetchAlerts,
+      refreshAlerts,
 
     markAlertAsRead,
     dismissAlert,

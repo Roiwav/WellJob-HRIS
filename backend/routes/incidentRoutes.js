@@ -4,6 +4,7 @@ const {
   getIncidents,
   getIncidentsByEmployee,
   getIncidentById,
+  getIncidentFormMeta,
   createIncident,
   updateIncidentStatus,
   deleteIncident,
@@ -110,6 +111,23 @@ router.get(
     "HR_STAFF"
   ),
   getIncidents
+);
+
+/*
+ * Lightweight deployed-employee search for the
+ * Add Incident form.
+ *
+ * Must remain above /incidents/:id so Express does
+ * not interpret "form-meta" as an incident ID.
+ */
+router.get(
+  "/incidents/form-meta",
+  verifyToken,
+  authorizeRoles(
+    "HR_MANAGER",
+    "HR_STAFF"
+  ),
+  getIncidentFormMeta
 );
 
 /*

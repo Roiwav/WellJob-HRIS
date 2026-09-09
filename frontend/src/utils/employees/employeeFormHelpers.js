@@ -1,6 +1,5 @@
 import {
   DOCUMENT_OPTIONS,
-  MIN_DEPLOYED_DOCUMENTS,
   normalizeName,
   toProperName,
 } from "../../components/employees/employeeConstants";
@@ -578,20 +577,6 @@ export function validateEmployeeForm({
     }
   );
 
-  const completedDocuments =
-    getCompletedDocuments(
-      documents
-    );
-
-  if (
-    isDeployed &&
-    completedDocuments.length <
-      MIN_DEPLOYED_DOCUMENTS
-  ) {
-    errors.documents.general =
-      `At least ${MIN_DEPLOYED_DOCUMENTS} complete compliance documents are required for deployed employees.`;
-  }
-
   const hasDocumentErrors =
     Object.values(
       errors.documents
@@ -698,19 +683,14 @@ export function getComplianceReviewWarning(
     ).length;
 
   if (
-    formData?.status ===
-      "Deployed" &&
-    completedCount <
-      MIN_DEPLOYED_DOCUMENTS
-  ) {
-    return `Only ${completedCount}/${DOCUMENT_OPTIONS.length} documents are complete. A minimum of ${MIN_DEPLOYED_DOCUMENTS} complete documents is required for deployed employees.`;
-  }
-
-  if (
     completedCount <
     DOCUMENT_OPTIONS.length
   ) {
-    return `Compliance is incomplete. ${completedCount}/${DOCUMENT_OPTIONS.length} documents are complete.`;
+    const pendingCount =
+      DOCUMENT_OPTIONS.length -
+      completedCount;
+
+    return `${completedCount} of ${DOCUMENT_OPTIONS.length} compliance requirements submitted. ${pendingCount} requirement${pendingCount === 1 ? "" : "s"} pending. Remaining documents may be submitted later.`;
   }
 
   return "";

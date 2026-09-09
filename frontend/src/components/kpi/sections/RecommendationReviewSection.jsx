@@ -34,7 +34,7 @@ import {
 
 import {
   useCreateKPIDecisionMutation,
-  useKPIDecisionHistoryQuery,
+  useKPIDecisionLatestQuery,
 } from "../../../hooks/useKPIDecisionQueries";
 
 const FINAL_ACTION_OPTIONS =
@@ -757,7 +757,7 @@ export default function RecommendationReviewSection({
 
   const {
     data:
-      decisionHistoryData,
+      decisionSnapshotData,
 
     isLoading:
       isHistoryLoading,
@@ -771,20 +771,28 @@ export default function RecommendationReviewSection({
     refetch:
       refetchDecisionHistory,
   } =
-    useKPIDecisionHistoryQuery();
+    useKPIDecisionLatestQuery();
 
   const decisionHistory =
     useMemo(
       () => {
         return Array.isArray(
-          decisionHistoryData
+          decisionSnapshotData
+            ?.decisions
         )
-          ? decisionHistoryData
+          ? decisionSnapshotData
+              .decisions
           : [];
       },
       [
-        decisionHistoryData,
+        decisionSnapshotData,
       ]
+    );
+
+  const recordedDecisionCount =
+    Number(
+      decisionSnapshotData?.total ||
+        0
     );
 
   const allPendingEmployees =
@@ -1020,7 +1028,7 @@ export default function RecommendationReviewSection({
 
                 <p className="mt-1 text-xl font-extrabold">
                   {
-                    decisionHistory.length
+                    recordedDecisionCount
                   }
                 </p>
               </div>

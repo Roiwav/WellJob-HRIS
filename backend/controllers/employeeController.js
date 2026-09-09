@@ -59,6 +59,85 @@ function toNullableDate(value) {
   );
 }
 
+const EMPLOYEE_STATUS =
+  Object.freeze({
+    DEPLOYED:
+      "Deployed",
+
+    FLOATING_STANDBY:
+      "Floating / Standby",
+
+    INACTIVE:
+      "Inactive",
+  });
+
+const EDITABLE_EMPLOYEE_STATUSES =
+  new Set([
+    EMPLOYEE_STATUS.DEPLOYED,
+    EMPLOYEE_STATUS.FLOATING_STANDBY,
+  ]);
+
+const EMPLOYEE_STATUS_ALIASES =
+  Object.freeze({
+    deployed:
+      EMPLOYEE_STATUS.DEPLOYED,
+
+    "active deployed":
+      EMPLOYEE_STATUS.DEPLOYED,
+
+    floating:
+      EMPLOYEE_STATUS.FLOATING_STANDBY,
+
+    standby:
+      EMPLOYEE_STATUS.FLOATING_STANDBY,
+
+    "floating / standby":
+      EMPLOYEE_STATUS.FLOATING_STANDBY,
+
+    "floating/standby":
+      EMPLOYEE_STATUS.FLOATING_STANDBY,
+
+    inactive:
+      EMPLOYEE_STATUS.INACTIVE,
+  });
+
+function normalizeEmployeeStatus(
+  value
+) {
+  const normalized =
+    toNullable(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return (
+    EMPLOYEE_STATUS_ALIASES[
+      normalized.toLowerCase()
+    ] || null
+  );
+}
+
+function resolveEditableEmployeeStatus(
+  value
+) {
+  const normalized =
+    normalizeEmployeeStatus(
+      value
+    );
+
+  if (
+    !normalized ||
+    !EDITABLE_EMPLOYEE_STATUSES.has(
+      normalized
+    )
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
 /*
  * TRUSTED AUDIT ACTOR
  *
@@ -382,22 +461,42 @@ exports.createEmployee = async (
     const finalName =
       toNullable(name);
 
+    const submittedStatus =
+      toNullable(status);
+
     const finalStatus =
-      toNullable(status) ||
-      "Deployed";
+      submittedStatus
+        ? resolveEditableEmployeeStatus(
+            submittedStatus
+          )
+        : EMPLOYEE_STATUS.DEPLOYED;
+
+    if (!finalStatus) {
+      return await rejectEmployeeRequest(
+        req,
+        res,
+        "Employee status must be either Deployed or Floating / Standby."
+      );
+    }
 
     const finalCompany =
       finalStatus ===
-      "Deployed"
+      EMPLOYEE_STATUS.DEPLOYED
         ? toNullable(
             company
           )
         : null;
 
-    const finalContractStart =
+    const submittedContractStart =
       toNullableDate(
         contractStart
       );
+
+    const finalContractStart =
+      finalStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+        ? submittedContractStart
+        : null;
 
     if (!finalName) {
       return await rejectEmployeeRequest(
@@ -409,13 +508,25 @@ exports.createEmployee = async (
 
     if (
       finalStatus ===
-        "Deployed" &&
+        EMPLOYEE_STATUS.DEPLOYED &&
       !finalCompany
     ) {
       return await rejectEmployeeRequest(
         req,
         res,
         "Company is required for deployed employees."
+      );
+    }
+
+    if (
+      finalStatus ===
+        EMPLOYEE_STATUS.DEPLOYED &&
+      !finalContractStart
+    ) {
+      return await rejectEmployeeRequest(
+        req,
+        res,
+        "Deployment start date is required for deployed employees."
       );
     }
 
@@ -457,6 +568,83 @@ exports.createEmployee = async (
 
     const employeeId =
       result.insertId;
+
+    /*
+     * Initial workforce status is preserved as
+     * effective-dated employee history.
+     *
+     * For deployed employees, the effective date
+     * is the deployment start date entered by HR.
+     * For an initially floating/standby employee,
+     * the record-creation time becomes the initial
+     * status effective time.
+     */
+    await connection.query(
+      `
+      INSERT INTO employee_status_history
+      (
+        employee_id,
+        from_status,
+        to_status,
+        effective_at,
+        reason,
+        source_event,
+        changed_by_user_id
+      )
+      VALUES (
+        ?,
+        NULL,
+        ?,
+        COALESCE(?, NOW()),
+        ?,
+        ?,
+        ?
+      )
+      `,
+      [
+        employeeId,
+        finalStatus,
+        finalContractStart
+          ? `${finalContractStart} 00:00:00`
+          : null,
+        "Initial employee record",
+        "EMPLOYEE_CREATED",
+        actor.userId,
+      ]
+    );
+
+    /*
+     * A deployed employee must also have one
+     * authoritative active assignment row.
+     *
+     * Floating / Standby employees intentionally
+     * receive no fabricated deployment assignment.
+     */
+    if (
+      finalStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+    ) {
+      await connection.query(
+        `
+        INSERT INTO deployment_assignments
+        (
+          employee_id,
+          company,
+          position,
+          start_date,
+          status,
+          created_by_user_id
+        )
+        VALUES (?, ?, NULL, ?, 'Active', ?)
+        `,
+        [
+          employeeId,
+          finalCompany,
+          finalContractStart,
+          actor.userId,
+        ]
+      );
+    }
 
     for (
       const doc of documents
@@ -578,16 +766,1018 @@ exports.createEmployee = async (
   }
 };
 
+function normalizeEmployeeLookupName(
+  value
+) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 255);
+}
+
+/*
+ * ==================================================
+ * EMPLOYEE FORM META
+ * ==================================================
+ *
+ * Returns a display-only next ID preview and,
+ * when a name is supplied, the matching employee
+ * needed for duplicate-name verification.
+ */
+exports.getEmployeeFormMeta = async (
+  req,
+  res
+) => {
+  try {
+    const name =
+      normalizeEmployeeLookupName(
+        req.query?.name
+      );
+
+    const excludeIdValue =
+      String(
+        req.query?.excludeId ??
+          ""
+      ).trim();
+
+    let excludeId = null;
+
+    if (excludeIdValue) {
+      const parsedExcludeId =
+        Number.parseInt(
+          excludeIdValue,
+          10
+        );
+
+      if (
+        !Number.isInteger(
+          parsedExcludeId
+        ) ||
+        parsedExcludeId <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid excluded employee ID.",
+          });
+      }
+
+      excludeId =
+        parsedExcludeId;
+    }
+
+    const nextIdQuery =
+      db.promise().query(`
+        SELECT
+          COALESCE(
+            (
+              SELECT
+                AUTO_INCREMENT
+              FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = 'employees'
+              LIMIT 1
+            ),
+            (
+              SELECT
+                COALESCE(
+                  MAX(id),
+                  0
+                ) + 1
+              FROM employees
+            ),
+            1
+          ) AS next_employee_id
+      `);
+
+    let duplicateQuery =
+      Promise.resolve([
+        [],
+        [],
+      ]);
+
+    if (name) {
+      const duplicateSql = `
+        SELECT
+          id,
+          name,
+          company,
+          status,
+          archived
+        FROM employees
+        WHERE LOWER(TRIM(name)) =
+          LOWER(?)
+        ${
+          excludeId
+            ? "AND id <> ?"
+            : ""
+        }
+        ORDER BY
+          archived ASC,
+          created_at DESC,
+          id DESC
+        LIMIT 1
+      `;
+
+      const duplicateParams =
+        excludeId
+          ? [
+              name,
+              excludeId,
+            ]
+          : [
+              name,
+            ];
+
+      duplicateQuery =
+        db.promise().query(
+          duplicateSql,
+          duplicateParams
+        );
+    }
+
+    const [
+      nextIdResult,
+      duplicateResult,
+    ] = await Promise.all([
+      nextIdQuery,
+      duplicateQuery,
+    ]);
+
+    const [nextIdRows] =
+      nextIdResult;
+
+    const [duplicateRows] =
+      duplicateResult;
+
+    const nextEmployeeId =
+      Number(
+        nextIdRows[
+          0
+        ]?.next_employee_id ||
+          1
+      );
+
+    return res.json({
+      employeeIdPreview:
+        `EMP${String(
+          nextEmployeeId
+        ).padStart(
+          3,
+          "0"
+        )}`,
+
+      duplicateEmployee:
+        duplicateRows[
+          0
+        ] || null,
+    });
+  } catch (err) {
+    console.error(
+      "FETCH EMPLOYEE FORM META ERROR:",
+      err
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Fetch employee form metadata error",
+      });
+  }
+};
+
+const REQUIRED_EMPLOYEE_DOCUMENT_NAMES =
+  Object.freeze([
+    "resume",
+    "nso/psa",
+    "sss (id or e1 form)",
+    "pag-ibig (id or mdrf form)",
+    "philhealth (id or mdf form)",
+    "diploma",
+    "cedula",
+    "barangay clearance",
+    "nbi/police clearance",
+  ]);
+
+const EXPIRABLE_EMPLOYEE_DOCUMENT_NAMES =
+  Object.freeze([
+    "barangay clearance",
+    "nbi/police clearance",
+  ]);
+
+const EMPLOYEE_COMPLIANCE_STATUSES =
+  new Set([
+    "Complete",
+    "Expiring Soon",
+    "Expired",
+    "Incomplete",
+    "No Data",
+  ]);
+
+const EMPLOYEE_SUMMARY_SORTS =
+  new Set([
+    "latest",
+    "name-asc",
+    "name-desc",
+    "expired-first",
+    "expiring-first",
+  ]);
+
+const EMPLOYEE_SUMMARY_SCOPES =
+  new Set([
+    "active",
+    "archived",
+    "all",
+  ]);
+
+const DEFAULT_EMPLOYEE_PAGE_SIZE =
+  50;
+
+const MAX_EMPLOYEE_PAGE_SIZE =
+  100;
+
+function toPositiveInteger(
+  value,
+  fallback
+) {
+  const parsed =
+    Number.parseInt(
+      String(value ?? ""),
+      10
+    );
+
+  return (
+    Number.isInteger(parsed) &&
+    parsed > 0
+  )
+    ? parsed
+    : fallback;
+}
+
+function normalizeEmployeeSummarySearch(
+  value
+) {
+  return String(value || "")
+    .trim()
+    .slice(0, 100);
+}
+
+function resolveEmployeeComplianceStatus(
+  summary
+) {
+  const documentCount =
+    Number(
+      summary?.document_count ||
+        0
+    );
+
+  if (documentCount === 0) {
+    return "No Data";
+  }
+
+  if (
+    Number(
+      summary?.expired_count ||
+        0
+    ) > 0
+  ) {
+    return "Expired";
+  }
+
+  if (
+    Number(
+      summary?.expiring_soon_count ||
+        0
+    ) > 0
+  ) {
+    return "Expiring Soon";
+  }
+
+  if (
+    Number(
+      summary?.complete_required_count ||
+        0
+    ) <
+    REQUIRED_EMPLOYEE_DOCUMENT_NAMES.length
+  ) {
+    return "Incomplete";
+  }
+
+  return "Complete";
+}
+
+function getEmployeeSummarySortSql(
+  sortBy,
+  complianceStatusSql = ""
+) {
+  if (sortBy === "name-asc") {
+    return "e.name ASC, e.id ASC";
+  }
+
+  if (sortBy === "name-desc") {
+    return "e.name DESC, e.id DESC";
+  }
+
+  if (
+    sortBy === "expired-first" ||
+    sortBy === "expiring-first"
+  ) {
+    return `
+      CASE ${complianceStatusSql}
+        WHEN 'Expired' THEN 1
+        WHEN 'Expiring Soon' THEN 2
+        WHEN 'Incomplete' THEN 3
+        WHEN 'Complete' THEN 4
+        WHEN 'No Data' THEN 5
+        ELSE 6
+      END ASC,
+      e.name ASC,
+      e.id ASC
+    `;
+  }
+
+  return "e.created_at DESC, e.id DESC";
+}
+
+function buildEmployeeSummaryFilters({
+  scope,
+  search,
+  status,
+  compliance,
+  complianceStatusSql = "",
+}) {
+  const where = [];
+  const params = [];
+
+  if (scope === "active") {
+    where.push(
+      "e.archived = 0",
+      "e.status <> 'Inactive'"
+    );
+  } else if (
+    scope === "archived"
+  ) {
+    where.push(
+      "(e.archived = 1 OR e.status = 'Inactive')"
+    );
+  }
+
+  if (search) {
+    const searchPattern =
+      `%${search.toLowerCase()}%`;
+
+    where.push(`
+      (
+        CAST(e.id AS CHAR) LIKE ?
+        OR LOWER(e.name) LIKE ?
+        OR LOWER(COALESCE(e.company, '')) LIKE ?
+        OR EXISTS (
+          SELECT 1
+          FROM deployment_assignments AS da_search
+          WHERE da_search.employee_id = e.id
+            AND LOWER(COALESCE(da_search.position, '')) LIKE ?
+        )
+      )
+    `);
+
+    params.push(
+      searchPattern,
+      searchPattern,
+      searchPattern,
+      searchPattern
+    );
+  }
+
+  if (
+    status &&
+    status !== "All"
+  ) {
+    where.push(
+      "e.status = ?"
+    );
+
+    params.push(
+      status
+    );
+  }
+
+  if (
+    compliance &&
+    compliance !== "All"
+  ) {
+    where.push(
+      `${complianceStatusSql} = ?`
+    );
+
+    params.push(
+      compliance
+    );
+  }
+
+  return {
+    whereSql:
+      where.length > 0
+        ? `WHERE ${where.join(
+            "\nAND "
+          )}`
+        : "",
+
+    params,
+  };
+}
+
+function createEmployeeComplianceSql(
+  employeeIds = []
+) {
+  const requiredNames =
+    REQUIRED_EMPLOYEE_DOCUMENT_NAMES
+      .map(() => "?")
+      .join(", ");
+
+  const expirableNames =
+    EXPIRABLE_EMPLOYEE_DOCUMENT_NAMES
+      .map(() => "?")
+      .join(", ");
+
+  const normalizedEmployeeIds =
+    Array.isArray(
+      employeeIds
+    )
+      ? employeeIds
+          .map((id) =>
+            Number.parseInt(
+              String(id),
+              10
+            )
+          )
+          .filter(
+            Number.isInteger
+          )
+      : [];
+
+  const employeeFilterSql =
+    normalizedEmployeeIds.length > 0
+      ? `
+        WHERE d.employee_id IN (
+          ${normalizedEmployeeIds
+            .map(() => "?")
+            .join(", ")}
+        )
+      `
+      : "";
+
+  const aggregateSql = `
+    SELECT
+      d.employee_id,
+      COUNT(*) AS document_count,
+      COUNT(
+        DISTINCT CASE
+          WHEN
+            LOWER(TRIM(d.name)) IN (${requiredNames})
+            AND TRIM(COALESCE(d.file_path, '')) <> ''
+            AND (
+              LOWER(TRIM(d.name)) NOT IN (${expirableNames})
+              OR d.expiration_date IS NOT NULL
+            )
+          THEN LOWER(TRIM(d.name))
+          ELSE NULL
+        END
+      ) AS complete_required_count,
+      MAX(
+        CASE
+          WHEN
+            LOWER(TRIM(d.name)) IN (${expirableNames})
+            AND TRIM(COALESCE(d.file_path, '')) <> ''
+            AND d.expiration_date < CURDATE()
+          THEN 1
+          ELSE 0
+        END
+      ) AS expired_count,
+      MAX(
+        CASE
+          WHEN
+            LOWER(TRIM(d.name)) IN (${expirableNames})
+            AND TRIM(COALESCE(d.file_path, '')) <> ''
+            AND d.expiration_date BETWEEN
+              CURDATE()
+              AND DATE_ADD(
+                CURDATE(),
+                INTERVAL 30 DAY
+              )
+          THEN 1
+          ELSE 0
+        END
+      ) AS expiring_soon_count
+    FROM employee_documents AS d
+    ${employeeFilterSql}
+    GROUP BY d.employee_id
+  `;
+
+  const params = [
+    ...REQUIRED_EMPLOYEE_DOCUMENT_NAMES,
+    ...EXPIRABLE_EMPLOYEE_DOCUMENT_NAMES,
+    ...EXPIRABLE_EMPLOYEE_DOCUMENT_NAMES,
+    ...EXPIRABLE_EMPLOYEE_DOCUMENT_NAMES,
+    ...normalizedEmployeeIds,
+  ];
+
+  return {
+    aggregateSql,
+    params,
+  };
+}
+
 /*
  * ==================================================
  * GET EMPLOYEES
  * ==================================================
+ *
+ * Default mode preserves the existing full response.
+ * view=summary provides a paginated lightweight list.
  */
 exports.getEmployees = async (
   req,
   res
 ) => {
   try {
+    const view =
+      String(
+        req.query?.view ||
+          ""
+      )
+        .trim()
+        .toLowerCase();
+
+    if (view === "summary") {
+      const page =
+        toPositiveInteger(
+          req.query?.page,
+          1
+        );
+
+      const requestedPageSize =
+        toPositiveInteger(
+          req.query?.pageSize,
+          DEFAULT_EMPLOYEE_PAGE_SIZE
+        );
+
+      const pageSize =
+        Math.min(
+          requestedPageSize,
+          MAX_EMPLOYEE_PAGE_SIZE
+        );
+
+      const offset =
+        (page - 1) *
+        pageSize;
+
+      const search =
+        normalizeEmployeeSummarySearch(
+          req.query?.search
+        );
+
+      const scopeInput =
+        String(
+          req.query?.scope ||
+            "active"
+        )
+          .trim()
+          .toLowerCase();
+
+      const scope =
+        EMPLOYEE_SUMMARY_SCOPES.has(
+          scopeInput
+        )
+          ? scopeInput
+          : "active";
+
+      const sortInput =
+        String(
+          req.query?.sort ||
+            "latest"
+        ).trim();
+
+      const sortBy =
+        EMPLOYEE_SUMMARY_SORTS.has(
+          sortInput
+        )
+          ? sortInput
+          : "latest";
+
+      const statusInput =
+        String(
+          req.query?.status ||
+            "All"
+        ).trim();
+
+      const status =
+        statusInput === "All"
+          ? "All"
+          : normalizeEmployeeStatus(
+              statusInput
+            );
+
+      if (!status) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid employee status filter.",
+          });
+      }
+
+      const compliance =
+        String(
+          req.query?.compliance ||
+            "All"
+        ).trim();
+
+      if (
+        compliance !== "All" &&
+        !EMPLOYEE_COMPLIANCE_STATUSES.has(
+          compliance
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid compliance filter.",
+          });
+      }
+
+      const complianceSensitiveSort =
+        sortBy === "expired-first" ||
+        sortBy === "expiring-first";
+
+      const needsGlobalCompliance =
+        compliance !== "All" ||
+        complianceSensitiveSort;
+
+      const activeTotalSql = `
+        SELECT
+          COUNT(*) AS total
+        FROM employees
+        WHERE archived = 0
+          AND status <> 'Inactive'
+      `;
+
+      if (!needsGlobalCompliance) {
+        const {
+          whereSql,
+          params:
+            filterParams,
+        } =
+          buildEmployeeSummaryFilters({
+            scope,
+            search,
+            status,
+            compliance:
+              "All",
+          });
+
+        const orderBySql =
+          getEmployeeSummarySortSql(
+            sortBy
+          );
+
+        const dataSql = `
+          SELECT
+            e.id,
+            e.name,
+            e.company,
+            (
+              SELECT da_position.position
+              FROM deployment_assignments AS da_position
+              WHERE da_position.employee_id = e.id
+              ORDER BY
+                da_position.start_date DESC,
+                da_position.id DESC
+              LIMIT 1
+            ) AS position,
+            e.status,
+            e.contractStart,
+            e.contractEnd,
+            e.contractEndReason,
+            e.contractEndedAt,
+            e.created_at,
+            e.updated_at,
+            e.archived
+          FROM employees AS e
+          ${whereSql}
+          ORDER BY
+            ${orderBySql}
+          LIMIT ${pageSize}
+          OFFSET ${offset}
+        `;
+
+        const countSql = `
+          SELECT
+            COUNT(*) AS total
+          FROM employees AS e
+          ${whereSql}
+        `;
+
+        const [
+          dataResult,
+          countResult,
+          activeTotalResult,
+        ] = await Promise.all([
+          db.promise().query(
+            dataSql,
+            filterParams
+          ),
+
+          db.promise().query(
+            countSql,
+            filterParams
+          ),
+
+          db.promise().query(
+            activeTotalSql
+          ),
+        ]);
+
+        const [employees] =
+          dataResult;
+
+        const [[countRow]] =
+          countResult;
+
+        const [[activeTotalRow]] =
+          activeTotalResult;
+
+        const employeeIds =
+          employees.map(
+            (employee) =>
+              employee.id
+          );
+
+        let complianceRows = [];
+
+        if (
+          employeeIds.length > 0
+        ) {
+          const {
+            aggregateSql,
+            params,
+          } =
+            createEmployeeComplianceSql(
+              employeeIds
+            );
+
+          const [
+            complianceResult,
+          ] =
+            await db.promise().query(
+              aggregateSql,
+              params
+            );
+
+          complianceRows =
+            complianceResult;
+        }
+
+        const complianceByEmployeeId =
+          new Map(
+            complianceRows.map(
+              (row) => [
+                Number(
+                  row.employee_id
+                ),
+                row,
+              ]
+            )
+          );
+
+        const result =
+          employees.map(
+            (employee) => ({
+              ...employee,
+
+              complianceStatus:
+                resolveEmployeeComplianceStatus(
+                  complianceByEmployeeId.get(
+                    Number(
+                      employee.id
+                    )
+                  )
+                ),
+            })
+          );
+
+        const total =
+          Number(
+            countRow?.total ||
+              0
+          );
+
+        const activeTotal =
+          Number(
+            activeTotalRow?.total ||
+              0
+          );
+
+        return res.json({
+          employees:
+            result,
+
+          pagination: {
+            page,
+            pageSize,
+            total,
+            totalPages:
+              total > 0
+                ? Math.ceil(
+                    total /
+                      pageSize
+                  )
+                : 0,
+            activeTotal,
+          },
+
+          filters: {
+            scope,
+            search,
+            status,
+            compliance,
+            sort:
+              sortBy,
+          },
+        });
+      }
+
+      /*
+       * Compliance-specific filtering/sorting must
+       * evaluate the full matching set before LIMIT.
+       * This path runs only when the user explicitly
+       * requests a compliance filter or sort.
+       */
+      const {
+        aggregateSql,
+        params:
+          complianceParams,
+      } =
+        createEmployeeComplianceSql();
+
+      const complianceStatusSql = `
+        CASE
+          WHEN COALESCE(c.document_count, 0) = 0
+            THEN 'No Data'
+          WHEN COALESCE(c.expired_count, 0) > 0
+            THEN 'Expired'
+          WHEN COALESCE(c.expiring_soon_count, 0) > 0
+            THEN 'Expiring Soon'
+          WHEN COALESCE(c.complete_required_count, 0) <
+            ${REQUIRED_EMPLOYEE_DOCUMENT_NAMES.length}
+            THEN 'Incomplete'
+          ELSE 'Complete'
+        END
+      `;
+
+      const {
+        whereSql,
+        params:
+          filterParams,
+      } =
+        buildEmployeeSummaryFilters({
+          scope,
+          search,
+          status,
+          compliance,
+          complianceStatusSql,
+        });
+
+      const orderBySql =
+        getEmployeeSummarySortSql(
+          sortBy,
+          complianceStatusSql
+        );
+
+      const dataSql = `
+        SELECT
+          e.id,
+          e.name,
+          e.company,
+          (
+            SELECT da_position.position
+            FROM deployment_assignments AS da_position
+            WHERE da_position.employee_id = e.id
+            ORDER BY
+              da_position.start_date DESC,
+              da_position.id DESC
+            LIMIT 1
+          ) AS position,
+          e.status,
+          e.contractStart,
+          e.contractEnd,
+          e.contractEndReason,
+          e.contractEndedAt,
+          e.created_at,
+          e.updated_at,
+          e.archived,
+          ${complianceStatusSql}
+            AS complianceStatus
+        FROM employees AS e
+        LEFT JOIN (
+          ${aggregateSql}
+        ) AS c
+          ON c.employee_id = e.id
+        ${whereSql}
+        ORDER BY
+          ${orderBySql}
+        LIMIT ${pageSize}
+        OFFSET ${offset}
+      `;
+
+      const countSql = `
+        SELECT
+          COUNT(*) AS total
+        FROM employees AS e
+        LEFT JOIN (
+          ${aggregateSql}
+        ) AS c
+          ON c.employee_id = e.id
+        ${whereSql}
+      `;
+
+      const [
+        dataResult,
+        countResult,
+        activeTotalResult,
+      ] = await Promise.all([
+        db.promise().query(
+          dataSql,
+          [
+            ...complianceParams,
+            ...filterParams,
+          ]
+        ),
+
+        db.promise().query(
+          countSql,
+          [
+            ...complianceParams,
+            ...filterParams,
+          ]
+        ),
+
+        db.promise().query(
+          activeTotalSql
+        ),
+      ]);
+
+      const [employees] =
+        dataResult;
+
+      const [[countRow]] =
+        countResult;
+
+      const [[activeTotalRow]] =
+        activeTotalResult;
+
+      const total =
+        Number(
+          countRow?.total ||
+            0
+        );
+
+      const activeTotal =
+        Number(
+          activeTotalRow?.total ||
+            0
+        );
+
+      return res.json({
+        employees,
+
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages:
+            total > 0
+              ? Math.ceil(
+                  total /
+                    pageSize
+                )
+              : 0,
+          activeTotal,
+        },
+
+        filters: {
+          scope,
+          search,
+          status,
+          compliance,
+          sort:
+            sortBy,
+        },
+      });
+    }
+
     const [
       employeeResult,
       documentResult,
@@ -690,6 +1880,107 @@ exports.getEmployees = async (
   }
 };
 
+
+/*
+ * ==================================================
+ * GET EMPLOYEE BY ID
+ * ==================================================
+ *
+ * Fetches one employee and only that employee's
+ * documents for on-demand detail/edit workflows.
+ */
+exports.getEmployeeById = async (
+  req,
+  res
+) => {
+  try {
+    const { id } =
+      req.params;
+
+    const [rows] =
+      await db
+        .promise()
+        .query(
+          `
+          SELECT
+            e.*,
+            d.id AS document_id,
+            d.name AS document_name,
+            d.expiration_date AS document_expiration_date,
+            d.file_path AS document_file_path
+          FROM employees AS e
+          LEFT JOIN employee_documents AS d
+            ON d.employee_id = e.id
+          WHERE e.id = ?
+          ORDER BY d.id ASC
+          `,
+          [id]
+        );
+
+    if (rows.length === 0) {
+      return res
+        .status(404)
+        .json({
+          error:
+            "Employee not found.",
+        });
+    }
+
+    const firstRow =
+      rows[0];
+
+    const employee = {
+      ...firstRow,
+    };
+
+    delete employee.document_id;
+    delete employee.document_name;
+    delete employee.document_expiration_date;
+    delete employee.document_file_path;
+
+    employee.documents =
+      rows
+        .filter(
+          (row) =>
+            row.document_id !==
+              null &&
+            row.document_id !==
+              undefined
+        )
+        .map(
+          (row) => ({
+            id:
+              row.document_id,
+
+            name:
+              row.document_name,
+
+            expirationDate:
+              row.document_expiration_date,
+
+            filePath:
+              row.document_file_path,
+          })
+        );
+
+    return res.json(
+      employee
+    );
+  } catch (err) {
+    console.error(
+      "FETCH EMPLOYEE BY ID ERROR:",
+      err
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Fetch employee error",
+      });
+  }
+};
+
 /*
  * ==================================================
  * UPDATE EMPLOYEE
@@ -733,6 +2024,15 @@ exports.updateEmployee = async (
   let transactionCommitted =
     false;
 
+  let isRedeployment =
+    false;
+
+  let newAssignmentId =
+    null;
+
+  let finalEmployeeName =
+    "Unknown Employee";
+
   const historicalFileCandidates =
     [];
 
@@ -750,22 +2050,26 @@ exports.updateEmployee = async (
     const finalName =
       toNullable(name);
 
-    const finalStatus =
-      toNullable(status) ||
-      "Deployed";
+    const submittedStatus =
+      toNullable(status);
 
-    const finalCompany =
-      finalStatus ===
-      "Deployed"
-        ? toNullable(
-            company
+    const requestedStatus =
+      submittedStatus
+        ? resolveEditableEmployeeStatus(
+            submittedStatus
           )
         : null;
 
-    const finalContractStart =
-      toNullableDate(
-        contractStart
+    if (
+      submittedStatus &&
+      !requestedStatus
+    ) {
+      return await rejectEmployeeRequest(
+        req,
+        res,
+        "Employee status must be either Deployed or Floating / Standby."
       );
+    }
 
     if (!finalName) {
       return await rejectEmployeeRequest(
@@ -775,17 +2079,13 @@ exports.updateEmployee = async (
       );
     }
 
-    if (
-      finalStatus ===
-        "Deployed" &&
-      !finalCompany
-    ) {
-      return await rejectEmployeeRequest(
-        req,
-        res,
-        "Company is required for deployed employees."
+    const submittedCompany =
+      toNullable(company);
+
+    const submittedContractStart =
+      toNullableDate(
+        contractStart
       );
-    }
 
     const frontendDocs =
       extractDocumentsFromReq(
@@ -803,24 +2103,415 @@ exports.updateEmployee = async (
     transactionStarted =
       true;
 
-    await connection.query(
-      `
-      UPDATE employees
-      SET
-        name = ?,
-        company = ?,
-        status = ?,
-        contractStart = ?
-      WHERE id = ?
-      `,
-      [
-        finalName,
-        finalCompany,
-        finalStatus,
-        finalContractStart,
-        id,
-      ]
-    );
+    const rejectAfterRollback =
+      async (
+        statusCode,
+        message
+      ) => {
+        await connection.rollback();
+
+        transactionStarted =
+          false;
+
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(statusCode)
+          .json({
+            error:
+              message,
+          });
+      };
+
+    /*
+     * Lock the current employee row before deciding
+     * whether this is a normal edit or redeployment.
+     */
+    const [
+      employeeRows,
+    ] =
+      await connection.query(
+        `
+        SELECT
+          id,
+          name,
+          company,
+          status,
+          contractStart,
+          contractEnd,
+          contractEndReason,
+          contractEndRemarks,
+          contractEndedAt,
+          archived
+        FROM employees
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+    if (
+      employeeRows.length ===
+      0
+    ) {
+      return await rejectAfterRollback(
+        404,
+        "Employee not found."
+      );
+    }
+
+    const currentEmployee =
+      employeeRows[0];
+
+    finalEmployeeName =
+      finalName ||
+      currentEmployee.name ||
+      "Unknown Employee";
+
+    if (
+      Number(
+        currentEmployee.archived ||
+        0
+      ) === 1
+    ) {
+      return await rejectAfterRollback(
+        409,
+        "Archived employees cannot be updated through the active employee workflow."
+      );
+    }
+
+    const currentStatus =
+      normalizeEmployeeStatus(
+        currentEmployee.status
+      );
+
+    if (!currentStatus) {
+      return await rejectAfterRollback(
+        409,
+        "The employee has an unsupported current status. Resolve the employee status before editing this record."
+      );
+    }
+
+    if (
+      currentStatus ===
+      EMPLOYEE_STATUS.INACTIVE
+    ) {
+      return await rejectAfterRollback(
+        409,
+        "Inactive employees cannot be reactivated through the standard employee edit workflow."
+      );
+    }
+
+    const finalStatus =
+      requestedStatus ||
+      currentStatus;
+
+    if (
+      currentStatus ===
+        EMPLOYEE_STATUS.DEPLOYED &&
+      finalStatus ===
+        EMPLOYEE_STATUS.FLOATING_STANDBY
+    ) {
+      return await rejectAfterRollback(
+        409,
+        "A deployed employee must use the End Assignment workflow before becoming Floating / Standby."
+      );
+    }
+
+    const [
+      activeAssignments,
+    ] =
+      await connection.query(
+        `
+        SELECT
+          id,
+          company,
+          start_date
+        FROM deployment_assignments
+        WHERE employee_id = ?
+          AND status = 'Active'
+        ORDER BY
+          start_date DESC,
+          id DESC
+        LIMIT 2
+        FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+    if (
+      activeAssignments.length >
+      1
+    ) {
+      return await rejectAfterRollback(
+        409,
+        "Multiple active deployment assignments were found for this employee. Resolve the assignment records before editing the employee."
+      );
+    }
+
+    if (
+      currentStatus ===
+        EMPLOYEE_STATUS.DEPLOYED &&
+      activeAssignments.length !==
+        1
+    ) {
+      return await rejectAfterRollback(
+        409,
+        "The deployed employee does not have exactly one active deployment assignment."
+      );
+    }
+
+    if (
+      currentStatus ===
+        EMPLOYEE_STATUS.FLOATING_STANDBY &&
+      activeAssignments.length !==
+        0
+    ) {
+      return await rejectAfterRollback(
+        409,
+        "A Floating / Standby employee cannot have an active deployment assignment."
+      );
+    }
+
+    isRedeployment =
+      currentStatus ===
+        EMPLOYEE_STATUS.FLOATING_STANDBY &&
+      finalStatus ===
+        EMPLOYEE_STATUS.DEPLOYED;
+
+    const currentCompany =
+      toNullable(
+        currentEmployee.company
+      );
+
+    const currentContractStart =
+      toNullableDate(
+        currentEmployee.contractStart
+      );
+
+    const finalCompany =
+      finalStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+        ? (
+            submittedCompany ||
+            (
+              currentStatus ===
+              EMPLOYEE_STATUS.DEPLOYED
+                ? currentCompany
+                : null
+            )
+          )
+        : null;
+
+    const finalContractStart =
+      finalStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+        ? (
+            submittedContractStart ||
+            (
+              currentStatus ===
+              EMPLOYEE_STATUS.DEPLOYED
+                ? currentContractStart
+                : null
+            )
+          )
+        : currentContractStart;
+
+    if (
+      finalStatus ===
+        EMPLOYEE_STATUS.DEPLOYED &&
+      !finalCompany
+    ) {
+      return await rejectAfterRollback(
+        400,
+        "Company is required for deployed employees."
+      );
+    }
+
+    if (
+      finalStatus ===
+        EMPLOYEE_STATUS.DEPLOYED &&
+      !finalContractStart
+    ) {
+      return await rejectAfterRollback(
+        400,
+        "Deployment start date is required for deployed employees."
+      );
+    }
+
+    if (isRedeployment) {
+      /*
+       * Redeployment starts a NEW assignment.
+       *
+       * Previous completed/cancelled assignment rows
+       * are preserved as history.
+       */
+      const [
+        assignmentResult,
+      ] =
+        await connection.query(
+          `
+          INSERT INTO deployment_assignments
+          (
+            employee_id,
+            company,
+            position,
+            start_date,
+            status,
+            created_by_user_id
+          )
+          VALUES (?, ?, NULL, ?, 'Active', ?)
+          `,
+          [
+            id,
+            finalCompany,
+            finalContractStart,
+            actor.userId,
+          ]
+        );
+
+      newAssignmentId =
+        assignmentResult.insertId;
+
+      await connection.query(
+        `
+        INSERT INTO employee_status_history
+        (
+          employee_id,
+          from_status,
+          to_status,
+          effective_at,
+          reason,
+          remarks,
+          source_event,
+          changed_by_user_id
+        )
+        VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+        `,
+        [
+          id,
+          EMPLOYEE_STATUS.FLOATING_STANDBY,
+          EMPLOYEE_STATUS.DEPLOYED,
+          `${finalContractStart} 00:00:00`,
+          "Redeployed to client assignment",
+          "EMPLOYEE_REDEPLOYED",
+          actor.userId,
+        ]
+      );
+
+      /*
+       * employees remains the current-state
+       * compatibility/master record.
+       *
+       * Prior assignment-end fields are safe to
+       * clear here because historical assignment
+       * and status records are now preserved.
+       */
+      await connection.query(
+        `
+        UPDATE employees
+        SET
+          name = ?,
+          company = ?,
+          status = ?,
+          contractStart = ?,
+          contractEnd = NULL,
+          contractEndReason = NULL,
+          contractEndRemarks = NULL,
+          contractEndedAt = NULL
+        WHERE id = ?
+        `,
+        [
+          finalName,
+          finalCompany,
+          EMPLOYEE_STATUS.DEPLOYED,
+          finalContractStart,
+          id,
+        ]
+      );
+    } else if (
+      finalStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+    ) {
+      /*
+       * Normal edit while currently deployed.
+       *
+       * Keep the authoritative active assignment
+       * synchronized with corrected company/start
+       * details instead of creating a second row.
+       */
+      const activeAssignment =
+        activeAssignments[0];
+
+      await connection.query(
+        `
+        UPDATE deployment_assignments
+        SET
+          company = ?,
+          start_date = ?
+        WHERE id = ?
+          AND status = 'Active'
+        `,
+        [
+          finalCompany,
+          finalContractStart,
+          activeAssignment.id,
+        ]
+      );
+
+      await connection.query(
+        `
+        UPDATE employees
+        SET
+          name = ?,
+          company = ?,
+          status = ?,
+          contractStart = ?,
+          contractEnd = NULL,
+          contractEndReason = NULL,
+          contractEndRemarks = NULL,
+          contractEndedAt = NULL
+        WHERE id = ?
+        `,
+        [
+          finalName,
+          finalCompany,
+          EMPLOYEE_STATUS.DEPLOYED,
+          finalContractStart,
+          id,
+        ]
+      );
+    } else {
+      /*
+       * Floating / Standby normal edit.
+       *
+       * Do not fabricate an assignment and do not
+       * alter the preserved previous assignment-end
+       * metadata through a generic profile edit.
+       */
+      await connection.query(
+        `
+        UPDATE employees
+        SET
+          name = ?,
+          company = NULL,
+          status = ?
+        WHERE id = ?
+        `,
+        [
+          finalName,
+          EMPLOYEE_STATUS.FLOATING_STANDBY,
+          id,
+        ]
+      );
+    }
 
     const [
       existingDocs,
@@ -941,11 +2632,6 @@ exports.updateEmployee = async (
     transactionCommitted =
       true;
 
-    /*
-     * Release the transaction connection before
-     * post-commit cleanup performs its own
-     * reference-count queries through the pool.
-     */
     connection.release();
 
     connection = null;
@@ -972,17 +2658,40 @@ exports.updateEmployee = async (
         AUDIT_CATEGORY.OPERATIONAL,
 
       action:
-        "UPDATE_EMPLOYEE",
+        isRedeployment
+          ? "REDEPLOY_EMPLOYEE"
+          : "UPDATE_EMPLOYEE",
 
       description:
-        `${actor.fullName} updated employee record for ${finalName}.`,
+        isRedeployment
+          ? `${actor.fullName} redeployed employee ${finalEmployeeName} to ${finalCompany}.`
+          : `${actor.fullName} updated employee record for ${finalEmployeeName}.`,
     });
 
     return res.json({
       success: true,
 
       message:
-        "Employee updated successfully.",
+        isRedeployment
+          ? "Employee redeployed successfully."
+          : "Employee updated successfully.",
+
+      employeeId:
+        id,
+
+      employeeStatus:
+        finalStatus,
+
+      assignmentId:
+        isRedeployment
+          ? newAssignmentId
+          : (
+              finalStatus ===
+                EMPLOYEE_STATUS.DEPLOYED
+                ? activeAssignments[0]?.id ||
+                  null
+                : null
+            ),
     });
   } catch (err) {
     let rollbackSucceeded =
@@ -1042,7 +2751,7 @@ const CONTRACT_END_REASON_RULES =
   {
     "Completed Contract": {
       employeeStatus:
-        "Floating / Standby",
+        EMPLOYEE_STATUS.FLOATING_STANDBY,
 
       deploymentStatus:
         "Completed",
@@ -1051,7 +2760,7 @@ const CONTRACT_END_REASON_RULES =
     "End of Assignment / Pulled Out by Client":
       {
         employeeStatus:
-          "Floating / Standby",
+          EMPLOYEE_STATUS.FLOATING_STANDBY,
 
         deploymentStatus:
           "Completed",
@@ -1060,7 +2769,7 @@ const CONTRACT_END_REASON_RULES =
     "Transferred / Reassigned":
       {
         employeeStatus:
-          "Floating / Standby",
+          EMPLOYEE_STATUS.FLOATING_STANDBY,
 
         deploymentStatus:
           "Completed",
@@ -1068,7 +2777,7 @@ const CONTRACT_END_REASON_RULES =
 
     Resigned: {
       employeeStatus:
-        "Inactive",
+        EMPLOYEE_STATUS.INACTIVE,
 
       deploymentStatus:
         "Cancelled",
@@ -1076,7 +2785,7 @@ const CONTRACT_END_REASON_RULES =
 
     AWOL: {
       employeeStatus:
-        "Inactive",
+        EMPLOYEE_STATUS.INACTIVE,
 
       deploymentStatus:
         "Cancelled",
@@ -1084,7 +2793,7 @@ const CONTRACT_END_REASON_RULES =
 
     Terminated: {
       employeeStatus:
-        "Inactive",
+        EMPLOYEE_STATUS.INACTIVE,
 
       deploymentStatus:
         "Cancelled",
@@ -1100,10 +2809,18 @@ exports.updateContractEnd = async (
   req,
   res
 ) => {
-  try {
-    const { id } =
-      req.params;
+  const { id } =
+    req.params;
 
+  let connection = null;
+
+  let transactionStarted =
+    false;
+
+  let transactionCommitted =
+    false;
+
+  try {
     const {
       contractEnd,
       endReason,
@@ -1154,33 +2871,221 @@ exports.updateContractEnd = async (
       });
     }
 
-    const [employeeRows] =
+    connection =
       await db
         .promise()
-        .query(
-          `
-          SELECT name
-          FROM employees
-          WHERE id = ?
-          LIMIT 1
-          `,
-          [id]
-        );
+        .getConnection();
+
+    await connection
+      .beginTransaction();
+
+    transactionStarted =
+      true;
+
+    /*
+     * Lock the employee master row while the
+     * assignment and status history are closed.
+     *
+     * Archive state and current workforce status
+     * are validated from the authoritative row,
+     * not from client-supplied values.
+     */
+    const [
+      employeeRows,
+    ] =
+      await connection.query(
+        `
+        SELECT
+          id,
+          name,
+          status,
+          archived,
+          contractStart
+        FROM employees
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
 
     if (
       employeeRows.length === 0
     ) {
+      await connection.rollback();
+
+      transactionStarted =
+        false;
+
       return res.status(404).json({
         error:
           "Employee not found.",
       });
     }
 
-    const employeeName =
-      employeeRows[0]?.name ||
-      "Unknown Employee";
+    const employee =
+      employeeRows[0];
 
-    await db.promise().query(
+    if (
+      Number(
+        employee.archived ||
+        0
+      ) === 1
+    ) {
+      await connection.rollback();
+
+      transactionStarted =
+        false;
+
+      return res.status(409).json({
+        error:
+          "Archived employees cannot have an active deployment ended.",
+      });
+    }
+
+    const currentEmployeeStatus =
+      normalizeEmployeeStatus(
+        employee.status
+      );
+
+    if (
+      currentEmployeeStatus !==
+      EMPLOYEE_STATUS.DEPLOYED
+    ) {
+      await connection.rollback();
+
+      transactionStarted =
+        false;
+
+      return res.status(409).json({
+        error:
+          "Only a currently deployed employee can have an active deployment ended.",
+      });
+    }
+
+    /*
+     * Exactly one active assignment must exist.
+     *
+     * Two rows are intentionally requested so an
+     * integrity conflict can be detected instead
+     * of silently closing an arbitrary assignment.
+     */
+    const [
+      activeAssignments,
+    ] =
+      await connection.query(
+        `
+        SELECT
+          id,
+          company,
+          start_date
+        FROM deployment_assignments
+        WHERE employee_id = ?
+          AND status = 'Active'
+        ORDER BY
+          start_date DESC,
+          id DESC
+        LIMIT 2
+        FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+    if (
+      activeAssignments.length ===
+      0
+    ) {
+      await connection.rollback();
+
+      transactionStarted =
+        false;
+
+      return res.status(409).json({
+        error:
+          "No active deployment assignment was found for this employee.",
+      });
+    }
+
+    if (
+      activeAssignments.length >
+      1
+    ) {
+      await connection.rollback();
+
+      transactionStarted =
+        false;
+
+      return res.status(409).json({
+        error:
+          "Multiple active deployment assignments were found for this employee. Resolve the assignment records before ending the deployment.",
+      });
+    }
+
+    const activeAssignment =
+      activeAssignments[0];
+
+    const assignmentStartDate =
+      toNullableDate(
+        activeAssignment.start_date
+      );
+
+    if (
+      assignmentStartDate &&
+      finalContractEnd <
+        assignmentStartDate
+    ) {
+      await connection.rollback();
+
+      transactionStarted =
+        false;
+
+      return res.status(400).json({
+        error:
+          "Deployment end date cannot be earlier than the deployment start date.",
+      });
+    }
+
+    /*
+     * Close the historical assignment first.
+     *
+     * Assignment status describes the assignment:
+     * - Completed: normal end/pull-out/reassignment
+     * - Cancelled: employment separation
+     *
+     * Employee status separately describes the
+     * person's current WELLJOB workforce state.
+     */
+    await connection.query(
+      `
+      UPDATE deployment_assignments
+      SET
+        end_date = ?,
+        end_reason = ?,
+        end_remarks = ?,
+        status = ?,
+        ended_at = NOW()
+      WHERE id = ?
+        AND status = 'Active'
+      `,
+      [
+        finalContractEnd,
+        finalReason,
+        finalRemarks,
+        reasonRule.deploymentStatus,
+        activeAssignment.id,
+      ]
+    );
+
+    /*
+     * Preserve the compatibility/current-state
+     * fields on employees while the application is
+     * progressively migrated to assignment history.
+     */
+    await connection.query(
       `
       UPDATE employees
       SET
@@ -1199,6 +3104,53 @@ exports.updateContractEnd = async (
         id,
       ]
     );
+
+    /*
+     * Record the effective workforce transition.
+     *
+     * The effective date uses the HR-selected
+     * assignment end date so historical yearly
+     * reporting remains reconstructable.
+     */
+    await connection.query(
+      `
+      INSERT INTO employee_status_history
+      (
+        employee_id,
+        from_status,
+        to_status,
+        effective_at,
+        reason,
+        remarks,
+        source_event,
+        changed_by_user_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        id,
+        EMPLOYEE_STATUS.DEPLOYED,
+        reasonRule.employeeStatus,
+        `${finalContractEnd} 00:00:00`,
+        finalReason,
+        finalRemarks,
+        "DEPLOYMENT_ENDED",
+        actor.userId,
+      ]
+    );
+
+    await connection.commit();
+
+    transactionCommitted =
+      true;
+
+    connection.release();
+
+    connection = null;
+
+    const employeeName =
+      employee?.name ||
+      "Unknown Employee";
 
     await logAudit({
       userId:
@@ -1234,6 +3186,12 @@ exports.updateContractEnd = async (
 
       employeeName,
 
+      assignmentId:
+        activeAssignment.id,
+
+      company:
+        activeAssignment.company,
+
       contractEnd:
         finalContractEnd,
 
@@ -1250,6 +3208,23 @@ exports.updateContractEnd = async (
         reasonRule.employeeStatus,
     });
   } catch (err) {
+    if (
+      connection &&
+      transactionStarted &&
+      !transactionCommitted
+    ) {
+      try {
+        await connection.rollback();
+      } catch (
+        rollbackError
+      ) {
+        console.error(
+          "UPDATE CONTRACT END ROLLBACK ERROR:",
+          rollbackError
+        );
+      }
+    }
+
     console.error(
       "UPDATE CONTRACT END ERROR:",
       err
@@ -1259,6 +3234,10 @@ exports.updateContractEnd = async (
       error:
         "Failed to update contract end date.",
     });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
   }
 };
 
@@ -1588,10 +3567,6 @@ exports.deleteEmployee = async (
       );
     }
 
-    /*
-     * employee_documents has no FK constraint,
-     * so it must be explicitly deleted.
-     */
     await connection.query(
       `
       DELETE FROM employee_documents
@@ -1602,17 +3577,26 @@ exports.deleteEmployee = async (
       ]
     );
 
-    /*
-     * Deleting the employee triggers the existing
-     * database cascade:
-     *
-     * employees
-     * -> incidents
-     * -> incident_evidence
-     * -> incident_timeline
-     *
-     * Do NOT manually duplicate those deletes.
-     */
+    await connection.query(
+      `
+      DELETE FROM deployment_assignments
+      WHERE employee_id = ?
+      `,
+      [
+        id,
+      ]
+    );
+
+    await connection.query(
+      `
+      DELETE FROM employee_status_history
+      WHERE employee_id = ?
+      `,
+      [
+        id,
+      ]
+    );
+
     await connection.query(
       `
       DELETE FROM employees

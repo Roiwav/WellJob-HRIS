@@ -61,7 +61,7 @@ const DEFAULT_ROLE_CONFIG = {
 };
 
 const SMART_ALERT_POLL_INTERVAL =
-  10000;
+  30000;
 
 function getAlertKey(alert) {
   return String(
@@ -122,7 +122,6 @@ export default function Navbar({
     hasReadAlerts,
     isFetching,
     isClearingRead,
-    refresh,
     markAlertAsRead,
     dismissAlert,
     clearReadAlerts,
@@ -130,12 +129,8 @@ export default function Navbar({
     user,
     {
       /*
-       * Cross-device/LAN browsers cannot receive
-       * the local dataUpdated browser event.
-       *
-       * A 10-second poll keeps notifications
-       * near-real-time without requiring an
-       * invasive WebSocket/SSE architecture.
+       * Polling covers updates from other devices
+       * that cannot receive local browser events.
        */
       pollInterval:
         SMART_ALERT_POLL_INTERVAL,
@@ -404,7 +399,7 @@ export default function Navbar({
     };
 
   const handleToggleNotifications =
-    async () => {
+    () => {
       if (!canView) {
         return;
       }
@@ -419,17 +414,6 @@ export default function Navbar({
       setOpenProfile(
         false
       );
-
-      try {
-        await refresh({
-          silent: true,
-        });
-      } catch (error) {
-        console.error(
-          "Failed to refresh smart alerts:",
-          error
-        );
-      }
     };
 
   const handleViewNotifications =

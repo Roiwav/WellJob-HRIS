@@ -21,9 +21,30 @@ export const KPI_DECISION_QUERY_KEYS = {
     "kpi-decisions",
   ],
 
+  latest: [
+    "kpi-decisions",
+    "latest",
+  ],
+
   history: [
     "kpi-decisions",
     "history",
+  ],
+
+  historyPage: ({
+    page,
+    pageSize,
+    search,
+    decisionType,
+  }) => [
+    "kpi-decisions",
+    "history",
+    {
+      page,
+      pageSize,
+      search,
+      decisionType,
+    },
   ],
 };
 
@@ -101,17 +122,137 @@ async function requestJson(
   }
 }
 
-export function useKPIDecisionHistoryQuery(
+function buildDecisionHistoryUrl(
+  params = {}
+) {
+  const page =
+    Number.isInteger(
+      Number(
+        params.page
+      )
+    ) &&
+    Number(
+      params.page
+    ) > 0
+      ? Number(
+          params.page
+        )
+      : 1;
+
+  const requestedPageSize =
+    Number(
+      params.pageSize
+    );
+
+  const pageSize =
+    Number.isInteger(
+      requestedPageSize
+    ) &&
+    requestedPageSize > 0
+      ? Math.min(
+          requestedPageSize,
+          100
+        )
+      : 25;
+
+  const search =
+    String(
+      params.search ||
+        ""
+    ).trim();
+
+  const decisionType =
+    String(
+      params.decisionType ||
+        "ALL"
+    ).trim() ||
+    "ALL";
+
+  const query =
+    new URLSearchParams({
+      view:
+        "history",
+
+      page:
+        String(page),
+
+      pageSize:
+        String(
+          pageSize
+        ),
+
+      search,
+
+      decisionType,
+    });
+
+  return {
+    url:
+      `${DECISION_HISTORY_API}?${query.toString()}`,
+
+    queryParams: {
+      page,
+      pageSize,
+      search,
+      decisionType,
+    },
+  };
+}
+
+export function useKPIDecisionLatestQuery(
   options = {}
 ) {
   return useQuery({
     queryKey:
-      KPI_DECISION_QUERY_KEYS.history,
+      KPI_DECISION_QUERY_KEYS.latest,
 
     queryFn:
       () =>
         requestJson(
-          DECISION_HISTORY_API
+          `${DECISION_HISTORY_API}?view=latest`
+        ),
+
+    refetchInterval:
+      false,
+
+    staleTime:
+      DEFAULT_STALE_TIME_MS,
+
+    refetchOnWindowFocus:
+      false,
+
+    refetchOnReconnect:
+      true,
+
+    retry:
+      0,
+
+    ...options,
+  });
+}
+
+export function useKPIDecisionHistoryPageQuery(
+  params = {},
+  options = {}
+) {
+  const {
+    url,
+    queryParams,
+  } =
+    buildDecisionHistoryUrl(
+      params
+    );
+
+  return useQuery({
+    queryKey:
+      KPI_DECISION_QUERY_KEYS.historyPage(
+        queryParams
+      ),
+
+    queryFn:
+      () =>
+        requestJson(
+          url
         ),
 
     refetchInterval:
@@ -155,18 +296,10 @@ export function useCreateKPIDecisionMutation() {
 
     onSuccess:
       async () => {
-        await Promise.all([
-          queryClient.invalidateQueries({
-            queryKey:
-              KPI_DECISION_QUERY_KEYS.all,
-          }),
-
-          queryClient.invalidateQueries({
-            queryKey: [
-              "kpi",
-            ],
-          }),
-        ]);
+        await queryClient.invalidateQueries({
+          queryKey:
+            KPI_DECISION_QUERY_KEYS.all,
+        });
       },
   });
 }
@@ -190,18 +323,10 @@ export function useDeleteKPIDecisionMutation() {
 
     onSuccess:
       async () => {
-        await Promise.all([
-          queryClient.invalidateQueries({
-            queryKey:
-              KPI_DECISION_QUERY_KEYS.all,
-          }),
-
-          queryClient.invalidateQueries({
-            queryKey: [
-              "kpi",
-            ],
-          }),
-        ]);
+        await queryClient.invalidateQueries({
+          queryKey:
+            KPI_DECISION_QUERY_KEYS.all,
+        });
       },
   });
 }

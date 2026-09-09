@@ -20,6 +20,9 @@ import {
 
 import useViolationPolicyOptions from "../../../hooks/useViolationPolicyOptions";
 
+import authenticatedFetch from "../../../utils/authenticatedFetch";
+import { API_BASE } from "../../../config/api";
+
 import {
   computeAutoSeverity,
   getNextOffenseCount,
@@ -29,7 +32,6 @@ import {
 
 import {
   buildFinalIncident,
-  findActiveDeployment,
   formatDateTime,
   generateIncidentId,
   getDateOnly,
@@ -55,6 +57,12 @@ import {
   BaseModal,
   NoticeModal,
 } from "../shared/ModalUI";
+
+const INCIDENT_FORM_META_URL =
+  `${API_BASE}/incidents/form-meta`;
+
+const EMPLOYEE_SEARCH_DEBOUNCE_MS =
+  350;
 
 const EMPTY_ALERT = {
   show: false,
@@ -155,8 +163,6 @@ export default function AddIncidentModal({
   isOpen,
   onClose,
   onSave,
-  employees = [],
-  deployments = [],
   existingIncidents = [],
 }) {
   const violationBoxRef =
@@ -171,6 +177,9 @@ export default function AddIncidentModal({
   const closeTimerRef =
     useRef(null);
 
+  const employeeSearchRequestRef =
+    useRef(null);
+
   const [
     formData,
     setFormData,
@@ -180,6 +189,26 @@ export default function AddIncidentModal({
     employeeSearch,
     setEmployeeSearch,
   ] = useState("");
+
+  const [
+    employeeOptions,
+    setEmployeeOptions,
+  ] = useState([]);
+
+  const [
+    isSearchingEmployees,
+    setIsSearchingEmployees,
+  ] = useState(false);
+
+  const [
+    employeeSearchError,
+    setEmployeeSearchError,
+  ] = useState("");
+
+  const [
+    selectedEmployeeOption,
+    setSelectedEmployeeOption,
+  ] = useState(null);
 
   const [
     violationSearch,
@@ -309,6 +338,14 @@ export default function AddIncidentModal({
           );
 
           setEmployeeSearch("");
+          setEmployeeOptions([]);
+          setIsSearchingEmployees(
+            false
+          );
+          setEmployeeSearchError("");
+          setSelectedEmployeeOption(
+            null
+          );
           setViolationSearch("");
 
           setShowEmployeeDropdown(
@@ -351,6 +388,12 @@ export default function AddIncidentModal({
         window.clearTimeout(
           closeTimerRef.current
         );
+      }
+
+      if (
+        employeeSearchRequestRef.current
+      ) {
+        employeeSearchRequestRef.current.abort();
       }
     };
   }, []);
@@ -399,73 +442,195 @@ export default function AddIncidentModal({
     };
   }, [isOpen]);
 
-  const employeeOptions =
-    useMemo(
-      () =>
-        employees
-          .filter((employee) => {
-            const status =
-              String(
-                employee?.status ||
-                  ""
+  useEffect(() => {
+    if (
+      !isOpen ||
+      selectedEmployeeOption
+    ) {
+      return undefined;
+    }
+
+    const keyword =
+      employeeSearch.trim();
+
+    if (!keyword) {
+      return undefined;
+    }
+
+    let requestController =
+      null;
+
+    const searchTimerId =
+      window.setTimeout(
+        async () => {
+          requestController =
+            new AbortController();
+
+          if (
+            employeeSearchRequestRef.current
+          ) {
+            employeeSearchRequestRef.current.abort();
+          }
+
+          employeeSearchRequestRef.current =
+            requestController;
+
+          setIsSearchingEmployees(
+            true
+          );
+
+          setEmployeeSearchError(
+            ""
+          );
+
+          try {
+            const response =
+              await authenticatedFetch(
+                `${INCIDENT_FORM_META_URL}?employeeSearch=${encodeURIComponent(
+                  keyword
+                )}`,
+                {
+                  signal:
+                    requestController.signal,
+
+                  headers: {
+                    Accept:
+                      "application/json",
+                  },
+                }
+              );
+
+            const data =
+              await response
+                .json()
+                .catch(
+                  () => null
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                data?.error ||
+                  data?.message ||
+                  `Employee search failed with status ${response.status}`
+              );
+            }
+
+            if (
+              requestController.signal.aborted
+            ) {
+              return;
+            }
+
+            const results =
+              Array.isArray(
+                data?.employees
               )
-                .trim()
-                .toLowerCase();
+                ? data.employees
+                    .map(
+                      (
+                        employee
+                      ) => ({
+                        ...employee,
 
-            return (
-              status ===
-                "deployed" ||
-              status ===
-                "active deployed"
+                        id:
+                          employee?.id ||
+                          employee
+                            ?.employeeId ||
+                          employee
+                            ?.employee_id,
+
+                        name:
+                          employee?.name ||
+                          employee
+                            ?.full_name ||
+                          employee
+                            ?.fullName ||
+                          "",
+
+                        company:
+                          employee
+                            ?.company ||
+                          employee
+                            ?.activeDeployment
+                            ?.company ||
+                          "",
+                      })
+                    )
+                    .filter(
+                      (
+                        employee
+                      ) =>
+                        employee.id &&
+                        employee.name &&
+                        employee
+                          .activeDeployment
+                    )
+                : [];
+
+            setEmployeeOptions(
+              results
             );
-          })
-          .map((employee) => ({
-            id:
-              employee?.id ||
-              employee?.employeeId ||
-              employee?.employee_id ||
-              employee?.name,
+          } catch (error) {
+            if (
+              error?.name ===
+              "AbortError"
+            ) {
+              return;
+            }
 
-            name:
-              employee?.name ||
-              employee?.full_name ||
-              employee?.fullName ||
-              "",
+            console.error(
+              "Incident employee search error:",
+              error
+            );
 
-            company:
-              employee?.company ||
-              "",
-          })),
-      [employees]
-    );
+            setEmployeeOptions(
+              []
+            );
+
+            setEmployeeSearchError(
+              error?.message ||
+                "Unable to search deployed employees."
+            );
+          } finally {
+            if (
+              employeeSearchRequestRef.current ===
+                requestController
+            ) {
+              employeeSearchRequestRef.current =
+                null;
+
+              if (
+                !requestController.signal.aborted
+              ) {
+                setIsSearchingEmployees(
+                  false
+                );
+              }
+            }
+          }
+        },
+        EMPLOYEE_SEARCH_DEBOUNCE_MS
+      );
+
+    return () => {
+      window.clearTimeout(
+        searchTimerId
+      );
+
+      if (
+        requestController
+      ) {
+        requestController.abort();
+      }
+    };
+  }, [
+    employeeSearch,
+    isOpen,
+    selectedEmployeeOption,
+  ]);
 
   const filteredEmployees =
-    useMemo(() => {
-      const keyword =
-        employeeSearch
-          .trim()
-          .toLowerCase();
-
-      if (!keyword) {
-        return [];
-      }
-
-      return employeeOptions
-        .filter((employee) =>
-          [
-            employee.name,
-            employee.id,
-            employee.company,
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(keyword)
-        )
-        .slice(0, 8);
-    }, [
-      employeeOptions,
-      employeeSearch,
-    ]);
+    employeeOptions;
 
   const filteredViolations =
     useMemo(() => {
@@ -612,10 +777,29 @@ export default function AddIncidentModal({
     useCallback(
       (selectedEmployee) => {
         const activeDeployment =
-          findActiveDeployment(
-            deployments,
-            selectedEmployee
-          );
+          selectedEmployee
+            ?.activeDeployment ||
+          null;
+
+        if (
+          !activeDeployment
+        ) {
+          showCustomAlert({
+            type: "error",
+
+            title:
+              "Deployment Not Available",
+
+            message:
+              "The selected employee no longer has a valid active deployment. Please search again.",
+          });
+
+          return;
+        }
+
+        setSelectedEmployeeOption(
+          selectedEmployee
+        );
 
         setFormData(
           (current) => ({
@@ -630,8 +814,6 @@ export default function AddIncidentModal({
             company:
               activeDeployment
                 ?.company ||
-              activeDeployment
-                ?.clientCompany ||
               selectedEmployee
                 .company ||
               "",
@@ -651,6 +833,14 @@ export default function AddIncidentModal({
           `${selectedEmployee.name} (${selectedEmployee.id})`
         );
 
+        setEmployeeOptions(
+          []
+        );
+
+        setEmployeeSearchError(
+          ""
+        );
+
         setShowEmployeeDropdown(
           false
         );
@@ -660,8 +850,8 @@ export default function AddIncidentModal({
         resetDuplicateVerification();
       },
       [
-        deployments,
         resetDuplicateVerification,
+        showCustomAlert,
       ]
     );
 
@@ -670,6 +860,18 @@ export default function AddIncidentModal({
       (event) => {
         setEmployeeSearch(
           event.target.value
+        );
+
+        setEmployeeOptions(
+          []
+        );
+
+        setEmployeeSearchError(
+          ""
+        );
+
+        setSelectedEmployeeOption(
+          null
         );
 
         setShowEmployeeDropdown(
@@ -1025,19 +1227,30 @@ export default function AddIncidentModal({
         return;
       }
 
-      const activeDeployment =
-        findActiveDeployment(
-          deployments,
-          {
-            employeeId:
-              formData.employeeId,
-
-            employee:
-              formData.employee,
-          }
+      const selectedEmployeeId =
+        String(
+          selectedEmployeeOption
+            ?.id ||
+          ""
         );
 
-      if (!activeDeployment) {
+      const formEmployeeId =
+        String(
+          formData.employeeId ||
+          ""
+        );
+
+      const activeDeployment =
+        selectedEmployeeOption
+          ?.activeDeployment ||
+        null;
+
+      if (
+        !activeDeployment ||
+        !selectedEmployeeId ||
+        selectedEmployeeId !==
+          formEmployeeId
+      ) {
         showCustomAlert({
           type: "error",
 
@@ -1045,7 +1258,7 @@ export default function AddIncidentModal({
             "Invalid Employee",
 
           message:
-            "Only employees with an active deployment record can be reported in incidents.",
+            "Please select a currently deployed employee from the server search results before saving.",
         });
 
         return;
@@ -1163,7 +1376,6 @@ export default function AddIncidentModal({
     }, [
       closeCustomAlert,
       computePenaltyData,
-      deployments,
       duplicateConfirmed,
       existingIncidents,
       formData,
@@ -1171,6 +1383,7 @@ export default function AddIncidentModal({
       needsDuplicateVerification,
       onClose,
       onSave,
+      selectedEmployeeOption,
       showCustomAlert,
       validateForm,
     ]);
@@ -1328,6 +1541,19 @@ export default function AddIncidentModal({
                   </div>
 
                   {showEmployeeDropdown &&
+                    employeeSearch &&
+                    isSearchingEmployees && (
+                      <div
+                        role="status"
+                        className="absolute z-30 mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+                      >
+                        Searching deployed employees...
+                      </div>
+                    )}
+
+                  {showEmployeeDropdown &&
+                    !isSearchingEmployees &&
+                    !employeeSearchError &&
                     filteredEmployees.length >
                       0 && (
                       <div
@@ -1383,8 +1609,25 @@ export default function AddIncidentModal({
 
                   {showEmployeeDropdown &&
                     employeeSearch &&
+                    !isSearchingEmployees &&
+                    employeeSearchError && (
+                      <div
+                        role="alert"
+                        className="absolute z-30 mt-2 w-full rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm text-red-600 shadow-xl dark:border-red-500/30 dark:bg-slate-900 dark:text-red-300"
+                      >
+                        {
+                          employeeSearchError
+                        }
+                      </div>
+                    )}
+
+                  {showEmployeeDropdown &&
+                    employeeSearch &&
+                    !isSearchingEmployees &&
+                    !employeeSearchError &&
                     filteredEmployees.length ===
-                      0 && (
+                      0 &&
+                    !selectedEmployeeOption && (
                       <div className="absolute z-30 mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 shadow-xl dark:border-slate-700 dark:bg-slate-900">
                         No deployed
                         employee found.

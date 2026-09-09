@@ -248,7 +248,8 @@ export default function EmployeeTable({
                 const employeeCompany = getEmployeeCompany(employee);
 
                 const complianceStatus = normalizeComplianceStatus(
-                  complianceResolver(employee?.documents)
+                  employee?.complianceStatus ||
+                    complianceResolver(employee?.documents)
                 );
 
                 return (

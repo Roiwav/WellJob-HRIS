@@ -28,17 +28,13 @@ import ErrorState from "../components/ui/ErrorState";
 import EmptyState from "../components/ui/EmptyState";
 
 import {
-  buildLegacySeparationPayload,
+  buildDeploymentStatusPayload,
   getMonthOptions,
-  getYearOptions,
   normalizeSeparationReason,
 } from "../utils/deployments/deploymentHelpers";
 
 const DEPLOYMENT_API_URL =
   `${API_BASE}/deployments`;
-
-const EMPLOYEES_API_URL =
-  `${API_BASE}/employees`;
 
 const DATA_EVENT_SOURCE =
   "deployments-page";
@@ -49,6 +45,20 @@ const REQUEST_TIMEOUT_MS =
 const DATA_UPDATE_DEBOUNCE_MS =
   300;
 
+const SEARCH_DEBOUNCE_MS =
+  350;
+
+const DEPLOYMENT_PAGE_SIZE =
+  50;
+
+const DEPLOYMENT_REFRESH_DOMAINS =
+  new Set([
+    "deployment",
+    "deployments",
+    "employee",
+    "employees",
+  ]);
+
 const SELECT_CLASS_NAME = [
   "min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5",
   "text-sm font-semibold text-gray-900 shadow-sm outline-none transition",
@@ -58,9 +68,6 @@ const SELECT_CLASS_NAME = [
   "dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20",
   "dark:disabled:bg-slate-800 dark:disabled:text-gray-500",
 ].join(" ");
-
-let activeDeploymentRequest =
-  null;
 
 /*
  * ==================================================
@@ -262,22 +269,6 @@ async function requestJson(
       timeoutId
     );
   }
-}
-
-function getDeploymentData() {
-  if (
-    !activeDeploymentRequest
-  ) {
-    activeDeploymentRequest =
-      requestJson(
-        DEPLOYMENT_API_URL
-      ).finally(() => {
-        activeDeploymentRequest =
-          null;
-      });
-  }
-
-  return activeDeploymentRequest;
 }
 
 function normalizeDeploymentStatus(
@@ -500,22 +491,30 @@ function getRequestError(
   );
 }
 
-function normalizeSearchText(
-  value
+function shouldRefreshDeployments(
+  event
 ) {
-  return String(
-    value || ""
-  )
-    .toLowerCase()
-    .replace(
-      /[^a-z0-9\s]/g,
-      ""
+  if (
+    event?.detail
+      ?.source ===
+    DATA_EVENT_SOURCE
+  ) {
+    return false;
+  }
+
+  const domain =
+    String(
+      event?.detail?.domain ||
+        ""
     )
-    .replace(
-      /\s+/g,
-      " "
+      .trim()
+      .toLowerCase();
+
+  return (
+    DEPLOYMENT_REFRESH_DOMAINS.has(
+      domain
     )
-    .trim();
+  );
 }
 
 export default function Deployments() {
@@ -563,6 +562,45 @@ export default function Deployments() {
   ] = useState("");
 
   const [
+    debouncedSearch,
+    setDebouncedSearch,
+  ] = useState("");
+
+  const [
+    page,
+    setPage,
+  ] = useState(1);
+
+  const [
+    pagination,
+    setPagination,
+  ] = useState({
+    page: 1,
+    pageSize:
+      DEPLOYMENT_PAGE_SIZE,
+    total: 0,
+    totalPages: 0,
+  });
+
+  const [
+    deploymentSummary,
+    setDeploymentSummary,
+  ] = useState({
+    companies: [],
+    totalDeployments: 0,
+    totalCompanies: 0,
+    activeDeployments: 0,
+    completedDeployments: 0,
+    cancelledDeployments: 0,
+    topCompany: null,
+  });
+
+  const [
+    availableYears,
+    setAvailableYears,
+  ] = useState([]);
+
+  const [
     selectedMonth,
     setSelectedMonth,
   ] = useState("");
@@ -590,12 +628,28 @@ export default function Deployments() {
 
   const yearOptions =
     useMemo(
-      () =>
-        getYearOptions(
-          deployments
+      () => [
+        {
+          label:
+            "All Years",
+          value:
+            "",
+        },
+        ...availableYears.map(
+          (year) => ({
+            label:
+              String(
+                year
+              ),
+            value:
+              String(
+                year
+              ),
+          })
         ),
+      ],
       [
-        deployments,
+        availableYears,
       ]
     );
 
@@ -616,6 +670,26 @@ export default function Deployments() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const timer =
+      window.setTimeout(
+        () => {
+          setDebouncedSearch(
+            search.trim()
+          );
+        },
+        SEARCH_DEBOUNCE_MS
+      );
+
+    return () => {
+      window.clearTimeout(
+        timer
+      );
+    };
+  }, [
+    search,
+  ]);
 
   const fetchDeployments =
     useCallback(
@@ -666,8 +740,35 @@ export default function Deployments() {
             );
           }
 
+          const params =
+            new URLSearchParams({
+              view:
+                "summary",
+
+              page:
+                String(
+                  page
+                ),
+
+              pageSize:
+                String(
+                  DEPLOYMENT_PAGE_SIZE
+                ),
+
+              search:
+                debouncedSearch,
+
+              month:
+                selectedMonth,
+
+              year:
+                selectedYear,
+            });
+
           const data =
-            await getDeploymentData();
+            await requestJson(
+              `${DEPLOYMENT_API_URL}?${params.toString()}`
+            );
 
           if (
             !isMountedRef.current
@@ -677,16 +778,128 @@ export default function Deployments() {
 
           const normalized =
             Array.isArray(
-              data
+              data?.deployments
             )
-              ? data.map(
+              ? data.deployments.map(
                   normalizeDeployment
                 )
               : [];
 
+          const nextPagination =
+            data?.pagination ||
+            {};
+
+          const nextTotalPages =
+            Number(
+              nextPagination.totalPages ||
+                0
+            );
+
           setDeployments(
             normalized
           );
+
+          setPagination({
+            page:
+              Number(
+                nextPagination.page
+              ) ||
+              page,
+
+            pageSize:
+              Number(
+                nextPagination.pageSize
+              ) ||
+              DEPLOYMENT_PAGE_SIZE,
+
+            total:
+              Number(
+                nextPagination.total
+              ) ||
+              0,
+
+            totalPages:
+              nextTotalPages,
+          });
+
+          setDeploymentSummary({
+            companies:
+              Array.isArray(
+                data?.summary
+                  ?.companies
+              )
+                ? data.summary.companies
+                : [],
+
+            totalDeployments:
+              Number(
+                data?.summary
+                  ?.totalDeployments
+              ) ||
+              0,
+
+            totalCompanies:
+              Number(
+                data?.summary
+                  ?.totalCompanies
+              ) ||
+              0,
+
+            activeDeployments:
+              Number(
+                data?.summary
+                  ?.activeDeployments
+              ) ||
+              0,
+
+            completedDeployments:
+              Number(
+                data?.summary
+                  ?.completedDeployments
+              ) ||
+              0,
+
+            cancelledDeployments:
+              Number(
+                data?.summary
+                  ?.cancelledDeployments
+              ) ||
+              0,
+
+            topCompany:
+              data?.summary
+                ?.topCompany ||
+              null,
+          });
+
+          setAvailableYears(
+            Array.isArray(
+              data?.filterMeta
+                ?.years
+            )
+              ? data.filterMeta.years
+                  .map(
+                    (year) =>
+                      Number(
+                        year
+                      )
+                  )
+                  .filter(
+                    Number.isInteger
+                  )
+              : []
+          );
+
+          if (
+            nextTotalPages >
+              0 &&
+            page >
+              nextTotalPages
+          ) {
+            setPage(
+              nextTotalPages
+            );
+          }
 
           return true;
         } catch (
@@ -735,7 +948,12 @@ export default function Deployments() {
           }
         }
       },
-      []
+      [
+        debouncedSearch,
+        page,
+        selectedMonth,
+        selectedYear,
+      ]
     );
 
   useEffect(() => {
@@ -773,24 +991,17 @@ export default function Deployments() {
     const handleDataUpdated =
       (event) => {
         if (
-          event?.detail
-            ?.source ===
-          DATA_EVENT_SOURCE
+          shouldRefreshDeployments(
+            event
+          )
         ) {
-          return;
+          scheduleRefresh();
         }
-
-        scheduleRefresh();
       };
 
     window.addEventListener(
       "dataUpdated",
       handleDataUpdated
-    );
-
-    window.addEventListener(
-      "focus",
-      scheduleRefresh
     );
 
     return () => {
@@ -805,11 +1016,6 @@ export default function Deployments() {
       window.removeEventListener(
         "dataUpdated",
         handleDataUpdated
-      );
-
-      window.removeEventListener(
-        "focus",
-        scheduleRefresh
       );
     };
   }, [
@@ -861,19 +1067,17 @@ export default function Deployments() {
           return false;
         }
 
-        const employeeId =
+        const deploymentId =
           updatedDeployment
-            ?.employeeId ||
+            ?.deploymentId ||
           updatedDeployment
-            ?.employee_id ||
-          updatedDeployment
-            ?.id;
+            ?.deployment_id;
 
         if (
-          !employeeId
+          !deploymentId
         ) {
           setFetchError(
-            "Unable to record separation because the employee ID is missing."
+            "Unable to update deployment because the deployment ID is missing."
           );
 
           return false;
@@ -884,52 +1088,25 @@ export default function Deployments() {
             ""
           );
 
-          const legacyPayload =
-            buildLegacySeparationPayload(
+          const statusPayload =
+            buildDeploymentStatusPayload(
               updatedDeployment
             );
 
-          /*
-           * Axios already receives the JWT from the
-           * global interceptor in App.jsx, but adding
-           * the same authenticated header explicitly
-           * keeps this page self-contained and ensures
-           * the request remains authenticated.
-           */
-          await axios.put(
-            `${EMPLOYEES_API_URL}/${encodeURIComponent(
-              employeeId
-            )}/contract-end`,
-            {
-              ...legacyPayload,
+          const response =
+            await axios.patch(
+              `${DEPLOYMENT_API_URL}/${encodeURIComponent(
+                deploymentId
+              )}/status`,
+              statusPayload,
+              {
+                timeout:
+                  REQUEST_TIMEOUT_MS,
 
-              userId:
-                user?.userId ||
-                user?.id ||
-                null,
-
-              username:
-                user?.username ||
-                null,
-
-              fullName:
-                user?.full_name ||
-                user?.fullName ||
-                user?.username ||
-                null,
-
-              role:
-                user?.role ||
-                null,
-            },
-            {
-              timeout:
-                REQUEST_TIMEOUT_MS,
-
-              headers:
-                getAuthenticatedHeaders(),
-            }
-          );
+                headers:
+                  getAuthenticatedHeaders(),
+              }
+            );
 
           await fetchDeployments({
             showError:
@@ -937,11 +1114,12 @@ export default function Deployments() {
           });
 
           emitDataUpdated(
-            "EMPLOYEE_SEPARATED"
+            "DEPLOYMENT_STATUS_UPDATED"
           );
 
           setToastMessage(
-            "Employee separation recorded successfully."
+            response?.data?.message ||
+              "Deployment status updated successfully."
           );
 
           return true;
@@ -949,14 +1127,14 @@ export default function Deployments() {
           error
         ) {
           console.error(
-            "Error recording employee separation:",
+            "Error updating deployment status:",
             error
           );
 
           setFetchError(
             getRequestError(
               error,
-              "Failed to record employee separation. Please try again."
+              "Failed to update deployment status. Please try again."
             )
           );
 
@@ -966,7 +1144,6 @@ export default function Deployments() {
       [
         fetchDeployments,
         isSuperAdmin,
-        user,
       ]
     );
 
@@ -996,125 +1173,11 @@ export default function Deployments() {
       setSearch("");
       setSelectedMonth("");
       setSelectedYear("");
+      setPage(1);
     }, []);
 
-  const filteredDeployments =
-    useMemo(() => {
-      const normalizedSearch =
-        normalizeSearchText(
-          search
-        );
-
-      const searchTerms =
-        normalizedSearch
-          ? normalizedSearch.split(
-              /\s+/
-            )
-          : [];
-
-      return deployments.filter(
-        (
-          deployment
-        ) => {
-          const searchableText =
-            normalizeSearchText(
-              [
-                deployment.id,
-                deployment
-                  .deploymentId,
-                deployment
-                  .employeeId,
-                deployment
-                  .employee,
-                deployment
-                  .company,
-                deployment
-                  .location,
-                deployment
-                  .status,
-                deployment
-                  .employmentType,
-                deployment
-                  .separationReason,
-              ].join(" ")
-            );
-
-          const matchesSearch =
-            searchTerms.length ===
-              0 ||
-            searchTerms.every(
-              (term) =>
-                searchableText.includes(
-                  term
-                )
-            );
-
-          if (
-            !matchesSearch
-          ) {
-            return false;
-          }
-
-          if (
-            !selectedMonth &&
-            !selectedYear
-          ) {
-            return true;
-          }
-
-          const startDateValue =
-            deployment.start ||
-            deployment.contractStart;
-
-          if (
-            !startDateValue ||
-            startDateValue ===
-              "-"
-          ) {
-            return false;
-          }
-
-          const startDate =
-            new Date(
-              startDateValue
-            );
-
-          if (
-            Number.isNaN(
-              startDate.getTime()
-            )
-          ) {
-            return false;
-          }
-
-          const matchesMonth =
-            selectedMonth ===
-              "" ||
-            startDate.getMonth() ===
-              Number(
-                selectedMonth
-              );
-
-          const matchesYear =
-            selectedYear ===
-              "" ||
-            String(
-              startDate.getFullYear()
-            ) ===
-              selectedYear;
-
-          return (
-            matchesMonth &&
-            matchesYear
-          );
-        }
-      );
-    }, [
-      deployments,
-      search,
-      selectedMonth,
-      selectedYear,
-    ]);
+  const visibleDeployments =
+    deployments;
 
   const hasActiveFilters =
     Boolean(
@@ -1186,15 +1249,15 @@ export default function Deployments() {
 
       {!isLoading && (
         <ClientDeploymentSummary
-          deployments={
-            deployments
+          summary={
+            deploymentSummary
           }
         />
       )}
 
       <FilterBar
         resultCount={
-          filteredDeployments.length
+          pagination.total
         }
         resultLabel="deployment"
         actions={
@@ -1226,15 +1289,25 @@ export default function Deployments() {
             }
             onChange={(
               event
-            ) =>
+            ) => {
               setSearch(
                 event.target
                   .value
-              )
-            }
-            onClear={() =>
-              setSearch("")
-            }
+              );
+
+              setPage(
+                1
+              );
+            }}
+            onClear={() => {
+              setSearch(
+                ""
+              );
+
+              setPage(
+                1
+              );
+            }}
           />
         </div>
 
@@ -1260,15 +1333,18 @@ export default function Deployments() {
               disabled={
                 isLoading ||
                 isRefreshing
-              }
-              onChange={(
+              }              onChange={(
                 event
-              ) =>
+              ) => {
                 setSelectedMonth(
                   event.target
                     .value
-                )
-              }
+                );
+
+                setPage(
+                  1
+                );
+              }}
               className={`${SELECT_CLASS_NAME} pl-10`}
             >
               {monthOptions.map(
@@ -1307,15 +1383,18 @@ export default function Deployments() {
             disabled={
               isLoading ||
               isRefreshing
-            }
-            onChange={(
-              event
-            ) =>
-              setSelectedYear(
-                event.target
-                  .value
-              )
-            }
+            }              onChange={(
+                event
+              ) => {
+                setSelectedYear(
+                  event.target
+                    .value
+                );
+
+                setPage(
+                  1
+                );
+              }}
             className={
               SELECT_CLASS_NAME
             }
@@ -1346,11 +1425,11 @@ export default function Deployments() {
           columns={8}
           showHeader
         />
-      ) : filteredDeployments
+      ) : visibleDeployments
           .length > 0 ? (
         <DeploymentTable
           deployments={
-            filteredDeployments
+            visibleDeployments
           }
           openView={
             openView
@@ -1394,6 +1473,78 @@ export default function Deployments() {
         </section>
       )}
 
+      {!isLoading &&
+        pagination.totalPages >
+          1 && (
+        <section className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-slate-900">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Page{" "}
+            {pagination.page} of{" "}
+            {
+              pagination.totalPages
+            }{" "}
+            ·{" "}
+            {pagination.total}{" "}
+            deployment
+            {pagination.total ===
+            1
+              ? ""
+              : "s"}
+          </p>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={
+                isLoading ||
+                isRefreshing ||
+                page <= 1
+              }
+              onClick={() =>
+                setPage(
+                  (
+                    currentPage
+                  ) =>
+                    Math.max(
+                      1,
+                      currentPage -
+                        1
+                    )
+                )
+              }
+            >
+              Previous
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={
+                isLoading ||
+                isRefreshing ||
+                page >=
+                  pagination.totalPages
+              }
+              onClick={() =>
+                setPage(
+                  (
+                    currentPage
+                  ) =>
+                    Math.min(
+                      pagination.totalPages,
+                      currentPage +
+                        1
+                    )
+                )
+              }
+            >
+              Next
+            </Button>
+          </div>
+        </section>
+      )}
+
       {selectedDeployment && (
         <DeploymentModal
           deployment={
@@ -1425,162 +1576,61 @@ export default function Deployments() {
 }
 
 function ClientDeploymentSummary({
-  deployments = [],
+  summary,
 }) {
   const [
     showAllCompanies,
     setShowAllCompanies,
   ] = useState(false);
 
-  const safeDeployments =
-    useMemo(() => {
-      return Array.isArray(
-        deployments
-      )
-        ? deployments
-        : [];
-    }, [
-      deployments,
-    ]);
-
   const summaryData =
-    useMemo(() => {
-      const companyMap =
-        new Map();
+    useMemo(
+      () => ({
+        companies:
+          Array.isArray(
+            summary?.companies
+          )
+            ? summary.companies
+            : [],
 
-      safeDeployments.forEach(
-        (
-          deployment
-        ) => {
-          const company =
-            deployment.company ||
-            "Unassigned Company";
+        totalDeployments:
+          Number(
+            summary?.totalDeployments ||
+              0
+          ),
 
-          const status =
-            normalizeDeploymentStatus(
-              deployment.status
-            );
+        totalCompanies:
+          Number(
+            summary?.totalCompanies ||
+              0
+          ),
 
-          if (
-            !companyMap.has(
-              company
-            )
-          ) {
-            companyMap.set(
-              company,
-              {
-                company,
-                total: 0,
-                active: 0,
-                completed: 0,
-                cancelled: 0,
-              }
-            );
-          }
+        activeDeployments:
+          Number(
+            summary?.activeDeployments ||
+              0
+          ),
 
-          const current =
-            companyMap.get(
-              company
-            );
+        completedDeployments:
+          Number(
+            summary?.completedDeployments ||
+              0
+          ),
 
-          current.total +=
-            1;
-
-          if (
-            status ===
-            "Active"
-          ) {
-            current.active +=
-              1;
-          }
-
-          if (
-            status ===
-            "Completed"
-          ) {
-            current.completed +=
-              1;
-          }
-
-          if (
-            status ===
-            "Cancelled"
-          ) {
-            current.cancelled +=
-              1;
-          }
-        }
-      );
-
-      const companies =
-        Array.from(
-          companyMap.values()
-        ).sort(
-          (
-            first,
-            second
-          ) =>
-            second.total -
-              first.total ||
-            first.company.localeCompare(
-              second.company
-            )
-        );
-
-      const totalDeployments =
-        safeDeployments.length;
-
-      const totalCompanies =
-        companies.length;
-
-      const activeDeployments =
-        companies.reduce(
-          (
-            sum,
-            company
-          ) =>
-            sum +
-            company.active,
-          0
-        );
-
-      const completedDeployments =
-        companies.reduce(
-          (
-            sum,
-            company
-          ) =>
-            sum +
-            company.completed,
-          0
-        );
-
-      const cancelledDeployments =
-        companies.reduce(
-          (
-            sum,
-            company
-          ) =>
-            sum +
-            company.cancelled,
-          0
-        );
-
-      return {
-        companies,
-        totalDeployments,
-        totalCompanies,
-        activeDeployments,
-        completedDeployments,
-        cancelledDeployments,
+        cancelledDeployments:
+          Number(
+            summary?.cancelledDeployments ||
+              0
+          ),
 
         topCompany:
-          companies[0] ||
+          summary?.topCompany ||
           null,
-      };
-    }, [
-      safeDeployments,
-    ]);
+      }),
+      [
+        summary,
+      ]
+    );
 
   const visibleCompanies =
     showAllCompanies
@@ -1591,7 +1641,7 @@ function ClientDeploymentSummary({
         );
 
   if (
-    safeDeployments.length ===
+    summaryData.totalDeployments ===
     0
   ) {
     return null;

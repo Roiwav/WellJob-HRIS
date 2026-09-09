@@ -30,6 +30,20 @@ const STATUS_BADGE_CLASSES = {
 const DEFAULT_STATUS_BADGE_CLASS =
   "border border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300";
 
+const COMPLETED_DEPLOYMENT_REASONS = new Set([
+  "Completed Contract",
+  "End of Assignment / Pulled Out by Client",
+  "Transferred / Reassigned",
+]);
+
+const CANCELLED_DEPLOYMENT_REASON_MAP = {
+  Resignation: "Resigned",
+  Resigned: "Resigned",
+  AWOL: "AWOL",
+  Termination: "Terminated",
+  Terminated: "Terminated",
+};
+
 function parseDate(dateValue) {
   if (!dateValue || dateValue === "-") {
     return null;
@@ -202,6 +216,37 @@ export function normalizeSeparationReason(value, remarks = "") {
   }
 
   return reason || "-";
+}
+
+export function buildDeploymentStatusPayload({
+  separationReason,
+  separationRemarks,
+}) {
+  const reason = String(separationReason || "").trim();
+  const endRemarks = normalizeRemarks(separationRemarks);
+
+  if (COMPLETED_DEPLOYMENT_REASONS.has(reason)) {
+    return {
+      status: "Completed",
+      endReason: reason,
+      endRemarks,
+    };
+  }
+
+  const cancelledReason =
+    CANCELLED_DEPLOYMENT_REASON_MAP[reason];
+
+  if (cancelledReason) {
+    return {
+      status: "Cancelled",
+      endReason: cancelledReason,
+      endRemarks,
+    };
+  }
+
+  throw new Error(
+    "Select a valid deployment end reason before saving."
+  );
 }
 
 export function buildLegacySeparationPayload({

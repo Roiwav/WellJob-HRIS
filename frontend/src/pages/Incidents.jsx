@@ -41,14 +41,8 @@ import {
   normalizeEvidenceFiles,
 } from "../utils/incidents/evidenceFiles";
 
-const EMPLOYEE_API_URL =
-  `${API_BASE}/employees`;
-
 const INCIDENT_API_URL =
   `${API_BASE}/incidents`;
-
-const DEPLOYMENT_API_URL =
-  `${API_BASE}/deployments`;
 
 const DATA_EVENT_SOURCE =
   "incidents-page";
@@ -158,14 +152,6 @@ function formatIncidentCode(
     4,
     "0"
   )}`;
-}
-
-function normalizeId(
-  value
-) {
-  return String(
-    value || ""
-  ).trim();
 }
 
 function normalizeName(
@@ -721,109 +707,6 @@ function normalizeBackendIncident(
   };
 }
 
-function normalizeBackendDeployment(
-  deployment = {}
-) {
-  return {
-    ...deployment,
-
-    deploymentId:
-      deployment.id ||
-      deployment.deploymentId ||
-      deployment.deployment_id,
-
-    employeeId:
-      deployment.employeeId ||
-      deployment.employee_id ||
-      deployment.empId ||
-      deployment.employeeID ||
-      "",
-
-    employee:
-      deployment.employee ||
-      deployment.employeeName ||
-      deployment.employee_name ||
-      deployment.name ||
-      "Unknown Employee",
-
-    employeeName:
-      deployment.employeeName ||
-      deployment.employee ||
-      deployment.employee_name ||
-      deployment.name ||
-      "Unknown Employee",
-
-    company:
-      deployment.company ||
-      deployment.clientCompany ||
-      deployment.client_company ||
-      "-",
-
-    location:
-      deployment.location ||
-      deployment.deploymentLocation ||
-      deployment.deployment_location ||
-      "-",
-
-    status:
-      deployment.status ||
-      deployment.deploymentStatus ||
-      deployment.deployment_status ||
-      "Active",
-
-    deploymentStatus:
-      deployment.deploymentStatus ||
-      deployment.deployment_status ||
-      deployment.status ||
-      "Active",
-
-    start:
-      deployment.start ||
-      deployment.deploymentDate ||
-      deployment.deployment_date ||
-      deployment.contractStart ||
-      deployment.contract_start ||
-      deployment.startDate ||
-      deployment.start_date ||
-      "-",
-
-    end:
-      deployment.end ||
-      deployment.endDate ||
-      deployment.end_date ||
-      deployment.deploymentEnd ||
-      deployment.deployment_end ||
-      deployment.contractEnd ||
-      deployment.contract_end ||
-      null,
-  };
-}
-
-function isActiveDeploymentRecord(
-  deployment
-) {
-  const status =
-    String(
-      deployment?.status ||
-      deployment
-        ?.deploymentStatus ||
-      deployment
-        ?.deployment_status ||
-      ""
-    )
-      .trim()
-      .toLowerCase();
-
-  return [
-    "active",
-    "deployed",
-    "active deployed",
-    "ongoing",
-  ].includes(
-    status
-  );
-}
-
 function buildIncidentList(
   rawIncidents = []
 ) {
@@ -967,20 +850,8 @@ export default function Incidents() {
     useRef(0);
 
   const [
-    employees,
-    setEmployees,
-  ] =
-    useState([]);
-
-  const [
     incidents,
     setIncidents,
-  ] =
-    useState([]);
-
-  const [
-    deploymentRecords,
-    setDeploymentRecords,
   ] =
     useState([]);
 
@@ -1088,214 +959,6 @@ export default function Incidents() {
         });
       },
       []
-    );
-
-  const activeDeployments =
-    useMemo(
-      () => {
-        return deploymentRecords.filter(
-          isActiveDeploymentRecord
-        );
-      },
-      [
-        deploymentRecords,
-      ]
-    );
-
-  const activeEmployees =
-    useMemo(
-      () => {
-        const activeDeploymentEmployeeIds =
-          new Set(
-            activeDeployments
-              .map(
-                (
-                  deployment
-                ) =>
-                  normalizeId(
-                    deployment.employeeId
-                  )
-              )
-              .filter(
-                Boolean
-              )
-          );
-
-        const activeDeploymentEmployeeNames =
-          new Set(
-            activeDeployments
-              .map(
-                (
-                  deployment
-                ) =>
-                  normalizeName(
-                    deployment.employee ||
-                    deployment.employeeName
-                  )
-              )
-              .filter(
-                Boolean
-              )
-          );
-
-        return employees.filter(
-          (
-            emp
-          ) => {
-            const employeeId =
-              normalizeId(
-                emp.id ||
-                emp.employeeId ||
-                emp.employee_id
-              );
-
-            const employeeName =
-              normalizeName(
-                emp.name ||
-                emp.full_name ||
-                emp.fullName
-              );
-
-            const isArchived =
-              emp.archived ===
-                true ||
-              Number(
-                emp.archived
-              ) === 1;
-
-            if (
-              isArchived
-            ) {
-              return false;
-            }
-
-            return (
-              (
-                !!employeeId &&
-                activeDeploymentEmployeeIds.has(
-                  employeeId
-                )
-              ) ||
-              (
-                !!employeeName &&
-                activeDeploymentEmployeeNames.has(
-                  employeeName
-                )
-              )
-            );
-          }
-        );
-      },
-      [
-        employees,
-        activeDeployments,
-      ]
-    );
-
-  const deployments =
-    useMemo(
-      () => {
-        return activeDeployments.map(
-          (
-            deployment
-          ) => {
-            const deploymentEmployeeId =
-              normalizeId(
-                deployment.employeeId
-              );
-
-            const deploymentEmployeeName =
-              normalizeName(
-                deployment.employee ||
-                deployment.employeeName
-              );
-
-            const employeeRecord =
-              employees.find(
-                (
-                  emp
-                ) => {
-                  const employeeId =
-                    normalizeId(
-                      emp.id ||
-                      emp.employeeId ||
-                      emp.employee_id
-                    );
-
-                  const employeeName =
-                    normalizeName(
-                      emp.name ||
-                      emp.full_name ||
-                      emp.fullName
-                    );
-
-                  return (
-                    (
-                      !!deploymentEmployeeId &&
-                      employeeId ===
-                        deploymentEmployeeId
-                    ) ||
-                    (
-                      !!deploymentEmployeeName &&
-                      employeeName ===
-                        deploymentEmployeeName
-                    )
-                  );
-                }
-              );
-
-            const employeeName =
-              employeeRecord?.name ||
-              employeeRecord?.full_name ||
-              employeeRecord?.fullName ||
-              deployment.employee ||
-              deployment.employeeName ||
-              "Unknown Employee";
-
-            return {
-              ...deployment,
-
-              id:
-                deployment.deploymentId ||
-                deployment.id ||
-                deploymentEmployeeId,
-
-              employeeId:
-                deploymentEmployeeId ||
-                normalizeId(
-                  employeeRecord?.id ||
-                  employeeRecord
-                    ?.employeeId
-                ),
-
-              employee:
-                employeeName,
-
-              employeeName,
-
-              company:
-                deployment.company ||
-                deployment.clientCompany ||
-                deployment.client_company ||
-                employeeRecord?.company ||
-                "-",
-
-              status:
-                deployment.status ||
-                "Active",
-
-              deploymentStatus:
-                deployment.deploymentStatus ||
-                deployment.status ||
-                "Active",
-            };
-          }
-        );
-      },
-      [
-        activeDeployments,
-        employees,
-      ]
     );
 
   const incidentCaseCounts =
@@ -1414,24 +1077,10 @@ export default function Incidents() {
             );
           }
 
-          const [
-            employeeData,
-            incidentData,
-            deploymentData,
-          ] =
-            await Promise.all([
-              requestJson(
-                EMPLOYEE_API_URL
-              ),
-
-              requestJson(
-                INCIDENT_API_URL
-              ),
-
-              requestJson(
-                DEPLOYMENT_API_URL
-              ),
-            ]);
+          const incidentData =
+            await requestJson(
+              `${INCIDENT_API_URL}?view=summary`
+            );
 
           if (
             !isMountedRef.current ||
@@ -1450,29 +1099,8 @@ export default function Incidents() {
                 : []
             );
 
-          const backendDeployments =
-            Array.isArray(
-              deploymentData
-            )
-              ? deploymentData.map(
-                  normalizeBackendDeployment
-                )
-              : [];
-
-          setEmployees(
-            Array.isArray(
-              employeeData
-            )
-              ? employeeData
-              : []
-          );
-
           setIncidents(
             backendIncidents
-          );
-
-          setDeploymentRecords(
-            backendDeployments
           );
 
           return true;
@@ -1490,7 +1118,7 @@ export default function Incidents() {
           ) {
             setFetchError(
               error?.message ||
-              "Unable to load employee, deployment, and incident records."
+              "Unable to load incident records."
             );
           }
 
@@ -1528,6 +1156,211 @@ export default function Incidents() {
         }
       },
       []
+    );
+
+  const loadIncidentDetails =
+    useCallback(
+      async (
+        incident
+      ) => {
+        if (
+          !incident?.id
+        ) {
+          throw new Error(
+            "Incident ID is unavailable."
+          );
+        }
+
+        const incidentData =
+          await requestJson(
+            `${INCIDENT_API_URL}/${incident.id}`
+          );
+
+        const normalizedIncident =
+          normalizeBackendIncident(
+            incidentData || {}
+          );
+
+        return normalizeIncidentWithRules(
+          normalizedIncident,
+          incidents
+        );
+      },
+      [
+        incidents,
+      ]
+    );
+
+  const openIncidentAction =
+    useCallback(
+      async (
+        incident,
+        requestedAction = "view"
+      ) => {
+        try {
+          const fullIncident =
+            await loadIncidentDetails(
+              incident
+            );
+
+          if (
+            !isMountedRef.current
+          ) {
+            return false;
+          }
+
+          const currentStatus =
+            normalizeStatus(
+              fullIncident.status
+            );
+
+          setSelectedIncident(
+            null
+          );
+
+          setStartReviewIncident(
+            null
+          );
+
+          setConfirmStartIncident(
+            null
+          );
+
+          setResolutionIncident(
+            null
+          );
+
+          setReviewIncident(
+            null
+          );
+
+          if (
+            requestedAction ===
+              "review" &&
+            currentStatus ===
+              "For Review" &&
+            isAuthorizedReviewer
+          ) {
+            setCaseTab(
+              "FOR_REVIEW"
+            );
+
+            setReviewIncident(
+              fullIncident
+            );
+          } else if (
+            requestedAction ===
+              "submit-resolution" &&
+            currentStatus ===
+              "Investigating" &&
+            !isSuperAdmin
+          ) {
+            setCaseTab(
+              "ACTIVE"
+            );
+
+            setResolutionIncident(
+              fullIncident
+            );
+          } else if (
+            requestedAction ===
+              "start-investigation" &&
+            currentStatus ===
+              "Open" &&
+            !isSuperAdmin
+          ) {
+            setCaseTab(
+              "ACTIVE"
+            );
+
+            setStartReviewIncident(
+              fullIncident
+            );
+          } else {
+            setSelectedIncident(
+              fullIncident
+            );
+          }
+
+          return true;
+        } catch (error) {
+          console.error(
+            "Load incident detail error:",
+            error
+          );
+
+          showNotice(
+            "error",
+            "Unable to Open Incident",
+            error?.message ||
+              "The complete incident record could not be loaded."
+          );
+
+          return false;
+        }
+      },
+      [
+        isAuthorizedReviewer,
+        isSuperAdmin,
+        loadIncidentDetails,
+        showNotice,
+      ]
+    );
+
+  const handleViewIncident =
+    useCallback(
+      (
+        incident
+      ) =>
+        openIncidentAction(
+          incident,
+          "view"
+        ),
+      [
+        openIncidentAction,
+      ]
+    );
+
+  const handleStartReviewIncident =
+    useCallback(
+      (
+        incident
+      ) =>
+        openIncidentAction(
+          incident,
+          "start-investigation"
+        ),
+      [
+        openIncidentAction,
+      ]
+    );
+
+  const handleResolveIncident =
+    useCallback(
+      (
+        incident
+      ) =>
+        openIncidentAction(
+          incident,
+          "submit-resolution"
+        ),
+      [
+        openIncidentAction,
+      ]
+    );
+
+  const handleReviewIncident =
+    useCallback(
+      (
+        incident
+      ) =>
+        openIncidentAction(
+          incident,
+          "review"
+        ),
+      [
+        openIncidentAction,
+      ]
     );
 
   useEffect(
@@ -1644,8 +1477,11 @@ export default function Incidents() {
         incidents.length ===
           0
       ) {
-        return;
+        return undefined;
       }
+
+      let cancelled =
+        false;
 
       const targetId =
         String(
@@ -1691,100 +1527,47 @@ export default function Incidents() {
           }
         );
 
-        return;
+        return undefined;
       }
 
-      const currentStatus =
-        normalizeStatus(
-          foundIncident.status
-        );
+      const openRequestedIncident =
+        async () => {
+          await openIncidentAction(
+            foundIncident,
+            requestedAction
+          );
 
-      setSelectedIncident(
-        null
-      );
+          if (
+            cancelled
+          ) {
+            return;
+          }
 
-      setStartReviewIncident(
-        null
-      );
+          navigate(
+            location.pathname,
+            {
+              replace:
+                true,
 
-      setConfirmStartIncident(
-        null
-      );
+              state:
+                {},
+            }
+          );
+        };
 
-      setResolutionIncident(
-        null
-      );
+      openRequestedIncident();
 
-      setReviewIncident(
-        null
-      );
-
-      if (
-        requestedAction ===
-          "review" &&
-        currentStatus ===
-          "For Review" &&
-        isAuthorizedReviewer
-      ) {
-        setCaseTab(
-          "FOR_REVIEW"
-        );
-
-        setReviewIncident(
-          foundIncident
-        );
-      } else if (
-        requestedAction ===
-          "submit-resolution" &&
-        currentStatus ===
-          "Investigating" &&
-        !isSuperAdmin
-      ) {
-        setCaseTab(
-          "ACTIVE"
-        );
-
-        setResolutionIncident(
-          foundIncident
-        );
-      } else if (
-        requestedAction ===
-          "start-investigation" &&
-        currentStatus ===
-          "Open" &&
-        !isSuperAdmin
-      ) {
-        setCaseTab(
-          "ACTIVE"
-        );
-
-        setStartReviewIncident(
-          foundIncident
-        );
-      } else {
-        setSelectedIncident(
-          foundIncident
-        );
-      }
-
-      navigate(
-        location.pathname,
-        {
-          replace:
-            true,
-
-          state:
-            {},
-        }
-      );
+      return () => {
+        cancelled =
+          true;
+      };
     },
     [
       incidents,
-      isAuthorizedReviewer,
-      isSuperAdmin,
       location.pathname,
       location.state,
       navigate,
+      openIncidentAction,
     ]
   );
 
@@ -2032,41 +1815,6 @@ export default function Incidents() {
         return false;
       }
 
-      const activeDeploymentForEmployee =
-        deployments.find(
-          (
-            deployment
-          ) => {
-            const deploymentEmployeeId =
-              normalizeId(
-                deployment.employeeId
-              );
-
-            const incidentEmployeeId =
-              normalizeId(
-                newIncident.employeeId
-              );
-
-            return (
-              deploymentEmployeeId &&
-              deploymentEmployeeId ===
-                incidentEmployeeId
-            );
-          }
-        );
-
-      if (
-        !activeDeploymentForEmployee
-      ) {
-        showNotice(
-          "error",
-          "Employee Not Deployed",
-          "Incident reports can only be created for employees with an active deployment record."
-        );
-
-        return false;
-      }
-
       const totalEmployeeCases =
         incidents.filter(
           (
@@ -2084,7 +1832,6 @@ export default function Incidents() {
         ...newIncident,
 
         company:
-          activeDeploymentForEmployee.company ||
           newIncident.company ||
           "",
 
@@ -3092,16 +2839,16 @@ export default function Incidents() {
             formatIncidentCode
           }
           onView={
-            setSelectedIncident
+            handleViewIncident
           }
           onStartReview={
-            setStartReviewIncident
+            handleStartReviewIncident
           }
           onResolve={
-            setResolutionIncident
+            handleResolveIncident
           }
           onReview={
-            setReviewIncident
+            handleReviewIncident
           }
         />
       </div>
@@ -3207,12 +2954,6 @@ export default function Incidents() {
         }
         onSave={
           handleAddIncident
-        }
-        employees={
-          activeEmployees
-        }
-        deployments={
-          deployments
         }
         existingIncidents={
           incidents

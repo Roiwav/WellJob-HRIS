@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -32,7 +33,7 @@ import {
 
 import {
   useDeleteKPIDecisionMutation,
-  useKPIDecisionHistoryQuery,
+  useKPIDecisionHistoryPageQuery,
 } from "../../../hooks/useKPIDecisionQueries";
 
 const DECISION_FILTER_OPTIONS = [
@@ -54,13 +55,12 @@ const DECISION_FILTER_OPTIONS = [
   },
 ];
 
-function normalizeSearchText(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ");
-}
+const HISTORY_PAGE_SIZE =
+  25;
+
+const SEARCH_DEBOUNCE_MS =
+  350;
+
 
 function formatEmployeeId(id) {
   return String(id || "-").replace(
@@ -383,6 +383,16 @@ export default function DecisionHistorySection() {
   ] = useState("ALL");
 
   const [
+    debouncedSearch,
+    setDebouncedSearch,
+  ] = useState("");
+
+  const [
+    page,
+    setPage,
+  ] = useState(1);
+
+  const [
     deleteTarget,
     setDeleteTarget,
   ] = useState(null);
@@ -397,6 +407,24 @@ export default function DecisionHistorySection() {
     setSuccessMessage,
   ] = useState("");
 
+  useEffect(() => {
+    const timeoutId =
+      globalThis.setTimeout(
+        () => {
+          setDebouncedSearch(
+            search.trim()
+          );
+        },
+        SEARCH_DEBOUNCE_MS
+      );
+
+    return () => {
+      globalThis.clearTimeout(
+        timeoutId
+      );
+    };
+  }, [search]);
+
   const {
     data: historyData,
     isLoading,
@@ -404,7 +432,18 @@ export default function DecisionHistorySection() {
     error,
     refetch,
   } =
-    useKPIDecisionHistoryQuery();
+    useKPIDecisionHistoryPageQuery({
+      page,
+
+      pageSize:
+        HISTORY_PAGE_SIZE,
+
+      search:
+        debouncedSearch,
+
+      decisionType:
+        decisionFilter,
+    });
 
   const deleteDecisionMutation =
     useDeleteKPIDecisionMutation();
@@ -412,122 +451,32 @@ export default function DecisionHistorySection() {
   const history =
     useMemo(() => {
       return Array.isArray(
-        historyData
+        historyData?.records
       )
-        ? historyData.filter(Boolean)
+        ? historyData.records.filter(
+            Boolean
+          )
         : [];
     }, [historyData]);
 
-  const filteredHistory =
-    useMemo(() => {
-      const normalizedSearch =
-        normalizeSearchText(search);
-
-      const searchTerms =
-        normalizedSearch
-          ? normalizedSearch.split(
-              /\s+/
-            )
-          : [];
-
-      return history.filter(
-        (record) => {
-          if (
-            decisionFilter !==
-              "ALL" &&
-            record?.decisionType !==
-              decisionFilter
-          ) {
-            return false;
-          }
-
-          if (
-            searchTerms.length ===
-            0
-          ) {
-            return true;
-          }
-
-          const searchableText =
-            normalizeSearchText(
-              [
-                record?.employeeName,
-                record?.employeeId,
-                formatEmployeeId(
-                  record?.employeeId
-                ),
-                record?.company,
-                record?.decisionType,
-                record?.systemRecommendation,
-                record?.suggestedHRAction,
-                record?.finalAction,
-                record?.notes,
-                record?.decidedBy,
-                record?.decidedByRole,
-                record?.riskLevel,
-                record?.kpiLevel,
-                record?.decisionConfidence,
-              ]
-                .filter(
-                  (value) =>
-                    value !== null &&
-                    value !== undefined &&
-                    value !== ""
-                )
-                .join(" ")
-            );
-
-          return searchTerms.every(
-            (term) =>
-              searchableText.includes(
-                term
-              )
-          );
-        }
-      );
-    }, [
-      history,
-      search,
-      decisionFilter,
-    ]);
+  const pagination =
+    historyData?.pagination ||
+    {
+      page,
+      pageSize:
+        HISTORY_PAGE_SIZE,
+      total: 0,
+      totalPages: 1,
+    };
 
   const summary =
-    useMemo(() => {
-      return history.reduce(
-        (counts, record) => {
-          counts.total += 1;
-
-          if (
-            record?.decisionType ===
-            "Accepted"
-          ) {
-            counts.accepted += 1;
-          }
-
-          if (
-            record?.decisionType ===
-            "Modified"
-          ) {
-            counts.modified += 1;
-          }
-
-          if (
-            record?.decisionType ===
-            "Rejected"
-          ) {
-            counts.rejected += 1;
-          }
-
-          return counts;
-        },
-        {
-          total: 0,
-          accepted: 0,
-          modified: 0,
-          rejected: 0,
-        }
-      );
-    }, [history]);
+    historyData?.summary ||
+    {
+      total: 0,
+      accepted: 0,
+      modified: 0,
+      rejected: 0,
+    };
 
   const hasActiveFilters =
     Boolean(search.trim()) ||
@@ -540,7 +489,9 @@ export default function DecisionHistorySection() {
 
   const handleClearFilters = () => {
     setSearch("");
+    setDebouncedSearch("");
     setDecisionFilter("ALL");
+    setPage(1);
   };
 
   const handleRefresh =
@@ -612,9 +563,25 @@ export default function DecisionHistorySection() {
       }
 
       try {
+        const shouldMoveToPreviousPage =
+          history.length === 1 &&
+          page > 1;
+
         await deleteDecisionMutation.mutateAsync(
           deleteTarget.id
         );
+
+        if (
+          shouldMoveToPreviousPage
+        ) {
+          setPage(
+            (currentPage) =>
+              Math.max(
+                1,
+                currentPage - 1
+              )
+          );
+        }
 
         setDeleteTarget(null);
 
@@ -710,7 +677,10 @@ export default function DecisionHistorySection() {
           <div className="mt-5">
             <FilterBar
               resultCount={
-                filteredHistory.length
+                Number(
+                  pagination.total ||
+                    0
+                )
               }
               resultLabel="decision record"
               actions={
@@ -760,14 +730,17 @@ export default function DecisionHistorySection() {
                   hideLabel
                   placeholder="Search employee, action, reviewer, notes, confidence, or risk..."
                   value={search}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setSearch(
                       event.target.value
-                    )
-                  }
-                  onClear={() =>
-                    setSearch("")
-                  }
+                    );
+                    setPage(1);
+                  }}
+                  onClear={() => {
+                    setSearch("");
+                    setDebouncedSearch("");
+                    setPage(1);
+                  }}
                 />
               </div>
 
@@ -784,11 +757,12 @@ export default function DecisionHistorySection() {
                   value={
                     decisionFilter
                   }
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setDecisionFilter(
                       event.target.value
-                    )
-                  }
+                    );
+                    setPage(1);
+                  }}
                   className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                 >
                   {DECISION_FILTER_OPTIONS.map(
@@ -835,7 +809,7 @@ export default function DecisionHistorySection() {
             columns={4}
             showHeader
           />
-        ) : filteredHistory.length ===
+        ) : history.length ===
           0 ? (
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <EmptyState
@@ -868,7 +842,7 @@ export default function DecisionHistorySection() {
           </div>
         ) : (
           <div className="grid gap-4">
-            {filteredHistory.map(
+            {history.map(
               (record) => {
                 const isDeletingRecord =
                   deleteDecisionMutation.isPending &&
@@ -896,6 +870,78 @@ export default function DecisionHistorySection() {
                 );
               }
             )}
+          </div>
+        )}
+
+        {Number(
+          pagination.total ||
+            0
+        ) > 0 && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+              Page{" "}
+              {pagination.page || page}{" "}
+              of{" "}
+              {pagination.totalPages ||
+                1}{" "}
+              •{" "}
+              {pagination.total || 0}{" "}
+              matching decision
+              record(s)
+            </p>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={
+                  isFetching ||
+                  page <= 1
+                }
+                onClick={() =>
+                  setPage(
+                    (currentPage) =>
+                      Math.max(
+                        1,
+                        currentPage -
+                          1
+                      )
+                  )
+                }
+              >
+                Previous
+              </Button>
+
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={
+                  isFetching ||
+                  page >=
+                    Number(
+                      pagination.totalPages ||
+                        1
+                    )
+                }
+                onClick={() =>
+                  setPage(
+                    (currentPage) =>
+                      Math.min(
+                        Number(
+                          pagination.totalPages ||
+                            1
+                        ),
+                        currentPage +
+                          1
+                      )
+                  )
+                }
+              >
+                Next
+              </Button>
+            </div>
           </div>
         )}
 

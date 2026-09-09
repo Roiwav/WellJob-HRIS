@@ -309,23 +309,6 @@ function isComplianceDocumentExpired(
   );
 }
 
-async function tableExists(
-  tableName
-) {
-  const [rows] =
-    await db
-      .promise()
-      .query(
-        "SHOW TABLES LIKE ?",
-        [
-          tableName,
-        ]
-      );
-
-  return (
-    rows.length > 0
-  );
-}
 
 function normalizeEmployee(
   employee
@@ -427,18 +410,21 @@ async function fetchEmployees() {
   const [rows] =
     await db
       .promise()
-      .query(
-        "SELECT * FROM employees"
-      );
+      .query(`
+        SELECT
+          id,
+          name,
+          company,
+          status,
+          archived
+        FROM employees
+        WHERE archived = 0
+           OR archived IS NULL
+      `);
 
-  return rows
-    .map(
-      normalizeEmployee
-    )
-    .filter(
-      (employee) =>
-        !employee.archived
-    );
+  return rows.map(
+    normalizeEmployee
+  );
 }
 
 async function fetchIncidents() {
@@ -447,12 +433,32 @@ async function fetchIncidents() {
       .promise()
       .query(`
         SELECT
-          i.*,
+          i.id,
+          i.employee_id,
+          i.violation_type,
+          i.severity,
+          i.status,
+          i.company,
+          i.updated_at,
+          i.created_at,
+          i.incident_date,
           e.name AS employeeNameFromEmployee,
           e.company AS employeeCompany
-        FROM incidents i
-        LEFT JOIN employees e
+        FROM incidents AS i
+        LEFT JOIN employees AS e
           ON e.id = i.employee_id
+        WHERE LOWER(
+          REPLACE(
+            COALESCE(i.status, 'Open'),
+            '_',
+            ' '
+          )
+        ) IN (
+          'open',
+          'investigating',
+          'for review',
+          'resolved'
+        )
       `);
 
   return rows
@@ -465,28 +471,38 @@ async function fetchIncidents() {
 }
 
 async function fetchEmployeeDocuments() {
-  const exists =
-    await tableExists(
-      "employee_documents"
-    );
-
-  if (
-    !exists
-  ) {
-    return [];
-  }
-
   const [rows] =
     await db
       .promise()
       .query(`
         SELECT
-          d.*,
+          d.id,
+          d.employee_id,
+          d.name,
+          d.expiration_date,
+          d.file_path,
           e.name AS employeeName,
           e.company AS employeeCompany
-        FROM employee_documents d
-        LEFT JOIN employees e
+        FROM employee_documents AS d
+        INNER JOIN employees AS e
           ON e.id = d.employee_id
+        WHERE
+          (
+            e.archived = 0
+            OR e.archived IS NULL
+          )
+          AND (
+            d.file_path IS NULL
+            OR TRIM(d.file_path) = ''
+            OR (
+              d.expiration_date IS NOT NULL
+              AND d.expiration_date <=
+                DATE_ADD(
+                  CURDATE(),
+                  INTERVAL 30 DAY
+                )
+            )
+          )
       `);
 
   return rows.map(
@@ -507,18 +523,14 @@ async function fetchEmployeeDocuments() {
 
       name:
         document.name ||
-        document.document_name ||
         "Document",
 
       filePath:
         document.file_path ||
-        document.file ||
         null,
 
       expirationDate:
         document.expiration_date ||
-        document.expirationDate ||
-        document.expires_at ||
         null,
     })
   );

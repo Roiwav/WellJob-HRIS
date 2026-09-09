@@ -1,0 +1,78 @@
+{
+  "generatedAt": "2026-09-07T21:50:49.874Z",
+  "referenceDate": "2026-09-08",
+  "currentWorkforce": 1624,
+  "currentDeployed": 1510,
+  "currentFloating": 114,
+  "historicalInactiveArchived": 30,
+  "totalEmployeeRecords": 1654,
+  "redeployedCurrentEmployees": 200,
+  "deploymentAssignments": 1854,
+  "statusHistoryRows": 2198,
+  "employeeDocumentRows": 13440,
+  "incidentRows": 96,
+  "incidentTimelineRows": 363,
+  "complianceRequirementNames": [
+    "Resume",
+    "NSO/PSA",
+    "SSS (ID or E1 form)",
+    "Pag-IBIG (ID or MDRF Form)",
+    "PhilHealth (ID or MDF Form)",
+    "Diploma",
+    "Cedula",
+    "Barangay Clearance",
+    "NBI/Police Clearance"
+  ],
+  "showcase": [
+    {
+      "seedIndex": 201,
+      "employeeId": 203,
+      "expectedUse": "High-risk KPI / DSS scenario"
+    },
+    {
+      "seedIndex": 202,
+      "employeeId": 204,
+      "expectedUse": "High-risk KPI / DSS scenario"
+    },
+    {
+      "seedIndex": 203,
+      "employeeId": 205,
+      "expectedUse": "High-risk KPI / DSS scenario"
+    },
+    {
+      "seedIndex": 204,
+      "employeeId": 206,
+      "expectedUse": "High-risk KPI / DSS scenario"
+    },
+    {
+      "seedIndex": 205,
+      "employeeId": 207,
+      "expectedUse": "Repeat-offender scenario"
+    },
+    {
+      "seedIndex": 206,
+      "employeeId": 208,
+      "expectedUse": "Repeat-offender scenario"
+    },
+    {
+      "seedIndex": 1511,
+      "employeeId": 1513,
+      "expectedUse": "Floating / standby scenario"
+    },
+    {
+      "seedIndex": 1512,
+      "employeeId": 1514,
+      "expectedUse": "Floating / standby scenario"
+    },
+    {
+      "seedIndex": 1,
+      "employeeId": 3,
+      "expectedUse": "Redeployment history scenario"
+    },
+    {
+      "seedIndex": 2,
+      "employeeId": 4,
+      "expectedUse": "Redeployment history scenario"
+    }
+  ]
+}

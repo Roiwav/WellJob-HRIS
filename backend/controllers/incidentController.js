@@ -413,26 +413,6 @@ function normalizeEmployeeLookupId(
   );
 }
 
-function isActiveDeploymentRow(
-  deployment
-) {
-  const status =
-    normalizeText(
-      deployment.status ||
-        deployment
-          .deployment_status ||
-        deployment
-          .deploymentStatus
-    );
-
-  return [
-    "active",
-    "deployed",
-    "active deployed",
-    "ongoing",
-  ].includes(status);
-}
-
 async function tableExists(
   tableName
 ) {
@@ -481,13 +461,11 @@ async function getActiveDeploymentForEmployee(
       employeeId || ""
     ).trim();
 
-  if (
-    !normalizedEmployeeId ||
-    !(await tableExists(
-      "deployments"
-    ))
-  ) {
-    return null;
+  if (!normalizedEmployeeId) {
+    return {
+      assignment: null,
+      hasConflict: false,
+    };
   }
 
   const [rows] =
@@ -495,27 +473,206 @@ async function getActiveDeploymentForEmployee(
       .promise()
       .query(
         `
-        SELECT *
-        FROM deployments
-        WHERE CAST(
-          employee_id AS CHAR
-        ) = ?
+        SELECT
+          id,
+          employee_id,
+          company,
+          position,
+          start_date,
+          end_date,
+          end_reason,
+          end_remarks,
+          status,
+          ended_at,
+          created_at,
+          updated_at
+        FROM deployment_assignments
+        WHERE employee_id = ?
+          AND status = 'Active'
         ORDER BY
-          created_at DESC,
+          start_date DESC,
           id DESC
+        LIMIT 2
         `,
         [
           normalizedEmployeeId,
         ]
       );
 
-  return (
-    rows.find(
-      isActiveDeploymentRow
-    ) ||
-    null
-  );
+  return {
+    assignment:
+      rows[0] || null,
+
+    hasConflict:
+      rows.length > 1,
+  };
 }
+
+exports.getIncidentFormMeta =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const employeeSearch =
+        String(
+          req.query
+            ?.employeeSearch ||
+          req.query?.search ||
+          ""
+        )
+          .trim()
+          .slice(
+            0,
+            100
+          );
+
+      if (!employeeSearch) {
+        return res.json({
+          employees: [],
+        });
+      }
+
+      const normalizedEmployeeId =
+        normalizeEmployeeLookupId(
+          employeeSearch
+        );
+
+      const textSearch =
+        `%${employeeSearch.toLowerCase()}%`;
+
+      const idSearch =
+        `%${normalizedEmployeeId}%`;
+
+      const [rows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              e.id,
+              e.name,
+              e.status,
+              da.id AS deployment_id,
+              da.company,
+              da.position,
+              da.start_date
+            FROM employees e
+            INNER JOIN deployment_assignments da
+              ON da.employee_id = e.id
+              AND da.status = 'Active'
+            WHERE
+              e.archived = 0
+              AND LOWER(
+                TRIM(
+                  e.status
+                )
+              ) = 'deployed'
+              AND (
+                LOWER(
+                  e.name
+                ) LIKE ?
+                OR CAST(
+                  e.id AS CHAR
+                ) LIKE ?
+                OR LOWER(
+                  COALESCE(
+                    da.company,
+                    ''
+                  )
+                ) LIKE ?
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM deployment_assignments conflicting
+                WHERE
+                  conflicting.employee_id = e.id
+                  AND conflicting.status = 'Active'
+                  AND conflicting.id <> da.id
+              )
+            ORDER BY
+              e.name ASC,
+              e.id ASC
+            LIMIT 8
+            `,
+            [
+              textSearch,
+              idSearch,
+              textSearch,
+            ]
+          );
+
+      return res.json({
+        employees:
+          rows.map(
+            (row) => ({
+              id:
+                row.id,
+
+              employeeId:
+                row.id,
+
+              name:
+                row.name,
+
+              status:
+                row.status,
+
+              company:
+                row.company ||
+                "",
+
+              activeDeployment: {
+                id:
+                  row.deployment_id,
+
+                deploymentId:
+                  row.deployment_id,
+
+                employeeId:
+                  row.id,
+
+                employee:
+                  row.name,
+
+                employeeName:
+                  row.name,
+
+                company:
+                  row.company ||
+                  "",
+
+                position:
+                  row.position ||
+                  "",
+
+                status:
+                  "Active",
+
+                deploymentStatus:
+                  "Active",
+
+                startDate:
+                  row.start_date ||
+                  null,
+              },
+            })
+          ),
+      });
+    } catch (error) {
+      console.error(
+        "GET INCIDENT FORM META ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to load incident form employee options.",
+        });
+    }
+  };
 
 /*
  * ==================================================
@@ -1656,6 +1813,29 @@ function serializeIncident(
   };
 }
 
+
+function serializeIncidentSummary(
+  incident
+) {
+  const serialized =
+    serializeIncident(
+      incident,
+      [],
+      []
+    );
+
+  const {
+    evidence,
+    timelineEvents,
+    timeline_events,
+    timeline,
+    ...summary
+  } =
+    serialized;
+
+  return summary;
+}
+
 async function getIncidentWithEvidence(
   id
 ) {
@@ -1897,6 +2077,77 @@ exports.getIncidents =
     res
   ) => {
     try {
+      const view =
+        String(
+          req.query?.view ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+      if (
+        view ===
+        "summary"
+      ) {
+        const [incidents] =
+          await db
+            .promise()
+            .query(`
+              SELECT
+                i.id,
+                i.employee_id,
+                i.employee_name,
+                i.company,
+                i.violation_type,
+                i.severity,
+                i.status,
+                i.incident_date,
+                i.location,
+                i.description,
+                i.reported_by,
+                i.action_taken,
+                i.policy_sanction,
+                i.recommendation,
+                i.resolution_notes,
+                i.investigation_started_by_id,
+                i.investigation_started_by_username,
+                i.investigation_started_by_name,
+                i.investigation_started_at,
+                i.resolution_submitted_by_id,
+                i.resolution_submitted_by_username,
+                i.resolution_submitted_by_name,
+                i.resolution_submitted_at,
+                i.reviewed_by_id,
+                i.reviewed_by_username,
+                i.reviewed_by_name,
+                i.reviewed_at,
+                i.review_decision,
+                i.review_comments,
+                i.created_at,
+                i.updated_at,
+                i.last_action_by_id,
+                i.last_action_by_username,
+                i.last_action_by_name,
+                i.last_action_type,
+                i.last_action_at,
+                e.name AS employeeNameFromEmployee,
+                e.company AS employeeCompany,
+                e.status AS employeeStatus
+              FROM incidents i
+              LEFT JOIN employees e
+                ON e.id = i.employee_id
+              ORDER BY
+                i.created_at DESC,
+                i.id DESC
+            `);
+
+        return res.json(
+          incidents.map(
+            serializeIncidentSummary
+          )
+        );
+      }
+
       await ensureIncidentTimelineTable();
 
       const [incidents] =
@@ -2371,36 +2622,40 @@ exports.createIncident =
           });
       }
 
-      const activeDeployment =
+      const {
+        assignment:
+          activeDeployment,
+        hasConflict:
+          hasDeploymentConflict,
+      } =
         await getActiveDeploymentForEmployee(
           finalEmployeeId
         );
 
-      /*
-       * DATA INTEGRITY:
-       *
-       * Employee identity is server-authoritative.
-       * Client-supplied employee names are ignored so
-       * a direct API request cannot attach a valid
-       * employee_id to a forged display name.
-       */
+      if (hasDeploymentConflict) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "Multiple active deployment assignments were found for the selected employee.",
+          });
+      }
+
+      if (!activeDeployment) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "The selected deployed employee does not have an active deployment assignment.",
+          });
+      }
+
       const finalEmployeeName =
         employeeRecord.name ||
         null;
 
-      /*
-       * DATA INTEGRITY:
-       *
-       * Company assignment comes from trusted server
-       * records rather than req.body.company.
-       */
       const finalCompany =
-        activeDeployment
-          ?.company ||
-        activeDeployment
-          ?.client_company ||
-        employeeRecord
-          .company ||
+        activeDeployment.company ||
         null;
 
       const submittedViolation =

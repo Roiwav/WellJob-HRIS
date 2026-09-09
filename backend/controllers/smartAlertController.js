@@ -322,22 +322,6 @@ function getTrustedStateUserKeys(
   return Array.from(keys);
 }
 
-async function tableExists(
-  tableName
-) {
-  const [rows] =
-    await db
-      .promise()
-      .query(
-        "SHOW TABLES LIKE ?",
-        [
-          tableName,
-        ]
-      );
-
-  return rows.length > 0;
-}
-
 function addAlias(
   map,
   key,
@@ -360,59 +344,40 @@ function addAlias(
 }
 
 async function getUserNameMap() {
-  const userTable =
-    (await tableExists(
-      "users"
-    ))
-      ? "users"
-      : (await tableExists(
-          "user_accounts"
-        ))
-      ? "user_accounts"
-      : null;
-
-  const map =
-    new Map();
-
-  if (!userTable) {
-    return map;
-  }
-
   const [rows] =
     await db
       .promise()
       .query(
-        `SELECT * FROM ${userTable}`
+        `
+        SELECT
+          id,
+          user_id,
+          full_name,
+          username,
+          role
+        FROM users
+        `
       );
+
+  const map =
+    new Map();
 
   rows.forEach(
     (user) => {
-      const rawRole =
-        user.role ||
-        user.user_role ||
-        user.userRole ||
-        "";
-
       const profile = {
         name:
           user.full_name ||
-          user.fullName ||
-          user.fullname ||
-          user.display_name ||
-          user.displayName ||
-          user.name ||
           user.username ||
           "Unknown User",
 
         username:
           user.username ||
-          user.email ||
           "",
 
         role:
-          rawRole
+          user.role
             ? normalizeRole(
-                rawRole
+                user.role
               )
             : "",
       };
@@ -420,17 +385,8 @@ async function getUserNameMap() {
       [
         user.id,
         user.user_id,
-        user.userId,
-        user.employee_id,
-        user.employeeId,
         user.username,
-        user.email,
-        user.name,
         user.full_name,
-        user.fullName,
-        user.fullname,
-        user.display_name,
-        user.displayName,
       ].forEach(
         (value) => {
           addAlias(
@@ -1826,24 +1782,103 @@ function buildEmployeePatternAlerts(
 
   const alerts = [];
 
+  const incidentsByEmployeeId =
+    new Map();
+
+  const incidentsByEmployeeName =
+    new Map();
+
+  visibleIncidents.forEach(
+    (incident) => {
+      const status =
+        normalizeStatus(
+          incident.status
+        );
+
+      if (
+        ![
+          "Open",
+          "Investigating",
+        ].includes(status)
+      ) {
+        return;
+      }
+
+      const employeeId =
+        String(
+          incident?.employeeId ||
+          ""
+        ).trim();
+
+      const employeeName =
+        normalizeText(
+          incident?.employee ||
+          incident?.employeeName
+        );
+
+      if (employeeId) {
+        const current =
+          incidentsByEmployeeId.get(
+            employeeId
+          ) || [];
+
+        current.push(
+          incident
+        );
+
+        incidentsByEmployeeId.set(
+          employeeId,
+          current
+        );
+      }
+
+      if (employeeName) {
+        const current =
+          incidentsByEmployeeName.get(
+            employeeName
+          ) || [];
+
+        current.push(
+          incident
+        );
+
+        incidentsByEmployeeName.set(
+          employeeName,
+          current
+        );
+      }
+    }
+  );
+
   activeEmployees.forEach(
     (employee) => {
-      const activeCases =
-        visibleIncidents.filter(
-          (incident) =>
-            isSameEmployee(
-              employee,
-              incident
-            ) &&
-            [
-              "Open",
-              "Investigating",
-            ].includes(
-              normalizeStatus(
-                incident.status
-              )
-            )
+      const employeeId =
+        String(
+          employee?.id ||
+          ""
+        ).trim();
+
+      const employeeName =
+        normalizeText(
+          employee?.name
         );
+
+      const activeCases =
+        (
+          employeeId
+            ? incidentsByEmployeeId.get(
+                employeeId
+              )
+            : null
+        ) ||
+        (
+          employeeName
+            ? incidentsByEmployeeName.get(
+                employeeName
+              )
+            : null
+        ) ||
+        [];
 
       if (
         activeCases.length <
@@ -1981,54 +2016,127 @@ function buildEmployeePatternAlerts(
 async function fetchBaseData() {
   const [
     userNameMap,
-    [employees],
-    [incidents],
+    [incidentRows],
   ] =
     await Promise.all([
       getUserNameMap(),
 
+      /*
+       * Smart Alerts only needs workflow identity,
+       * status, severity, timing, and employee
+       * context. Avoid transferring full incident
+       * rows and derive the employee pattern set
+       * from this same query.
+       */
       db
         .promise()
         .query(`
           SELECT
-            id,
-            name,
-            company,
-            status,
-            archived
-          FROM employees
-        `),
-
-      db
-        .promise()
-        .query(`
-          SELECT
-            i.*,
+            i.id,
+            i.employee_id,
+            i.company,
+            i.violation_type,
+            i.severity,
+            i.status,
+            i.reported_by,
+            i.incident_date,
+            i.created_at,
+            i.updated_at,
+            i.last_action_by_id,
+            i.last_action_by_username,
+            i.last_action_by_name,
+            i.last_action_type,
+            i.last_action_at,
+            i.investigation_started_by_id,
+            i.investigation_started_by_username,
+            i.investigation_started_by_name,
+            i.investigation_started_at,
+            i.resolution_submitted_by_id,
+            i.resolution_submitted_by_username,
+            i.resolution_submitted_by_name,
+            i.resolution_submitted_at,
+            i.reviewed_by_id,
+            i.reviewed_by_username,
+            i.reviewed_by_name,
+            i.reviewed_at,
+            i.review_decision,
+            i.review_comments,
+            e.id AS employeeRecordId,
             e.name AS employeeNameFromEmployee,
             e.company AS employeeCompany,
-            e.status AS employeeStatus
+            e.status AS employeeStatus,
+            e.archived AS employeeArchived
           FROM incidents i
           LEFT JOIN employees e
             ON e.id = i.employee_id
-          ORDER BY
-            COALESCE(
-              i.updated_at,
-              i.created_at,
-              i.incident_date
-            ) DESC
         `),
     ]);
+
+  const employeesById =
+    new Map();
+
+  incidentRows.forEach(
+    (incident) => {
+      const employeeId =
+        incident.employeeRecordId;
+
+      if (
+        employeeId ===
+          null ||
+        employeeId ===
+          undefined ||
+        Number(
+          incident.employeeArchived
+        ) === 1
+      ) {
+        return;
+      }
+
+      const key =
+        String(
+          employeeId
+        );
+
+      if (
+        employeesById.has(
+          key
+        )
+      ) {
+        return;
+      }
+
+      employeesById.set(
+        key,
+        normalizeEmployee({
+          id:
+            employeeId,
+
+          name:
+            incident.employeeNameFromEmployee,
+
+          company:
+            incident.employeeCompany,
+
+          status:
+            incident.employeeStatus,
+
+          archived:
+            incident.employeeArchived,
+        })
+      );
+    }
+  );
 
   return {
     userNameMap,
 
     employees:
-      employees.map(
-        normalizeEmployee
+      Array.from(
+        employeesById.values()
       ),
 
     incidents:
-      incidents.map(
+      incidentRows.map(
         (incident) =>
           normalizeIncident(
             incident,
@@ -2050,16 +2158,66 @@ function buildSmartAlerts({
         !employee.archived
     );
 
+  const activeEmployeeIds =
+    new Set();
+
+  const activeEmployeeNames =
+    new Set();
+
+  activeEmployees.forEach(
+    (employee) => {
+      const employeeId =
+        String(
+          employee?.id ||
+          ""
+        ).trim();
+
+      const employeeName =
+        normalizeText(
+          employee?.name
+        );
+
+      if (employeeId) {
+        activeEmployeeIds.add(
+          employeeId
+        );
+      }
+
+      if (employeeName) {
+        activeEmployeeNames.add(
+          employeeName
+        );
+      }
+    }
+  );
+
   const visibleIncidents =
     incidents.filter(
       (incident) => {
+        const incidentEmployeeId =
+          String(
+            incident?.employeeId ||
+            ""
+          ).trim();
+
+        const incidentEmployeeName =
+          normalizeText(
+            incident?.employee ||
+            incident?.employeeName
+          );
+
         const employeeIsActive =
-          activeEmployees.some(
-            (employee) =>
-              isSameEmployee(
-                employee,
-                incident
-              )
+          (
+            incidentEmployeeId &&
+            activeEmployeeIds.has(
+              incidentEmployeeId
+            )
+          ) ||
+          (
+            incidentEmployeeName &&
+            activeEmployeeNames.has(
+              incidentEmployeeName
+            )
           );
 
         return (
@@ -2113,13 +2271,7 @@ async function getAlertStates({
   userKeys,
   role,
 }) {
-  const hasTable =
-    await tableExists(
-      "smart_alert_states"
-    );
-
   if (
-    !hasTable ||
     !Array.isArray(
       userKeys
     ) ||
@@ -2300,7 +2452,6 @@ async function upsertAlertState({
   alertKey,
   isRead,
   isDismissed,
-  skipTableCheck = false,
 }) {
   if (
     !userKey ||
@@ -2308,21 +2459,6 @@ async function upsertAlertState({
     !alertKey
   ) {
     return;
-  }
-
-  if (
-    !skipTableCheck
-  ) {
-    const hasTable =
-      await tableExists(
-        "smart_alert_states"
-      );
-
-    if (
-      !hasTable
-    ) {
-      return;
-    }
   }
 
   await db
@@ -2798,34 +2934,22 @@ exports.markAllSmartAlertsRead =
         alertKeys.length >
         0
       ) {
-        const hasTable =
-          await tableExists(
-            "smart_alert_states"
-          );
+        await Promise.all(
+          alertKeys.map(
+            (alertKey) =>
+              upsertAlertState({
+                userKey,
+                role,
+                alertKey,
 
-        if (
-          hasTable
-        ) {
-          await Promise.all(
-            alertKeys.map(
-              (alertKey) =>
-                upsertAlertState({
-                  userKey,
-                  role,
-                  alertKey,
+                isRead:
+                  true,
 
-                  isRead:
-                    true,
-
-                  isDismissed:
-                    false,
-
-                  skipTableCheck:
-                    true,
-                })
-            )
-          );
-        }
+                isDismissed:
+                  false,
+              })
+          )
+        );
       }
 
       return res.json({

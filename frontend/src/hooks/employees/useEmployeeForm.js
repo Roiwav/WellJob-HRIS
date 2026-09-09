@@ -1,5 +1,3 @@
-// frontend/src/hooks/employees/useEmployeeForm.js
-
 import {
   useCallback,
   useEffect,
@@ -7,6 +5,8 @@ import {
   useRef,
   useState,
 } from "react";
+
+import axios from "axios";
 
 import {
   COMPANY_OPTIONS,
@@ -18,12 +18,16 @@ import {
   INITIAL_EMPLOYEE_FORM_ERRORS,
   calculateEmployeeFormCompletion,
   createInitialEmployeeFormData,
-  findDuplicateEmployee,
+  EMPLOYEE_API_URL,
   getCompletedDocuments,
   getComplianceReviewWarning,
+  getEmployeeApiError,
   validateEmployeeDocumentFile,
   validateEmployeeForm,
 } from "../../utils/employees/employeeFormHelpers";
+
+const DUPLICATE_LOOKUP_DEBOUNCE_MS =
+  350;
 
 function createInitialErrors() {
   return {
@@ -59,6 +63,7 @@ export default function useEmployeeForm({
   const [showReview, setShowReview] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
+  const [duplicateEmployee, setDuplicateEmployee] = useState(null);
   const [filteredCompanies, setFilteredCompanies] =
     useState(COMPANY_OPTIONS);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -67,6 +72,8 @@ export default function useEmployeeForm({
   const [saveError, setSaveError] = useState("");
 
   const companyBlurTimerRef = useRef(null);
+  const duplicateLookupTimerRef = useRef(null);
+  const duplicateLookupAbortRef = useRef(null);
 
   const resetForm = useCallback((employee = null) => {
     setFormData(createInitialEmployeeFormData(employee));
@@ -74,6 +81,7 @@ export default function useEmployeeForm({
     setShowReview(false);
     setShowDocuments(false);
     setDuplicateConfirmed(false);
+    setDuplicateEmployee(null);
     setFilteredCompanies(COMPANY_OPTIONS);
     setShowSuggestions(false);
     setDragTargetDocument("");
@@ -87,18 +95,106 @@ export default function useEmployeeForm({
       if (companyBlurTimerRef.current) {
         window.clearTimeout(companyBlurTimerRef.current);
       }
+
+      if (duplicateLookupTimerRef.current) {
+        window.clearTimeout(duplicateLookupTimerRef.current);
+      }
+
+      duplicateLookupAbortRef.current?.abort();
     };
   }, []);
 
-  const duplicateEmployee = useMemo(
-    () =>
-      findDuplicateEmployee({
-        employees,
-        employeeName: formData.name,
-        excludedEmployeeId: employeeId,
-      }),
-    [employeeId, employees, formData.name]
+  const lookupDuplicateEmployee = useCallback(
+    async (employeeName, signal) => {
+      const normalizedName = String(employeeName || "")
+        .trim()
+        .replace(/\s+/g, " ");
+
+      if (!normalizedName) {
+        return null;
+      }
+
+      const params = {
+        name: normalizedName,
+      };
+
+      if (initialEmployee && employeeId) {
+        params.excludeId = employeeId;
+      }
+
+      const { data } = await axios.get(
+        `${EMPLOYEE_API_URL}/form-meta`,
+        {
+          params,
+          signal,
+        }
+      );
+
+      return data?.duplicateEmployee || null;
+    },
+    [employeeId, initialEmployee]
   );
+
+  useEffect(() => {
+    if (duplicateLookupTimerRef.current) {
+      window.clearTimeout(duplicateLookupTimerRef.current);
+      duplicateLookupTimerRef.current = null;
+    }
+
+    duplicateLookupAbortRef.current?.abort();
+    duplicateLookupAbortRef.current = null;
+
+    const employeeName = String(formData.name || "")
+      .trim()
+      .replace(/\s+/g, " ");
+
+    if (!employeeName) {
+      return undefined;
+    }
+
+    duplicateLookupTimerRef.current = window.setTimeout(() => {
+      const controller = new AbortController();
+
+      duplicateLookupAbortRef.current = controller;
+
+      void lookupDuplicateEmployee(
+        employeeName,
+        controller.signal
+      )
+        .then((matchedEmployee) => {
+          if (!controller.signal.aborted) {
+            setDuplicateEmployee(matchedEmployee);
+          }
+        })
+        .catch((error) => {
+          if (
+            error?.code !== "ERR_CANCELED" &&
+            error?.name !== "CanceledError" &&
+            error?.name !== "AbortError"
+          ) {
+            console.error(
+              "EMPLOYEE DUPLICATE LOOKUP ERROR:",
+              error
+            );
+          }
+        })
+        .finally(() => {
+          if (duplicateLookupAbortRef.current === controller) {
+            duplicateLookupAbortRef.current = null;
+          }
+        });
+    }, DUPLICATE_LOOKUP_DEBOUNCE_MS);
+
+    return () => {
+      if (duplicateLookupTimerRef.current) {
+        window.clearTimeout(duplicateLookupTimerRef.current);
+        duplicateLookupTimerRef.current = null;
+      }
+
+      duplicateLookupAbortRef.current?.abort();
+      duplicateLookupAbortRef.current = null;
+    };
+  }, [formData.name, lookupDuplicateEmployee]);
 
   const completedDocuments = useMemo(
     () => getCompletedDocuments(formData.documents),
@@ -175,6 +271,7 @@ export default function useEmployeeForm({
 
       if (name === "name") {
         setDuplicateConfirmed(false);
+        setDuplicateEmployee(null);
 
         setErrors((currentErrors) => ({
           ...currentErrors,
@@ -389,9 +486,42 @@ export default function useEmployeeForm({
   }, []);
 
   const handleSubmit = useCallback(
-    (event) => {
+    async (event) => {
       event.preventDefault();
       setSaveError("");
+
+      if (duplicateLookupTimerRef.current) {
+        window.clearTimeout(duplicateLookupTimerRef.current);
+        duplicateLookupTimerRef.current = null;
+      }
+
+      duplicateLookupAbortRef.current?.abort();
+      duplicateLookupAbortRef.current = null;
+
+      let verifiedDuplicateEmployee = null;
+
+      try {
+        verifiedDuplicateEmployee =
+          await lookupDuplicateEmployee(formData.name);
+
+        setDuplicateEmployee(
+          verifiedDuplicateEmployee
+        );
+      } catch (error) {
+        console.error(
+          "EMPLOYEE DUPLICATE VERIFICATION ERROR:",
+          error
+        );
+
+        setSaveError(
+          getEmployeeApiError(
+            error,
+            "Unable to verify possible duplicate employee records."
+          )
+        );
+
+        return false;
+      }
 
       const validationResult = validateEmployeeForm({
         formData,
@@ -400,7 +530,8 @@ export default function useEmployeeForm({
         excludedEmployeeId: initialEmployee
           ? employeeId
           : "",
-        duplicateEmployee,
+        duplicateEmployee:
+          verifiedDuplicateEmployee,
         duplicateConfirmed,
       });
 
@@ -423,11 +554,11 @@ export default function useEmployeeForm({
     },
     [
       duplicateConfirmed,
-      duplicateEmployee,
       employeeId,
       employees,
       formData,
       initialEmployee,
+      lookupDuplicateEmployee,
     ]
   );
 

@@ -33,11 +33,16 @@ function DocumentPreview({ document }) {
     [document]
   );
 
-  const localPreviewType = getDocumentPreviewType(document);
+  const localPreviewType =
+    getDocumentPreviewType(document);
 
   useEffect(() => {
     return () => {
-      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+      if (localPreviewUrl) {
+        URL.revokeObjectURL(
+          localPreviewUrl
+        );
+      }
     };
   }, [localPreviewUrl]);
 
@@ -46,56 +51,103 @@ function DocumentPreview({ document }) {
       <PreviewContent
         previewUrl={localPreviewUrl}
         previewType={localPreviewType}
-        fileName={getDocumentFileName(document) || "Employee document"}
+        fileName={
+          getDocumentFileName(
+            document
+          ) ||
+          "Employee document"
+        }
       />
     );
   }
 
-  return <PersistedDocumentPreview document={document} />;
+  return (
+    <PersistedDocumentPreview
+      document={document}
+    />
+  );
 }
 
-function PersistedDocumentPreview({ document }) {
-  const [preview, setPreview] = useState({
+function PersistedDocumentPreview({
+  document,
+}) {
+  const [
+    preview,
+    setPreview,
+  ] = useState({
     url: "",
     type: "",
     loading: true,
     error: "",
   });
+
   const fileName =
-    getDocumentFileName(document) || "Employee document";
+    getDocumentFileName(
+      document
+    ) ||
+    "Employee document";
 
   useEffect(() => {
-    const controller = new AbortController();
+    const controller =
+      new AbortController();
+
     let previewUrl = "";
 
     async function loadPersistedPreview() {
       try {
-        const result = await fetchEmployeeDocumentPreview(document?.id, {
-          signal: controller.signal,
-        });
+        const result =
+          await fetchEmployeeDocumentPreview(
+            document?.id,
+            {
+              signal:
+                controller.signal,
+            }
+          );
 
-        previewUrl = result.url;
+        previewUrl =
+          result.url;
 
-        if (controller.signal.aborted) {
-          URL.revokeObjectURL(previewUrl);
+        if (
+          controller.signal.aborted
+        ) {
+          URL.revokeObjectURL(
+            previewUrl
+          );
+
           previewUrl = "";
+
           return;
         }
 
         setPreview({
-          url: result.url,
-          type: result.type,
-          loading: false,
-          error: "",
+          url:
+            result.url,
+          type:
+            result.type,
+          loading:
+            false,
+          error:
+            "",
         });
       } catch (error) {
-        if (error?.name === "AbortError" || controller.signal.aborted) return;
+        if (
+          error?.name ===
+            "AbortError" ||
+          controller.signal.aborted
+        ) {
+          return;
+        }
 
         setPreview({
-          url: "",
-          type: "",
-          loading: false,
-          error: error?.message || "Unable to load this document preview.",
+          url:
+            "",
+          type:
+            "",
+          loading:
+            false,
+          error:
+            error?.message ||
+            "Unable to load this document preview.",
         });
       }
     }
@@ -104,21 +156,33 @@ function PersistedDocumentPreview({ document }) {
 
     return () => {
       controller.abort();
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+
+      if (previewUrl) {
+        URL.revokeObjectURL(
+          previewUrl
+        );
+      }
     };
   }, [document]);
 
   if (preview.loading) {
     return (
-      <p className="mt-3 text-xs text-gray-400" role="status">
-        Loading protected document preview...
+      <p
+        className="mt-3 text-xs text-gray-400"
+        role="status"
+      >
+        Loading protected document
+        preview...
       </p>
     );
   }
 
   if (preview.error) {
     return (
-      <p className="mt-3 text-xs text-red-600 dark:text-red-300" role="alert">
+      <p
+        className="mt-3 text-xs text-red-600 dark:text-red-300"
+        role="alert"
+      >
         {preview.error}
       </p>
     );
@@ -134,15 +198,26 @@ function PersistedDocumentPreview({ document }) {
 
   return (
     <PreviewContent
-      previewUrl={preview.url}
-      previewType={preview.type}
+      previewUrl={
+        preview.url
+      }
+      previewType={
+        preview.type
+      }
       fileName={fileName}
     />
   );
 }
 
-function PreviewContent({ previewUrl, previewType, fileName }) {
-  if (previewType === "image") {
+function PreviewContent({
+  previewUrl,
+  previewType,
+  fileName,
+}) {
+  if (
+    previewType ===
+    "image"
+  ) {
     return (
       <img
         src={previewUrl}
@@ -152,7 +227,10 @@ function PreviewContent({ previewUrl, previewType, fileName }) {
     );
   }
 
-  if (previewType === "pdf") {
+  if (
+    previewType ===
+    "pdf"
+  ) {
     return (
       <iframe
         src={previewUrl}
@@ -169,8 +247,14 @@ function PreviewContent({ previewUrl, previewType, fileName }) {
       rel="noreferrer"
       className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-white/5"
     >
-      <FiFileText aria-hidden="true" className="shrink-0" />
-      <span className="truncate">{fileName}</span>
+      <FiFileText
+        aria-hidden="true"
+        className="shrink-0"
+      />
+
+      <span className="truncate">
+        {fileName}
+      </span>
     </a>
   );
 }
@@ -186,44 +270,101 @@ export default function EmployeeReviewDialog({
   onClose,
   onConfirm,
 }) {
-  const isEditMode = mode === "edit";
-  const isDeployed = formData?.status === "Deployed";
+  const isEditMode =
+    mode === "edit";
 
-  const selectedDocuments = useMemo(
-    () => getSelectedDocuments(formData?.documents),
-    [formData?.documents]
-  );
+  const isDeployed =
+    formData?.status ===
+    "Deployed";
 
-  const dialogTitle = isEditMode
-    ? "Review Employee Update"
-    : "Review Employee Details";
+  const [
+    acknowledgedWarning,
+    setAcknowledgedWarning,
+  ] = useState("");
 
-  const dialogDescription = isEditMode
-    ? "Verify all changes before updating the employee record."
-    : "Verify all employee information before saving the new record.";
+  const requiresAcknowledgement =
+    Boolean(
+      complianceWarning
+    );
+
+  const complianceAcknowledged =
+    !requiresAcknowledgement ||
+    acknowledgedWarning ===
+      complianceWarning;
+
+  const selectedDocuments =
+    useMemo(
+      () =>
+        getSelectedDocuments(
+          formData?.documents
+        ),
+      [
+        formData?.documents,
+      ]
+    );
+
+  const dialogTitle =
+    isEditMode
+      ? "Review Employee Update"
+      : "Review Employee Details";
+
+  const dialogDescription =
+    isEditMode
+      ? "Verify all changes before updating the employee record."
+      : "Verify all employee information before saving the new record.";
 
   const handleClose = () => {
-    if (!isSaving) onClose?.();
+    if (!isSaving) {
+      onClose?.();
+    }
   };
 
   const handleConfirm = () => {
-    if (!isSaving) onConfirm?.();
+    if (
+      isSaving ||
+      (
+        requiresAcknowledgement &&
+        !complianceAcknowledged
+      )
+    ) {
+      return;
+    }
+
+    onConfirm?.();
   };
 
-  if (!open) return null;
+  if (!open) {
+    return null;
+  }
 
   return (
     <Dialog
       open
-      onClose={handleClose}
-      title={dialogTitle}
-      description={dialogDescription}
-      tone="success"
+      onClose={
+        handleClose
+      }
+      title={
+        dialogTitle
+      }
+      description={
+        dialogDescription
+      }
+      tone={
+        requiresAcknowledgement
+          ? "warning"
+          : "success"
+      }
       size="xl"
       height="xl"
-      preventClose={isSaving}
-      closeOnOverlay={!isSaving}
-      closeOnEscape={!isSaving}
+      preventClose={
+        isSaving
+      }
+      closeOnOverlay={
+        !isSaving
+      }
+      closeOnEscape={
+        !isSaving
+      }
       scrollBody
       bodyClassName="p-5 sm:p-6"
       footer={
@@ -231,29 +372,74 @@ export default function EmployeeReviewDialog({
           <Button
             type="button"
             variant="secondary"
-            disabled={isSaving}
-            onClick={handleClose}
+            disabled={
+              isSaving
+            }
+            onClick={
+              handleClose
+            }
           >
             Back to Edit
           </Button>
 
           <Button
             type="button"
-            variant="success"
-            loading={isSaving}
-            disabled={isSaving}
-            onClick={handleConfirm}
+            variant={
+              requiresAcknowledgement
+                ? "warning"
+                : "success"
+            }
+            loading={
+              isSaving
+            }
+            disabled={
+              isSaving ||
+              (
+                requiresAcknowledgement &&
+                !complianceAcknowledged
+              )
+            }
+            onClick={
+              handleConfirm
+            }
           >
-            {isEditMode ? "Confirm Update" : "Confirm Save"}
+            {requiresAcknowledgement
+              ? (
+                  isEditMode
+                    ? "Proceed and Update"
+                    : "Proceed and Save"
+                )
+              : (
+                  isEditMode
+                    ? "Confirm Update"
+                    : "Confirm Save"
+                )}
           </Button>
         </div>
       }
     >
       <div className="space-y-5">
         <div className="flex flex-wrap items-center gap-2">
-          <StatusPill tone="green">
-            <FiCheck aria-hidden="true" />
-            Ready for Confirmation
+          <StatusPill
+            tone={
+              requiresAcknowledgement
+                ? "amber"
+                : "green"
+            }
+          >
+            {requiresAcknowledgement ? (
+              <FiAlertTriangle
+                aria-hidden="true"
+              />
+            ) : (
+              <FiCheck
+                aria-hidden="true"
+              />
+            )}
+
+            {requiresAcknowledgement
+              ? "Compliance Review Required"
+              : "Ready for Confirmation"}
           </StatusPill>
 
           {isEditMode && (
@@ -265,8 +451,8 @@ export default function EmployeeReviewDialog({
 
         {complianceWarning && (
           <div
-            role="status"
-            className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+            role="alert"
+            className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
           >
             <div className="flex gap-3">
               <FiAlertTriangle
@@ -276,12 +462,44 @@ export default function EmployeeReviewDialog({
 
               <div className="min-w-0">
                 <p className="font-extrabold">
-                  Compliance Warning
+                  Compliance Requirements Pending
                 </p>
 
                 <p className="mt-1 break-words leading-6">
-                  {complianceWarning}
+                  {
+                    complianceWarning
+                  }
                 </p>
+
+                <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-300 bg-white/70 p-3 font-semibold dark:border-amber-500/30 dark:bg-slate-900/50">
+                  <input
+                    type="checkbox"
+                    checked={
+                      complianceAcknowledged
+                    }
+                    disabled={
+                      isSaving
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setAcknowledgedWarning(
+                        event.target
+                          .checked
+                          ? complianceWarning
+                          : ""
+                      )
+                    }
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+
+                  <span className="leading-5">
+                    I acknowledge that some
+                    compliance requirements are
+                    still pending and may be
+                    submitted later.
+                  </span>
+                </label>
               </div>
             </div>
           </div>
@@ -290,24 +508,36 @@ export default function EmployeeReviewDialog({
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <ReviewBox
             label="Employee ID"
-            value={employeeId || "-"}
+            value={
+              employeeId ||
+              "-"
+            }
           />
 
           <ReviewBox
             label="Full Name"
-            value={toProperName(formData?.name) || "-"}
+            value={
+              toProperName(
+                formData?.name
+              ) ||
+              "-"
+            }
           />
 
           <ReviewBox
             label="Employment Status"
-            value={formData?.status || "-"}
+            value={
+              formData?.status ||
+              "-"
+            }
           />
 
           <ReviewBox
             label="Company"
             value={
               isDeployed
-                ? formData?.company || "-"
+                ? formData?.company ||
+                  "-"
                 : "Not Assigned"
             }
           />
@@ -316,7 +546,8 @@ export default function EmployeeReviewDialog({
             label="Start Date"
             value={
               isDeployed
-                ? formData?.contractStart || "-"
+                ? formData?.contractStart ||
+                  "-"
                 : "Not Applicable"
             }
           />
@@ -330,7 +561,9 @@ export default function EmployeeReviewDialog({
         <section className="rounded-2xl border border-gray-200 p-5 dark:border-white/10">
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
-              <FiFileText aria-hidden="true" />
+              <FiFileText
+                aria-hidden="true"
+              />
             </div>
 
             <div className="min-w-0">
@@ -339,68 +572,93 @@ export default function EmployeeReviewDialog({
               </h3>
 
               <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
-                Review selected files and expiration information.
+                Review selected files
+                and expiration
+                information.
               </p>
             </div>
           </div>
 
           {selectedDocuments.length ? (
             <div className="space-y-3">
-              {selectedDocuments.map((document) => {
-                const isExpirable = Boolean(document.expirable);
-                const documentStatus = isExpirable
-                  ? getDocumentStatus(document.expirationDate)
-                  : "Permanent";
+              {selectedDocuments.map(
+                (document) => {
+                  const isExpirable =
+                    Boolean(
+                      document.expirable
+                    );
 
-                const hasMissingDate =
-                  isExpirable && !document.expirationDate;
+                  const documentStatus =
+                    isExpirable
+                      ? getDocumentStatus(
+                          document.expirationDate
+                        )
+                      : "Permanent";
 
-                const isRisky = [
-                  "Expired",
-                  "Expiring Soon",
-                ].includes(documentStatus);
+                  const hasMissingDate =
+                    isExpirable &&
+                    !document.expirationDate;
 
-                return (
-                  <article
-                    key={document.name}
-                    className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 dark:border-white/10 dark:bg-slate-800"
-                  >
-                    <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-                      <div className="min-w-0">
-                        <p className="break-words font-bold text-gray-900 dark:text-white">
-                          {document.name}
-                        </p>
+                  const isRisky =
+                    [
+                      "Expired",
+                      "Expiring Soon",
+                    ].includes(
+                      documentStatus
+                    );
 
-                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          {isExpirable
-                            ? `Expires: ${document.expirationDate || "-"}`
-                            : "Permanent document"}
-                        </p>
+                  return (
+                    <article
+                      key={
+                        document.name
+                      }
+                      className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 dark:border-white/10 dark:bg-slate-800"
+                    >
+                      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+                        <div className="min-w-0">
+                          <p className="break-words font-bold text-gray-900 dark:text-white">
+                            {
+                              document.name
+                            }
+                          </p>
+
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {isExpirable
+                              ? `Expires: ${document.expirationDate || "-"}`
+                              : "Permanent document"}
+                          </p>
+                        </div>
+
+                        <StatusPill
+                          tone={
+                            hasMissingDate
+                              ? "red"
+                              : isRisky
+                                ? "amber"
+                                : "green"
+                          }
+                        >
+                          {hasMissingDate
+                            ? "Missing Date"
+                            : documentStatus}
+                        </StatusPill>
                       </div>
 
-                      <StatusPill
-                        tone={
-                          hasMissingDate
-                            ? "red"
-                            : isRisky
-                              ? "amber"
-                              : "green"
+                      <DocumentPreview
+                        document={
+                          document
                         }
-                      >
-                        {hasMissingDate
-                          ? "Missing Date"
-                          : documentStatus}
-                      </StatusPill>
-                    </div>
-
-                    <DocumentPreview document={document} />
-                  </article>
-                );
-              })}
+                      />
+                    </article>
+                  );
+                }
+              )}
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500 dark:border-white/10 dark:bg-slate-800 dark:text-gray-400">
-              No compliance documents selected.
+            <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              No compliance
+              requirements have been
+              submitted yet.
             </div>
           )}
         </section>
@@ -413,7 +671,9 @@ export default function EmployeeReviewDialog({
                 ? "Unable to update employee"
                 : "Unable to save employee"
             }
-            message={saveError}
+            message={
+              saveError
+            }
           />
         )}
       </div>

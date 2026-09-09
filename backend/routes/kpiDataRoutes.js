@@ -3,9 +3,8 @@ const express = require("express");
 const router = express.Router();
 
 const {
-  getDeployments,
-  updateDeploymentStatus,
-} = require("../controllers/deploymentController");
+  getKpiData,
+} = require("../controllers/kpiDataController");
 
 const {
   verifyToken,
@@ -16,24 +15,14 @@ const {
 } = require("../middleware/roleMiddleware");
 
 router.get(
-  "/deployments",
+  "/kpi/data",
   verifyToken,
   authorizeRoles(
     "SUPER_ADMIN",
     "HR_MANAGER",
     "HR_STAFF"
   ),
-  getDeployments
-);
-
-router.patch(
-  "/deployments/:deploymentId/status",
-  verifyToken,
-  authorizeRoles(
-    "HR_MANAGER",
-    "HR_STAFF"
-  ),
-  updateDeploymentStatus
+  getKpiData
 );
 
 module.exports = router;

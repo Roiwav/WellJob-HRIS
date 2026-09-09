@@ -716,6 +716,19 @@ export default function SuperAdminPortal() {
     nextGeneratedAccount,
   ]);
 
+  const visibleAccounts =
+    useMemo(
+      () =>
+        accounts.filter(
+          (account) =>
+            normalizeRole(
+              account?.role
+            ) !==
+            "SUPER_ADMIN"
+        ),
+      [accounts]
+    );
+
   const filteredAccounts =
     useMemo(() => {
       const normalizedSearch =
@@ -730,7 +743,7 @@ export default function SuperAdminPortal() {
             )
           : [];
 
-      return accounts.filter(
+      return visibleAccounts.filter(
         (account) => {
           const matchesRole =
             userRoleFilter ===
@@ -784,9 +797,9 @@ export default function SuperAdminPortal() {
         }
       );
     }, [
-      accounts,
       search,
       userRoleFilter,
+      visibleAccounts,
     ]);
 
   const hasActiveFilters =
@@ -1622,7 +1635,7 @@ export default function SuperAdminPortal() {
             }
             label="Created Accounts"
             count={
-              accounts.length
+              visibleAccounts.length
             }
             onClick={() =>
               setActiveTab(
@@ -1878,7 +1891,7 @@ export default function SuperAdminPortal() {
             </h2>
 
             <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              Review and manage existing internal system accounts. Super Admin accounts remain protected.
+              Review and manage internal accounts created for HR and IT support roles.
             </p>
           </header>
 
@@ -1963,10 +1976,6 @@ export default function SuperAdminPortal() {
                 >
                   <option value="ALL">
                     All Roles
-                  </option>
-
-                  <option value="SUPER_ADMIN">
-                    Super Admin
                   </option>
 
                   <option

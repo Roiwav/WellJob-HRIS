@@ -166,6 +166,11 @@ const kpiDecisionRoutes =
     "./routes/kpiDecisionRoutes"
   );
 
+const kpiDataRoutes =
+  require(
+    "./routes/kpiDataRoutes"
+  );
+
 const smartAlertRoutes =
   require(
     "./routes/smartAlertRoutes"
@@ -179,6 +184,11 @@ const smartSuggestionRoutes =
 const settingsRoutes =
   require(
     "./routes/settingsRoutes"
+  );
+
+const dashboardRoutes =
+  require(
+    "./routes/dashboardRoutes"
   );
 
 // INIT APP
@@ -322,6 +332,11 @@ app.use(
 
 app.use(
   "/api",
+  kpiDataRoutes
+);
+
+app.use(
+  "/api",
   smartAlertRoutes
 );
 
@@ -338,6 +353,11 @@ app.use(
 app.use(
   "/api",
   settingsRoutes
+);
+
+app.use(
+  "/api",
+  dashboardRoutes
 );
 
 // DEFAULT TEST ROUTE

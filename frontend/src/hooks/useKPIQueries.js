@@ -4,18 +4,14 @@ import {
 } from "@tanstack/react-query";
 
 import {
-  isSameEmployee,
   normalizeStatus,
 } from "../utils/kpi/kpiHelpers";
 
 import authenticatedFetch from "../utils/authenticatedFetch";
 import { API_BASE } from "../config/api";
 
-const EMPLOYEE_API_URL =
-  `${API_BASE}/employees`;
-
-const INCIDENT_API_URL =
-  `${API_BASE}/incidents`;
+const KPI_DATA_API_URL =
+  `${API_BASE}/kpi/data`;
 
 const REQUEST_TIMEOUT_MS =
   60 * 1000;
@@ -249,22 +245,16 @@ function normalizeBackendIncident(
 }
 
 export async function fetchKPIBackendData() {
-  const [
-    employeeData,
-    incidentData,
-  ] = await Promise.all([
-    requestJson(
-      EMPLOYEE_API_URL
-    ),
-
-    requestJson(
-      INCIDENT_API_URL
-    ),
-  ]);
+  const data =
+    await requestJson(
+      KPI_DATA_API_URL
+    );
 
   const employeesRaw =
-    Array.isArray(employeeData)
-      ? employeeData
+    Array.isArray(
+      data?.employeesRaw
+    )
+      ? data.employeesRaw
           .filter(Boolean)
           .map(
             normalizeBackendEmployee
@@ -275,32 +265,23 @@ export async function fetchKPIBackendData() {
           )
       : [];
 
-  const normalizedIncidents =
-    Array.isArray(incidentData)
-      ? incidentData
+  const incidentsRaw =
+    Array.isArray(
+      data?.incidentsRaw
+    )
+      ? data.incidentsRaw
           .filter(Boolean)
           .map(
             normalizeBackendIncident
           )
       : [];
 
-  const incidentsRaw =
-    normalizedIncidents.filter(
-      (incident) =>
-        employeesRaw.some(
-          (employee, index) =>
-            isSameEmployee(
-              employee,
-              incident,
-              index
-            )
-        )
-    );
-
   return {
     employeesRaw,
     incidentsRaw,
+
     fetchedAt:
+      data?.fetchedAt ||
       new Date().toISOString(),
   };
 }

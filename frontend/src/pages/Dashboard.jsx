@@ -36,8 +36,7 @@ import SeverityPieChart from "../components/dashboard/charts/SeverityPieChart";
 import CaseAgingChart from "../components/dashboard/charts/CaseAgingChart";
 
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
-const INCIDENT_API_URL = `${API_BASE}/incidents`;
-const DEPLOYMENT_API_URL = `${API_BASE}/deployments`;
+const DASHBOARD_API_URL = `${API_BASE}/dashboard/overview`;
 
 const DATA_EVENT_SOURCE = "dashboard-page";
 const REQUEST_TIMEOUT_MS = 45 * 1000;
@@ -98,18 +97,54 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
+function shouldRefreshDashboardForEvent(
+  event
+) {
+  const domain =
+    normalizeText(
+      event?.detail?.domain
+    ).replace(
+      /[_\s]+/g,
+      "-"
+    );
+
+  if (!domain) {
+    return true;
+  }
+
+  return (
+    domain.startsWith(
+      "employee"
+    ) ||
+    domain.startsWith(
+      "incident"
+    ) ||
+    domain.startsWith(
+      "deployment"
+    ) ||
+    domain.includes(
+      "document"
+    ) ||
+    domain.includes(
+      "compliance"
+    )
+  );
+}
+
 function normalizeStatus(status) {
   const value = normalizeText(status);
 
   if (
-    value === "resolved" ||
     value === "for_review" ||
     value === "for review"
   ) {
     return "For Review";
   }
 
-  if (value === "closed") {
+  if (
+    value === "resolved" ||
+    value === "closed"
+  ) {
     return "Closed";
   }
 
@@ -124,17 +159,6 @@ function isArchivedEmployee(employee) {
   return (
     employee?.archived === true ||
     Number(employee?.archived) === 1
-  );
-}
-
-function isEmployeeDeployed(employee) {
-  const status = normalizeText(
-    employee?.status
-  );
-
-  return (
-    status === "deployed" ||
-    status === "active deployed"
   );
 }
 
@@ -283,87 +307,6 @@ function normalizeBackendIncident(
   };
 }
 
-function normalizeBackendDeployment(
-  deployment = {}
-) {
-  const employeeId =
-    deployment.employeeId ||
-    deployment.employee_id ||
-    deployment.empId ||
-    deployment.employeeID ||
-    deployment.id ||
-    "";
-
-  const deploymentId =
-    deployment.deploymentId ||
-    deployment.deployment_id ||
-    deployment.id ||
-    "";
-
-  const date =
-    deployment.start ||
-    deployment.deploymentDate ||
-    deployment.deployment_date ||
-    deployment.contractStart ||
-    deployment.contract_start ||
-    deployment.startDate ||
-    deployment.start_date ||
-    deployment.createdAt ||
-    deployment.created_at ||
-    "";
-
-  return {
-    ...deployment,
-
-    id: deploymentId,
-    deploymentId,
-    employeeId,
-
-    employee:
-      deployment.employee ||
-      deployment.employeeName ||
-      deployment.employee_name ||
-      deployment.name ||
-      "Unknown Employee",
-
-    company:
-      deployment.company ||
-      deployment.clientCompany ||
-      deployment.client_company ||
-      "Unassigned",
-
-    status:
-      deployment.status ||
-      deployment.deploymentStatus ||
-      deployment.deployment_status ||
-      "Active",
-
-    date,
-    start: date,
-
-    contractStart:
-      deployment.contractStart ||
-      deployment.contract_start ||
-      deployment.deploymentDate ||
-      deployment.deployment_date ||
-      date,
-
-    contractEnd:
-      deployment.contractEnd ||
-      deployment.contract_end ||
-      deployment.endDate ||
-      deployment.end_date ||
-      deployment.deploymentEnd ||
-      deployment.deployment_end ||
-      null,
-
-    createdAt:
-      deployment.createdAt ||
-      deployment.created_at ||
-      date,
-  };
-}
-
 async function requestJson(
   url,
   options = {}
@@ -439,23 +382,6 @@ function getSharedRequest(url) {
   return activeRequests.get(url);
 }
 
-function getRejectedReason(
-  result,
-  fallback
-) {
-  if (
-    result?.status !==
-    "rejected"
-  ) {
-    return "";
-  }
-
-  return (
-    result?.reason?.message ||
-    fallback
-  );
-}
-
 function normalizeDateValue(value) {
   if (!value) {
     return "";
@@ -493,37 +419,6 @@ function getRecordDate(record) {
     record?.created_at ||
     record?.incidentDate ||
     record?.incident_date ||
-    record?.date ||
-    ""
-  );
-}
-
-function getDeploymentTrendDate(
-  employee
-) {
-  return (
-    employee?.contractStart ||
-    employee?.contract_start ||
-    employee?.createdAt ||
-    employee?.created_at ||
-    employee?.date ||
-    ""
-  );
-}
-
-function getDeploymentRecordDate(
-  record
-) {
-  return (
-    record?.start ||
-    record?.deploymentDate ||
-    record?.deployment_date ||
-    record?.contractStart ||
-    record?.contract_start ||
-    record?.startDate ||
-    record?.start_date ||
-    record?.createdAt ||
-    record?.created_at ||
     record?.date ||
     ""
   );
@@ -755,90 +650,6 @@ function isActiveIncident(status) {
     "For Review",
   ].includes(
     normalizeStatus(status)
-  );
-}
-
-function getExpiringDocumentsCount(
-  employees
-) {
-  return employees.reduce(
-    (count, employee) => {
-      const documents =
-        Array.isArray(
-          employee.documents
-        )
-          ? employee.documents
-          : [];
-
-      const expiringDocuments =
-        documents.filter(
-          (document) => {
-            const expirationDate =
-              document?.expirationDate ||
-              document?.expiration_date ||
-              document?.expiryDate ||
-              document?.expiresAt ||
-              document?.date;
-
-            if (!expirationDate) {
-              return false;
-            }
-
-            const today =
-              new Date();
-
-            today.setHours(
-              0,
-              0,
-              0,
-              0
-            );
-
-            const expiration =
-              new Date(
-                expirationDate
-              );
-
-            if (
-              Number.isNaN(
-                expiration.getTime()
-              )
-            ) {
-              return false;
-            }
-
-            expiration.setHours(
-              0,
-              0,
-              0,
-              0
-            );
-
-            const differenceInDays =
-              Math.ceil(
-                (expiration.getTime() -
-                  today.getTime()) /
-                  (1000 *
-                    60 *
-                    60 *
-                    24)
-              );
-
-            return (
-              differenceInDays >=
-                0 &&
-              differenceInDays <=
-                30
-            );
-          }
-        );
-
-      return (
-        count +
-        expiringDocuments.length
-      );
-    },
-    0
   );
 }
 
@@ -1308,7 +1119,6 @@ export default function Dashboard() {
       incidents: [],
       rawEmployees: [],
       rawIncidents: [],
-      rawDeployments: [],
     });
 
   useEffect(() => {
@@ -1348,162 +1158,65 @@ export default function Dashboard() {
           setFetchError("");
         }
 
-        const [
-          employeeResult,
-          incidentResult,
-          deploymentResult,
-        ] = await Promise.allSettled([
-          getSharedRequest(
-            EMPLOYEE_API_URL
-          ),
-          getSharedRequest(
-            INCIDENT_API_URL
-          ),
-          getSharedRequest(
-            DEPLOYMENT_API_URL
-          ),
-        ]);
+        const overview =
+          await getSharedRequest(
+            DASHBOARD_API_URL
+          );
 
-        const requestErrors = [
-          getRejectedReason(
-            employeeResult,
-            "Employee data failed to load."
-          ),
-
-          getRejectedReason(
-            incidentResult,
-            "Incident data failed to load."
-          ),
-
-          getRejectedReason(
-            deploymentResult,
-            "Deployment data failed to load."
-          ),
-        ].filter(Boolean);
-
-        if (requestErrors.length > 0) {
-          if (
-            showError &&
-            isMountedRef.current
-          ) {
-            setFetchError(
-              `Some dashboard data could not be loaded: ${requestErrors.join(
-                " "
-              )}`
-            );
-          }
-
-          return false;
+        if (
+          !overview ||
+          typeof overview !==
+            "object"
+        ) {
+          throw new Error(
+            "Dashboard data is unavailable."
+          );
         }
 
-        const employeeData =
-          employeeResult.value;
-
-        const incidentData =
-          incidentResult.value;
-
-        const deploymentData =
-          deploymentResult.value;
-
         const employeesRaw =
-          Array.isArray(employeeData)
-            ? employeeData.map(
+          Array.isArray(
+            overview.employees
+          )
+            ? overview.employees.map(
                 normalizeBackendEmployee
               )
             : [];
 
         const incidentsRaw =
-          Array.isArray(incidentData)
-            ? incidentData.map(
+          Array.isArray(
+            overview.incidents
+          )
+            ? overview.incidents.map(
                 normalizeBackendIncident
               )
             : [];
 
-        const deploymentsRaw =
-          Array.isArray(
-            deploymentData
-          )
-            ? deploymentData.map(
-                normalizeBackendDeployment
-              )
-            : [];
-
-        const activeEmployees =
+        const nonArchivedEmployees =
           employeesRaw.filter(
             (employee) =>
               !employee.archived
           );
 
-        const deployedEmployeeIdSet =
-          new Set(
-            deploymentsRaw
-              .filter(
-                (deployment) => {
-                  const status =
-                    normalizeText(
-                      deployment.status
-                    );
-
-                  return (
-                    status ===
-                      "active" ||
-                    status ===
-                      "deployed"
-                  );
-                }
-              )
-              .map((deployment) =>
-                String(
-                  deployment.employeeId ||
-                    ""
-                )
-              )
-              .filter(Boolean)
-          );
-
-        const deployedEmployees =
-          deployedEmployeeIdSet.size >
-          0
-            ? activeEmployees.filter(
-                (employee) =>
-                  deployedEmployeeIdSet.has(
-                    String(
-                      employee.employeeId ||
-                        employee.id
-                    )
-                  )
-              )
-            : activeEmployees.filter(
-                isEmployeeDeployed
-              );
-
-        const workforceSource =
-          deploymentsRaw.length > 0
-            ? deploymentsRaw
-            : deployedEmployees.map(
-                (employee) => ({
-                  ...employee,
-                  date:
-                    getDeploymentTrendDate(
-                      employee
-                    ),
-                })
-              );
-
         const workforce =
-          workforceSource
-            .map((record) => ({
-              date:
-                normalizeDateValue(
-                  getDeploymentRecordDate(
-                    record
-                  )
-                ),
-              employees: 1,
-            }))
-            .filter(
-              (item) => item.date
-            );
+          Array.isArray(
+            overview.deploymentTrend
+          )
+            ? overview.deploymentTrend
+                .map((record) => ({
+                  date:
+                    normalizeDateValue(
+                      record?.date
+                    ),
+
+                  employees:
+                    Number(
+                      record?.employees
+                    ) || 0,
+                }))
+                .filter(
+                  (item) => item.date
+                )
+            : [];
 
         const incidents =
           incidentsRaw
@@ -1520,6 +1233,9 @@ export default function Dashboard() {
               (item) => item.date
             );
 
+        const backendKpis =
+          overview.kpis || {};
+
         if (!isMountedRef.current) {
           return false;
         }
@@ -1527,43 +1243,39 @@ export default function Dashboard() {
         setData({
           kpis: {
             total:
-              activeEmployees.length,
+              Number(
+                backendKpis.total
+              ) || 0,
 
             deployed:
-              deployedEmployees.length,
+              Number(
+                backendKpis.deployed
+              ) || 0,
 
             available:
-              Math.max(
-                activeEmployees.length -
-                  deployedEmployees.length,
-                0
-              ),
+              Number(
+                backendKpis.available
+              ) || 0,
 
             activeIncidents:
-              incidentsRaw.filter(
-                (incident) =>
-                  isActiveIncident(
-                    incident.status
-                  )
-              ).length,
+              Number(
+                backendKpis.activeIncidents
+              ) || 0,
 
             expiringDocs:
-              getExpiringDocumentsCount(
-                activeEmployees
-              ),
+              Number(
+                backendKpis.expiringDocs
+              ) || 0,
           },
 
           workforce,
           incidents,
 
           rawEmployees:
-            activeEmployees,
+            nonArchivedEmployees,
 
           rawIncidents:
             incidentsRaw,
-
-          rawDeployments:
-            deploymentsRaw,
         });
 
         setLastUpdated(
@@ -1631,7 +1343,10 @@ export default function Dashboard() {
     ) => {
       if (
         event?.detail?.source ===
-        DATA_EVENT_SOURCE
+          DATA_EVENT_SOURCE ||
+        !shouldRefreshDashboardForEvent(
+          event
+        )
       ) {
         return;
       }
@@ -2165,7 +1880,7 @@ export default function Dashboard() {
 
   const handleRowClick =
     useCallback(
-      (row) => {
+      async (row) => {
         const employeeId =
           row?.employeeId ??
           row?.employee_id;
@@ -2179,30 +1894,44 @@ export default function Dashboard() {
           return;
         }
 
-        const targetEmployee =
-          data.rawEmployees.find(
-            (employee) =>
-              String(
-                employee.id
-              ) ===
-                String(employeeId) ||
-              String(
-                employee.employeeId
-              ) ===
-                String(employeeId)
-          );
+        try {
+          setFetchError("");
 
-        if (targetEmployee) {
+          const employee =
+            await getSharedRequest(
+              `${EMPLOYEE_API_URL}/${encodeURIComponent(
+                String(employeeId)
+              )}`
+            );
+
+          if (!isMountedRef.current) {
+            return;
+          }
+
           setEditingEmployee(
-            targetEmployee
+            normalizeBackendEmployee(
+              employee
+            )
           );
 
           setActiveDrilldown(
             null
           );
+        } catch (error) {
+          console.error(
+            "Dashboard employee detail fetch error:",
+            error
+          );
+
+          if (isMountedRef.current) {
+            setFetchError(
+              error?.message ||
+                "Unable to load employee details."
+            );
+          }
         }
       },
-      [data.rawEmployees]
+      []
     );
 
   const handleEmployeeSaveSuccess =

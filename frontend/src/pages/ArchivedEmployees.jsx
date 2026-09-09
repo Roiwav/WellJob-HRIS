@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FiArrowLeft,
@@ -28,17 +28,21 @@ import {
   getComplianceStatus,
   getEmployeeCompany,
   getEmployeeDisplayName,
-  matchesEmployeeSearch,
-  normalizeEmployeeStatus,
 } from "../utils/employees/employeeHelpers";
 import {
   EMPLOYEE_API_URL,
   getEmployeeApiError,
-  parseEmployeeDocuments,
 } from "../utils/employees/employeeFormHelpers";
 
 const DATA_EVENT_SOURCE = "archived-employees-page";
 const REQUEST_TIMEOUT_MS = 15000;
+const ARCHIVED_PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 350;
+
+const ARCHIVED_REFRESH_DOMAINS = new Set([
+  "employee",
+  "employees",
+]);
 
 function emitDataUpdated(action) {
   window.dispatchEvent(
@@ -59,19 +63,24 @@ function getEmployeeId(employee) {
   );
 }
 
-function isArchivedEmployee(employee) {
+function getArchivedComplianceStatus(employee) {
   return (
-    employee?.archived === true ||
-    Number(employee?.archived) === 1 ||
-    normalizeEmployeeStatus(employee?.status) === "Inactive"
+    employee?.complianceStatus ||
+    employee?.compliance_status ||
+    getComplianceStatus(employee?.documents)
   );
 }
 
-function normalizeArchivedEmployee(employee) {
-  return {
-    ...employee,
-    documents: parseEmployeeDocuments(employee?.documents),
-  };
+function shouldRefreshArchivedEmployees(event) {
+  if (event?.detail?.source === DATA_EVENT_SOURCE) {
+    return false;
+  }
+
+  const domain = String(event?.detail?.domain || "")
+    .trim()
+    .toLowerCase();
+
+  return ARCHIVED_REFRESH_DOMAINS.has(domain);
 }
 
 function getEmployeeKey(employee, index) {
@@ -83,7 +92,17 @@ export default function ArchivedEmployees() {
 
   const [archivedEmployees, setArchivedEmployees] = useState([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: ARCHIVED_PAGE_SIZE,
+    total: 0,
+    totalPages: 0,
+    activeTotal: 0,
+  });
   const [viewEmployee, setViewEmployee] = useState(null);
+  const [viewLoadingId, setViewLoadingId] = useState("");
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
@@ -92,10 +111,15 @@ export default function ArchivedEmployees() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [processingAction, setProcessingAction] = useState("");
 
+  const fetchRequestIdRef = useRef(0);
+
   const isProcessing = Boolean(processingAction);
 
   const fetchArchivedEmployees = useCallback(
     async ({ showInitialLoading = false, showRefreshing = false } = {}) => {
+      const requestId = fetchRequestIdRef.current + 1;
+      fetchRequestIdRef.current = requestId;
+
       if (showInitialLoading) setIsLoading(true);
       if (showRefreshing) setIsRefreshing(true);
 
@@ -105,26 +129,55 @@ export default function ArchivedEmployees() {
         const response = await axios.get(EMPLOYEE_API_URL, {
           timeout: REQUEST_TIMEOUT_MS,
           headers: { Accept: "application/json" },
+          params: {
+            view: "summary",
+            scope: "archived",
+            page,
+            pageSize: ARCHIVED_PAGE_SIZE,
+            search: debouncedSearch,
+            sort: "latest",
+          },
         });
 
-        const employees = Array.isArray(response.data) ? response.data : [];
-        setArchivedEmployees(
-          employees.filter(isArchivedEmployee).map(normalizeArchivedEmployee)
-        );
+        if (requestId !== fetchRequestIdRef.current) {
+          return false;
+        }
+
+        const employees = Array.isArray(response.data?.employees)
+          ? response.data.employees
+          : [];
+
+        const responsePagination = response.data?.pagination || {};
+
+        setArchivedEmployees(employees);
+        setPagination({
+          page: Number(responsePagination.page) || page,
+          pageSize:
+            Number(responsePagination.pageSize) || ARCHIVED_PAGE_SIZE,
+          total: Number(responsePagination.total) || 0,
+          totalPages: Number(responsePagination.totalPages) || 0,
+          activeTotal: Number(responsePagination.activeTotal) || 0,
+        });
 
         return true;
       } catch (error) {
+        if (requestId !== fetchRequestIdRef.current) {
+          return false;
+        }
+
         console.error("Error fetching archived employees:", error);
         setErrorMessage(
           getEmployeeApiError(error, "Unable to fetch archived employees.")
         );
         return false;
       } finally {
-        if (showInitialLoading) setIsLoading(false);
-        if (showRefreshing) setIsRefreshing(false);
+        if (requestId === fetchRequestIdRef.current) {
+          if (showInitialLoading) setIsLoading(false);
+          if (showRefreshing) setIsRefreshing(false);
+        }
       }
     },
-    []
+    [debouncedSearch, page]
   );
 
   useEffect(() => {
@@ -132,8 +185,16 @@ export default function ArchivedEmployees() {
   }, [fetchArchivedEmployees]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
     const handleDataUpdated = (event) => {
-      if (event?.detail?.source !== DATA_EVENT_SOURCE) {
+      if (shouldRefreshArchivedEmployees(event)) {
         void fetchArchivedEmployees();
       }
     };
@@ -142,21 +203,62 @@ export default function ArchivedEmployees() {
     return () => window.removeEventListener("dataUpdated", handleDataUpdated);
   }, [fetchArchivedEmployees]);
 
-  const filteredArchivedEmployees = useMemo(
-    () =>
-      archivedEmployees.filter((employee) =>
-        matchesEmployeeSearch(employee, search)
-      ),
-    [archivedEmployees, search]
-  );
-
   const removeArchivedEmployee = useCallback((employeeId) => {
     setArchivedEmployees((currentEmployees) =>
       currentEmployees.filter(
         (employee) => getEmployeeId(employee) !== String(employeeId)
       )
     );
+
+    setPagination((currentPagination) => {
+      const total = Math.max(0, currentPagination.total - 1);
+
+      return {
+        ...currentPagination,
+        total,
+        totalPages:
+          total > 0
+            ? Math.ceil(total / currentPagination.pageSize)
+            : 0,
+      };
+    });
   }, []);
+
+  const handleViewEmployee = useCallback(
+    async (employee) => {
+      const employeeId = getEmployeeId(employee);
+
+      if (!employeeId || viewLoadingId) {
+        return;
+      }
+
+      try {
+        setViewLoadingId(employeeId);
+        setErrorMessage("");
+
+        const response = await axios.get(
+          `${EMPLOYEE_API_URL}/${encodeURIComponent(employeeId)}`,
+          {
+            timeout: REQUEST_TIMEOUT_MS,
+            headers: { Accept: "application/json" },
+          }
+        );
+
+        setViewEmployee(response.data || null);
+      } catch (error) {
+        console.error("Error loading archived employee details:", error);
+        setErrorMessage(
+          getEmployeeApiError(
+            error,
+            "Unable to load the archived employee details."
+          )
+        );
+      } finally {
+        setViewLoadingId("");
+      }
+    },
+    [viewLoadingId]
+  );
 
   const handleRefresh = useCallback(() => {
     return fetchArchivedEmployees({ showRefreshing: true });
@@ -263,14 +365,17 @@ export default function ArchivedEmployees() {
       />
 
       <FilterBar
-        resultCount={filteredArchivedEmployees.length}
+        resultCount={pagination.total}
         resultLabel="archived employee"
         actions={
           <Button
             variant="ghost"
             size="sm"
             disabled={!search.trim() || isLoading || isRefreshing || isProcessing}
-            onClick={() => setSearch("")}
+            onClick={() => {
+              setSearch("");
+              setPage(1);
+            }}
           >
             Clear Search
           </Button>
@@ -283,8 +388,14 @@ export default function ArchivedEmployees() {
             placeholder="Search by name, ID, company, or position..."
             value={search}
             disabled={isLoading || isRefreshing || isProcessing}
-            onChange={(event) => setSearch(event.target.value)}
-            onClear={() => setSearch("")}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            onClear={() => {
+              setSearch("");
+              setPage(1);
+            }}
           />
         </div>
       </FilterBar>
@@ -314,12 +425,12 @@ export default function ArchivedEmployees() {
             </div>
 
             <span className="w-fit rounded-full bg-slate-100 px-4 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              {filteredArchivedEmployees.length}{" "}
-              {filteredArchivedEmployees.length === 1 ? "record" : "records"}
+              {pagination.total}{" "}
+              {pagination.total === 1 ? "record" : "records"}
             </span>
           </div>
 
-          {filteredArchivedEmployees.length === 0 ? (
+          {archivedEmployees.length === 0 ? (
             <div className="p-5 sm:p-6">
               <EmptyState
                 icon={search.trim() ? "search" : "records"}
@@ -352,11 +463,12 @@ export default function ArchivedEmployees() {
                 </thead>
 
                 <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                  {filteredArchivedEmployees.map((employee, index) => {
+                  {archivedEmployees.map((employee, index) => {
                     const employeeId = getEmployeeId(employee);
                     const employeeName = getEmployeeDisplayName(employee);
                     const employeeCompany = getEmployeeCompany(employee);
-                    const complianceStatus = getComplianceStatus(employee.documents);
+                    const complianceStatus =
+                      getArchivedComplianceStatus(employee);
 
                     return (
                       <tr
@@ -412,10 +524,19 @@ export default function ArchivedEmployees() {
                               title="View Employee"
                               variant="primary"
                               size="md"
-                              disabled={isProcessing}
-                              onClick={() => setViewEmployee(employee)}
+                              disabled={
+                                isProcessing || Boolean(viewLoadingId)
+                              }
+                              onClick={() => void handleViewEmployee(employee)}
                             >
-                              <FiEye aria-hidden="true" />
+                              {viewLoadingId === employeeId ? (
+                                <FiRefreshCw
+                                  aria-hidden="true"
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <FiEye aria-hidden="true" />
+                              )}
                             </IconButton>
 
                             <IconButton
@@ -452,6 +573,57 @@ export default function ArchivedEmployees() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {pagination.totalPages > 1 && (
+            <div className="flex flex-col gap-3 border-t border-gray-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-white/10">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Page {pagination.page} of {pagination.totalPages} ·{" "}
+                {pagination.total} archived{" "}
+                {pagination.total === 1 ? "employee" : "employees"}
+              </p>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={
+                    isLoading ||
+                    isRefreshing ||
+                    isProcessing ||
+                    page <= 1
+                  }
+                  onClick={() =>
+                    setPage((currentPage) =>
+                      Math.max(1, currentPage - 1)
+                    )
+                  }
+                >
+                  Previous
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={
+                    isLoading ||
+                    isRefreshing ||
+                    isProcessing ||
+                    page >= pagination.totalPages
+                  }
+                  onClick={() =>
+                    setPage((currentPage) =>
+                      Math.min(
+                        pagination.totalPages,
+                        currentPage + 1
+                      )
+                    )
+                  }
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </section>

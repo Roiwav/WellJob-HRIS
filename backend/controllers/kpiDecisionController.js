@@ -1490,24 +1490,436 @@ exports.getKpiDecisionHistory =
     res
   ) => {
     try {
-      const [rows] =
-        await db
-          .promise()
-          .query(
+      const view =
+        cleanValue(
+          req.query?.view
+        ).toLowerCase();
+
+      if (!view) {
+        const [rows] =
+          await db
+            .promise()
+            .query(
+              `
+              SELECT *
+              FROM kpi_decision_history
+              ORDER BY
+                decided_at DESC,
+                id DESC
+              `
+            );
+
+        return res.json(
+          rows.map(
+            toCamelCaseRecord
+          )
+        );
+      }
+
+      if (
+        view === "latest"
+      ) {
+        const [rows] =
+          await db
+            .promise()
+            .query(
+              `
+              SELECT
+                d.id,
+                d.employee_id,
+                d.employee_name,
+                d.company,
+                d.risk_level,
+                d.kpi_level,
+                d.violation_count,
+                d.severity_score,
+                d.critical_incident_count,
+                d.decision_confidence,
+                d.suggested_hr_action,
+                d.system_recommendation,
+                d.final_action,
+                d.decision_type,
+                d.notes,
+                d.decided_by,
+                d.decided_by_role,
+                d.decided_at,
+                d.status,
+                d.recommendation_reason,
+                d.decision_confidence_reason,
+                d.suggested_hr_action_reason,
+                d.corrective_action_basis,
+                d.created_at,
+                d.updated_at,
+                totals.total_records
+              FROM kpi_decision_history AS d
+              INNER JOIN (
+                SELECT
+                  employee_id,
+                  MAX(id) AS latest_id
+                FROM kpi_decision_history
+                GROUP BY employee_id
+              ) AS latest
+                ON latest.latest_id = d.id
+              CROSS JOIN (
+                SELECT
+                  COUNT(*) AS total_records
+                FROM kpi_decision_history
+              ) AS totals
+              ORDER BY
+                d.decided_at DESC,
+                d.id DESC
+              `
+            );
+
+        return res.json({
+          decisions:
+            rows.map(
+              toCamelCaseRecord
+            ),
+
+          total:
+            Number(
+              rows[0]
+                ?.total_records ||
+                0
+            ),
+
+          fetchedAt:
+            new Date()
+              .toISOString(),
+        });
+      }
+
+      if (
+        view !== "history"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            error:
+              "Invalid KPI decision history view.",
+
+            message:
+              "Use view=latest or view=history.",
+          });
+      }
+
+      const requestedPage =
+        parsePositiveInteger(
+          req.query?.page
+        );
+
+      const requestedPageSize =
+        parsePositiveInteger(
+          req.query?.pageSize
+        );
+
+      const page =
+        requestedPage ||
+        1;
+
+      const pageSize =
+        Math.min(
+          requestedPageSize ||
+            25,
+          100
+        );
+
+      const decisionType =
+        cleanValue(
+          req.query
+            ?.decisionType,
+          "ALL"
+        );
+
+      if (
+        decisionType !==
+          "ALL" &&
+        !ALLOWED_DECISION_TYPES.has(
+          decisionType
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            error:
+              "Invalid decision type filter.",
+          });
+      }
+
+      const normalizedSearch =
+        String(
+          req.query
+            ?.search ||
+            ""
+        )
+          .trim()
+          .toLowerCase()
+          .replace(
+            /[^a-z0-9\s]/g,
+            " "
+          )
+          .replace(
+            /\s+/g,
+            " "
+          );
+
+      const searchTerms =
+        normalizedSearch
+          ? normalizedSearch
+              .split(
+                /\s+/
+              )
+              .filter(
+                Boolean
+              )
+          : [];
+
+      const whereParts = [];
+      const whereParams = [];
+
+      if (
+        decisionType !==
+        "ALL"
+      ) {
+        whereParts.push(
+          "decision_type = ?"
+        );
+
+        whereParams.push(
+          decisionType
+        );
+      }
+
+      searchTerms.forEach(
+        (term) => {
+          const likeTerm =
+            `%${term}%`;
+
+          whereParts.push(
             `
-            SELECT *
-            FROM kpi_decision_history
-            ORDER BY
-              decided_at DESC,
-              id DESC
+            (
+              LOWER(COALESCE(employee_name, '')) LIKE ?
+              OR LOWER(CAST(COALESCE(employee_id, '') AS CHAR)) LIKE ?
+              OR LOWER(COALESCE(company, '')) LIKE ?
+              OR LOWER(COALESCE(decision_type, '')) LIKE ?
+              OR LOWER(COALESCE(system_recommendation, '')) LIKE ?
+              OR LOWER(COALESCE(suggested_hr_action, '')) LIKE ?
+              OR LOWER(COALESCE(final_action, '')) LIKE ?
+              OR LOWER(COALESCE(notes, '')) LIKE ?
+              OR LOWER(COALESCE(decided_by, '')) LIKE ?
+              OR LOWER(COALESCE(decided_by_role, '')) LIKE ?
+              OR LOWER(COALESCE(risk_level, '')) LIKE ?
+              OR LOWER(COALESCE(kpi_level, '')) LIKE ?
+              OR LOWER(COALESCE(decision_confidence, '')) LIKE ?
+            )
             `
           );
 
-      return res.json(
-        rows.map(
-          toCamelCaseRecord
-        )
+          for (
+            let index = 0;
+            index < 13;
+            index += 1
+          ) {
+            whereParams.push(
+              likeTerm
+            );
+          }
+        }
       );
+
+      const whereSql =
+        whereParts.length > 0
+          ? `WHERE ${whereParts.join(
+              " AND "
+            )}`
+          : "";
+
+      const offset =
+        (page - 1) *
+        pageSize;
+
+      const [
+        rowsResult,
+        countResult,
+        summaryResult,
+      ] =
+        await Promise.all([
+          db
+            .promise()
+            .query(
+              `
+              SELECT
+                id,
+                employee_id,
+                employee_name,
+                company,
+                risk_level,
+                kpi_level,
+                violation_count,
+                severity_score,
+                critical_incident_count,
+                decision_confidence,
+                suggested_hr_action,
+                system_recommendation,
+                final_action,
+                decision_type,
+                notes,
+                decided_by,
+                decided_by_role,
+                decided_at,
+                status,
+                recommendation_reason,
+                decision_confidence_reason,
+                suggested_hr_action_reason,
+                corrective_action_basis,
+                created_at,
+                updated_at
+              FROM kpi_decision_history
+              ${whereSql}
+              ORDER BY
+                decided_at DESC,
+                id DESC
+              LIMIT ?
+              OFFSET ?
+              `,
+              [
+                ...whereParams,
+                pageSize,
+                offset,
+              ]
+            ),
+
+          db
+            .promise()
+            .query(
+              `
+              SELECT
+                COUNT(*) AS total
+              FROM kpi_decision_history
+              ${whereSql}
+              `,
+              whereParams
+            ),
+
+          db
+            .promise()
+            .query(
+              `
+              SELECT
+                COUNT(*) AS total,
+                COALESCE(
+                  SUM(
+                    decision_type = 'Accepted'
+                  ),
+                  0
+                ) AS accepted,
+                COALESCE(
+                  SUM(
+                    decision_type = 'Modified'
+                  ),
+                  0
+                ) AS modified,
+                COALESCE(
+                  SUM(
+                    decision_type = 'Rejected'
+                  ),
+                  0
+                ) AS rejected
+              FROM kpi_decision_history
+              `
+            ),
+        ]);
+
+      const [rows] =
+        rowsResult;
+
+      const [countRows] =
+        countResult;
+
+      const [summaryRows] =
+        summaryResult;
+
+      const total =
+        Number(
+          countRows[0]
+            ?.total ||
+            0
+        );
+
+      const totalPages =
+        Math.max(
+          1,
+          Math.ceil(
+            total /
+              pageSize
+          )
+        );
+
+      const summaryRow =
+        summaryRows[0] ||
+        {};
+
+      return res.json({
+        records:
+          rows.map(
+            toCamelCaseRecord
+          ),
+
+        pagination: {
+          page,
+
+          pageSize,
+
+          total,
+
+          totalPages,
+        },
+
+        summary: {
+          total:
+            Number(
+              summaryRow.total ||
+                0
+            ),
+
+          accepted:
+            Number(
+              summaryRow.accepted ||
+                0
+            ),
+
+          modified:
+            Number(
+              summaryRow.modified ||
+                0
+            ),
+
+          rejected:
+            Number(
+              summaryRow.rejected ||
+                0
+            ),
+        },
+
+        filters: {
+          search:
+            cleanValue(
+              req.query
+                ?.search
+            ),
+
+          decisionType,
+        },
+
+        fetchedAt:
+          new Date()
+            .toISOString(),
+      });
     } catch (error) {
       console.error(
         "GET KPI DECISION HISTORY ERROR:",

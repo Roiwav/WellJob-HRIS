@@ -15,7 +15,6 @@ import {
 import {
   getDaysUntilExpiration,
   normalizeEmployeeStatus,
-  normalizeText,
 } from "../../utils/employees/employeeHelpers";
 import {
   parseEmployeeDocuments,
@@ -277,27 +276,6 @@ function getEmployeeName(employee) {
   );
 }
 
-function isSameEmployee(employee, incident) {
-  const employeeId = getEmployeeId(employee);
-  const employeeName = normalizeText(getEmployeeName(employee));
-
-  const incidentEmployeeId = String(
-    incident?.employeeId || incident?.employee_id || incident?.empId || ""
-  );
-
-  const incidentEmployeeName = normalizeText(
-    incident?.employee ||
-      incident?.employeeName ||
-      incident?.employee_name ||
-      ""
-  );
-
-  return (
-    (Boolean(employeeId) && employeeId === incidentEmployeeId) ||
-    (Boolean(employeeName) && employeeName === incidentEmployeeName)
-  );
-}
-
 function normalizeIncident(incident = {}) {
   const date =
     incident.reportedAt ||
@@ -439,9 +417,18 @@ export default function EmployeeModal({ employee, onClose }) {
         setIncidentLoading(true);
         setIncidentError("");
 
-        const response = await authenticatedFetch(INCIDENT_API_URL, {
-          signal: controller.signal,
-        });
+        if (!employeeId) {
+          throw new Error(
+            "Employee ID is unavailable for incident lookup."
+          );
+        }
+
+        const response = await authenticatedFetch(
+          `${INCIDENT_API_URL}/employee/${encodeURIComponent(employeeId)}`,
+          {
+            signal: controller.signal,
+          }
+        );
 
         const data = await response.json().catch(() => []);
 
@@ -456,9 +443,7 @@ export default function EmployeeModal({ employee, onClose }) {
         if (controller.signal.aborted) return;
 
         const incidents = Array.isArray(data)
-          ? data
-              .map(normalizeIncident)
-              .filter((incident) => isSameEmployee(employee, incident))
+          ? data.map(normalizeIncident)
           : [];
 
         setEmployeeIncidents(incidents);
@@ -483,7 +468,7 @@ export default function EmployeeModal({ employee, onClose }) {
     void loadEmployeeIncidents();
 
     return () => controller.abort();
-  }, [employee]);
+  }, [employee, employeeId]);
 
   useEffect(() => {
     return () => {
