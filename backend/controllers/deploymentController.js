@@ -1,5 +1,10 @@
 const db = require("../config/db");
 
+const {
+  logAudit,
+  AUDIT_CATEGORY,
+} = require("../utils/auditLogger");
+
 const COMPANY_LOCATIONS = {
   "SM Supermalls": "Calamba City, Laguna",
   "Robinsons Retail Holdings": "Calamba City, Laguna",
@@ -46,23 +51,34 @@ function normalizeDate(value) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return "-";
   }
 
-  return date.toISOString().slice(0, 10);
+  return date
+    .toISOString()
+    .slice(0, 10);
 }
 
 function normalizeText(value) {
-  return String(value || "")
+  return String(
+    value || ""
+  )
     .trim()
     .toLowerCase();
 }
 
-function normalizeNullableText(value) {
-  const normalized = String(
-    value || ""
-  ).trim();
+function normalizeNullableText(
+  value
+) {
+  const normalized =
+    String(
+      value || ""
+    ).trim();
 
   return normalized || null;
 }
@@ -74,7 +90,9 @@ function isCurrentlyDeployedEmployee(
     "deployed",
     "active deployed",
   ].includes(
-    normalizeText(employee?.status)
+    normalizeText(
+      employee?.status
+    )
   );
 }
 
@@ -93,6 +111,50 @@ function getActorUserId(req) {
     req?.user?.id ??
     null
   );
+}
+
+/*
+ * ==================================================
+ * TRUSTED AUDIT ACTOR
+ * ==================================================
+ *
+ * Audit identity is derived only from the verified
+ * authentication payload attached to req.user.
+ *
+ * No actor identity is accepted from req.body,
+ * query parameters, or route parameters.
+ */
+function getActor(req) {
+  const user =
+    req?.user || {};
+
+  const username =
+    normalizeNullableText(
+      user.username
+    );
+
+  const fullName =
+    normalizeNullableText(
+      user.fullName ??
+        user.full_name ??
+        user.name
+    ) ||
+    username ||
+    "Unknown User";
+
+  return {
+    userId:
+      getActorUserId(req),
+
+    username,
+
+    fullName,
+
+    role:
+      normalizeNullableText(
+        user.role
+      ),
+  };
 }
 
 function mapAssignment(row) {
@@ -133,7 +195,8 @@ function mapAssignment(row) {
       "Active",
 
     employeeStatus:
-      row.employeeStatus || "",
+      row.employeeStatus ||
+      "",
 
     employmentType:
       "Permanent",
@@ -235,12 +298,8 @@ function buildDeploymentSummaryFilters({
       search
     )
       .toLowerCase()
-      .split(
-        /\s+/
-      )
-      .filter(
-        Boolean
-      );
+      .split(/\s+/)
+      .filter(Boolean);
 
   for (
     const term of searchTerms
@@ -253,12 +312,10 @@ function buildDeploymentSummaryFilters({
         COMPANY_LOCATIONS
       )
         .filter(
-          (
-            [
-              ,
-              location,
-            ]
-          ) =>
+          ([
+            ,
+            location,
+          ]) =>
             normalizeText(
               location
             ).includes(
@@ -266,11 +323,9 @@ function buildDeploymentSummaryFilters({
             )
         )
         .map(
-          (
-            [
-              company,
-            ]
-          ) =>
+          ([
+            company,
+          ]) =>
             company
         );
 
@@ -719,6 +774,7 @@ exports.getDeployments = async (
           page,
           pageSize,
           total,
+
           totalPages:
             total > 0
               ? Math.ceil(
@@ -756,33 +812,35 @@ exports.getDeployments = async (
     }
 
     const [rows] =
-      await db.promise().query(
-        `
-        SELECT
-          da.id AS deploymentId,
-          da.employee_id AS employeeId,
-          e.name AS employee,
-          da.company,
-          da.position,
-          da.start_date AS startDate,
-          da.end_date AS endDate,
-          da.end_reason AS endReason,
-          da.end_remarks AS endRemarks,
-          da.status AS deploymentStatus,
-          da.ended_at AS endedAt,
-          da.created_at AS createdAt,
-          da.updated_at AS updatedAt,
-          e.status AS employeeStatus,
-          e.archived
-        FROM deployment_assignments AS da
-        INNER JOIN employees AS e
-          ON e.id = da.employee_id
-        WHERE e.archived = 0
-        ORDER BY
-          da.start_date DESC,
-          da.id DESC
-        `
-      );
+      await db
+        .promise()
+        .query(
+          `
+          SELECT
+            da.id AS deploymentId,
+            da.employee_id AS employeeId,
+            e.name AS employee,
+            da.company,
+            da.position,
+            da.start_date AS startDate,
+            da.end_date AS endDate,
+            da.end_reason AS endReason,
+            da.end_remarks AS endRemarks,
+            da.status AS deploymentStatus,
+            da.ended_at AS endedAt,
+            da.created_at AS createdAt,
+            da.updated_at AS updatedAt,
+            e.status AS employeeStatus,
+            e.archived
+          FROM deployment_assignments AS da
+          INNER JOIN employees AS e
+            ON e.id = da.employee_id
+          WHERE e.archived = 0
+          ORDER BY
+            da.start_date DESC,
+            da.id DESC
+          `
+        );
 
     return res.json(
       rows.map(
@@ -795,13 +853,39 @@ exports.getDeployments = async (
       err
     );
 
-    return res.status(500).json({
-      error:
-        "Failed to fetch deployments",
-    });
+    return res
+      .status(500)
+      .json({
+        error:
+          "Failed to fetch deployments",
+      });
   }
 };
 
+/*
+ * ==================================================
+ * UPDATE DEPLOYMENT STATUS
+ * F-03 — DEPLOYMENT LIFECYCLE AUDIT LOGGING
+ * ==================================================
+ *
+ * The lifecycle mutation remains server-authoritative.
+ *
+ * The following operations participate in one
+ * database transaction:
+ *
+ * - deployment assignment status/end update;
+ * - employee lifecycle status update;
+ * - employee status history insert;
+ * - operational audit log insert.
+ *
+ * The audit row is written using the SAME active
+ * database connection before COMMIT.
+ *
+ * If audit logging fails, throwOnError causes the
+ * entire lifecycle transaction to roll back so a
+ * successful business mutation cannot exist without
+ * its corresponding audit event.
+ */
 exports.updateDeploymentStatus = async (
   req,
   res
@@ -817,22 +901,28 @@ exports.updateDeploymentStatus = async (
   } = req.body || {};
 
   if (!deploymentId) {
-    return res.status(400).json({
-      error:
-        "Deployment ID is required.",
-    });
+    return res
+      .status(400)
+      .json({
+        error:
+          "Deployment ID is required.",
+      });
   }
 
   if (
     ![
       "Completed",
       "Cancelled",
-    ].includes(status)
+    ].includes(
+      status
+    )
   ) {
-    return res.status(400).json({
-      error:
-        "Deployment status must be Completed or Cancelled.",
-    });
+    return res
+      .status(400)
+      .json({
+        error:
+          "Deployment status must be Completed or Cancelled.",
+      });
   }
 
   const requestedReason =
@@ -843,7 +933,10 @@ exports.updateDeploymentStatus = async (
   let finalReason =
     requestedReason;
 
-  if (status === "Completed") {
+  if (
+    status ===
+    "Completed"
+  ) {
     finalReason =
       requestedReason ||
       "Completed Contract";
@@ -853,24 +946,31 @@ exports.updateDeploymentStatus = async (
         finalReason
       )
     ) {
-      return res.status(400).json({
-        error:
-          "Invalid completed deployment reason.",
-      });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Invalid completed deployment reason.",
+        });
     }
   }
 
-  if (status === "Cancelled") {
+  if (
+    status ===
+    "Cancelled"
+  ) {
     if (
       !finalReason ||
       !CANCELLED_REASONS.has(
         finalReason
       )
     ) {
-      return res.status(400).json({
-        error:
-          "Cancelled deployments require Resigned, AWOL, or Terminated.",
-      });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Cancelled deployments require Resigned, AWOL, or Terminated.",
+        });
     }
   }
 
@@ -880,12 +980,22 @@ exports.updateDeploymentStatus = async (
     );
 
   const employeeStatus =
-    getEmployeeStatus(status);
+    getEmployeeStatus(
+      status
+    );
+
+  /*
+   * Actor identity comes only from verified
+   * req.user authentication data.
+   */
+  const actor =
+    getActor(req);
 
   const actorUserId =
-    getActorUserId(req);
+    actor.userId;
 
   let connection = null;
+
   let transactionStarted =
     false;
 
@@ -895,11 +1005,19 @@ exports.updateDeploymentStatus = async (
         .promise()
         .getConnection();
 
-    await connection.beginTransaction();
+    await connection
+      .beginTransaction();
 
-    transactionStarted = true;
+    transactionStarted =
+      true;
 
-    const [assignmentLookup] =
+    /*
+     * Resolve the employee that owns the target
+     * deployment assignment.
+     */
+    const [
+      assignmentLookup,
+    ] =
       await connection.query(
         `
         SELECT
@@ -914,22 +1032,35 @@ exports.updateDeploymentStatus = async (
       );
 
     if (
-      assignmentLookup.length === 0
+      assignmentLookup.length ===
+      0
     ) {
-      await connection.rollback();
-      transactionStarted = false;
+      await connection
+        .rollback();
 
-      return res.status(404).json({
-        error:
-          "Deployment assignment not found.",
-      });
+      transactionStarted =
+        false;
+
+      return res
+        .status(404)
+        .json({
+          error:
+            "Deployment assignment not found.",
+        });
     }
 
     const employeeId =
       assignmentLookup[0]
         .employee_id;
 
-    const [employeeRows] =
+    /*
+     * Employee row is locked first so lifecycle
+     * state cannot be changed concurrently by
+     * another employee lifecycle operation.
+     */
+    const [
+      employeeRows,
+    ] =
       await connection.query(
         `
         SELECT
@@ -948,15 +1079,21 @@ exports.updateDeploymentStatus = async (
       );
 
     if (
-      employeeRows.length === 0
+      employeeRows.length ===
+      0
     ) {
-      await connection.rollback();
-      transactionStarted = false;
+      await connection
+        .rollback();
 
-      return res.status(404).json({
-        error:
-          "Employee not found.",
-      });
+      transactionStarted =
+        false;
+
+      return res
+        .status(404)
+        .json({
+          error:
+            "Employee not found.",
+        });
     }
 
     const employee =
@@ -964,16 +1101,22 @@ exports.updateDeploymentStatus = async (
 
     if (
       Number(
-        employee.archived || 0
+        employee.archived ||
+          0
       ) === 1
     ) {
-      await connection.rollback();
-      transactionStarted = false;
+      await connection
+        .rollback();
 
-      return res.status(409).json({
-        error:
-          "Archived employees cannot have their deployment status updated.",
-      });
+      transactionStarted =
+        false;
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "Archived employees cannot have their deployment status updated.",
+        });
     }
 
     if (
@@ -981,16 +1124,30 @@ exports.updateDeploymentStatus = async (
         employee
       )
     ) {
-      await connection.rollback();
-      transactionStarted = false;
+      await connection
+        .rollback();
 
-      return res.status(409).json({
-        error:
-          "Only a currently deployed employee can have an active deployment ended.",
-      });
+      transactionStarted =
+        false;
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "Only a currently deployed employee can have an active deployment ended.",
+        });
     }
 
-    const [assignmentRows] =
+    /*
+     * Lock the exact target deployment assignment.
+     *
+     * Its current status is also retained so the
+     * audit trail can record the authoritative
+     * before -> after lifecycle transition.
+     */
+    const [
+      assignmentRows,
+    ] =
       await connection.query(
         `
         SELECT
@@ -1012,15 +1169,21 @@ exports.updateDeploymentStatus = async (
       );
 
     if (
-      assignmentRows.length === 0
+      assignmentRows.length ===
+      0
     ) {
-      await connection.rollback();
-      transactionStarted = false;
+      await connection
+        .rollback();
 
-      return res.status(404).json({
-        error:
-          "Deployment assignment not found.",
-      });
+      transactionStarted =
+        false;
+
+      return res
+        .status(404)
+        .json({
+          error:
+            "Deployment assignment not found.",
+        });
     }
 
     const activeAssignment =
@@ -1030,23 +1193,36 @@ exports.updateDeploymentStatus = async (
       activeAssignment.status !==
       "Active"
     ) {
-      await connection.rollback();
-      transactionStarted = false;
+      await connection
+        .rollback();
 
-      return res.status(409).json({
-        error:
-          "Only an active deployment assignment can be completed or cancelled.",
-      });
+      transactionStarted =
+        false;
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "Only an active deployment assignment can be completed or cancelled.",
+        });
     }
 
-    const [activeAssignments] =
+    /*
+     * Preserve the existing one-active-assignment
+     * integrity validation.
+     */
+    const [
+      activeAssignments,
+    ] =
       await connection.query(
         `
-        SELECT id
+        SELECT
+          id
         FROM deployment_assignments
         WHERE employee_id = ?
           AND status = 'Active'
-        ORDER BY id ASC
+        ORDER BY
+          id ASC
         LIMIT 2
         FOR UPDATE
         `,
@@ -1056,21 +1232,33 @@ exports.updateDeploymentStatus = async (
       );
 
     if (
-      activeAssignments.length !== 1 ||
+      activeAssignments.length !==
+        1 ||
       Number(
-        activeAssignments[0]?.id
+        activeAssignments[0]
+          ?.id
       ) !==
-        Number(deploymentId)
+        Number(
+          deploymentId
+        )
     ) {
-      await connection.rollback();
-      transactionStarted = false;
+      await connection
+        .rollback();
 
-      return res.status(409).json({
-        error:
-          "Deployment assignment integrity conflict detected for this employee.",
-      });
+      transactionStarted =
+        false;
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "Deployment assignment integrity conflict detected for this employee.",
+        });
     }
 
+    /*
+     * Update the deployment lifecycle record.
+     */
     await connection.query(
       `
       UPDATE deployment_assignments
@@ -1091,6 +1279,16 @@ exports.updateDeploymentStatus = async (
       ]
     );
 
+    /*
+     * Update the employee's authoritative
+     * workforce lifecycle status.
+     *
+     * Completed deployment:
+     *   -> Floating / Standby
+     *
+     * Cancelled deployment:
+     *   -> Inactive
+     */
     await connection.query(
       `
       UPDATE employees
@@ -1110,6 +1308,10 @@ exports.updateDeploymentStatus = async (
       ]
     );
 
+    /*
+     * Preserve the existing lifecycle history
+     * behavior.
+     */
     await connection.query(
       `
       INSERT INTO employee_status_history
@@ -1143,9 +1345,70 @@ exports.updateDeploymentStatus = async (
       ]
     );
 
+    /*
+     * ==================================================
+     * F-03 TRANSACTIONAL OPERATIONAL AUDIT
+     * ==================================================
+     *
+     * This audit INSERT uses the same MySQL
+     * transaction as the deployment, employee,
+     * and status-history mutations above.
+     *
+     * throwOnError = true is intentional:
+     *
+     * audit failure
+     *      ->
+     * exception
+     *      ->
+     * catch()
+     *      ->
+     * transaction rollback
+     *
+     * This prevents a lifecycle mutation from
+     * committing without its required audit trail.
+     */
+    const remarksAuditText =
+      finalRemarks
+        ? ` Remarks: ${finalRemarks}.`
+        : "";
+
+    await logAudit(
+      {
+        userId:
+          actor.userId,
+
+        username:
+          actor.username,
+
+        fullName:
+          actor.fullName,
+
+        role:
+          actor.role,
+
+        category:
+          AUDIT_CATEGORY.OPERATIONAL,
+
+        action:
+          "DEPLOYMENT_STATUS_UPDATED",
+
+        description:
+          `${actor.fullName} updated deployment #${deploymentId} for ${employee.name} (Employee #${employeeId}, ${activeAssignment.company || "Unknown Company"}) from ${activeAssignment.status} to ${status}. Employee status changed from ${employee.status} to ${employeeStatus}. Reason: ${finalReason}.${remarksAuditText}`,
+      },
+      {
+        connection,
+        throwOnError: true,
+      }
+    );
+
+    /*
+     * Commit only after ALL lifecycle records
+     * and the audit event have succeeded.
+     */
     await connection.commit();
 
-    transactionStarted = false;
+    transactionStarted =
+      false;
 
     return res.json({
       success: true,
@@ -1157,10 +1420,14 @@ exports.updateDeploymentStatus = async (
           : "Deployment marked as completed successfully.",
 
       deploymentId:
-        Number(deploymentId),
+        Number(
+          deploymentId
+        ),
 
       assignmentId:
-        Number(deploymentId),
+        Number(
+          deploymentId
+        ),
 
       employeeId,
 
@@ -1179,12 +1446,18 @@ exports.updateDeploymentStatus = async (
         finalRemarks,
     });
   } catch (err) {
+    /*
+     * Any failure before successful commit,
+     * including audit insertion failure,
+     * rolls the entire lifecycle mutation back.
+     */
     if (
       connection &&
       transactionStarted
     ) {
       try {
-        await connection.rollback();
+        await connection
+          .rollback();
       } catch (
         rollbackError
       ) {
@@ -1200,10 +1473,12 @@ exports.updateDeploymentStatus = async (
       err
     );
 
-    return res.status(500).json({
-      error:
-        "Failed to update deployment status",
-    });
+    return res
+      .status(500)
+      .json({
+        error:
+          "Failed to update deployment status",
+      });
   } finally {
     if (connection) {
       connection.release();
