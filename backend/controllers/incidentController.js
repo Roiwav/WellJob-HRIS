@@ -430,7 +430,11 @@ async function tableExists(
 }
 
 async function getActiveDeploymentForEmployee(
-  employeeId
+  employeeId,
+  {
+    connection = null,
+    lockForUpdate = false,
+  } = {}
 ) {
   const normalizedEmployeeId =
     String(
@@ -444,36 +448,44 @@ async function getActiveDeploymentForEmployee(
     };
   }
 
+  const queryTarget =
+    connection ||
+    db.promise();
+
+  const lockClause =
+    lockForUpdate
+      ? "FOR UPDATE"
+      : "";
+
   const [rows] =
-    await db
-      .promise()
-      .query(
-        `
-        SELECT
-          id,
-          employee_id,
-          company,
-          position,
-          start_date,
-          end_date,
-          end_reason,
-          end_remarks,
-          status,
-          ended_at,
-          created_at,
-          updated_at
-        FROM deployment_assignments
-        WHERE employee_id = ?
-          AND status = 'Active'
-        ORDER BY
-          start_date DESC,
-          id DESC
-        LIMIT 2
-        `,
-        [
-          normalizedEmployeeId,
-        ]
-      );
+    await queryTarget.query(
+      `
+      SELECT
+        id,
+        employee_id,
+        company,
+        position,
+        start_date,
+        end_date,
+        end_reason,
+        end_remarks,
+        status,
+        ended_at,
+        created_at,
+        updated_at
+      FROM deployment_assignments
+      WHERE employee_id = ?
+        AND status = 'Active'
+      ORDER BY
+        start_date DESC,
+        id DESC
+      LIMIT 2
+      ${lockClause}
+      `,
+      [
+        normalizedEmployeeId,
+      ]
+    );
 
   return {
     assignment:
@@ -688,7 +700,7 @@ async function lockEmployeeForClassification(
   const [rows] =
     await connection.query(
       `
-      SELECT id
+      SELECT *
       FROM employees
       WHERE id = ?
       LIMIT 1
@@ -710,6 +722,8 @@ async function lockEmployeeForClassification(
       }
     );
   }
+
+  return rows[0];
 }
 
 async function getIncidentHistoryCounts({
@@ -2033,6 +2047,197 @@ async function getActor(req) {
   };
 }
 
+function toPositiveInteger(
+  value,
+  fallback
+) {
+  const parsed =
+    Number.parseInt(
+      String(
+        value ?? ""
+      ),
+      10
+    );
+
+  return Number.isInteger(
+    parsed
+  ) && parsed > 0
+    ? parsed
+    : fallback;
+}
+
+function normalizeIncidentSummaryCaseTab(
+  value
+) {
+  const normalized =
+    String(
+      value || "ALL"
+    )
+      .trim()
+      .toUpperCase()
+      .replace(
+        /[\s-]+/g,
+        "_"
+      );
+
+  return [
+    "ALL",
+    "ACTIVE",
+    "FOR_REVIEW",
+    "CLOSED",
+  ].includes(
+    normalized
+  )
+    ? normalized
+    : "ALL";
+}
+
+function normalizeIncidentSummarySearch(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase()
+    .replace(
+      /[^a-z0-9\s]/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .slice(
+      0,
+      150
+    );
+}
+
+function buildIncidentSummaryFilters(
+  query = {}
+) {
+  const conditions =
+    [];
+
+  const params =
+    [];
+
+  const caseTab =
+    normalizeIncidentSummaryCaseTab(
+      query.caseTab ||
+      query.case_tab
+    );
+
+  const severity =
+    String(
+      query.severity ||
+      query.severityFilter ||
+      query.severity_filter ||
+      "ALL"
+    ).trim();
+
+  const normalizedSeverity =
+    severity.toUpperCase();
+
+  if (
+    caseTab ===
+    "ACTIVE"
+  ) {
+    conditions.push(
+      `LOWER(TRIM(COALESCE(i.status, ''))) IN ('open', 'investigating')`
+    );
+  } else if (
+    caseTab ===
+    "FOR_REVIEW"
+  ) {
+    conditions.push(
+      `(LOWER(TRIM(COALESCE(i.status, ''))) IN ('for review', 'for_review'))`
+    );
+  } else if (
+    caseTab ===
+    "CLOSED"
+  ) {
+    conditions.push(
+      `(LOWER(TRIM(COALESCE(i.status, ''))) IN ('closed', 'resolved'))`
+    );
+  }
+
+  if (
+    normalizedSeverity &&
+    normalizedSeverity !==
+      "ALL"
+  ) {
+    conditions.push(
+      "LOWER(TRIM(COALESCE(i.severity, ''))) = ?"
+    );
+
+    params.push(
+      severity.toLowerCase()
+    );
+  }
+
+  const normalizedSearch =
+    normalizeIncidentSummarySearch(
+      query.search
+    );
+
+  const searchTerms =
+    normalizedSearch
+      ? normalizedSearch.split(
+          /\s+/
+        )
+      : [];
+
+  for (
+    const term of
+    searchTerms
+  ) {
+    const likeTerm =
+      `%${term}%`;
+
+    conditions.push(
+      `
+      (
+        LOWER(CAST(i.id AS CHAR)) LIKE ?
+        OR LOWER(CONCAT('inc', LPAD(CAST(i.id AS CHAR), 4, '0'))) LIKE ?
+        OR LOWER(CAST(i.employee_id AS CHAR)) LIKE ?
+        OR LOWER(COALESCE(i.employee_name, '')) LIKE ?
+        OR LOWER(COALESCE(e.name, '')) LIKE ?
+        OR LOWER(COALESCE(i.violation_type, '')) LIKE ?
+        OR LOWER(COALESCE(i.company, '')) LIKE ?
+        OR LOWER(COALESCE(e.company, '')) LIKE ?
+        OR LOWER(COALESCE(i.location, '')) LIKE ?
+        OR LOWER(COALESCE(i.severity, '')) LIKE ?
+        OR LOWER(COALESCE(i.status, '')) LIKE ?
+        OR LOWER(COALESCE(i.policy_sanction, '')) LIKE ?
+        OR LOWER(COALESCE(i.action_taken, '')) LIKE ?
+        OR LOWER(COALESCE(i.recommendation, '')) LIKE ?
+        OR LOWER(COALESCE(i.description, '')) LIKE ?
+        OR LOWER(COALESCE(i.reported_by, '')) LIKE ?
+      )
+      `
+    );
+
+    params.push(
+      ...Array(16).fill(
+        likeTerm
+      )
+    );
+  }
+
+  return {
+    whereClause:
+      conditions.length
+        ? `WHERE ${conditions.join(
+            " AND "
+          )}`
+        : "",
+
+    params,
+  };
+}
+
 exports.getIncidents =
   async (
     req,
@@ -2047,14 +2252,172 @@ exports.getIncidents =
           .trim()
           .toLowerCase();
 
+      /*
+       * ==================================================
+       * PAGINATED INCIDENT SUMMARY
+       * ==================================================
+       *
+       * The main Incident page uses this lightweight
+       * endpoint.
+       *
+       * Search/filtering occurs on the server so
+       * pagination never hides matching records that
+       * exist outside the currently loaded page.
+       *
+       * Full Case Details and employee incident history
+       * remain handled by their existing endpoints.
+       */
       if (
         view ===
         "summary"
       ) {
+        const requestedPage =
+          toPositiveInteger(
+            req.query?.page,
+            1
+          );
+
+        const requestedPageSize =
+          Math.min(
+            toPositiveInteger(
+              req.query?.pageSize ||
+              req.query?.page_size,
+              25
+            ),
+            100
+          );
+
+        const {
+          whereClause,
+          params,
+        } =
+          buildIncidentSummaryFilters(
+            req.query || {}
+          );
+
+        const [
+          [countRows],
+          [caseCountRows],
+        ] =
+          await Promise.all([
+            db
+              .promise()
+              .query(
+                `
+                SELECT
+                  COUNT(*) AS total
+                FROM incidents i
+                LEFT JOIN employees e
+                  ON e.id = i.employee_id
+                ${whereClause}
+                `,
+                params
+              ),
+
+            /*
+             * Tab counts intentionally describe the
+             * complete incident collection, matching
+             * the original page behavior before server
+             * pagination was introduced.
+             */
+            db
+              .promise()
+              .query(`
+                SELECT
+                  COUNT(*) AS all_count,
+
+                  SUM(
+                    CASE
+                      WHEN LOWER(
+                        TRIM(
+                          COALESCE(
+                            status,
+                            ''
+                          )
+                        )
+                      ) IN (
+                        'open',
+                        'investigating'
+                      )
+                      THEN 1
+                      ELSE 0
+                    END
+                  ) AS active_count,
+
+                  SUM(
+                    CASE
+                      WHEN LOWER(
+                        TRIM(
+                          COALESCE(
+                            status,
+                            ''
+                          )
+                        )
+                      ) IN (
+                        'for review',
+                        'for_review'
+                      )
+                      THEN 1
+                      ELSE 0
+                    END
+                  ) AS for_review_count,
+
+                  SUM(
+                    CASE
+                      WHEN LOWER(
+                        TRIM(
+                          COALESCE(
+                            status,
+                            ''
+                          )
+                        )
+                      ) IN (
+                        'closed',
+                        'resolved'
+                      )
+                      THEN 1
+                      ELSE 0
+                    END
+                  ) AS closed_count
+
+                FROM incidents
+              `),
+          ]);
+
+        const total =
+          Number(
+            countRows?.[0]
+              ?.total ||
+            0
+          );
+
+        const totalPages =
+          total > 0
+            ? Math.ceil(
+                total /
+                requestedPageSize
+              )
+            : 1;
+
+        /*
+         * Clamp an outdated page after filters/search
+         * reduce the result set.
+         */
+        const page =
+          Math.min(
+            requestedPage,
+            totalPages
+          );
+
+        const offset =
+          (page - 1) *
+          requestedPageSize;
+
         const [incidents] =
           await db
             .promise()
-            .query(`
+            .query(
+              `
               SELECT
                 i.id,
                 i.employee_id,
@@ -2098,19 +2461,87 @@ exports.getIncidents =
               FROM incidents i
               LEFT JOIN employees e
                 ON e.id = i.employee_id
+              ${whereClause}
               ORDER BY
                 i.created_at DESC,
                 i.id DESC
-            `);
+              LIMIT ?
+              OFFSET ?
+              `,
+              [
+                ...params,
+                requestedPageSize,
+                offset,
+              ]
+            );
 
-        return res.json(
-          incidents.map(
-            serializeIncidentSummary
-          )
-        );
+        const caseCounts =
+          caseCountRows?.[0] ||
+          {};
+
+        return res.json({
+          incidents:
+            incidents.map(
+              serializeIncidentSummary
+            ),
+
+          pagination: {
+            page,
+
+            pageSize:
+              requestedPageSize,
+
+            total,
+
+            totalPages,
+
+            hasPreviousPage:
+              page > 1,
+
+            hasNextPage:
+              page < totalPages,
+          },
+
+          caseCounts: {
+            ALL:
+              Number(
+                caseCounts.all_count ||
+                0
+              ),
+
+            ACTIVE:
+              Number(
+                caseCounts.active_count ||
+                0
+              ),
+
+            FOR_REVIEW:
+              Number(
+                caseCounts.for_review_count ||
+                0
+              ),
+
+            CLOSED:
+              Number(
+                caseCounts.closed_count ||
+                0
+              ),
+          },
+        });
       }
 
-          const [incidents] =
+      /*
+       * ==================================================
+       * LEGACY FULL INCIDENT COLLECTION
+       * ==================================================
+       *
+       * Kept unchanged for backwards compatibility.
+       *
+       * F-08 pagination applies specifically to the
+       * lightweight summary view used by the normal
+       * Incident page.
+       */
+      const [incidents] =
         await db
           .promise()
           .query(`
@@ -2475,7 +2906,7 @@ exports.createIncident =
       false;
 
     try {
-          const {
+      const {
         employeeId,
         employee_id,
         violation,
@@ -2526,85 +2957,34 @@ exports.createIncident =
           });
       }
 
-      const [
-        employeeRows,
-      ] =
-        await db
-          .promise()
-          .query(
-            `
-            SELECT *
-            FROM employees
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [
-              finalEmployeeId,
-            ]
-          );
+      /*
+       * Throwing a controlled error after the
+       * transaction begins lets the common catch block
+       * roll back every locked/partially completed
+       * operation before returning the validation
+       * response.
+       */
+      const rejectIncidentCreation =
+        (
+          statusCode,
+          message
+        ) => {
+          const error =
+            new Error(
+              message
+            );
 
-      if (
-        !employeeRows.length
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Selected employee not found.",
-          });
-      }
+          error.name =
+            "IncidentCreationRejection";
 
-      const employeeRecord =
-        employeeRows[0];
+          error.statusCode =
+            statusCode;
 
-      if (
-        !isDeployedEmployee(
-          employeeRecord
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Incident cannot be created for floating or standby employees. Please select a deployed employee.",
-          });
-      }
+          error.isIncidentCreationRejection =
+            true;
 
-      const {
-        assignment:
-          activeDeployment,
-        hasConflict:
-          hasDeploymentConflict,
-      } =
-        await getActiveDeploymentForEmployee(
-          finalEmployeeId
-        );
-
-      if (hasDeploymentConflict) {
-        return res
-          .status(409)
-          .json({
-            error:
-              "Multiple active deployment assignments were found for the selected employee.",
-          });
-      }
-
-      if (!activeDeployment) {
-        return res
-          .status(409)
-          .json({
-            error:
-              "The selected deployed employee does not have an active deployment assignment.",
-          });
-      }
-
-      const finalEmployeeName =
-        employeeRecord.name ||
-        null;
-
-      const finalCompany =
-        activeDeployment.company ||
-        null;
+          throw error;
+        };
 
       const submittedViolation =
         violationType ||
@@ -2657,10 +3037,11 @@ exports.createIncident =
       /*
        * DATA INTEGRITY:
        *
-       * The reporter identity is derived from the
-       * verified authenticated principal. A caller
-       * cannot forge reportedBy through the request
-       * body.
+       * Reporter identity comes only from the verified
+       * authenticated principal.
+       *
+       * Any reportedBy/user metadata supplied through
+       * the request body is intentionally ignored.
        */
       const finalReportedBy =
         actor.fullName ||
@@ -2684,17 +3065,106 @@ exports.createIncident =
         true;
 
       /*
-       * Lock the employee row while computing
-       * offense history so simultaneous incident
-       * submissions for the same employee cannot
-       * classify themselves against the same stale
-       * previous offense count.
+       * ==================================================
+       * B-05 — TRANSACTIONAL DEPLOYMENT INTEGRITY
+       * ==================================================
+       *
+       * Employee/deployment validation must happen
+       * inside the same transaction that creates the
+       * incident.
+       *
+       * The employee row is locked first. The active
+       * assignment is then locked before incident
+       * classification and insertion.
+       *
+       * Therefore deployment termination cannot change
+       * this employee/site between authoritative
+       * validation and incident insertion.
        */
-      await lockEmployeeForClassification(
-        connection,
-        finalEmployeeId
-      );
+      const employeeRecord =
+        await lockEmployeeForClassification(
+          connection,
+          finalEmployeeId
+        );
 
+      if (
+        Number(
+          employeeRecord
+            ?.archived ||
+          0
+        ) === 1
+      ) {
+        rejectIncidentCreation(
+          409,
+          "Incident cannot be created for an archived employee."
+        );
+      }
+
+      if (
+        !isDeployedEmployee(
+          employeeRecord
+        )
+      ) {
+        rejectIncidentCreation(
+          400,
+          "Incident cannot be created for floating or standby employees. Please select a deployed employee."
+        );
+      }
+
+      const {
+        assignment:
+          activeDeployment,
+        hasConflict:
+          hasDeploymentConflict,
+      } =
+        await getActiveDeploymentForEmployee(
+          finalEmployeeId,
+          {
+            connection,
+
+            lockForUpdate:
+              true,
+          }
+        );
+
+      if (
+        hasDeploymentConflict
+      ) {
+        rejectIncidentCreation(
+          409,
+          "Multiple active deployment assignments were found for the selected employee."
+        );
+      }
+
+      if (
+        !activeDeployment
+      ) {
+        rejectIncidentCreation(
+          409,
+          "The selected employee no longer has an active deployment assignment. Refresh the form and try again."
+        );
+      }
+
+      const finalEmployeeName =
+        employeeRecord.name ||
+        null;
+
+      /*
+       * Authoritative company/client source.
+       *
+       * Never trust company supplied by the browser.
+       * The locked Active deployment assignment is the
+       * source of truth.
+       */
+      const finalCompany =
+        activeDeployment.company ||
+        null;
+
+      /*
+       * Employee row is already locked above, so
+       * classification/history is calculated under the
+       * same employee serialization boundary.
+       */
       const classification =
         await buildAuthoritativeIncidentClassification(
           {
@@ -2861,6 +3331,11 @@ exports.createIncident =
         connection,
       });
 
+      /*
+       * Audit write is part of the same transaction.
+       * If audit persistence fails, incident creation
+       * also rolls back.
+       */
       await logAudit(
         {
           userId:
@@ -2937,6 +3412,9 @@ exports.createIncident =
         try {
           await connection
             .rollback();
+
+          transactionStarted =
+            false;
         } catch (
           rollbackError
         ) {
@@ -2950,12 +3428,33 @@ exports.createIncident =
         }
       }
 
+      /*
+       * If rollback itself fails, uploaded files cannot
+       * safely be treated as unclaimed because the DB
+       * outcome is uncertain.
+       */
       if (
         rollbackFailed
       ) {
         claimIncidentEvidenceFiles(
           req
         );
+      }
+
+      if (
+        error
+          ?.isIncidentCreationRejection &&
+        !rollbackFailed
+      ) {
+        return res
+          .status(
+            error.statusCode ||
+            409
+          )
+          .json({
+            error:
+              error.message,
+          });
       }
 
       if (
@@ -3750,6 +4249,15 @@ exports.deleteIncident =
       [];
 
     try {
+      /*
+       * Actor is always derived from req.user.
+       * Request-body identity is never trusted.
+       */
+      const actor =
+        await getActor(
+          req
+        );
+
       connection =
         await db
           .promise()
@@ -3761,12 +4269,23 @@ exports.deleteIncident =
       transactionStarted =
         true;
 
+      /*
+       * Lock the exact record being permanently
+       * deleted and retain enough authoritative data
+       * for its audit description.
+       */
       const [
         incidentRows,
       ] =
         await connection.query(
           `
-          SELECT id
+          SELECT
+            id,
+            employee_id,
+            employee_name,
+            company,
+            violation_type,
+            incident_date
           FROM incidents
           WHERE id = ?
           LIMIT 1
@@ -3794,6 +4313,16 @@ exports.deleteIncident =
           });
       }
 
+      const incidentRecord =
+        incidentRows[0];
+
+      /*
+       * Evidence paths are collected before the
+       * relational delete.
+       *
+       * Actual filesystem cleanup intentionally occurs
+       * only after the DB transaction commits.
+       */
       const [
         evidenceRows,
       ] =
@@ -3829,17 +4358,83 @@ exports.deleteIncident =
         ]
       );
 
+      const employeeLabel =
+        incidentRecord
+          .employee_name ||
+        `Employee #${
+          incidentRecord
+            .employee_id ||
+          "Unknown"
+        }`;
+
+      /*
+       * ==================================================
+       * F-04 — TRANSACTIONAL PERMANENT DELETE AUDIT
+       * ==================================================
+       *
+       * Audit and destructive deletion succeed or fail
+       * together.
+       *
+       * throwOnError is required so an audit failure
+       * aborts and rolls back the delete.
+       */
+      await logAudit(
+        {
+          userId:
+            actor.userId,
+
+          username:
+            actor.username,
+
+          fullName:
+            actor.fullName,
+
+          role:
+            actor.role,
+
+          category:
+            AUDIT_CATEGORY
+              .OPERATIONAL,
+
+          action:
+            "DELETE_INCIDENT",
+
+          description:
+            `${actor.fullName} permanently deleted incident #${id} for ${employeeLabel}${
+              incidentRecord
+                .violation_type
+                ? ` (${incidentRecord.violation_type})`
+                : ""
+            }.`,
+        },
+        {
+          connection,
+
+          throwOnError:
+            true,
+        }
+      );
+
       await connection
         .commit();
 
       transactionCommitted =
         true;
 
+      /*
+       * Release DB resources before potentially slow
+       * filesystem cleanup.
+       */
       connection.release();
 
       connection =
         null;
 
+      /*
+       * Physical cleanup is intentionally outside the
+       * transaction. Database/audit integrity has
+       * already been established at this point.
+       */
       await cleanupHistoricalFileCandidates(
         historicalFileCandidates,
         "incident_delete"
@@ -3861,6 +4456,9 @@ exports.deleteIncident =
         try {
           await connection
             .rollback();
+
+          transactionStarted =
+            false;
         } catch (
           rollbackError
         ) {
