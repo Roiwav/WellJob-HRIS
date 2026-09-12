@@ -1,84 +1,160 @@
-export const EMPLOYEES_KEY = "legacy_employees_disabled";
-export const INCIDENTS_KEY = "legacy_incidents_disabled";
+export const EMPLOYEES_KEY =
+  "legacy_employees_disabled";
+
+export const INCIDENTS_KEY =
+  "legacy_incidents_disabled";
 
 export const KPI_LEVELS = {
-  GOOD_STANDING: "Good Standing",
-  MINOR_CONCERN: "Minor Concern",
-  NEEDS_IMPROVEMENT: "Needs Improvement",
-  CRITICAL_CONCERN: "Critical Concern",
+  GOOD_STANDING:
+    "Good Standing",
+
+  MINOR_CONCERN:
+    "Minor Concern",
+
+  NEEDS_IMPROVEMENT:
+    "Needs Improvement",
+
+  CRITICAL_CONCERN:
+    "Critical Concern",
 };
 
 export const RISK_LEVELS = {
-  LOW_RISK: "Low Risk",
-  MONITOR: "Monitor",
-  REPEAT: "Repeat",
-  HIGH_RISK: "High Risk",
+  LOW_RISK:
+    "Low Risk",
+
+  MONITOR:
+    "Monitor",
+
+  REPEAT:
+    "Repeat",
+
+  HIGH_RISK:
+    "High Risk",
 };
 
 export const DECISION_CONFIDENCE = {
-  LOW: "Low Confidence",
-  MODERATE: "Moderate Confidence",
-  HIGH: "High Confidence",
+  LOW:
+    "Low Confidence",
+
+  MODERATE:
+    "Moderate Confidence",
+
+  HIGH:
+    "High Confidence",
 };
 
 export const HR_ACTION_WORKFLOW = {
-  MONITOR: "Continue Monitoring",
-  HUMAN_REVIEW: "Human Review Required",
-  HR_VALIDATION: "HR Validation Required",
-  INVESTIGATION: "Schedule HR Investigation",
-  PIP: "Performance Improvement Review",
-  ESCALATION: "Priority HR Escalation",
-  SUSPENSION: "Suspension Review",
-  TERMINATION: "Termination Review",
+  MONITOR:
+    "Continue Monitoring",
+
+  HUMAN_REVIEW:
+    "Human Review Required",
+
+  HR_VALIDATION:
+    "HR Validation Required",
+
+  INVESTIGATION:
+    "Schedule HR Investigation",
+
+  PIP:
+    "Performance Improvement Review",
+
+  ESCALATION:
+    "Priority HR Escalation",
+
+  SUSPENSION:
+    "Suspension Review",
+
+  TERMINATION:
+    "Termination Review",
 };
 
 export const SEVERITY_LABELS = {
-  NONE: "None",
-  MINOR: "Minor",
-  MAJOR: "Major",
-  CRITICAL: "Critical",
+  NONE:
+    "None",
+
+  MINOR:
+    "Minor",
+
+  MAJOR:
+    "Major",
+
+  CRITICAL:
+    "Critical",
 };
 
-const SEVERITY_WEIGHTS = Object.freeze({
-  [SEVERITY_LABELS.NONE]: 0,
-  [SEVERITY_LABELS.MINOR]: 1,
-  [SEVERITY_LABELS.MAJOR]: 3,
-  [SEVERITY_LABELS.CRITICAL]: 5,
-});
+const SEVERITY_WEIGHTS =
+  Object.freeze({
+    [SEVERITY_LABELS.NONE]:
+      0,
+
+    [SEVERITY_LABELS.MINOR]:
+      1,
+
+    [SEVERITY_LABELS.MAJOR]:
+      3,
+
+    [SEVERITY_LABELS.CRITICAL]:
+      5,
+  });
 
 export const RECOMMENDATION_LABELS = {
-  RETAIN: "Retain / Maintain Good Standing",
+  RETAIN:
+    "Retain / Maintain Good Standing",
 };
-
 
 export const WELLJOB_LOW_KPI_ACTIONS = [
   {
-    title: "Verbal Counseling",
-    code: "VERBAL_COUNSELING",
+    title:
+      "Verbal Counseling",
+
+    code:
+      "VERBAL_COUNSELING",
+
     shortDescription:
       "Initial coaching or reminder for employees with early signs of KPI standing concern or minor performance concern.",
   },
+
   {
-    title: "Performance Improvement Plan",
-    code: "PERFORMANCE_IMPROVEMENT_PLAN",
+    title:
+      "Performance Improvement Plan",
+
+    code:
+      "PERFORMANCE_IMPROVEMENT_PLAN",
+
     shortDescription:
       "Structured monitoring plan with target goals, review period, and expected improvement.",
   },
+
   {
-    title: "Reassignment of Position",
-    code: "REASSIGNMENT_OF_POSITION",
+    title:
+      "Reassignment of Position",
+
+    code:
+      "REASSIGNMENT_OF_POSITION",
+
     shortDescription:
       "Review possible role mismatch and consider reassignment when the employee may perform better in another position or deployment assignment.",
   },
+
   {
-    title: "Seminar & Webinar",
-    code: "SEMINAR_WEBINAR",
+    title:
+      "Seminar & Webinar",
+
+    code:
+      "SEMINAR_WEBINAR",
+
     shortDescription:
       "Policy refresher or awareness session for recurring behavioral, attendance, or compliance-related concerns.",
   },
+
   {
-    title: "Employee Training",
-    code: "EMPLOYEE_TRAINING",
+    title:
+      "Employee Training",
+
+    code:
+      "EMPLOYEE_TRAINING",
+
     shortDescription:
       "Skills-based training for quality, productivity, safety, task handling, or competency improvement.",
   },
@@ -88,41 +164,85 @@ export function safeParse() {
   return [];
 }
 
-export function normalizeText(value) {
-  return String(value || "").trim().toLowerCase();
+export function normalizeText(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase();
 }
 
-function normalizeComparableText(value) {
-  return normalizeText(value)
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ");
+function normalizeIdentifier(
+  value
+) {
+  return String(
+    value ?? ""
+  ).trim();
 }
 
-export function normalizeStatus(status) {
-  const value = normalizeComparableText(status);
+function normalizeComparableText(
+  value
+) {
+  return normalizeText(
+    value
+  )
+    .replace(
+      /[_-]+/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    );
+}
 
-  if (value === "for review") {
+export function normalizeStatus(
+  status
+) {
+  const value =
+    normalizeComparableText(
+      status
+    );
+
+  if (
+    value ===
+    "for review"
+  ) {
     return "For Review";
   }
 
   if (
-    value === "resolved" ||
-    value === "closed"
+    value ===
+      "resolved" ||
+    value ===
+      "closed"
   ) {
     return "Closed";
   }
 
-  if (value === "investigating") {
+  if (
+    value ===
+    "investigating"
+  ) {
     return "Investigating";
   }
 
   return "Open";
 }
 
-export function normalizeKPILevel(level) {
-  const value = normalizeComparableText(level);
+export function normalizeKPILevel(
+  level
+) {
+  const value =
+    normalizeComparableText(
+      level
+    );
 
-  switch (value) {
+  switch (
+    value
+  ) {
     case "clean":
     case "good":
     case "good standing":
@@ -144,14 +264,24 @@ export function normalizeKPILevel(level) {
       return KPI_LEVELS.CRITICAL_CONCERN;
 
     default:
-      return level || KPI_LEVELS.GOOD_STANDING;
+      return (
+        level ||
+        KPI_LEVELS.GOOD_STANDING
+      );
   }
 }
 
-export function normalizeRiskLevel(level) {
-  const value = normalizeComparableText(level);
+export function normalizeRiskLevel(
+  level
+) {
+  const value =
+    normalizeComparableText(
+      level
+    );
 
-  switch (value) {
+  switch (
+    value
+  ) {
     case "clean":
     case "low":
     case "low risk":
@@ -171,14 +301,24 @@ export function normalizeRiskLevel(level) {
       return RISK_LEVELS.HIGH_RISK;
 
     default:
-      return level || RISK_LEVELS.LOW_RISK;
+      return (
+        level ||
+        RISK_LEVELS.LOW_RISK
+      );
   }
 }
 
-export function normalizeSeverityLabel(level) {
-  const value = normalizeComparableText(level);
+export function normalizeSeverityLabel(
+  level
+) {
+  const value =
+    normalizeComparableText(
+      level
+    );
 
-  switch (value) {
+  switch (
+    value
+  ) {
     case "clean":
     case "none":
       return SEVERITY_LABELS.NONE;
@@ -196,22 +336,36 @@ export function normalizeSeverityLabel(level) {
       return SEVERITY_LABELS.CRITICAL;
 
     default:
-      return level || SEVERITY_LABELS.NONE;
+      return (
+        level ||
+        SEVERITY_LABELS.NONE
+      );
   }
 }
 
-export function normalizeRecommendation(recommendation) {
-  const value = normalizeComparableText(recommendation);
+export function normalizeRecommendation(
+  recommendation
+) {
+  const value =
+    normalizeComparableText(
+      recommendation
+    );
 
   if (
-    value === "retain" ||
-    value === "retain / maintain good standing" ||
-    value === "retain maintain good standing"
+    value ===
+      "retain" ||
+    value ===
+      "retain / maintain good standing" ||
+    value ===
+      "retain maintain good standing"
   ) {
     return RECOMMENDATION_LABELS.RETAIN;
   }
 
-  return recommendation || RECOMMENDATION_LABELS.RETAIN;
+  return (
+    recommendation ||
+    RECOMMENDATION_LABELS.RETAIN
+  );
 }
 
 function buildDistribution(
@@ -220,39 +374,63 @@ function buildDistribution(
   preferredOrder = []
 ) {
   const safeRecords =
-    Array.isArray(records)
-      ? records.filter(Boolean)
+    Array.isArray(
+      records
+    )
+      ? records.filter(
+          Boolean
+        )
       : [];
 
-  if (safeRecords.length === 0) {
+  if (
+    safeRecords.length ===
+    0
+  ) {
     return [];
   }
 
-  const counts = new Map();
+  const counts =
+    new Map();
 
-  safeRecords.forEach((record) => {
-    const rawLabel =
-      typeof getLabel === "function"
-        ? getLabel(record)
-        : "";
+  safeRecords.forEach(
+    (
+      record
+    ) => {
+      const rawLabel =
+        typeof getLabel ===
+        "function"
+          ? getLabel(
+              record
+            )
+          : "";
 
-    const label =
-      String(
-        rawLabel ||
-          "Unspecified"
-      ).trim() ||
-      "Unspecified";
+      const label =
+        String(
+          rawLabel ||
+            "Unspecified"
+        ).trim() ||
+        "Unspecified";
 
-    counts.set(
-      label,
-      (counts.get(label) || 0) + 1
-    );
-  });
+      counts.set(
+        label,
+        (
+          counts.get(
+            label
+          ) ||
+          0
+        ) +
+          1
+      );
+    }
+  );
 
   const orderIndex =
     new Map(
       preferredOrder.map(
-        (label, index) => [
+        (
+          label,
+          index
+        ) => [
           label,
           index,
         ]
@@ -264,8 +442,14 @@ function buildDistribution(
   )
     .sort(
       (
-        [firstLabel, firstCount],
-        [secondLabel, secondCount]
+        [
+          firstLabel,
+          firstCount,
+        ],
+        [
+          secondLabel,
+          secondCount,
+        ]
       ) => {
         const firstOrder =
           orderIndex.has(
@@ -311,18 +495,28 @@ function buildDistribution(
       }
     )
     .map(
-      ([name, value]) => ({
+      (
+        [
+          name,
+          value,
+        ]
+      ) => ({
         name,
+
         value,
+
         percentage:
           Math.round(
             (
               (
                 value /
                 safeRecords.length
-              ) * 100
-            ) * 10
-          ) / 10,
+              ) *
+              100
+            ) *
+              10
+          ) /
+          10,
       })
     );
 }
@@ -332,10 +526,14 @@ export function buildKPILevelDistribution(
 ) {
   return buildDistribution(
     employees,
-    (employee) =>
+
+    (
+      employee
+    ) =>
       normalizeKPILevel(
         employee?.kpiLevel
       ),
+
     [
       KPI_LEVELS.GOOD_STANDING,
       KPI_LEVELS.MINOR_CONCERN,
@@ -350,10 +548,14 @@ export function buildRiskLevelDistribution(
 ) {
   return buildDistribution(
     employees,
-    (employee) =>
+
+    (
+      employee
+    ) =>
       normalizeRiskLevel(
         employee?.riskLevel
       ),
+
     [
       RISK_LEVELS.LOW_RISK,
       RISK_LEVELS.MONITOR,
@@ -368,9 +570,13 @@ export function buildDecisionConfidenceDistribution(
 ) {
   return buildDistribution(
     employees,
-    (employee) =>
+
+    (
+      employee
+    ) =>
       employee?.decisionConfidence ||
       "Unspecified Confidence",
+
     [
       DECISION_CONFIDENCE.LOW,
       DECISION_CONFIDENCE.MODERATE,
@@ -385,9 +591,13 @@ export function buildSuggestedHRActionDistribution(
 ) {
   return buildDistribution(
     employees,
-    (employee) =>
+
+    (
+      employee
+    ) =>
       employee?.suggestedHRAction ||
       "Unspecified Suggested Action",
+
     [
       HR_ACTION_WORKFLOW.MONITOR,
       HR_ACTION_WORKFLOW.HUMAN_REVIEW,
@@ -407,15 +617,23 @@ export function buildSystemRecommendationDistribution(
 ) {
   const preferredOrder = [
     RECOMMENDATION_LABELS.RETAIN,
+
     ...WELLJOB_LOW_KPI_ACTIONS.map(
-      (action) => action.title
+      (
+        action
+      ) =>
+        action.title
     ),
+
     "Unspecified Recommendation",
   ];
 
   return buildDistribution(
     employees,
-    (employee) => {
+
+    (
+      employee
+    ) => {
       const recommendation =
         String(
           employee?.recommendation ||
@@ -428,25 +646,40 @@ export function buildSystemRecommendationDistribution(
           )
         : "Unspecified Recommendation";
     },
+
     preferredOrder
   );
 }
 
-function getDecisionTimestamp(record) {
+function getDecisionTimestamp(
+  record
+) {
   const candidates = [
     record?.decidedAt,
     record?.createdAt,
     record?.updatedAt,
   ];
 
-  for (const candidate of candidates) {
-    if (!candidate) {
+  for (
+    const candidate of
+    candidates
+  ) {
+    if (
+      !candidate
+    ) {
       continue;
     }
 
-    const timestamp = new Date(candidate).getTime();
+    const timestamp =
+      new Date(
+        candidate
+      ).getTime();
 
-    if (!Number.isNaN(timestamp)) {
+    if (
+      !Number.isNaN(
+        timestamp
+      )
+    ) {
       return timestamp;
     }
   }
@@ -458,53 +691,91 @@ export function getLatestKPIDecisionForEmployee(
   decisionHistory = [],
   employeeId
 ) {
-  if (!Array.isArray(decisionHistory)) {
+  if (
+    !Array.isArray(
+      decisionHistory
+    )
+  ) {
     return null;
   }
 
-  const normalizedEmployeeId = String(
-    employeeId ?? ""
-  ).trim();
+  const normalizedEmployeeId =
+    normalizeIdentifier(
+      employeeId
+    );
 
-  if (!normalizedEmployeeId) {
+  if (
+    !normalizedEmployeeId
+  ) {
     return null;
   }
 
-  let latestDecision = null;
+  let latestDecision =
+    null;
 
-  decisionHistory.forEach((record) => {
-    if (
-      String(
-        record?.employeeId ?? ""
-      ).trim() !== normalizedEmployeeId
-    ) {
-      return;
+  decisionHistory.forEach(
+    (
+      record
+    ) => {
+      const recordEmployeeId =
+        normalizeIdentifier(
+          record?.employeeId ??
+            record?.employee_id
+        );
+
+      if (
+        recordEmployeeId !==
+        normalizedEmployeeId
+      ) {
+        return;
+      }
+
+      if (
+        !latestDecision
+      ) {
+        latestDecision =
+          record;
+
+        return;
+      }
+
+      const currentTimestamp =
+        getDecisionTimestamp(
+          record
+        );
+
+      const latestTimestamp =
+        getDecisionTimestamp(
+          latestDecision
+        );
+
+      if (
+        currentTimestamp >
+        latestTimestamp
+      ) {
+        latestDecision =
+          record;
+
+        return;
+      }
+
+      if (
+        currentTimestamp ===
+          latestTimestamp &&
+        Number(
+          record?.id ||
+            0
+        ) >
+          Number(
+            latestDecision?.id ||
+              0
+          )
+      ) {
+        latestDecision =
+          record;
+      }
     }
-
-    if (!latestDecision) {
-      latestDecision = record;
-      return;
-    }
-
-    const currentTimestamp =
-      getDecisionTimestamp(record);
-
-    const latestTimestamp =
-      getDecisionTimestamp(latestDecision);
-
-    if (currentTimestamp > latestTimestamp) {
-      latestDecision = record;
-      return;
-    }
-
-    if (
-      currentTimestamp === latestTimestamp &&
-      Number(record?.id || 0) >
-        Number(latestDecision?.id || 0)
-    ) {
-      latestDecision = record;
-    }
-  });
+  );
 
   return latestDecision;
 }
@@ -513,7 +784,10 @@ export function isKPIDecisionSnapshotCurrent(
   employee,
   decision
 ) {
-  if (!employee || !decision) {
+  if (
+    !employee ||
+    !decision
+  ) {
     return false;
   }
 
@@ -529,47 +803,60 @@ export function isKPIDecisionSnapshotCurrent(
 
   return (
     Number(
-      employee?.violationCount || 0
+      employee?.violationCount ||
+        0
     ) ===
       Number(
-        decision?.violationCount || 0
+        decision?.violationCount ||
+          0
       ) &&
+
     Number(
-      employee?.severityScore || 0
+      employee?.severityScore ||
+        0
     ) ===
       Number(
-        decision?.severityScore || 0
+        decision?.severityScore ||
+          0
       ) &&
+
     Number(
-      employee?.criticalIncidentCount || 0
+      employee?.criticalIncidentCount ||
+        0
     ) ===
       Number(
-        decision?.criticalIncidentCount || 0
+        decision?.criticalIncidentCount ||
+          0
       ) &&
+
     normalizeComparableText(
       employee?.kpiLevel
     ) ===
       normalizeComparableText(
         decision?.kpiLevel
       ) &&
+
     normalizeComparableText(
       employee?.riskLevel
     ) ===
       normalizeComparableText(
         decision?.riskLevel
       ) &&
+
     normalizeComparableText(
       employee?.decisionConfidence
     ) ===
       normalizeComparableText(
         decision?.decisionConfidence
       ) &&
+
     normalizeComparableText(
       employee?.suggestedHRAction
     ) ===
       normalizeComparableText(
         decision?.suggestedHRAction
       ) &&
+
     currentRecommendation ===
       recordedRecommendation
   );
@@ -591,16 +878,61 @@ export function hasCurrentKPIDecisionReview(
   );
 }
 
-export function getEmployeeId(employee, index = 0) {
+/*
+ * ==================================================
+ * A8 — AUTHORITATIVE EMPLOYEE IDENTIFIERS
+ * ==================================================
+ *
+ * Association between employees, incidents, and KPI
+ * records must use the authoritative employee ID.
+ *
+ * Employee names are display data only and are never
+ * used as a fallback relationship key.
+ */
+export function getAuthoritativeEmployeeId(
+  employee
+) {
+  return normalizeIdentifier(
+    employee?.id ??
+      employee?.employeeId ??
+      employee?.employee_id
+  );
+}
+
+function getAuthoritativeIncidentEmployeeId(
+  incident
+) {
+  return normalizeIdentifier(
+    incident?.employeeId ??
+      incident?.employee_id ??
+      incident?.empId
+  );
+}
+
+/*
+ * getEmployeeId remains suitable for UI rendering.
+ *
+ * The synthetic fallback is intentionally NOT used by
+ * incident/KPI association functions.
+ */
+export function getEmployeeId(
+  employee,
+  index = 0
+) {
+  const authoritativeEmployeeId =
+    getAuthoritativeEmployeeId(
+      employee
+    );
+
   return (
-    employee?.id ||
-    employee?.employeeId ||
-    employee?.employee_id ||
+    authoritativeEmployeeId ||
     `EMP-${index + 1}`
   );
 }
 
-export function getEmployeeName(employee) {
+export function getEmployeeName(
+  employee
+) {
   return (
     employee?.name ||
     employee?.full_name ||
@@ -611,33 +943,28 @@ export function getEmployeeName(employee) {
 
 export function isSameEmployee(
   employee,
-  incident,
-  index = 0
+  incident
 ) {
-  const employeeId = String(
-    getEmployeeId(employee, index)
-  );
+  const employeeId =
+    getAuthoritativeEmployeeId(
+      employee
+    );
 
-  const employeeName = normalizeText(
-    getEmployeeName(employee)
-  );
+  const incidentEmployeeId =
+    getAuthoritativeIncidentEmployeeId(
+      incident
+    );
 
-  const incidentEmployeeId = String(
-    incident?.employeeId ||
-      incident?.employee_id ||
-      incident?.empId ||
-      ""
-  );
-
-  const incidentEmployeeName = normalizeText(
-    incident?.employee ||
-      incident?.employeeName ||
-      incident?.name
-  );
+  if (
+    !employeeId ||
+    !incidentEmployeeId
+  ) {
+    return false;
+  }
 
   return (
-    employeeId === incidentEmployeeId ||
-    employeeName === incidentEmployeeName
+    employeeId ===
+    incidentEmployeeId
   );
 }
 
@@ -645,15 +972,24 @@ export function getKPILevelByScore(
   severityScore,
   violationCount
 ) {
-  if (severityScore >= 8) {
+  if (
+    severityScore >=
+    8
+  ) {
     return KPI_LEVELS.CRITICAL_CONCERN;
   }
 
-  if (severityScore >= 4) {
+  if (
+    severityScore >=
+    4
+  ) {
     return KPI_LEVELS.NEEDS_IMPROVEMENT;
   }
 
-  if (violationCount >= 1) {
+  if (
+    violationCount >=
+    1
+  ) {
     return KPI_LEVELS.MINOR_CONCERN;
   }
 
@@ -665,13 +1001,21 @@ export function getRiskLevelByKPI(
   violationCount,
   criticalCount
 ) {
-  const normalizedKPI = normalizeKPILevel(kpiLevel);
+  const normalizedKPI =
+    normalizeKPILevel(
+      kpiLevel
+    );
 
-  if (criticalCount >= 1) {
+  if (
+    criticalCount >=
+    1
+  ) {
     return RISK_LEVELS.HIGH_RISK;
   }
 
-  switch (normalizedKPI) {
+  switch (
+    normalizedKPI
+  ) {
     case KPI_LEVELS.CRITICAL_CONCERN:
       return RISK_LEVELS.HIGH_RISK;
 
@@ -682,7 +1026,8 @@ export function getRiskLevelByKPI(
       return RISK_LEVELS.MONITOR;
 
     default:
-      return violationCount > 0
+      return violationCount >
+        0
         ? RISK_LEVELS.MONITOR
         : RISK_LEVELS.LOW_RISK;
   }
@@ -692,15 +1037,24 @@ export function getSeverityLabelByScore(
   severityScore,
   violationCount
 ) {
-  if (severityScore >= 8) {
+  if (
+    severityScore >=
+    8
+  ) {
     return SEVERITY_LABELS.CRITICAL;
   }
 
-  if (severityScore >= 4) {
+  if (
+    severityScore >=
+    4
+  ) {
     return SEVERITY_LABELS.MAJOR;
   }
 
-  if (violationCount >= 1) {
+  if (
+    violationCount >=
+    1
+  ) {
     return SEVERITY_LABELS.MINOR;
   }
 
@@ -711,21 +1065,27 @@ export function getDecisionConfidence({
   violationCount = 0,
   criticalIncidentCount = 0,
   severityScore = 0,
-  riskLevel = RISK_LEVELS.LOW_RISK,
+  riskLevel =
+    RISK_LEVELS.LOW_RISK,
 }) {
   if (
-    criticalIncidentCount >= 1 ||
+    criticalIncidentCount >=
+      1 ||
     severityScore >= 12 ||
     violationCount >= 5 ||
-    riskLevel === RISK_LEVELS.HIGH_RISK
+    riskLevel ===
+      RISK_LEVELS.HIGH_RISK
   ) {
     return DECISION_CONFIDENCE.HIGH;
   }
 
   if (
-    severityScore >= 4 ||
-    violationCount >= 2 ||
-    riskLevel === RISK_LEVELS.REPEAT
+    severityScore >=
+      4 ||
+    violationCount >=
+      2 ||
+    riskLevel ===
+      RISK_LEVELS.REPEAT
   ) {
     return DECISION_CONFIDENCE.MODERATE;
   }
@@ -734,48 +1094,68 @@ export function getDecisionConfidence({
 }
 
 export function getSuggestedHRAction({
-  confidence = DECISION_CONFIDENCE.LOW,
+  confidence =
+    DECISION_CONFIDENCE.LOW,
+
   violationCount = 0,
+
   criticalIncidentCount = 0,
+
   severityScore = 0,
-  riskLevel = RISK_LEVELS.LOW_RISK,
+
+  riskLevel =
+    RISK_LEVELS.LOW_RISK,
 }) {
   if (
-    criticalIncidentCount >= 1 &&
-    violationCount >= 5 &&
-    severityScore >= 12
+    criticalIncidentCount >=
+      1 &&
+    violationCount >=
+      5 &&
+    severityScore >=
+      12
   ) {
     return HR_ACTION_WORKFLOW.TERMINATION;
   }
 
   if (
-    criticalIncidentCount >= 1 ||
-    riskLevel === RISK_LEVELS.HIGH_RISK
+    criticalIncidentCount >=
+      1 ||
+    riskLevel ===
+      RISK_LEVELS.HIGH_RISK
   ) {
     return HR_ACTION_WORKFLOW.SUSPENSION;
   }
 
   if (
-    confidence === DECISION_CONFIDENCE.HIGH &&
-    violationCount >= 3
+    confidence ===
+      DECISION_CONFIDENCE.HIGH &&
+    violationCount >=
+      3
   ) {
     return HR_ACTION_WORKFLOW.ESCALATION;
   }
 
   if (
-    confidence === DECISION_CONFIDENCE.MODERATE &&
-    violationCount >= 2
+    confidence ===
+      DECISION_CONFIDENCE.MODERATE &&
+    violationCount >=
+      2
   ) {
     return HR_ACTION_WORKFLOW.INVESTIGATION;
   }
 
-  if (confidence === DECISION_CONFIDENCE.MODERATE) {
+  if (
+    confidence ===
+    DECISION_CONFIDENCE.MODERATE
+  ) {
     return HR_ACTION_WORKFLOW.HR_VALIDATION;
   }
 
   if (
-    confidence === DECISION_CONFIDENCE.LOW &&
-    violationCount >= 1
+    confidence ===
+      DECISION_CONFIDENCE.LOW &&
+    violationCount >=
+      1
   ) {
     return HR_ACTION_WORKFLOW.HUMAN_REVIEW;
   }
@@ -784,21 +1164,36 @@ export function getSuggestedHRAction({
 }
 
 export function getDecisionConfidenceReason({
-  confidence = DECISION_CONFIDENCE.LOW,
+  confidence =
+    DECISION_CONFIDENCE.LOW,
+
   violationCount = 0,
+
   criticalIncidentCount = 0,
+
   severityScore = 0,
-  riskLevel = RISK_LEVELS.LOW_RISK,
+
+  riskLevel =
+    RISK_LEVELS.LOW_RISK,
 }) {
-  if (confidence === DECISION_CONFIDENCE.HIGH) {
+  if (
+    confidence ===
+    DECISION_CONFIDENCE.HIGH
+  ) {
     return `High confidence because the employee record shows strong decision indicators such as ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), ${severityScore} severity score, and ${riskLevel} status. HR review is required before final action.`;
   }
 
-  if (confidence === DECISION_CONFIDENCE.MODERATE) {
+  if (
+    confidence ===
+    DECISION_CONFIDENCE.MODERATE
+  ) {
     return `Moderate confidence because the employee has enough recorded concern for HR validation, including ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), and ${severityScore} severity score.`;
   }
 
-  if (violationCount >= 1) {
+  if (
+    violationCount >=
+    1
+  ) {
     return "Low confidence because the record shows an early concern only. Human review is recommended before applying any corrective action.";
   }
 
@@ -806,13 +1201,21 @@ export function getDecisionConfidenceReason({
 }
 
 export function getSuggestedHRActionReason({
-  suggestedHRAction = HR_ACTION_WORKFLOW.MONITOR,
+  suggestedHRAction =
+    HR_ACTION_WORKFLOW.MONITOR,
+
   violationCount = 0,
+
   criticalIncidentCount = 0,
+
   severityScore = 0,
-  riskLevel = RISK_LEVELS.LOW_RISK,
+
+  riskLevel =
+    RISK_LEVELS.LOW_RISK,
 }) {
-  switch (suggestedHRAction) {
+  switch (
+    suggestedHRAction
+  ) {
     case HR_ACTION_WORKFLOW.TERMINATION:
       return `Termination review is suggested because the employee has severe indicators such as ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), and ${severityScore} severity score. This is only for HR Manager validation and not an automatic termination decision.`;
 
@@ -843,7 +1246,9 @@ export function getSuggestedHRActionReason({
 export function getDecisionConfidenceClasses(
   confidence
 ) {
-  switch (confidence) {
+  switch (
+    confidence
+  ) {
     case DECISION_CONFIDENCE.HIGH:
       return "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300";
 
@@ -856,8 +1261,12 @@ export function getDecisionConfidenceClasses(
   }
 }
 
-export function getSuggestedHRActionClasses(action) {
-  switch (action) {
+export function getSuggestedHRActionClasses(
+  action
+) {
+  switch (
+    action
+  ) {
     case HR_ACTION_WORKFLOW.TERMINATION:
     case HR_ACTION_WORKFLOW.SUSPENSION:
     case HR_ACTION_WORKFLOW.ESCALATION:
@@ -877,15 +1286,26 @@ export function getSuggestedHRActionClasses(action) {
   }
 }
 
-function getActionByCode(code) {
+function getActionByCode(
+  code
+) {
   return (
     WELLJOB_LOW_KPI_ACTIONS.find(
-      (action) => action.code === code
-    ) || WELLJOB_LOW_KPI_ACTIONS[0]
+      (
+        action
+      ) =>
+        action.code ===
+        code
+    ) ||
+    WELLJOB_LOW_KPI_ACTIONS[
+      0
+    ]
   );
 }
 
-function getViolationText(incident) {
+function getViolationText(
+  incident
+) {
   return normalizeText(
     incident?.violation ||
       incident?.violationType ||
@@ -895,49 +1315,95 @@ function getViolationText(incident) {
   );
 }
 
-function toTitleCase(value = "") {
-  return String(value)
-    .replace(/_/g, " ")
-    .replace(/\s+/g, " ")
+function toTitleCase(
+  value = ""
+) {
+  return String(
+    value
+  )
+    .replace(
+      /_/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
     .trim()
     .toLowerCase()
-    .replace(/\b\w/g, (character) =>
-      character.toUpperCase()
+    .replace(
+      /\b\w/g,
+      (
+        character
+      ) =>
+        character.toUpperCase()
     );
 }
 
-function getReadableViolationName(value = "") {
-  if (!value) {
+function getReadableViolationName(
+  value = ""
+) {
+  if (
+    !value
+  ) {
     return "Recorded Violation";
   }
 
-  return toTitleCase(value);
+  return toTitleCase(
+    value
+  );
 }
 
-function getSafeIncidents(incidents) {
-  return Array.isArray(incidents)
-    ? incidents.filter(Boolean)
+function getSafeIncidents(
+  incidents
+) {
+  return Array.isArray(
+    incidents
+  )
+    ? incidents.filter(
+        Boolean
+      )
     : [];
 }
 
-function countByViolation(relatedIncidents = []) {
-  const counts = new Map();
-  const safeIncidents = getSafeIncidents(
-    relatedIncidents
-  );
+function countByViolation(
+  relatedIncidents = []
+) {
+  const counts =
+    new Map();
 
-  safeIncidents.forEach((incident) => {
-    const key = getViolationText(incident);
-
-    if (!key) {
-      return;
-    }
-
-    counts.set(
-      key,
-      (counts.get(key) || 0) + 1
+  const safeIncidents =
+    getSafeIncidents(
+      relatedIncidents
     );
-  });
+
+  safeIncidents.forEach(
+    (
+      incident
+    ) => {
+      const key =
+        getViolationText(
+          incident
+        );
+
+      if (
+        !key
+      ) {
+        return;
+      }
+
+      counts.set(
+        key,
+        (
+          counts.get(
+            key
+          ) ||
+          0
+        ) +
+          1
+      );
+    }
+  );
 
   return counts;
 }
@@ -945,142 +1411,257 @@ function countByViolation(relatedIncidents = []) {
 function hasRepeatedSameViolation(
   relatedIncidents = []
 ) {
-  const counts = countByViolation(
-    relatedIncidents
-  );
+  const counts =
+    countByViolation(
+      relatedIncidents
+    );
 
-  return Array.from(counts.values()).some(
-    (count) => count >= 2
+  return Array.from(
+    counts.values()
+  ).some(
+    (
+      count
+    ) =>
+      count >= 2
   );
 }
 
 function getMostCommonViolation(
   relatedIncidents = []
 ) {
-  const counts = countByViolation(
-    relatedIncidents
+  const counts =
+    countByViolation(
+      relatedIncidents
+    );
+
+  let selected =
+    "";
+
+  let selectedCount =
+    0;
+
+  counts.forEach(
+    (
+      count,
+      violation
+    ) => {
+      if (
+        count >
+        selectedCount
+      ) {
+        selected =
+          violation;
+
+        selectedCount =
+          count;
+      }
+    }
   );
 
-  let selected = "";
-  let selectedCount = 0;
-
-  counts.forEach((count, violation) => {
-    if (count > selectedCount) {
-      selected = violation;
-      selectedCount = count;
-    }
-  });
-
   return {
-    violation: selected,
-    count: selectedCount,
+    violation:
+      selected,
+
+    count:
+      selectedCount,
   };
 }
 
 function hasAttendanceOrPolicyConcern(
   relatedIncidents = []
 ) {
-  const safeIncidents = getSafeIncidents(
-    relatedIncidents
-  );
-
-  return safeIncidents.some((incident) => {
-    const text = getViolationText(incident);
-
-    return (
-      text.includes("tardiness") ||
-      text.includes("late") ||
-      text.includes("absence") ||
-      text.includes("absenteeism") ||
-      text.includes("awol") ||
-      text.includes("uniform") ||
-      text.includes("mobile") ||
-      text.includes("policy") ||
-      text.includes("attendance")
+  const safeIncidents =
+    getSafeIncidents(
+      relatedIncidents
     );
-  });
+
+  return safeIncidents.some(
+    (
+      incident
+    ) => {
+      const text =
+        getViolationText(
+          incident
+        );
+
+      return (
+        text.includes(
+          "tardiness"
+        ) ||
+        text.includes(
+          "late"
+        ) ||
+        text.includes(
+          "absence"
+        ) ||
+        text.includes(
+          "absenteeism"
+        ) ||
+        text.includes(
+          "awol"
+        ) ||
+        text.includes(
+          "uniform"
+        ) ||
+        text.includes(
+          "mobile"
+        ) ||
+        text.includes(
+          "policy"
+        ) ||
+        text.includes(
+          "attendance"
+        )
+      );
+    }
+  );
 }
 
 function hasSkillsOrQualityConcern(
   relatedIncidents = []
 ) {
-  const safeIncidents = getSafeIncidents(
-    relatedIncidents
-  );
-
-  return safeIncidents.some((incident) => {
-    const text = getViolationText(incident);
-
-    return (
-      text.includes("quality") ||
-      text.includes("negligence") ||
-      text.includes("instruction") ||
-      text.includes("safety") ||
-      text.includes("task") ||
-      text.includes("productivity") ||
-      text.includes("performance")
+  const safeIncidents =
+    getSafeIncidents(
+      relatedIncidents
     );
-  });
+
+  return safeIncidents.some(
+    (
+      incident
+    ) => {
+      const text =
+        getViolationText(
+          incident
+        );
+
+      return (
+        text.includes(
+          "quality"
+        ) ||
+        text.includes(
+          "negligence"
+        ) ||
+        text.includes(
+          "instruction"
+        ) ||
+        text.includes(
+          "safety"
+        ) ||
+        text.includes(
+          "task"
+        ) ||
+        text.includes(
+          "productivity"
+        ) ||
+        text.includes(
+          "performance"
+        )
+      );
+    }
+  );
 }
 
 function hasPossibleRoleMismatchConcern(
   relatedIncidents = []
 ) {
-  const safeIncidents = getSafeIncidents(
-    relatedIncidents
-  );
+  const safeIncidents =
+    getSafeIncidents(
+      relatedIncidents
+    );
 
   const repeatedSameViolation =
-    hasRepeatedSameViolation(safeIncidents);
-
-  return safeIncidents.some((incident) => {
-    const text = getViolationText(incident);
-
-    return (
-      repeatedSameViolation &&
-      (text.includes("negligence") ||
-        text.includes("instruction") ||
-        text.includes("task") ||
-        text.includes("quality") ||
-        text.includes("performance"))
+    hasRepeatedSameViolation(
+      safeIncidents
     );
-  });
+
+  return safeIncidents.some(
+    (
+      incident
+    ) => {
+      const text =
+        getViolationText(
+          incident
+        );
+
+      return (
+        repeatedSameViolation &&
+        (
+          text.includes(
+            "negligence"
+          ) ||
+          text.includes(
+            "instruction"
+          ) ||
+          text.includes(
+            "task"
+          ) ||
+          text.includes(
+            "quality"
+          ) ||
+          text.includes(
+            "performance"
+          )
+        )
+      );
+    }
+  );
 }
 
 function getSeverityBreakdown(
   relatedIncidents = []
 ) {
-  const safeIncidents = getSafeIncidents(
-    relatedIncidents
-  );
+  const safeIncidents =
+    getSafeIncidents(
+      relatedIncidents
+    );
 
   return safeIncidents.reduce(
-    (accumulator, incident) => {
-      const severity = normalizeSeverityLabel(
-        incident?.severity
-      );
+    (
+      accumulator,
+      incident
+    ) => {
+      const severity =
+        normalizeSeverityLabel(
+          incident?.severity
+        );
 
-      if (severity === SEVERITY_LABELS.CRITICAL) {
-        accumulator.critical += 1;
-      } else if (
-        severity === SEVERITY_LABELS.MAJOR
+      if (
+        severity ===
+        SEVERITY_LABELS.CRITICAL
       ) {
-        accumulator.major += 1;
+        accumulator.critical +=
+          1;
       } else if (
-        severity === SEVERITY_LABELS.MINOR
+        severity ===
+        SEVERITY_LABELS.MAJOR
       ) {
-        accumulator.minor += 1;
+        accumulator.major +=
+          1;
+      } else if (
+        severity ===
+        SEVERITY_LABELS.MINOR
+      ) {
+        accumulator.minor +=
+          1;
       } else {
-        accumulator.none += 1;
+        accumulator.none +=
+          1;
       }
 
       return accumulator;
     },
     {
-      critical: 0,
-      major: 0,
-      minor: 0,
-      none: 0,
+      critical:
+        0,
+
+      major:
+        0,
+
+      minor:
+        0,
+
+      none:
+        0,
     }
   );
 }
@@ -1088,61 +1669,97 @@ function getSeverityBreakdown(
 function buildSeveritySummary(
   relatedIncidents = []
 ) {
-  const breakdown = getSeverityBreakdown(
-    relatedIncidents
-  );
+  const breakdown =
+    getSeverityBreakdown(
+      relatedIncidents
+    );
 
-  const parts = [];
+  const parts =
+    [];
 
-  if (breakdown.critical > 0) {
-    parts.push(`${breakdown.critical} critical`);
+  if (
+    breakdown.critical >
+    0
+  ) {
+    parts.push(
+      `${breakdown.critical} critical`
+    );
   }
 
-  if (breakdown.major > 0) {
-    parts.push(`${breakdown.major} major`);
+  if (
+    breakdown.major >
+    0
+  ) {
+    parts.push(
+      `${breakdown.major} major`
+    );
   }
 
-  if (breakdown.minor > 0) {
-    parts.push(`${breakdown.minor} minor`);
+  if (
+    breakdown.minor >
+    0
+  ) {
+    parts.push(
+      `${breakdown.minor} minor`
+    );
   }
 
-  if (parts.length === 0) {
+  if (
+    parts.length ===
+    0
+  ) {
     return "no severity-bearing incident";
   }
 
-  return parts.join(", ");
+  return parts.join(
+    ", "
+  );
 }
 
 function buildDynamicBasis({
   violationCount = 0,
   criticalIncidentCount = 0,
   severityScore = 0,
-  normalizedRisk = RISK_LEVELS.LOW_RISK,
-  normalizedKPI = KPI_LEVELS.GOOD_STANDING,
+  normalizedRisk =
+    RISK_LEVELS.LOW_RISK,
+  normalizedKPI =
+    KPI_LEVELS.GOOD_STANDING,
   relatedIncidents = [],
   commonViolation = {
-    violation: "",
-    count: 0,
+    violation:
+      "",
+    count:
+      0,
   },
 }) {
-  const severitySummary = buildSeveritySummary(
-    relatedIncidents
-  );
+  const severitySummary =
+    buildSeveritySummary(
+      relatedIncidents
+    );
 
   const commonViolationName =
     getReadableViolationName(
       commonViolation.violation
     );
 
-  if (violationCount === 0) {
+  if (
+    violationCount ===
+    0
+  ) {
     return "No recorded incident, no severity score, and good standing KPI status.";
   }
 
-  if (commonViolation.count >= 2) {
+  if (
+    commonViolation.count >=
+    2
+  ) {
     return `${violationCount} recorded violation(s), including ${commonViolation.count} recurring ${commonViolationName} case(s), with ${severitySummary} classification and a total severity score of ${severityScore}.`;
   }
 
-  if (criticalIncidentCount >= 1) {
+  if (
+    criticalIncidentCount >=
+    1
+  ) {
     return `${criticalIncidentCount} critical incident(s), ${violationCount} total recorded violation(s), and a severity score of ${severityScore}.`;
   }
 
@@ -1154,12 +1771,16 @@ function buildDynamicReason({
   violationCount = 0,
   criticalIncidentCount = 0,
   severityScore = 0,
-  normalizedRisk = RISK_LEVELS.LOW_RISK,
-  normalizedKPI = KPI_LEVELS.GOOD_STANDING,
+  normalizedRisk =
+    RISK_LEVELS.LOW_RISK,
+  normalizedKPI =
+    KPI_LEVELS.GOOD_STANDING,
   relatedIncidents = [],
   commonViolation = {
-    violation: "",
-    count: 0,
+    violation:
+      "",
+    count:
+      0,
   },
   repeatedSameViolation = false,
   attendanceOrPolicyConcern = false,
@@ -1169,24 +1790,28 @@ function buildDynamicReason({
       commonViolation.violation
     );
 
-  const severitySummary = buildSeveritySummary(
-    relatedIncidents
-  );
+  const severitySummary =
+    buildSeveritySummary(
+      relatedIncidents
+    );
 
   if (
     primaryCode ===
     "PERFORMANCE_IMPROVEMENT_PLAN"
   ) {
     if (
-      criticalIncidentCount >= 1 ||
-      severityScore >= 8
+      criticalIncidentCount >=
+        1 ||
+      severityScore >=
+        8
     ) {
       return `Employee requires a structured Performance Improvement Plan because the record shows ${severitySummary} classification with a total severity score of ${severityScore}, placing the employee under ${normalizedKPI} and ${normalizedRisk}.`;
     }
 
     if (
       repeatedSameViolation &&
-      commonViolation.count >= 2
+      commonViolation.count >=
+        2
     ) {
       return `Employee requires a Performance Improvement Plan because recurring ${commonViolationName} was detected ${commonViolation.count} time(s), showing a repeated KPI standing concern.`;
     }
@@ -1199,33 +1824,46 @@ function buildDynamicReason({
     "REASSIGNMENT_OF_POSITION"
   ) {
     const baseViolation =
-      commonViolation.count >= 2
+      commonViolation.count >=
+      2
         ? `recurring ${commonViolationName} was detected ${commonViolation.count} time(s)`
         : "repeated task, quality, or performance-related concern was detected";
 
     return `Employee may need reassignment review because ${baseViolation}. This may indicate possible role mismatch in the current assignment.`;
   }
 
-  if (primaryCode === "EMPLOYEE_TRAINING") {
+  if (
+    primaryCode ===
+    "EMPLOYEE_TRAINING"
+  ) {
     return "Employee is recommended for training because the recorded concern is related to task quality, productivity, safety, or competency improvement. Training can help correct the issue before it becomes repeated.";
   }
 
-  if (primaryCode === "SEMINAR_WEBINAR") {
+  if (
+    primaryCode ===
+    "SEMINAR_WEBINAR"
+  ) {
     if (
       repeatedSameViolation &&
-      commonViolation.count >= 2
+      commonViolation.count >=
+        2
     ) {
       return `Employee is recommended for a refresher seminar or webinar because recurring ${commonViolationName} was detected ${commonViolation.count} time(s), indicating the need for policy awareness reinforcement.`;
     }
 
-    if (attendanceOrPolicyConcern) {
+    if (
+      attendanceOrPolicyConcern
+    ) {
       return "Employee is recommended for a refresher seminar or webinar because the recorded violation is related to attendance, policy compliance, or workplace behavior awareness.";
     }
 
     return "Employee is recommended for a seminar or webinar to reinforce company policies and prevent repeated KPI standing concerns.";
   }
 
-  if (primaryCode === "VERBAL_COUNSELING") {
+  if (
+    primaryCode ===
+    "VERBAL_COUNSELING"
+  ) {
     return `Employee is recommended for verbal counseling because there is an early KPI standing concern with ${violationCount} recorded violation(s), allowing HR to correct the issue before it becomes repeated.`;
   }
 
@@ -1236,28 +1874,42 @@ export function getCorrectiveActionRecommendation({
   violationCount = 0,
   criticalIncidentCount = 0,
   severityScore = 0,
-  riskLevel = RISK_LEVELS.LOW_RISK,
-  kpiLevel = KPI_LEVELS.GOOD_STANDING,
+  riskLevel =
+    RISK_LEVELS.LOW_RISK,
+  kpiLevel =
+    KPI_LEVELS.GOOD_STANDING,
   relatedIncidents = [],
 }) {
-  const safeRelatedIncidents = getSafeIncidents(
-    relatedIncidents
-  );
+  const safeRelatedIncidents =
+    getSafeIncidents(
+      relatedIncidents
+    );
 
   const normalizedRisk =
-    normalizeRiskLevel(riskLevel);
+    normalizeRiskLevel(
+      riskLevel
+    );
 
   const normalizedKPI =
-    normalizeKPILevel(kpiLevel);
+    normalizeKPILevel(
+      kpiLevel
+    );
 
   const isGoodStanding =
-    violationCount === 0 &&
-    criticalIncidentCount === 0 &&
-    severityScore === 0 &&
-    normalizedRisk === RISK_LEVELS.LOW_RISK &&
-    normalizedKPI === KPI_LEVELS.GOOD_STANDING;
+    violationCount ===
+      0 &&
+    criticalIncidentCount ===
+      0 &&
+    severityScore ===
+      0 &&
+    normalizedRisk ===
+      RISK_LEVELS.LOW_RISK &&
+    normalizedKPI ===
+      KPI_LEVELS.GOOD_STANDING;
 
-  if (isGoodStanding) {
+  if (
+    isGoodStanding
+  ) {
     return {
       recommendation:
         RECOMMENDATION_LABELS.RETAIN,
@@ -1265,7 +1917,8 @@ export function getCorrectiveActionRecommendation({
       recommendationReason:
         "Employee has no recorded violation, no active incident severity score, and may maintain good standing under regular HR monitoring.",
 
-      correctiveActionCode: "RETAIN",
+      correctiveActionCode:
+        "RETAIN",
 
       correctiveAction:
         RECOMMENDATION_LABELS.RETAIN,
@@ -1279,7 +1932,8 @@ export function getCorrectiveActionRecommendation({
       correctiveActionBasis:
         "No violation, no critical incident, zero severity score, and good standing KPI status.",
 
-      applicableActions: [],
+      applicableActions:
+        [],
     };
   }
 
@@ -1308,79 +1962,127 @@ export function getCorrectiveActionRecommendation({
       safeRelatedIncidents
     );
 
-  let primaryCode = "VERBAL_COUNSELING";
+  let primaryCode =
+    "VERBAL_COUNSELING";
 
   if (
-    criticalIncidentCount >= 1 ||
-    severityScore >= 8 ||
-    normalizedRisk === RISK_LEVELS.HIGH_RISK ||
-    normalizedKPI === KPI_LEVELS.CRITICAL_CONCERN
+    criticalIncidentCount >=
+      1 ||
+    severityScore >=
+      8 ||
+    normalizedRisk ===
+      RISK_LEVELS.HIGH_RISK ||
+    normalizedKPI ===
+      KPI_LEVELS.CRITICAL_CONCERN
   ) {
     primaryCode =
       "PERFORMANCE_IMPROVEMENT_PLAN";
-  } else if (possibleRoleMismatch) {
+  } else if (
+    possibleRoleMismatch
+  ) {
     primaryCode =
       "REASSIGNMENT_OF_POSITION";
-  } else if (skillsOrQualityConcern) {
+  } else if (
+    skillsOrQualityConcern
+  ) {
     primaryCode =
-      violationCount >= 3 ||
+      violationCount >=
+        3 ||
       repeatedSameViolation
         ? "REASSIGNMENT_OF_POSITION"
         : "EMPLOYEE_TRAINING";
-  } else if (attendanceOrPolicyConcern) {
+  } else if (
+    attendanceOrPolicyConcern
+  ) {
     primaryCode =
-      violationCount >= 3 ||
+      violationCount >=
+        3 ||
       repeatedSameViolation
         ? "SEMINAR_WEBINAR"
         : "VERBAL_COUNSELING";
-  } else if (repeatedSameViolation) {
-    primaryCode = "SEMINAR_WEBINAR";
   } else if (
-    violationCount >= 3 ||
-    normalizedRisk === RISK_LEVELS.REPEAT ||
-    normalizedKPI === KPI_LEVELS.NEEDS_IMPROVEMENT
+    repeatedSameViolation
+  ) {
+    primaryCode =
+      "SEMINAR_WEBINAR";
+  } else if (
+    violationCount >=
+      3 ||
+    normalizedRisk ===
+      RISK_LEVELS.REPEAT ||
+    normalizedKPI ===
+      KPI_LEVELS.NEEDS_IMPROVEMENT
   ) {
     primaryCode =
       "PERFORMANCE_IMPROVEMENT_PLAN";
   }
 
   const primaryAction =
-    getActionByCode(primaryCode);
+    getActionByCode(
+      primaryCode
+    );
 
-  const reason = buildDynamicReason({
-    primaryCode,
-    violationCount,
-    criticalIncidentCount,
-    severityScore,
-    normalizedRisk,
-    normalizedKPI,
-    relatedIncidents: safeRelatedIncidents,
-    commonViolation,
-    repeatedSameViolation,
-    attendanceOrPolicyConcern,
-  });
+  const reason =
+    buildDynamicReason({
+      primaryCode,
 
-  const basis = buildDynamicBasis({
-    violationCount,
-    criticalIncidentCount,
-    severityScore,
-    normalizedRisk,
-    normalizedKPI,
-    relatedIncidents: safeRelatedIncidents,
-    commonViolation,
-  });
+      violationCount,
+
+      criticalIncidentCount,
+
+      severityScore,
+
+      normalizedRisk,
+
+      normalizedKPI,
+
+      relatedIncidents:
+        safeRelatedIncidents,
+
+      commonViolation,
+
+      repeatedSameViolation,
+
+      attendanceOrPolicyConcern,
+    });
+
+  const basis =
+    buildDynamicBasis({
+      violationCount,
+
+      criticalIncidentCount,
+
+      severityScore,
+
+      normalizedRisk,
+
+      normalizedKPI,
+
+      relatedIncidents:
+        safeRelatedIncidents,
+
+      commonViolation,
+    });
 
   const applicableActions =
     WELLJOB_LOW_KPI_ACTIONS.filter(
-      (action) => {
-        if (action.code === primaryCode) {
+      (
+        action
+      ) => {
+        if (
+          action.code ===
+          primaryCode
+        ) {
           return true;
         }
 
         if (
-          action.code === "VERBAL_COUNSELING" &&
-          violationCount >= 1 &&
-          violationCount <= 2
+          action.code ===
+            "VERBAL_COUNSELING" &&
+          violationCount >=
+            1 &&
+          violationCount <=
+            2
         ) {
           return true;
         }
@@ -1388,8 +2090,11 @@ export function getCorrectiveActionRecommendation({
         if (
           action.code ===
             "PERFORMANCE_IMPROVEMENT_PLAN" &&
-          (violationCount >= 3 ||
-            criticalIncidentCount >= 1 ||
+          (
+            violationCount >=
+              3 ||
+            criticalIncidentCount >=
+              1 ||
             normalizedRisk ===
               RISK_LEVELS.HIGH_RISK ||
             normalizedRisk ===
@@ -1397,7 +2102,8 @@ export function getCorrectiveActionRecommendation({
             normalizedKPI ===
               KPI_LEVELS.NEEDS_IMPROVEMENT ||
             normalizedKPI ===
-              KPI_LEVELS.CRITICAL_CONCERN)
+              KPI_LEVELS.CRITICAL_CONCERN
+          )
         ) {
           return true;
         }
@@ -1411,15 +2117,19 @@ export function getCorrectiveActionRecommendation({
         }
 
         if (
-          action.code === "SEMINAR_WEBINAR" &&
-          (attendanceOrPolicyConcern ||
-            repeatedSameViolation)
+          action.code ===
+            "SEMINAR_WEBINAR" &&
+          (
+            attendanceOrPolicyConcern ||
+            repeatedSameViolation
+          )
         ) {
           return true;
         }
 
         if (
-          action.code === "EMPLOYEE_TRAINING" &&
+          action.code ===
+            "EMPLOYEE_TRAINING" &&
           skillsOrQualityConcern
         ) {
           return true;
@@ -1430,32 +2140,55 @@ export function getCorrectiveActionRecommendation({
     );
 
   return {
-    recommendation: primaryAction.title,
-    recommendationReason: reason,
-    correctiveActionCode: primaryAction.code,
-    correctiveAction: primaryAction.title,
+    recommendation:
+      primaryAction.title,
+
+    recommendationReason:
+      reason,
+
+    correctiveActionCode:
+      primaryAction.code,
+
+    correctiveAction:
+      primaryAction.title,
+
     correctiveActionDescription:
       primaryAction.shortDescription,
-    correctiveActionReason: reason,
-    correctiveActionBasis: basis,
+
+    correctiveActionReason:
+      reason,
+
+    correctiveActionBasis:
+      basis,
+
     applicableActions,
   };
 }
 
-export function getDSSRecommendation(employee) {
+export function getDSSRecommendation(
+  employee
+) {
   return getCorrectiveActionRecommendation(
-    employee || {}
+    employee ||
+      {}
   ).recommendation;
 }
 
-export function getDSSReason(employee) {
+export function getDSSReason(
+  employee
+) {
   return getCorrectiveActionRecommendation(
-    employee || {}
+    employee ||
+      {}
   ).recommendationReason;
 }
 
-export function getAlertClasses(level) {
-  switch (level) {
+export function getAlertClasses(
+  level
+) {
+  switch (
+    level
+  ) {
     case "HIGH":
       return "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/20 dark:text-red-300";
 
@@ -1470,8 +2203,9 @@ export function getAlertClasses(level) {
   }
 }
 
-
-function getIncidentDateValue(incident) {
+function getIncidentDateValue(
+  incident
+) {
   return (
     incident?.reportedAt ||
     incident?.date ||
@@ -1483,204 +2217,136 @@ function getIncidentDateValue(incident) {
 function getLatestIncidentDate(
   relatedIncidents = []
 ) {
-  const safeIncidents = getSafeIncidents(
-    relatedIncidents
+  const safeIncidents =
+    getSafeIncidents(
+      relatedIncidents
+    );
+
+  let latestValue =
+    null;
+
+  let latestTimestamp =
+    -1;
+
+  safeIncidents.forEach(
+    (
+      incident
+    ) => {
+      const candidate =
+        getIncidentDateValue(
+          incident
+        );
+
+      if (
+        !candidate
+      ) {
+        return;
+      }
+
+      const timestamp =
+        new Date(
+          candidate
+        ).getTime();
+
+      if (
+        Number.isNaN(
+          timestamp
+        ) ||
+        timestamp <=
+          latestTimestamp
+      ) {
+        return;
+      }
+
+      latestTimestamp =
+        timestamp;
+
+      latestValue =
+        candidate;
+    }
   );
-
-  let latestValue = null;
-  let latestTimestamp = -1;
-
-  safeIncidents.forEach((incident) => {
-    const candidate =
-      getIncidentDateValue(incident);
-
-    if (!candidate) {
-      return;
-    }
-
-    const timestamp = new Date(
-      candidate
-    ).getTime();
-
-    if (
-      Number.isNaN(timestamp) ||
-      timestamp <= latestTimestamp
-    ) {
-      return;
-    }
-
-    latestTimestamp = timestamp;
-    latestValue = candidate;
-  });
 
   return latestValue;
 }
 
+/*
+ * ==================================================
+ * A8 — ID-ONLY INCIDENT LOOKUP
+ * ==================================================
+ *
+ * Incidents are indexed only by employee ID.
+ *
+ * No name-based index is maintained because employee
+ * names are not unique identifiers and may legally be
+ * duplicated across different employee records.
+ */
 function buildIncidentLookup(
   incidents = []
 ) {
   const byEmployeeId =
     new Map();
 
-  const byEmployeeName =
-    new Map();
-
   incidents.forEach(
-    (incident, index) => {
+    (
+      incident
+    ) => {
       const employeeId =
-        String(
-          incident?.employeeId ||
-            incident?.employee_id ||
-            incident?.empId ||
-            ""
+        getAuthoritativeIncidentEmployeeId(
+          incident
         );
 
-      const employeeName =
-        normalizeText(
-          incident?.employee ||
-            incident?.employeeName ||
-            incident?.name
+      if (
+        !employeeId
+      ) {
+        return;
+      }
+
+      if (
+        !byEmployeeId.has(
+          employeeId
+        )
+      ) {
+        byEmployeeId.set(
+          employeeId,
+          []
         );
-
-      if (employeeId) {
-        if (
-          !byEmployeeId.has(
-            employeeId
-          )
-        ) {
-          byEmployeeId.set(
-            employeeId,
-            []
-          );
-        }
-
-        byEmployeeId
-          .get(employeeId)
-          .push(index);
       }
 
-      if (employeeName) {
-        if (
-          !byEmployeeName.has(
-            employeeName
-          )
-        ) {
-          byEmployeeName.set(
-            employeeName,
-            []
-          );
-        }
-
-        byEmployeeName
-          .get(employeeName)
-          .push(index);
-      }
+      byEmployeeId
+        .get(
+          employeeId
+        )
+        .push(
+          incident
+        );
     }
   );
 
   return {
     byEmployeeId,
-    byEmployeeName,
   };
-}
-
-function mergeIncidentIndexes(
-  first = [],
-  second = []
-) {
-  const merged = [];
-
-  let firstIndex = 0;
-  let secondIndex = 0;
-
-  while (
-    firstIndex < first.length ||
-    secondIndex < second.length
-  ) {
-    const firstValue =
-      firstIndex < first.length
-        ? first[firstIndex]
-        : Number.POSITIVE_INFINITY;
-
-    const secondValue =
-      secondIndex < second.length
-        ? second[secondIndex]
-        : Number.POSITIVE_INFINITY;
-
-    if (
-      firstValue ===
-      secondValue
-    ) {
-      merged.push(
-        firstValue
-      );
-
-      firstIndex += 1;
-      secondIndex += 1;
-      continue;
-    }
-
-    if (
-      firstValue <
-      secondValue
-    ) {
-      merged.push(
-        firstValue
-      );
-
-      firstIndex += 1;
-      continue;
-    }
-
-    merged.push(
-      secondValue
-    );
-
-    secondIndex += 1;
-  }
-
-  return merged;
 }
 
 function getRelatedIncidentsFromLookup({
   employee,
-  index,
-  incidents,
   lookup,
 }) {
   const employeeId =
-    String(
-      getEmployeeId(
-        employee,
-        index
-      )
+    getAuthoritativeEmployeeId(
+      employee
     );
 
-  const employeeName =
-    normalizeText(
-      getEmployeeName(
-        employee
-      )
-    );
+  if (
+    !employeeId
+  ) {
+    return [];
+  }
 
-  const idMatches =
+  return (
     lookup.byEmployeeId.get(
       employeeId
-    ) || [];
-
-  const nameMatches =
-    lookup.byEmployeeName.get(
-      employeeName
-    ) || [];
-
-  return mergeIncidentIndexes(
-    idMatches,
-    nameMatches
-  ).map(
-    (incidentIndex) =>
-      incidents[
-        incidentIndex
-      ]
+    ) ||
+    []
   );
 }
 
@@ -1689,13 +2355,21 @@ export function buildKPIEmployees(
   incidentsRaw = []
 ) {
   const safeEmployees =
-    Array.isArray(employeesRaw)
-      ? employeesRaw.filter(Boolean)
+    Array.isArray(
+      employeesRaw
+    )
+      ? employeesRaw.filter(
+          Boolean
+        )
       : [];
 
   const safeIncidents =
-    Array.isArray(incidentsRaw)
-      ? incidentsRaw.filter(Boolean)
+    Array.isArray(
+      incidentsRaw
+    )
+      ? incidentsRaw.filter(
+          Boolean
+        )
       : [];
 
   const incidentLookup =
@@ -1704,32 +2378,35 @@ export function buildKPIEmployees(
     );
 
   return safeEmployees.map(
-    (employee, index) => {
-      const employeeId = getEmployeeId(
-        employee,
-        index
-      );
+    (
+      employee,
+      index
+    ) => {
+      const employeeId =
+        getEmployeeId(
+          employee,
+          index
+        );
 
       const employeeName =
-        getEmployeeName(employee);
+        getEmployeeName(
+          employee
+        );
 
       const relatedIncidents =
         getRelatedIncidentsFromLookup({
-          employee: {
-            ...employee,
-            id: employeeId,
-            name: employeeName,
-          },
-          index,
-          incidents:
-            safeIncidents,
+          employee,
+
           lookup:
             incidentLookup,
         });
 
       const totalSeverityScore =
         relatedIncidents.reduce(
-          (sum, incident) => {
+          (
+            sum,
+            incident
+          ) => {
             const normalizedSeverity =
               normalizeSeverityLabel(
                 incident?.severity
@@ -1737,9 +2414,12 @@ export function buildKPIEmployees(
 
             return (
               sum +
-              (SEVERITY_WEIGHTS[
-                normalizedSeverity
-              ] ?? 0)
+              (
+                SEVERITY_WEIGHTS[
+                  normalizedSeverity
+                ] ??
+                0
+              )
             );
           },
           0
@@ -1747,7 +2427,9 @@ export function buildKPIEmployees(
 
       const criticalCount =
         relatedIncidents.filter(
-          (incident) =>
+          (
+            incident
+          ) =>
             normalizeSeverityLabel(
               incident?.severity
             ) ===
@@ -1755,39 +2437,49 @@ export function buildKPIEmployees(
         ).length;
 
       const openCount =
-        relatedIncidents.filter((incident) =>
-          [
-            "Open",
-            "Investigating",
-            "For Review",
-          ].includes(
-            normalizeStatus(
-              incident?.status
+        relatedIncidents.filter(
+          (
+            incident
+          ) =>
+            [
+              "Open",
+              "Investigating",
+              "For Review",
+            ].includes(
+              normalizeStatus(
+                incident?.status
+              )
             )
-          )
         ).length;
 
-      const kpiLevel = getKPILevelByScore(
-        totalSeverityScore,
-        relatedIncidents.length
-      );
+      const kpiLevel =
+        getKPILevelByScore(
+          totalSeverityScore,
+          relatedIncidents.length
+        );
 
-      const riskLevel = getRiskLevelByKPI(
-        kpiLevel,
-        relatedIncidents.length,
-        criticalCount
-      );
+      const riskLevel =
+        getRiskLevelByKPI(
+          kpiLevel,
+          relatedIncidents.length,
+          criticalCount
+        );
 
       const correctiveAction =
         getCorrectiveActionRecommendation({
           violationCount:
             relatedIncidents.length,
+
           criticalIncidentCount:
             criticalCount,
+
           severityScore:
             totalSeverityScore,
+
           riskLevel,
+
           kpiLevel,
+
           relatedIncidents,
         });
 
@@ -1795,52 +2487,72 @@ export function buildKPIEmployees(
         getDecisionConfidence({
           violationCount:
             relatedIncidents.length,
+
           criticalIncidentCount:
             criticalCount,
+
           severityScore:
             totalSeverityScore,
+
           riskLevel,
         });
 
       const suggestedHRAction =
         getSuggestedHRAction({
-          confidence: decisionConfidence,
+          confidence:
+            decisionConfidence,
+
           violationCount:
             relatedIncidents.length,
+
           criticalIncidentCount:
             criticalCount,
+
           severityScore:
             totalSeverityScore,
+
           riskLevel,
         });
 
       const decisionConfidenceReason =
         getDecisionConfidenceReason({
-          confidence: decisionConfidence,
+          confidence:
+            decisionConfidence,
+
           violationCount:
             relatedIncidents.length,
+
           criticalIncidentCount:
             criticalCount,
+
           severityScore:
             totalSeverityScore,
+
           riskLevel,
         });
 
       const suggestedHRActionReason =
         getSuggestedHRActionReason({
           suggestedHRAction,
+
           violationCount:
             relatedIncidents.length,
+
           criticalIncidentCount:
             criticalCount,
+
           severityScore:
             totalSeverityScore,
+
           riskLevel,
         });
 
       return {
-        id: employeeId,
-        name: employeeName,
+        id:
+          employeeId,
+
+        name:
+          employeeName,
 
         company:
           employee?.company ||
@@ -1854,14 +2566,18 @@ export function buildKPIEmployees(
         isDeployed:
           normalizeText(
             employee?.status
-          ) === "deployed",
+          ) ===
+          "deployed",
 
         violationCount:
           relatedIncidents.length,
 
-        openIncidentCount: openCount,
+        openIncidentCount:
+          openCount,
+
         criticalIncidentCount:
           criticalCount,
+
         severityScore:
           totalSeverityScore,
 
@@ -1872,10 +2588,15 @@ export function buildKPIEmployees(
           ),
 
         kpiLevel,
+
         riskLevel,
+
         decisionConfidence,
+
         decisionConfidenceReason,
+
         suggestedHRAction,
+
         suggestedHRActionReason,
 
         lastIncidentDate:
