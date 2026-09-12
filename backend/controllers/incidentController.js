@@ -2532,116 +2532,42 @@ exports.getIncidents =
 
       /*
        * ==================================================
-       * LEGACY FULL INCIDENT COLLECTION
+       * F-10 — LEGACY FULL-HISTORY ENDPOINT RETIRED
        * ==================================================
        *
-       * Kept unchanged for backwards compatibility.
+       * The unbounded GET /api/incidents response used to
+       * load every incident together with every evidence
+       * row and timeline event in one request.
        *
-       * F-08 pagination applies specifically to the
-       * lightweight summary view used by the normal
-       * Incident page.
+       * Active frontend consumers now use purpose-specific
+       * endpoints instead:
+       *
+       * - GET /api/incidents?view=summary
+       *   Paginated incident report data.
+       *
+       * - GET /api/incidents/:id
+       *   Full details for one incident.
+       *
+       * - GET /api/incidents/employee/:employeeId
+       *   Full history for one employee.
+       *
+       * Rejecting the legacy fallback prevents accidental
+       * system-wide full-history loads and also prevents an
+       * unsupported view value from silently triggering the
+       * expensive legacy query.
        */
-      const [incidents] =
-        await db
-          .promise()
-          .query(`
-            SELECT
-              i.*,
-              e.name AS employeeNameFromEmployee,
-              e.company AS employeeCompany,
-              e.status AS employeeStatus
-            FROM incidents i
-            LEFT JOIN employees e
-              ON e.id = i.employee_id
-            ORDER BY
-              i.created_at DESC,
-              i.id DESC
-          `);
+      return res
+        .status(400)
+        .json({
+          error:
+            "Full incident collection requests are no longer supported.",
 
-      if (
-        !incidents.length
-      ) {
-        return res.json(
-          []
-        );
-      }
+          code:
+            "INCIDENT_FULL_HISTORY_RETIRED",
 
-      const incidentIds =
-        incidents.map(
-          (incident) =>
-            incident.id
-        );
-
-      const [
-        [evidence],
-        timelineMap,
-      ] =
-        await Promise.all([
-          db
-            .promise()
-            .query(
-              `
-              SELECT *
-              FROM incident_evidence
-              WHERE incident_id IN (?)
-              ORDER BY
-                created_at DESC,
-                id DESC
-              `,
-              [
-                incidentIds,
-              ]
-            ),
-
-          getTimelineByIncidentIds(
-            incidentIds
-          ),
-        ]);
-
-      const evidenceMap =
-        evidence.reduce(
-          (
-            map,
-            item
-          ) => {
-            const key =
-              String(
-                item.incident_id
-              );
-
-            if (!map[key]) {
-              map[key] = [];
-            }
-
-            map[key].push(
-              item
-            );
-
-            return map;
-          },
-          {}
-        );
-
-      return res.json(
-        incidents.map(
-          (incident) => {
-            const key =
-              String(
-                incident.id
-              );
-
-            return serializeIncident(
-              incident,
-              evidenceMap[
-                key
-              ] || [],
-              timelineMap.get(
-                key
-              ) || []
-            );
-          }
-        )
-      );
+          message:
+            "Use view=summary for paginated incident reports, the incident detail endpoint for one case, or the employee incident history endpoint for one employee.",
+        });
     } catch (error) {
       console.error(
         "GET INCIDENTS ERROR:",
