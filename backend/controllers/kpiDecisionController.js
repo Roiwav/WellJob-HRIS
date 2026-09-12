@@ -8,8 +8,10 @@ const {
 const KPI_LEVELS = {
   GOOD_STANDING: "Good Standing",
   MINOR_CONCERN: "Minor Concern",
-  NEEDS_IMPROVEMENT: "Needs Improvement",
-  CRITICAL_CONCERN: "Critical Concern",
+  NEEDS_IMPROVEMENT:
+    "Needs Improvement",
+  CRITICAL_CONCERN:
+    "Critical Concern",
 };
 
 const RISK_LEVELS = {
@@ -21,19 +23,28 @@ const RISK_LEVELS = {
 
 const DECISION_CONFIDENCE = {
   LOW: "Low Confidence",
-  MODERATE: "Moderate Confidence",
+  MODERATE:
+    "Moderate Confidence",
   HIGH: "High Confidence",
 };
 
 const HR_ACTION_WORKFLOW = {
-  MONITOR: "Continue Monitoring",
-  HUMAN_REVIEW: "Human Review Required",
-  HR_VALIDATION: "HR Validation Required",
-  INVESTIGATION: "Schedule HR Investigation",
-  PIP: "Performance Improvement Review",
-  ESCALATION: "Priority HR Escalation",
-  SUSPENSION: "Suspension Review",
-  TERMINATION: "Termination Review",
+  MONITOR:
+    "Continue Monitoring",
+  HUMAN_REVIEW:
+    "Human Review Required",
+  HR_VALIDATION:
+    "HR Validation Required",
+  INVESTIGATION:
+    "Schedule HR Investigation",
+  PIP:
+    "Performance Improvement Review",
+  ESCALATION:
+    "Priority HR Escalation",
+  SUSPENSION:
+    "Suspension Review",
+  TERMINATION:
+    "Termination Review",
 };
 
 const SEVERITY_LABELS = {
@@ -43,78 +54,125 @@ const SEVERITY_LABELS = {
   CRITICAL: "Critical",
 };
 
-const SEVERITY_WEIGHTS = Object.freeze({
-  [SEVERITY_LABELS.MINOR]: 1,
-  [SEVERITY_LABELS.MAJOR]: 3,
-  [SEVERITY_LABELS.CRITICAL]: 5,
-});
+const SEVERITY_WEIGHTS =
+  Object.freeze({
+    [SEVERITY_LABELS.MINOR]:
+      1,
+
+    [SEVERITY_LABELS.MAJOR]:
+      3,
+
+    [SEVERITY_LABELS.CRITICAL]:
+      5,
+  });
 
 const RECOMMENDATION_LABELS = {
-  RETAIN: "Retain / Maintain Good Standing",
+  RETAIN:
+    "Retain / Maintain Good Standing",
 };
 
 const WELLJOB_LOW_KPI_ACTIONS = [
   {
-    title: "Verbal Counseling",
-    code: "VERBAL_COUNSELING",
+    title:
+      "Verbal Counseling",
+
+    code:
+      "VERBAL_COUNSELING",
   },
+
   {
-    title: "Performance Improvement Plan",
-    code: "PERFORMANCE_IMPROVEMENT_PLAN",
+    title:
+      "Performance Improvement Plan",
+
+    code:
+      "PERFORMANCE_IMPROVEMENT_PLAN",
   },
+
   {
-    title: "Reassignment of Position",
-    code: "REASSIGNMENT_OF_POSITION",
+    title:
+      "Reassignment of Position",
+
+    code:
+      "REASSIGNMENT_OF_POSITION",
   },
+
   {
-    title: "Seminar & Webinar",
-    code: "SEMINAR_WEBINAR",
+    title:
+      "Seminar & Webinar",
+
+    code:
+      "SEMINAR_WEBINAR",
   },
+
   {
-    title: "Employee Training",
-    code: "EMPLOYEE_TRAINING",
+    title:
+      "Employee Training",
+
+    code:
+      "EMPLOYEE_TRAINING",
   },
 ];
 
-const ALLOWED_DECISION_TYPES = new Set([
-  "Accepted",
-  "Modified",
-  "Rejected",
-]);
+const ALLOWED_DECISION_TYPES =
+  new Set([
+    "Accepted",
+    "Modified",
+    "Rejected",
+  ]);
 
-const ALLOWED_KPI_LEVELS = new Set(
-  Object.values(KPI_LEVELS)
-);
+const ALLOWED_KPI_LEVELS =
+  new Set(
+    Object.values(
+      KPI_LEVELS
+    )
+  );
 
-const ALLOWED_RISK_LEVELS = new Set(
-  Object.values(RISK_LEVELS)
-);
+const ALLOWED_RISK_LEVELS =
+  new Set(
+    Object.values(
+      RISK_LEVELS
+    )
+  );
 
-const ALLOWED_DECISION_CONFIDENCE = new Set(
-  Object.values(DECISION_CONFIDENCE)
-);
+const ALLOWED_DECISION_CONFIDENCE =
+  new Set(
+    Object.values(
+      DECISION_CONFIDENCE
+    )
+  );
 
-const ALLOWED_SUGGESTED_HR_ACTIONS = new Set(
-  Object.values(HR_ACTION_WORKFLOW)
-);
+const ALLOWED_SUGGESTED_HR_ACTIONS =
+  new Set(
+    Object.values(
+      HR_ACTION_WORKFLOW
+    )
+  );
 
-const ALLOWED_SYSTEM_RECOMMENDATIONS = new Set([
-  RECOMMENDATION_LABELS.RETAIN,
+const ALLOWED_SYSTEM_RECOMMENDATIONS =
+  new Set([
+    RECOMMENDATION_LABELS.RETAIN,
 
-  ...WELLJOB_LOW_KPI_ACTIONS.map(
-    (action) => action.title
-  ),
-]);
+    ...WELLJOB_LOW_KPI_ACTIONS.map(
+      (action) =>
+        action.title
+    ),
+  ]);
 
-const ALLOWED_FINAL_ACTIONS = new Set([
-  ...ALLOWED_SYSTEM_RECOMMENDATIONS,
-  ...ALLOWED_SUGGESTED_HR_ACTIONS,
-  "No Action Required",
-]);
+const ALLOWED_FINAL_ACTIONS =
+  new Set([
+    ...ALLOWED_SYSTEM_RECOMMENDATIONS,
 
-function toCamelCaseRecord(row) {
+    ...ALLOWED_SUGGESTED_HR_ACTIONS,
+
+    "No Action Required",
+  ]);
+
+function toCamelCaseRecord(
+  row
+) {
   return {
-    id: row.id,
+    id:
+      row.id,
 
     employeeId:
       row.employee_id,
@@ -227,12 +285,19 @@ function cleanValue(
   }
 
   const cleaned =
-    String(value).trim();
+    String(
+      value
+    ).trim();
 
-  return cleaned || fallback;
+  return (
+    cleaned ||
+    fallback
+  );
 }
 
-function normalizeText(value) {
+function normalizeText(
+  value
+) {
   return String(
     value || ""
   )
@@ -243,7 +308,9 @@ function normalizeText(value) {
 function normalizeComparableText(
   value
 ) {
-  return normalizeText(value)
+  return normalizeText(
+    value
+  )
     .replace(
       /[_-]+/g,
       " "
@@ -254,7 +321,9 @@ function normalizeComparableText(
     );
 }
 
-function getTrustedActor(req) {
+function getTrustedActor(
+  req
+) {
   const username =
     cleanValue(
       req.user?.username
@@ -270,6 +339,14 @@ function getTrustedActor(req) {
     req.user?.userId ??
     null;
 
+  const fullName =
+    cleanValue(
+      req.user?.fullName ??
+        req.user?.full_name ??
+        req.user?.name,
+      username
+    );
+
   if (
     !username ||
     !role ||
@@ -282,6 +359,7 @@ function getTrustedActor(req) {
   return {
     id,
     username,
+    fullName,
     role,
   };
 }
@@ -330,7 +408,9 @@ function parsePositiveInteger(
   value
 ) {
   const number =
-    Number(value);
+    Number(
+      value
+    );
 
   if (
     !Number.isSafeInteger(
@@ -349,7 +429,9 @@ function isAllowedValue(
   allowedValues
 ) {
   return allowedValues.has(
-    cleanValue(value)
+    cleanValue(
+      value
+    )
   );
 }
 
@@ -361,7 +443,9 @@ function normalizeSeverityLabel(
       level
     );
 
-  switch (value) {
+  switch (
+    value
+  ) {
     case "minor":
     case "low":
       return SEVERITY_LABELS.MINOR;
@@ -390,7 +474,8 @@ function getSeverityWeight(
   return (
     SEVERITY_WEIGHTS[
       normalizedSeverity
-    ] || 0
+    ] ||
+    0
   );
 }
 
@@ -425,12 +510,15 @@ function getExpectedRiskLevel(
   criticalIncidentCount
 ) {
   if (
-    criticalIncidentCount >= 1
+    criticalIncidentCount >=
+    1
   ) {
     return RISK_LEVELS.HIGH_RISK;
   }
 
-  switch (kpiLevel) {
+  switch (
+    kpiLevel
+  ) {
     case KPI_LEVELS.CRITICAL_CONCERN:
       return RISK_LEVELS.HIGH_RISK;
 
@@ -441,7 +529,8 @@ function getExpectedRiskLevel(
       return RISK_LEVELS.MONITOR;
 
     default:
-      return violationCount > 0
+      return violationCount >
+        0
         ? RISK_LEVELS.MONITOR
         : RISK_LEVELS.LOW_RISK;
   }
@@ -454,7 +543,8 @@ function getExpectedDecisionConfidence({
   riskLevel,
 }) {
   if (
-    criticalIncidentCount >= 1 ||
+    criticalIncidentCount >=
+      1 ||
     severityScore >= 12 ||
     violationCount >= 5 ||
     riskLevel ===
@@ -483,7 +573,8 @@ function getExpectedSuggestedHRAction({
   riskLevel,
 }) {
   if (
-    criticalIncidentCount >= 1 &&
+    criticalIncidentCount >=
+      1 &&
     violationCount >= 5 &&
     severityScore >= 12
   ) {
@@ -491,7 +582,8 @@ function getExpectedSuggestedHRAction({
   }
 
   if (
-    criticalIncidentCount >= 1 ||
+    criticalIncidentCount >=
+      1 ||
     riskLevel ===
       RISK_LEVELS.HIGH_RISK
   ) {
@@ -569,7 +661,9 @@ function getSuggestedHRActionReason({
   severityScore,
   riskLevel,
 }) {
-  switch (suggestedHRAction) {
+  switch (
+    suggestedHRAction
+  ) {
     case HR_ACTION_WORKFLOW.TERMINATION:
       return `Termination review is suggested because the employee has severe indicators such as ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), and ${severityScore} severity score. This is only for HR Manager validation and not an automatic termination decision.`;
 
@@ -612,7 +706,9 @@ function getViolationText(
 function toTitleCase(
   value = ""
 ) {
-  return String(value)
+  return String(
+    value
+  )
     .replace(
       /_/g,
       " "
@@ -625,7 +721,9 @@ function toTitleCase(
     .toLowerCase()
     .replace(
       /\b\w/g,
-      (character) =>
+      (
+        character
+      ) =>
         character.toUpperCase()
     );
 }
@@ -633,11 +731,15 @@ function toTitleCase(
 function getReadableViolationName(
   value = ""
 ) {
-  if (!value) {
+  if (
+    !value
+  ) {
     return "Recorded Violation";
   }
 
-  return toTitleCase(value);
+  return toTitleCase(
+    value
+  );
 }
 
 function getSafeIncidents(
@@ -646,7 +748,9 @@ function getSafeIncidents(
   return Array.isArray(
     incidents
   )
-    ? incidents.filter(Boolean)
+    ? incidents.filter(
+        Boolean
+      )
     : [];
 }
 
@@ -662,19 +766,28 @@ function countByViolation(
     );
 
   safeIncidents.forEach(
-    (incident) => {
+    (
+      incident
+    ) => {
       const key =
         getViolationText(
           incident
         );
 
-      if (!key) {
+      if (
+        !key
+      ) {
         return;
       }
 
       counts.set(
         key,
-        (counts.get(key) || 0) +
+        (
+          counts.get(
+            key
+          ) ||
+          0
+        ) +
           1
       );
     }
@@ -694,7 +807,9 @@ function hasRepeatedSameViolation(
   return Array.from(
     counts.values()
   ).some(
-    (count) =>
+    (
+      count
+    ) =>
       count >= 2
   );
 }
@@ -707,8 +822,11 @@ function getMostCommonViolation(
       relatedIncidents
     );
 
-  let selected = "";
-  let selectedCount = 0;
+  let selected =
+    "";
+
+  let selectedCount =
+    0;
 
   counts.forEach(
     (
@@ -743,7 +861,9 @@ function hasAttendanceOrPolicyConcern(
   return getSafeIncidents(
     relatedIncidents
   ).some(
-    (incident) => {
+    (
+      incident
+    ) => {
       const text =
         getViolationText(
           incident
@@ -788,7 +908,9 @@ function hasSkillsOrQualityConcern(
   return getSafeIncidents(
     relatedIncidents
   ).some(
-    (incident) => {
+    (
+      incident
+    ) => {
       const text =
         getViolationText(
           incident
@@ -835,7 +957,9 @@ function hasPossibleRoleMismatchConcern(
     );
 
   return safeIncidents.some(
-    (incident) => {
+    (
+      incident
+    ) => {
       const text =
         getViolationText(
           incident
@@ -922,7 +1046,8 @@ function buildSeveritySummary(
       relatedIncidents
     );
 
-  const parts = [];
+  const parts =
+    [];
 
   if (
     breakdown.critical >
@@ -952,12 +1077,15 @@ function buildSeveritySummary(
   }
 
   if (
-    parts.length === 0
+    parts.length ===
+    0
   ) {
     return "no severity-bearing incident";
   }
 
-  return parts.join(", ");
+  return parts.join(
+    ", "
+  );
 }
 
 function buildDynamicBasis({
@@ -980,7 +1108,8 @@ function buildDynamicBasis({
     );
 
   if (
-    violationCount === 0
+    violationCount ===
+    0
   ) {
     return "No recorded incident, no severity score, and good standing KPI status.";
   }
@@ -1103,11 +1232,15 @@ function getActionByCode(
 ) {
   return (
     WELLJOB_LOW_KPI_ACTIONS.find(
-      (action) =>
+      (
+        action
+      ) =>
         action.code ===
         code
     ) ||
-    WELLJOB_LOW_KPI_ACTIONS[0]
+    WELLJOB_LOW_KPI_ACTIONS[
+      0
+    ]
   );
 }
 
@@ -1134,7 +1267,9 @@ function getCorrectiveActionRecommendation({
     kpiLevel ===
       KPI_LEVELS.GOOD_STANDING;
 
-  if (isGoodStanding) {
+  if (
+    isGoodStanding
+  ) {
     return {
       recommendation:
         RECOMMENDATION_LABELS.RETAIN,
@@ -1231,8 +1366,11 @@ function getCorrectiveActionRecommendation({
   const recommendationReason =
     buildDynamicReason({
       primaryCode,
+
       violationCount,
+
       criticalIncidentCount,
+
       severityScore,
 
       normalizedRisk:
@@ -1245,14 +1383,18 @@ function getCorrectiveActionRecommendation({
         safeRelatedIncidents,
 
       commonViolation,
+
       repeatedSameViolation,
+
       attendanceOrPolicyConcern,
     });
 
   const correctiveActionBasis =
     buildDynamicBasis({
       violationCount,
+
       criticalIncidentCount,
+
       severityScore,
 
       normalizedRisk:
@@ -1278,26 +1420,38 @@ function getCorrectiveActionRecommendation({
 }
 
 async function getTrustedEmployee(
-  employeeId
+  employeeId,
+  {
+    connection = null,
+    lockForUpdate = false,
+  } = {}
 ) {
+  const queryTarget =
+    connection ||
+    db.promise();
+
+  const lockClause =
+    lockForUpdate
+      ? "FOR UPDATE"
+      : "";
+
   const [rows] =
-    await db
-      .promise()
-      .query(
-        `
-        SELECT
-          id,
-          name,
-          company,
-          archived
-        FROM employees
-        WHERE id = ?
-        LIMIT 1
-        `,
-        [
-          employeeId,
-        ]
-      );
+    await queryTarget.query(
+      `
+      SELECT
+        id,
+        name,
+        company,
+        archived
+      FROM employees
+      WHERE id = ?
+      LIMIT 1
+      ${lockClause}
+      `,
+      [
+        employeeId,
+      ]
+    );
 
   return (
     rows[0] ||
@@ -1306,26 +1460,38 @@ async function getTrustedEmployee(
 }
 
 async function getTrustedIncidents(
-  employeeId
+  employeeId,
+  {
+    connection = null,
+    lockForUpdate = false,
+  } = {}
 ) {
+  const queryTarget =
+    connection ||
+    db.promise();
+
+  const lockClause =
+    lockForUpdate
+      ? "FOR UPDATE"
+      : "";
+
   const [rows] =
-    await db
-      .promise()
-      .query(
-        `
-        SELECT
-          id,
-          violation_type,
-          severity,
-          description
-        FROM incidents
-        WHERE employee_id = ?
-        ORDER BY id ASC
-        `,
-        [
-          employeeId,
-        ]
-      );
+    await queryTarget.query(
+      `
+      SELECT
+        id,
+        violation_type,
+        severity,
+        description
+      FROM incidents
+      WHERE employee_id = ?
+      ORDER BY id ASC
+      ${lockClause}
+      `,
+      [
+        employeeId,
+      ]
+    );
 
   return Array.isArray(
     rows
@@ -1360,7 +1526,9 @@ function buildTrustedDecisionSnapshot(
 
   const criticalIncidentCount =
     relatedIncidents.filter(
-      (incident) =>
+      (
+        incident
+      ) =>
         normalizeSeverityLabel(
           incident?.severity
         ) ===
@@ -1383,8 +1551,11 @@ function buildTrustedDecisionSnapshot(
   const decisionConfidence =
     getExpectedDecisionConfidence({
       violationCount,
+
       criticalIncidentCount,
+
       severityScore,
+
       riskLevel,
     });
 
@@ -1394,18 +1565,26 @@ function buildTrustedDecisionSnapshot(
         decisionConfidence,
 
       violationCount,
+
       criticalIncidentCount,
+
       severityScore,
+
       riskLevel,
     });
 
   const correctiveAction =
     getCorrectiveActionRecommendation({
       violationCount,
+
       criticalIncidentCount,
+
       severityScore,
+
       riskLevel,
+
       kpiLevel,
+
       relatedIncidents,
     });
 
@@ -1415,27 +1594,40 @@ function buildTrustedDecisionSnapshot(
         decisionConfidence,
 
       violationCount,
+
       criticalIncidentCount,
+
       severityScore,
+
       riskLevel,
     });
 
   const suggestedHRActionReason =
     getSuggestedHRActionReason({
       suggestedHRAction,
+
       violationCount,
+
       criticalIncidentCount,
+
       severityScore,
+
       riskLevel,
     });
 
   return {
     violationCount,
+
     severityScore,
+
     criticalIncidentCount,
+
     kpiLevel,
+
     riskLevel,
+
     decisionConfidence,
+
     suggestedHRAction,
 
     systemRecommendation:
@@ -1495,7 +1687,9 @@ exports.getKpiDecisionHistory =
           req.query?.view
         ).toLowerCase();
 
-      if (!view) {
+      if (
+        !view
+      ) {
         const [rows] =
           await db
             .promise()
@@ -1517,7 +1711,8 @@ exports.getKpiDecisionHistory =
       }
 
       if (
-        view === "latest"
+        view ===
+        "latest"
       ) {
         const [rows] =
           await db
@@ -1591,12 +1786,16 @@ exports.getKpiDecisionHistory =
       }
 
       if (
-        view !== "history"
+        view !==
+        "history"
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid KPI decision history view.",
@@ -1642,9 +1841,12 @@ exports.getKpiDecisionHistory =
         )
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid decision type filter.",
@@ -1679,8 +1881,11 @@ exports.getKpiDecisionHistory =
               )
           : [];
 
-      const whereParts = [];
-      const whereParams = [];
+      const whereParts =
+        [];
+
+      const whereParams =
+        [];
 
       if (
         decisionType !==
@@ -1696,7 +1901,9 @@ exports.getKpiDecisionHistory =
       }
 
       searchTerms.forEach(
-        (term) => {
+        (
+          term
+        ) => {
           const likeTerm =
             `%${term}%`;
 
@@ -1721,7 +1928,8 @@ exports.getKpiDecisionHistory =
           );
 
           for (
-            let index = 0;
+            let index =
+              0;
             index < 13;
             index += 1
           ) {
@@ -1733,14 +1941,18 @@ exports.getKpiDecisionHistory =
       );
 
       const whereSql =
-        whereParts.length > 0
+        whereParts.length >
+        0
           ? `WHERE ${whereParts.join(
               " AND "
             )}`
           : "";
 
       const offset =
-        (page - 1) *
+        (
+          page -
+          1
+        ) *
         pageSize;
 
       const [
@@ -1812,24 +2024,28 @@ exports.getKpiDecisionHistory =
               `
               SELECT
                 COUNT(*) AS total,
+
                 COALESCE(
                   SUM(
                     decision_type = 'Accepted'
                   ),
                   0
                 ) AS accepted,
+
                 COALESCE(
                   SUM(
                     decision_type = 'Modified'
                   ),
                   0
                 ) AS modified,
+
                 COALESCE(
                   SUM(
                     decision_type = 'Rejected'
                   ),
                   0
                 ) AS rejected
+
               FROM kpi_decision_history
               `
             ),
@@ -1920,16 +2136,21 @@ exports.getKpiDecisionHistory =
           new Date()
             .toISOString(),
       });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "GET KPI DECISION HISTORY ERROR:",
         error
       );
 
       return res
-        .status(500)
+        .status(
+          500
+        )
         .json({
-          success: false,
+          success:
+            false,
 
           error:
             "Failed to fetch KPI decision history.",
@@ -1945,17 +2166,31 @@ exports.createKpiDecision =
     req,
     res
   ) => {
+    let connection =
+      null;
+
+    let transactionStarted =
+      false;
+
+    let transactionCommitted =
+      false;
+
     try {
       const actor =
         getTrustedActor(
           req
         );
 
-      if (!actor) {
+      if (
+        !actor
+      ) {
         return res
-          .status(401)
+          .status(
+            401
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Authentication required.",
@@ -1969,19 +2204,29 @@ exports.createKpiDecision =
         employeeId,
 
         riskLevel,
+
         kpiLevel,
+
         violationCount,
+
         severityScore,
+
         criticalIncidentCount,
 
         decisionConfidence,
+
         suggestedHRAction,
+
         systemRecommendation,
 
         finalAction,
+
         decisionType,
+
         notes,
-      } = req.body || {};
+      } =
+        req.body ||
+        {};
 
       const parsedEmployeeId =
         parsePositiveInteger(
@@ -2004,9 +2249,12 @@ exports.createKpiDecision =
         !cleanedDecisionType
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Employee ID, final action, and decision type are required.",
@@ -2019,9 +2267,12 @@ exports.createKpiDecision =
         )
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid decision type.",
@@ -2034,9 +2285,12 @@ exports.createKpiDecision =
         )
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid final HR action.",
@@ -2049,17 +2303,24 @@ exports.createKpiDecision =
         );
 
       if (
-        cleanedDecisionType ===
-          "Rejected" &&
+        [
+          "Modified",
+          "Rejected",
+        ].includes(
+          cleanedDecisionType
+        ) &&
         !cleanedNotes
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
-              "Rejected recommendations require HR notes.",
+              `${cleanedDecisionType} recommendations require HR justification notes.`,
           });
       }
 
@@ -2087,9 +2348,12 @@ exports.createKpiDecision =
           null
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "KPI numeric values must be valid non-negative numbers. Violation and critical incident counts must be whole numbers.",
@@ -2103,9 +2367,12 @@ exports.createKpiDecision =
         )
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid KPI level.",
@@ -2119,9 +2386,12 @@ exports.createKpiDecision =
         )
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid risk level.",
@@ -2135,9 +2405,12 @@ exports.createKpiDecision =
         )
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid decision confidence.",
@@ -2151,9 +2424,12 @@ exports.createKpiDecision =
         )
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid suggested HR action.",
@@ -2167,25 +2443,68 @@ exports.createKpiDecision =
         )
       ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid system recommendation.",
           });
       }
 
+      connection =
+        await db
+          .promise()
+          .getConnection();
+
+      await connection
+        .beginTransaction();
+
+      transactionStarted =
+        true;
+
+      /*
+       * ==================================================
+       * B-06 — AUTHORITATIVE KPI DECISION SNAPSHOT
+       * ==================================================
+       *
+       * Lock the employee first.
+       *
+       * Incident creation also follows employee-first
+       * lifecycle locking. This prevents a newly-created
+       * incident for the same employee from slipping
+       * between KPI snapshot validation and commit.
+       */
       const trustedEmployee =
         await getTrustedEmployee(
-          parsedEmployeeId
+          parsedEmployeeId,
+          {
+            connection,
+
+            lockForUpdate:
+              true,
+          }
         );
 
-      if (!trustedEmployee) {
+      if (
+        !trustedEmployee
+      ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
         return res
-          .status(404)
+          .status(
+            404
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Employee not found.",
@@ -2197,10 +2516,19 @@ exports.createKpiDecision =
           trustedEmployee.archived
         ) === 1
       ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
         return res
-          .status(409)
+          .status(
+            409
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Archived employees cannot receive a new KPI decision.",
@@ -2210,9 +2538,22 @@ exports.createKpiDecision =
           });
       }
 
+      /*
+       * Lock the current incident rows used by the
+       * server-authoritative KPI calculation.
+       *
+       * The employee + incident locks keep the decision
+       * snapshot stable until history + audit commit.
+       */
       const trustedIncidents =
         await getTrustedIncidents(
-          trustedEmployee.id
+          trustedEmployee.id,
+          {
+            connection,
+
+            lockForUpdate:
+              true,
+          }
         );
 
       const trustedSnapshot =
@@ -2265,10 +2606,19 @@ exports.createKpiDecision =
             trustedSnapshot,
         })
       ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
         return res
-          .status(409)
+          .status(
+            409
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "KPI decision snapshot is out of date or inconsistent.",
@@ -2284,10 +2634,19 @@ exports.createKpiDecision =
         cleanedFinalAction !==
           trustedSnapshot.suggestedHRAction
       ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Accepted recommendations must use the system-suggested HR action as the final HR action.",
@@ -2307,151 +2666,181 @@ exports.createKpiDecision =
         );
 
       const [result] =
-        await db
-          .promise()
-          .query(
-            `
-            INSERT INTO kpi_decision_history
-            (
-              employee_id,
-              employee_name,
-              company,
+        await connection.query(
+          `
+          INSERT INTO kpi_decision_history
+          (
+            employee_id,
+            employee_name,
+            company,
 
-              risk_level,
-              kpi_level,
-              violation_count,
-              severity_score,
-              critical_incident_count,
+            risk_level,
+            kpi_level,
+            violation_count,
+            severity_score,
+            critical_incident_count,
 
-              decision_confidence,
-              suggested_hr_action,
-              system_recommendation,
+            decision_confidence,
+            suggested_hr_action,
+            system_recommendation,
 
-              final_action,
-              decision_type,
+            final_action,
+            decision_type,
 
-              notes,
-              decided_by,
-              decided_by_role,
+            notes,
+            decided_by,
+            decided_by_role,
 
-              decided_at,
-              status,
+            decided_at,
+            status,
 
-              recommendation_reason,
-              decision_confidence_reason,
-              suggested_hr_action_reason,
-              corrective_action_basis
-            )
-            VALUES (
-              ?, ?, ?,
-              ?, ?, ?, ?, ?,
-              ?, ?, ?,
-              ?, ?,
-              ?, ?, ?,
-              NOW(), ?,
-              ?, ?, ?, ?
-            )
-            `,
-            [
-              String(
-                trustedEmployee.id
-              ),
+            recommendation_reason,
+            decision_confidence_reason,
+            suggested_hr_action_reason,
+            corrective_action_basis
+          )
+          VALUES (
+            ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, ?,
+            ?, ?, ?,
+            NOW(), ?,
+            ?, ?, ?, ?
+          )
+          `,
+          [
+            String(
+              trustedEmployee.id
+            ),
 
-              trustedEmployeeName,
+            trustedEmployeeName,
 
-              trustedCompany,
+            trustedCompany,
 
-              trustedSnapshot.riskLevel,
+            trustedSnapshot.riskLevel,
 
-              trustedSnapshot.kpiLevel,
+            trustedSnapshot.kpiLevel,
 
-              trustedSnapshot.violationCount,
+            trustedSnapshot.violationCount,
 
-              trustedSnapshot.severityScore,
+            trustedSnapshot.severityScore,
 
-              trustedSnapshot.criticalIncidentCount,
+            trustedSnapshot.criticalIncidentCount,
 
-              trustedSnapshot.decisionConfidence,
+            trustedSnapshot.decisionConfidence,
 
-              trustedSnapshot.suggestedHRAction,
+            trustedSnapshot.suggestedHRAction,
 
-              trustedSnapshot.systemRecommendation,
+            trustedSnapshot.systemRecommendation,
 
-              cleanedFinalAction,
+            cleanedFinalAction,
 
-              cleanedDecisionType,
+            cleanedDecisionType,
 
-              cleanedNotes,
+            cleanedNotes,
 
-              actor.username,
+            actor.username,
 
-              actor.role,
+            actor.role,
 
-              "Recorded",
+            "Recorded",
 
-              trustedSnapshot.recommendationReason,
+            trustedSnapshot.recommendationReason,
 
-              trustedSnapshot.decisionConfidenceReason,
+            trustedSnapshot.decisionConfidenceReason,
 
-              trustedSnapshot.suggestedHRActionReason,
+            trustedSnapshot.suggestedHRActionReason,
 
-              trustedSnapshot.correctiveActionBasis,
-            ]
-          );
+            trustedSnapshot.correctiveActionBasis,
+          ]
+        );
 
       const [rows] =
-        await db
-          .promise()
-          .query(
-            `
-            SELECT *
-            FROM kpi_decision_history
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [
-              result.insertId,
-            ]
-          );
+        await connection.query(
+          `
+          SELECT *
+          FROM kpi_decision_history
+          WHERE id = ?
+          LIMIT 1
+          `,
+          [
+            result.insertId,
+          ]
+        );
 
-      if (!rows[0]) {
-        return res
-          .status(500)
-          .json({
-            success: false,
-
-            error:
-              "KPI decision was created but could not be retrieved.",
-          });
+      if (
+        !rows[0]
+      ) {
+        throw new Error(
+          "KPI decision was inserted but could not be retrieved inside the active transaction."
+        );
       }
 
-      await logAudit({
-        userId:
-          actor.id,
+      /*
+       * ==================================================
+       * B-06 — TRANSACTIONAL OPERATIONAL AUDIT
+       * ==================================================
+       *
+       * KPI history + audit belong to ONE transaction.
+       *
+       * If audit INSERT fails:
+       *
+       * audit failure
+       *      ->
+       * throwOnError
+       *      ->
+       * catch
+       *      ->
+       * rollback KPI history INSERT
+       */
+      await logAudit(
+        {
+          userId:
+            actor.id,
 
-        username:
-          actor.username,
+          username:
+            actor.username,
 
-        role:
-          actor.role,
+          role:
+            actor.role,
 
-        category:
-          AUDIT_CATEGORY.OPERATIONAL,
+          category:
+            AUDIT_CATEGORY.OPERATIONAL,
 
-        action:
-          "CREATE_KPI_DECISION",
+          action:
+            "CREATE_KPI_DECISION",
 
-        description:
-          `Recorded ${cleanedDecisionType} KPI decision for ${trustedEmployeeName} (Employee ID ${trustedEmployee.id}). Final HR action: ${cleanedFinalAction}.`,
+          description:
+            `Recorded ${cleanedDecisionType} KPI decision for ${trustedEmployeeName} (Employee ID ${trustedEmployee.id}). Final HR action: ${cleanedFinalAction}.`,
 
-        fullName:
-          actor.username,
-      });
+          fullName:
+            actor.fullName,
+        },
+        {
+          connection,
+
+          throwOnError:
+            true,
+        }
+      );
+
+      await connection
+        .commit();
+
+      transactionCommitted =
+        true;
+
+      transactionStarted =
+        false;
 
       return res
-        .status(201)
+        .status(
+          201
+        )
         .json({
-          success: true,
+          success:
+            true,
 
           message:
             "KPI decision recorded successfully.",
@@ -2461,16 +2850,42 @@ exports.createKpiDecision =
               rows[0]
             ),
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
+      if (
+        connection &&
+        transactionStarted &&
+        !transactionCommitted
+      ) {
+        try {
+          await connection
+            .rollback();
+
+          transactionStarted =
+            false;
+        } catch (
+          rollbackError
+        ) {
+          console.error(
+            "CREATE KPI DECISION ROLLBACK ERROR:",
+            rollbackError
+          );
+        }
+      }
+
       console.error(
         "CREATE KPI DECISION ERROR:",
         error
       );
 
       return res
-        .status(500)
+        .status(
+          500
+        )
         .json({
-          success: false,
+          success:
+            false,
 
           error:
             "Failed to record KPI decision.",
@@ -2478,6 +2893,12 @@ exports.createKpiDecision =
           message:
             "The KPI decision could not be recorded.",
         });
+    } finally {
+      if (
+        connection
+      ) {
+        connection.release();
+      }
     }
   };
 
@@ -2486,17 +2907,31 @@ exports.deleteKpiDecision =
     req,
     res
   ) => {
+    let connection =
+      null;
+
+    let transactionStarted =
+      false;
+
+    let transactionCommitted =
+      false;
+
     try {
       const actor =
         getTrustedActor(
           req
         );
 
-      if (!actor) {
+      if (
+        !actor
+      ) {
         return res
-          .status(401)
+          .status(
+            401
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Authentication required.",
@@ -2511,45 +2946,77 @@ exports.deleteKpiDecision =
           req.params.id
         );
 
-      if (!id) {
+      if (
+        !id
+      ) {
         return res
-          .status(400)
+          .status(
+            400
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Invalid decision history record ID.",
           });
       }
 
-      const [existingRows] =
+      connection =
         await db
           .promise()
-          .query(
-            `
-            SELECT
-              id,
-              employee_id,
-              employee_name,
-              decision_type,
-              final_action
-            FROM kpi_decision_history
-            WHERE id = ?
-            LIMIT 1
-            `,
-            [
-              id,
-            ]
-          );
+          .getConnection();
+
+      await connection
+        .beginTransaction();
+
+      transactionStarted =
+        true;
+
+      /*
+       * Lock the exact history row before deletion.
+       *
+       * The audit description therefore reflects the same
+       * authoritative row being deleted.
+       */
+      const [existingRows] =
+        await connection.query(
+          `
+          SELECT
+            id,
+            employee_id,
+            employee_name,
+            decision_type,
+            final_action
+          FROM kpi_decision_history
+          WHERE id = ?
+          LIMIT 1
+          FOR UPDATE
+          `,
+          [
+            id,
+          ]
+        );
 
       const existingRecord =
         existingRows[0];
 
-      if (!existingRecord) {
+      if (
+        !existingRecord
+      ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
         return res
-          .status(404)
+          .status(
+            404
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Decision history record not found.",
@@ -2557,83 +3024,140 @@ exports.deleteKpiDecision =
       }
 
       const [result] =
-        await db
-          .promise()
-          .query(
-            `
-            DELETE FROM kpi_decision_history
-            WHERE id = ?
-            `,
-            [
-              id,
-            ]
-          );
+        await connection.query(
+          `
+          DELETE FROM kpi_decision_history
+          WHERE id = ?
+          `,
+          [
+            id,
+          ]
+        );
 
       if (
         result.affectedRows ===
         0
       ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
         return res
-          .status(404)
+          .status(
+            404
+          )
           .json({
-            success: false,
+            success:
+              false,
 
             error:
               "Decision history record not found.",
           });
       }
 
-      await logAudit({
-        userId:
-          actor.id,
+      /*
+       * Delete + audit are committed as one atomic unit.
+       *
+       * If the audit INSERT fails, the deleted history
+       * record is restored by rollback.
+       */
+      await logAudit(
+        {
+          userId:
+            actor.id,
 
-        username:
-          actor.username,
+          username:
+            actor.username,
 
-        role:
-          actor.role,
+          role:
+            actor.role,
 
-        category:
-          AUDIT_CATEGORY.OPERATIONAL,
+          category:
+            AUDIT_CATEGORY.OPERATIONAL,
 
-        action:
-          "DELETE_KPI_DECISION",
+          action:
+            "DELETE_KPI_DECISION",
 
-        description:
-          `Removed KPI decision history record ${id} for ${cleanValue(
-            existingRecord.employee_name,
-            "Unknown Employee"
-          )} (Employee ID ${cleanValue(
-            existingRecord.employee_id,
-            "Unknown"
-          )}). Decision type: ${cleanValue(
-            existingRecord.decision_type,
-            "Recorded"
-          )}; final HR action: ${cleanValue(
-            existingRecord.final_action,
-            "Unknown"
-          )}.`,
+          description:
+            `Removed KPI decision history record ${id} for ${cleanValue(
+              existingRecord.employee_name,
+              "Unknown Employee"
+            )} (Employee ID ${cleanValue(
+              existingRecord.employee_id,
+              "Unknown"
+            )}). Decision type: ${cleanValue(
+              existingRecord.decision_type,
+              "Recorded"
+            )}; final HR action: ${cleanValue(
+              existingRecord.final_action,
+              "Unknown"
+            )}.`,
 
-        fullName:
-          actor.username,
-      });
+          fullName:
+            actor.fullName,
+        },
+        {
+          connection,
+
+          throwOnError:
+            true,
+        }
+      );
+
+      await connection
+        .commit();
+
+      transactionCommitted =
+        true;
+
+      transactionStarted =
+        false;
 
       return res.json({
-        success: true,
+        success:
+          true,
 
         message:
           "KPI decision history record removed.",
       });
-    } catch (error) {
+    } catch (
+      error
+    ) {
+      if (
+        connection &&
+        transactionStarted &&
+        !transactionCommitted
+      ) {
+        try {
+          await connection
+            .rollback();
+
+          transactionStarted =
+            false;
+        } catch (
+          rollbackError
+        ) {
+          console.error(
+            "DELETE KPI DECISION ROLLBACK ERROR:",
+            rollbackError
+          );
+        }
+      }
+
       console.error(
         "DELETE KPI DECISION ERROR:",
         error
       );
 
       return res
-        .status(500)
+        .status(
+          500
+        )
         .json({
-          success: false,
+          success:
+            false,
 
           error:
             "Failed to delete KPI decision history record.",
@@ -2641,5 +3165,11 @@ exports.deleteKpiDecision =
           message:
             "The KPI decision history record could not be removed.",
         });
+    } finally {
+      if (
+        connection
+      ) {
+        connection.release();
+      }
     }
   };
