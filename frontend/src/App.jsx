@@ -454,7 +454,7 @@ function ApplicationContent({
             element={
               <ProtectedRoute
                 allowedRoles={
-                  AUTHENTICATED_ROLES
+                  HR_MODULE_ROLES
                 }
               />
             }
@@ -528,10 +528,9 @@ function ApplicationContent({
           <Route
             element={
               <ProtectedRoute
-                allowedRoles={[
-                  ROLES.SUPER_ADMIN,
-                  ROLES.HR_MANAGER,
-                ]}
+                allowedRoles={
+                  HR_MODULE_ROLES
+                }
               />
             }
           >
