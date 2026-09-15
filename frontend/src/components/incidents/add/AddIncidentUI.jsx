@@ -13,6 +13,7 @@ import {
 
 import Button from "../../ui/Button";
 import Dialog from "../../ui/Dialog";
+import { formatPolicyDescriptionAsPlainText } from "../../../utils/policyDescription";
 
 export function SectionTitle({ icon, title }) {
   return (
@@ -93,13 +94,11 @@ export function PolicyCard({ formData }) {
         {formData.violationSection}
       </p>
 
-      <div
-        className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400"
-        dangerouslySetInnerHTML={{
-          __html:
-            formData.violationDescription || "",
-        }}
-      />
+      <div className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-gray-600 dark:text-gray-400">
+        {formatPolicyDescriptionAsPlainText(
+          formData.violationDescription
+        )}
+      </div>
     </div>
   );
 }
