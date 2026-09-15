@@ -4,16 +4,11 @@ const router = express.Router();
 
 const {
   getLogsByCategory,
-  getAllLogs,
 } = require("../controllers/auditLogController");
 
 const {
   verifyToken,
 } = require("../middleware/authMiddleware");
-
-const {
-  authorizeRoles,
-} = require("../middleware/roleMiddleware");
 
 /*
  * ==================================================
@@ -123,27 +118,23 @@ function authorizeAuditCategory(
 
 /*
  * ==================================================
- * ALL AUDIT LOGS
- * ==================================================
- *
- * SUPER_ADMIN only.
- */
-router.get(
-  "/audit-logs",
-  verifyToken,
-  authorizeRoles(
-    "SUPER_ADMIN"
-  ),
-  getAllLogs
-);
-
-/*
- * ==================================================
  * CATEGORY-SPECIFIC AUDIT LOGS
  * ==================================================
  *
  * Authentication executes before category-specific
  * authorization.
+ *
+ * IMPORTANT:
+ * The legacy GET /audit-logs endpoint has been
+ * intentionally retired because it returned the
+ * complete audit history as an unbounded payload.
+ *
+ * All client-facing audit retrieval must now use:
+ *
+ *   GET /audit-logs/:category
+ *
+ * The controller applies bounded server-side
+ * pagination, filtering, and summary aggregation.
  */
 router.get(
   "/audit-logs/:category",
