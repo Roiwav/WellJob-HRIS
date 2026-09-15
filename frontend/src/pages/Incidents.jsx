@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -52,6 +51,29 @@ const REQUEST_TIMEOUT_MS =
 
 const PASSIVE_REFRESH_DEBOUNCE_MS =
   150;
+
+const INCIDENT_SEARCH_DEBOUNCE_MS =
+  300;
+
+const INCIDENT_PAGE_SIZE =
+  25;
+
+const EMPTY_CASE_COUNTS = {
+  ALL: 0,
+  ACTIVE: 0,
+  FOR_REVIEW: 0,
+  CLOSED: 0,
+};
+
+const DEFAULT_PAGINATION = {
+  page: 1,
+  pageSize:
+    INCIDENT_PAGE_SIZE,
+  total: 0,
+  totalPages: 1,
+  hasPreviousPage: false,
+  hasNextPage: false,
+};
 
 const INCIDENT_PAGE_DATA_DOMAINS =
   new Set([
@@ -154,22 +176,34 @@ function formatIncidentCode(
   )}`;
 }
 
-function normalizeName(
+function normalizeIncidentLookupId(
   value
 ) {
-  return String(
-    value || ""
-  )
-    .trim()
-    .toLowerCase()
-    .replace(
-      /[^a-z0-9\s]/g,
-      ""
-    )
-    .replace(
-      /\s+/g,
-      " "
+  const raw =
+    String(
+      value || ""
+    ).trim();
+
+  if (!raw) {
+    return "";
+  }
+
+  const incidentCodeMatch =
+    raw.match(
+      /^INC-(\d+)$/i
     );
+
+  if (
+    incidentCodeMatch
+  ) {
+    return String(
+      Number(
+        incidentCodeMatch[1]
+      )
+    );
+  }
+
+  return raw;
 }
 
 function normalizeRole(
@@ -345,21 +379,6 @@ function normalizeBackendIncident(
     incident.reviewed_at ||
     null;
 
-  /*
-   * ==================================================
-   * POLICY SANCTION / ACTION TAKEN SEPARATION
-   * ==================================================
-   *
-   * policySanction:
-   * Prescribed sanction saved by the backend when
-   * the incident is created.
-   *
-   * actionTaken:
-   * Actual action entered by the investigator when
-   * proof is submitted.
-   *
-   * These values must never fall back to each other.
-   */
   const policySanction =
     incident.policySanction ||
     incident.policy_sanction ||
@@ -662,9 +681,6 @@ function normalizeBackendIncident(
       incident.description ||
       "",
 
-    /*
-     * Prescribed policy sanction.
-     */
     policySanction,
 
     policy_sanction:
@@ -673,9 +689,6 @@ function normalizeBackendIncident(
     sanction:
       policySanction,
 
-    /*
-     * Actual investigation action.
-     */
     actionTaken,
 
     action_taken:
@@ -722,6 +735,186 @@ function buildIncidentList(
         normalized
       )
   );
+}
+
+function buildCaseCounts(
+  incidents = []
+) {
+  return incidents.reduce(
+    (
+      counts,
+      incident
+    ) => {
+      const status =
+        normalizeStatus(
+          incident.status
+        );
+
+      counts.ALL +=
+        1;
+
+      if (
+        [
+          "Open",
+          "Investigating",
+        ].includes(
+          status
+        )
+      ) {
+        counts.ACTIVE +=
+          1;
+      }
+
+      if (
+        status ===
+        "For Review"
+      ) {
+        counts.FOR_REVIEW +=
+          1;
+      }
+
+      if (
+        status ===
+        "Closed"
+      ) {
+        counts.CLOSED +=
+          1;
+      }
+
+      return counts;
+    },
+    {
+      ...EMPTY_CASE_COUNTS,
+    }
+  );
+}
+
+function normalizeCaseCounts(
+  value,
+  fallbackIncidents = []
+) {
+  if (
+    !value ||
+    typeof value !==
+      "object"
+  ) {
+    return buildCaseCounts(
+      fallbackIncidents
+    );
+  }
+
+  return {
+    ALL:
+      Number(
+        value.ALL ??
+        value.all ??
+        0
+      ) || 0,
+
+    ACTIVE:
+      Number(
+        value.ACTIVE ??
+        value.active ??
+        0
+      ) || 0,
+
+    FOR_REVIEW:
+      Number(
+        value.FOR_REVIEW ??
+        value.forReview ??
+        value.for_review ??
+        0
+      ) || 0,
+
+    CLOSED:
+      Number(
+        value.CLOSED ??
+        value.closed ??
+        0
+      ) || 0,
+  };
+}
+
+function normalizePagination(
+  value,
+  fallbackTotal = 0
+) {
+  if (
+    !value ||
+    typeof value !==
+      "object"
+  ) {
+    return {
+      ...DEFAULT_PAGINATION,
+
+      total:
+        fallbackTotal,
+    };
+  }
+
+  const page =
+    Math.max(
+      1,
+      Number(
+        value.page
+      ) || 1
+    );
+
+  const pageSize =
+    Math.max(
+      1,
+      Number(
+        value.pageSize ??
+        value.page_size
+      ) ||
+        INCIDENT_PAGE_SIZE
+    );
+
+  const total =
+    Math.max(
+      0,
+      Number(
+        value.total
+      ) || 0
+    );
+
+  const totalPages =
+    Math.max(
+      1,
+      Number(
+        value.totalPages ??
+        value.total_pages
+      ) ||
+        Math.ceil(
+          total /
+            pageSize
+        ) ||
+        1
+    );
+
+  return {
+    page,
+
+    pageSize,
+
+    total,
+
+    totalPages,
+
+    hasPreviousPage:
+      Boolean(
+        value.hasPreviousPage ??
+        value.has_previous_page ??
+        page > 1
+      ),
+
+    hasNextPage:
+      Boolean(
+        value.hasNextPage ??
+        value.has_next_page ??
+        page < totalPages
+      ),
+  };
 }
 
 async function requestJson(
@@ -856,6 +1049,28 @@ export default function Incidents() {
     useState([]);
 
   const [
+    incidentCaseCounts,
+    setIncidentCaseCounts,
+  ] =
+    useState({
+      ...EMPTY_CASE_COUNTS,
+    });
+
+  const [
+    currentPage,
+    setCurrentPage,
+  ] =
+    useState(1);
+
+  const [
+    pagination,
+    setPagination,
+  ] =
+    useState({
+      ...DEFAULT_PAGINATION,
+    });
+
+  const [
     isLoading,
     setIsLoading,
   ] =
@@ -961,65 +1176,6 @@ export default function Incidents() {
       []
     );
 
-  const incidentCaseCounts =
-    useMemo(
-      () => {
-        return incidents.reduce(
-          (
-            counts,
-            incident
-          ) => {
-            const status =
-              normalizeStatus(
-                incident.status
-              );
-
-            counts.ALL +=
-              1;
-
-            if (
-              [
-                "Open",
-                "Investigating",
-              ].includes(
-                status
-              )
-            ) {
-              counts.ACTIVE +=
-                1;
-            }
-
-            if (
-              status ===
-              "For Review"
-            ) {
-              counts.FOR_REVIEW +=
-                1;
-            }
-
-            if (
-              status ===
-              "Closed"
-            ) {
-              counts.CLOSED +=
-                1;
-            }
-
-            return counts;
-          },
-          {
-            ALL: 0,
-            ACTIVE: 0,
-            FOR_REVIEW: 0,
-            CLOSED: 0,
-          }
-        );
-      },
-      [
-        incidents,
-      ]
-    );
-
   const fetchPageData =
     useCallback(
       async ({
@@ -1027,6 +1183,18 @@ export default function Incidents() {
         showError = true,
         showRefreshing = false,
         passive = false,
+
+        page =
+          currentPage,
+
+        searchValue =
+          search,
+
+        caseTabValue =
+          caseTab,
+
+        severityValue =
+          severityFilter,
       } = {}) => {
         if (
           passive &&
@@ -1077,9 +1245,86 @@ export default function Incidents() {
             );
           }
 
+          const params =
+            new URLSearchParams();
+
+          params.set(
+            "view",
+            "summary"
+          );
+
+          params.set(
+            "page",
+            String(
+              Math.max(
+                1,
+                Number(page) ||
+                  1
+              )
+            )
+          );
+
+          params.set(
+            "pageSize",
+            String(
+              INCIDENT_PAGE_SIZE
+            )
+          );
+
+          const trimmedSearch =
+            String(
+              searchValue ||
+              ""
+            ).trim();
+
+          if (
+            trimmedSearch
+          ) {
+            params.set(
+              "search",
+              trimmedSearch
+            );
+          }
+
+          const normalizedCaseTab =
+            String(
+              caseTabValue ||
+              "ALL"
+            )
+              .trim()
+              .toUpperCase();
+
+          if (
+            normalizedCaseTab &&
+            normalizedCaseTab !==
+              "ALL"
+          ) {
+            params.set(
+              "caseTab",
+              normalizedCaseTab
+            );
+          }
+
+          const normalizedSeverity =
+            String(
+              severityValue ||
+              "ALL"
+            ).trim();
+
+          if (
+            normalizedSeverity &&
+            normalizedSeverity.toUpperCase() !==
+              "ALL"
+          ) {
+            params.set(
+              "severity",
+              normalizedSeverity
+            );
+          }
+
           const incidentData =
             await requestJson(
-              `${INCIDENT_API_URL}?view=summary`
+              `${INCIDENT_API_URL}?${params.toString()}`
             );
 
           if (
@@ -1090,17 +1335,66 @@ export default function Incidents() {
             return false;
           }
 
+          const rawIncidents =
+            Array.isArray(
+              incidentData
+            )
+              ? incidentData
+              : Array.isArray(
+                  incidentData
+                    ?.incidents
+                )
+                ? incidentData
+                    .incidents
+                : [];
+
           const backendIncidents =
             buildIncidentList(
+              rawIncidents
+            );
+
+          const nextPagination =
+            normalizePagination(
               Array.isArray(
                 incidentData
               )
-                ? incidentData
-                : []
+                ? null
+                : incidentData
+                    ?.pagination,
+              backendIncidents.length
+            );
+
+          const nextCaseCounts =
+            normalizeCaseCounts(
+              Array.isArray(
+                incidentData
+              )
+                ? null
+                : incidentData
+                    ?.caseCounts,
+              backendIncidents
             );
 
           setIncidents(
             backendIncidents
+          );
+
+          setPagination(
+            nextPagination
+          );
+
+          setIncidentCaseCounts(
+            nextCaseCounts
+          );
+
+          setCurrentPage(
+            (
+              previousPage
+            ) =>
+              previousPage ===
+              nextPagination.page
+                ? previousPage
+                : nextPagination.page
           );
 
           return true;
@@ -1155,7 +1449,12 @@ export default function Incidents() {
           }
         }
       },
-      []
+      [
+        caseTab,
+        currentPage,
+        search,
+        severityFilter,
+      ]
     );
 
   const loadIncidentDetails =
@@ -1181,14 +1480,52 @@ export default function Incidents() {
             incidentData || {}
           );
 
+        const employeeId =
+          normalizedIncident
+            .employeeId;
+
+        let historyContext =
+          [
+            normalizedIncident,
+          ];
+
+        if (
+          employeeId
+        ) {
+          try {
+            const employeeHistory =
+              await requestJson(
+                `${INCIDENT_API_URL}/employee/${encodeURIComponent(
+                  employeeId
+                )}`
+              );
+
+            if (
+              Array.isArray(
+                employeeHistory
+              )
+            ) {
+              historyContext =
+                employeeHistory.map(
+                  normalizeBackendIncident
+                );
+            }
+          } catch (
+            historyError
+          ) {
+            console.warn(
+              "Unable to load complete employee incident history for detail enrichment:",
+              historyError
+            );
+          }
+        }
+
         return normalizeIncidentWithRules(
           normalizedIncident,
-          incidents
+          historyContext
         );
       },
-      [
-        incidents,
-      ]
+      []
     );
 
   const openIncidentAction =
@@ -1245,6 +1582,10 @@ export default function Incidents() {
               "FOR_REVIEW"
             );
 
+            setCurrentPage(
+              1
+            );
+
             setReviewIncident(
               fullIncident
             );
@@ -1259,6 +1600,10 @@ export default function Incidents() {
               "ACTIVE"
             );
 
+            setCurrentPage(
+              1
+            );
+
             setResolutionIncident(
               fullIncident
             );
@@ -1271,6 +1616,10 @@ export default function Incidents() {
           ) {
             setCaseTab(
               "ACTIVE"
+            );
+
+            setCurrentPage(
+              1
             );
 
             setStartReviewIncident(
@@ -1381,10 +1730,30 @@ export default function Incidents() {
 
   useEffect(
     () => {
-      fetchPageData();
+      const delay =
+        String(
+          search || ""
+        ).trim()
+          ? INCIDENT_SEARCH_DEBOUNCE_MS
+          : 0;
+
+      const timerId =
+        window.setTimeout(
+          () => {
+            fetchPageData();
+          },
+          delay
+        );
+
+      return () => {
+        window.clearTimeout(
+          timerId
+        );
+      };
     },
     [
       fetchPageData,
+      search,
     ]
   );
 
@@ -1473,9 +1842,7 @@ export default function Incidents() {
     () => {
       if (
         !location.state
-          ?.incidentId ||
-        incidents.length ===
-          0
+          ?.incidentId
       ) {
         return undefined;
       }
@@ -1484,7 +1851,7 @@ export default function Incidents() {
         false;
 
       const targetId =
-        String(
+        normalizeIncidentLookupId(
           location.state
             .incidentId
         );
@@ -1498,23 +1865,8 @@ export default function Incidents() {
           .trim()
           .toLowerCase();
 
-      const foundIncident =
-        incidents.find(
-          (
-            incident
-          ) =>
-            String(
-              incident.id
-            ) ===
-              targetId ||
-            String(
-              incident.displayId
-            ) ===
-              targetId
-        );
-
       if (
-        !foundIncident
+        !targetId
       ) {
         navigate(
           location.pathname,
@@ -1533,7 +1885,15 @@ export default function Incidents() {
       const openRequestedIncident =
         async () => {
           await openIncidentAction(
-            foundIncident,
+            {
+              id:
+                targetId,
+
+              displayId:
+                formatIncidentCode(
+                  targetId
+                ),
+            },
             requestedAction
           );
 
@@ -1563,7 +1923,6 @@ export default function Incidents() {
       };
     },
     [
-      incidents,
       location.pathname,
       location.state,
       navigate,
@@ -1634,10 +1993,10 @@ export default function Incidents() {
       ) => {
         setIncidents(
           (
-            prev
+            previous
           ) => {
             const nextRaw =
-              prev.map(
+              previous.map(
                 (
                   incident
                 ) =>
@@ -1815,43 +2174,25 @@ export default function Incidents() {
         return false;
       }
 
-      const totalEmployeeCases =
-        incidents.filter(
-          (
-            inc
-          ) =>
-            String(
-              inc.employeeId
-            ) ===
-            String(
-              newIncident.employeeId
-            )
-        ).length;
-
-      const escalatedIncident = {
+      /*
+       * Do not recompute repeat-offense severity from
+       * the paginated Incident page.
+       *
+       * AddIncidentModal is responsible for the
+       * complete employee-history preview, while the
+       * backend remains the final authoritative
+       * classification source.
+       */
+      const normalizedIncident = {
         ...newIncident,
 
         company:
           newIncident.company ||
           "",
 
-        severity:
-          totalEmployeeCases >=
-            4 &&
-          newIncident.severity !==
-            "Critical"
-            ? "Critical"
-            : newIncident.severity,
-
         status:
           "Open",
       };
-
-      const normalizedIncident =
-        normalizeIncidentWithRules(
-          escalatedIncident,
-          incidents
-        );
 
       try {
         const response =
@@ -1917,14 +2258,6 @@ export default function Incidents() {
                   reportedBy:
                     actorFullName,
 
-                  /*
-                   * This is only a client preview /
-                   * consistency check.
-                   *
-                   * Backend remains authoritative and
-                   * stores its own computed value into
-                   * incidents.policy_sanction.
-                   */
                   policySanction:
                     normalizedIncident.sanction ||
                     "",
@@ -1969,12 +2302,22 @@ export default function Incidents() {
           "ACTIVE"
         );
 
+        setCurrentPage(
+          1
+        );
+
         await fetchPageData({
           silent:
             true,
 
           showError:
             false,
+
+          page:
+            1,
+
+          caseTabValue:
+            "ACTIVE",
         });
 
         emitDataUpdated(
@@ -2135,12 +2478,6 @@ export default function Incidents() {
         "SUBMIT_RESOLUTION"
       );
 
-      /*
-       * Actual investigation action.
-       *
-       * This is the workflow where action_taken is
-       * intentionally populated by the backend.
-       */
       formData.append(
         "actionTaken",
         resolutionData.actionTaken
@@ -2373,12 +2710,6 @@ export default function Incidents() {
                 ?.remarks ||
               "Proof reviewed and approved.",
 
-            /*
-             * Do not send actionTaken here.
-             *
-             * Reviewer approval changes review state,
-             * not the investigator's recorded action.
-             */
             recommendation:
               incident.recommendation ||
               "",
@@ -2405,6 +2736,10 @@ export default function Incidents() {
 
         setCaseTab(
           "CLOSED"
+        );
+
+        setCurrentPage(
+          1
         );
       }
 
@@ -2494,12 +2829,6 @@ export default function Incidents() {
             resolutionNotes:
               comments,
 
-            /*
-             * Do not send actionTaken here.
-             *
-             * Returning a case must preserve the
-             * investigator's existing action_taken.
-             */
             recommendation:
               incident.recommendation ||
               "",
@@ -2526,6 +2855,10 @@ export default function Incidents() {
 
         setCaseTab(
           "ACTIVE"
+        );
+
+        setCurrentPage(
+          1
         );
       }
 
@@ -2558,6 +2891,68 @@ export default function Incidents() {
       ]
     );
 
+  const handleSearchChange =
+    useCallback(
+      (
+        value
+      ) => {
+        setSearch(
+          value
+        );
+
+        setCurrentPage(
+          1
+        );
+      },
+      []
+    );
+
+  const handleCaseTabChange =
+    useCallback(
+      (
+        value
+      ) => {
+        setCaseTab(
+          value
+        );
+
+        setCurrentPage(
+          1
+        );
+      },
+      []
+    );
+
+  const handleSeverityFilterChange =
+    useCallback(
+      (
+        value
+      ) => {
+        setSeverityFilter(
+          value
+        );
+
+        setCurrentPage(
+          1
+        );
+      },
+      []
+    );
+
+  const handleClearSearch =
+    useCallback(
+      () => {
+        setSearch(
+          ""
+        );
+
+        setCurrentPage(
+          1
+        );
+      },
+      []
+    );
+
   const handleClearIncidentFilters =
     useCallback(
       () => {
@@ -2572,131 +2967,93 @@ export default function Incidents() {
         setCaseTab(
           "ALL"
         );
+
+        setCurrentPage(
+          1
+        );
       },
       []
     );
 
-  const filteredIncidents =
-    useMemo(
+  const handlePreviousPage =
+    useCallback(
       () => {
-        const normalizedSearch =
-          normalizeName(
-            search
-          );
+        if (
+          isLoading ||
+          isRefreshing ||
+          currentPage <= 1
+        ) {
+          return;
+        }
 
-        const searchTerms =
-          normalizedSearch
-            ? normalizedSearch.split(
-                /\s+/
-              )
-            : [];
-
-        return incidents.filter(
+        setCurrentPage(
           (
-            incident
-          ) => {
-            const status =
-              normalizeStatus(
-                incident.status
-              );
-
-            const matchesCaseTab =
-              caseTab ===
-                "ALL" ||
-              (
-                caseTab ===
-                  "ACTIVE" &&
-                [
-                  "Open",
-                  "Investigating",
-                ].includes(
-                  status
-                )
-              ) ||
-              (
-                caseTab ===
-                  "FOR_REVIEW" &&
-                status ===
-                  "For Review"
-              ) ||
-              (
-                caseTab ===
-                  "CLOSED" &&
-                status ===
-                  "Closed"
-              );
-
-            const searchableText =
-              normalizeName(
-                [
-                  incident.displayId,
-                  incident.id,
-                  incident.employeeId,
-                  incident.employee,
-                  incident.employeeName,
-                  incident.violation,
-                  incident.violationType,
-                  incident.company,
-                  incident.location,
-                  incident.severity,
-                  incident.status,
-                  incident.sanction,
-                  incident.actionTaken,
-                  incident.recommendation,
-                  incident.description,
-                  incident.reportedBy,
-                  incident.reportedByName,
-                ]
-                  .filter(
-                    Boolean
-                  )
-                  .join(
-                    " "
-                  )
-              );
-
-            const matchesSearch =
-              searchTerms.length ===
-                0 ||
-              searchTerms.every(
-                (
-                  term
-                ) =>
-                  searchableText.includes(
-                    term
-                  )
-              );
-
-            const matchesSeverity =
-              severityFilter ===
-                "ALL" ||
-              String(
-                incident.severity ||
-                ""
-              )
-                .trim()
-                .toLowerCase() ===
-                String(
-                  severityFilter
-                )
-                  .trim()
-                  .toLowerCase();
-
-            return (
-              matchesCaseTab &&
-              matchesSearch &&
-              matchesSeverity
-            );
-          }
+            page
+          ) =>
+            Math.max(
+              1,
+              page - 1
+            )
         );
       },
       [
-        incidents,
-        search,
-        caseTab,
-        severityFilter,
+        currentPage,
+        isLoading,
+        isRefreshing,
       ]
     );
+
+  const handleNextPage =
+    useCallback(
+      () => {
+        if (
+          isLoading ||
+          isRefreshing ||
+          currentPage >=
+            pagination.totalPages
+        ) {
+          return;
+        }
+
+        setCurrentPage(
+          (
+            page
+          ) =>
+            Math.min(
+              pagination
+                .totalPages,
+              page + 1
+            )
+        );
+      },
+      [
+        currentPage,
+        isLoading,
+        isRefreshing,
+        pagination.totalPages,
+      ]
+    );
+
+  const firstVisibleRecord =
+    pagination.total ===
+      0
+      ? 0
+      : (
+          pagination.page -
+          1
+        ) *
+          pagination.pageSize +
+        1;
+
+  const lastVisibleRecord =
+    pagination.total ===
+      0
+      ? 0
+      : Math.min(
+          pagination.page *
+            pagination.pageSize,
+          pagination.total
+        );
 
   return (
     <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
@@ -2795,21 +3152,19 @@ export default function Incidents() {
             isRefreshing
           }
           incidents={
-            filteredIncidents
+            incidents
           }
           totalIncidentCount={
-            incidents.length
+            incidentCaseCounts.ALL
           }
           search={
             search
           }
           onSearchChange={
-            setSearch
+            handleSearchChange
           }
-          onClearSearch={() =>
-            setSearch(
-              ""
-            )
+          onClearSearch={
+            handleClearSearch
           }
           onClearFilters={
             handleClearIncidentFilters
@@ -2818,7 +3173,7 @@ export default function Incidents() {
             caseTab
           }
           onCaseTabChange={
-            setCaseTab
+            handleCaseTabChange
           }
           caseCounts={
             incidentCaseCounts
@@ -2827,7 +3182,7 @@ export default function Incidents() {
             severityFilter
           }
           onSeverityFilterChange={
-            setSeverityFilter
+            handleSeverityFilterChange
           }
           isSuperAdmin={
             isSuperAdmin
@@ -2851,6 +3206,81 @@ export default function Incidents() {
             handleReviewIncident
           }
         />
+
+        {pagination.totalPages >
+          1 && (
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Showing{" "}
+              <span className="font-semibold text-gray-700 dark:text-gray-200">
+                {
+                  firstVisibleRecord
+                }
+                -
+                {
+                  lastVisibleRecord
+                }
+              </span>{" "}
+              of{" "}
+              <span className="font-semibold text-gray-700 dark:text-gray-200">
+                {
+                  pagination.total
+                }
+              </span>{" "}
+              matching incident
+              {pagination.total ===
+              1
+                ? ""
+                : "s"}
+              .
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={
+                  isLoading ||
+                  isRefreshing ||
+                  !pagination
+                    .hasPreviousPage
+                }
+                onClick={
+                  handlePreviousPage
+                }
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-slate-800"
+              >
+                Previous
+              </button>
+
+              <span className="min-w-[110px] text-center text-sm font-semibold text-gray-700 dark:text-gray-200">
+                Page{" "}
+                {
+                  pagination.page
+                }{" "}
+                of{" "}
+                {
+                  pagination.totalPages
+                }
+              </span>
+
+              <button
+                type="button"
+                disabled={
+                  isLoading ||
+                  isRefreshing ||
+                  !pagination
+                    .hasNextPage
+                }
+                onClick={
+                  handleNextPage
+                }
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-slate-800"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedIncident && (

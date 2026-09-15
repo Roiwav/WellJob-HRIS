@@ -30,11 +30,12 @@ const STATUS_BADGE_CLASSES = {
 const DEFAULT_STATUS_BADGE_CLASS =
   "border border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300";
 
-const COMPLETED_DEPLOYMENT_REASONS = new Set([
-  "Completed Contract",
-  "End of Assignment / Pulled Out by Client",
-  "Transferred / Reassigned",
-]);
+const COMPLETED_DEPLOYMENT_REASONS =
+  new Set([
+    "Completed Contract",
+    "End of Assignment / Pulled Out by Client",
+    "Transferred / Reassigned",
+  ]);
 
 const CANCELLED_DEPLOYMENT_REASON_MAP = {
   Resignation: "Resigned",
@@ -45,143 +46,254 @@ const CANCELLED_DEPLOYMENT_REASON_MAP = {
 };
 
 function parseDate(dateValue) {
-  if (!dateValue || dateValue === "-") {
+  if (
+    !dateValue ||
+    dateValue === "-"
+  ) {
     return null;
   }
 
-  const date = new Date(dateValue);
+  const date =
+    new Date(dateValue);
 
-  return Number.isNaN(date.getTime()) ? null : date;
+  return Number.isNaN(
+    date.getTime()
+  )
+    ? null
+    : date;
 }
 
 function normalizeRemarks(value) {
-  return String(value || "").trim();
+  return String(
+    value || ""
+  ).trim();
 }
 
 export function getMonthOptions() {
   return MONTH_OPTIONS;
 }
 
-export function getYearOptions(deployments = []) {
-  const years = new Set();
+export function getYearOptions(
+  deployments = []
+) {
+  const years =
+    new Set();
 
-  deployments.forEach((deployment) => {
-    const rawDate =
-      deployment?.start ||
-      deployment?.contractStart ||
-      deployment?.contract_start ||
-      deployment?.createdAt ||
-      deployment?.created_at;
+  deployments.forEach(
+    (deployment) => {
+      const rawDate =
+        deployment?.start ||
+        deployment?.contractStart ||
+        deployment?.contract_start ||
+        deployment?.createdAt ||
+        deployment?.created_at;
 
-    const date = parseDate(rawDate);
+      const date =
+        parseDate(rawDate);
 
-    if (date) {
-      years.add(String(date.getFullYear()));
+      if (date) {
+        years.add(
+          String(
+            date.getFullYear()
+          )
+        );
+      }
     }
-  });
+  );
 
   return [
-    { value: "", label: "All Years" },
+    {
+      value: "",
+      label: "All Years",
+    },
     ...Array.from(years)
-      .sort((first, second) => Number(second) - Number(first))
-      .map((year) => ({
-        value: year,
-        label: year,
-      })),
+      .sort(
+        (
+          first,
+          second
+        ) =>
+          Number(second) -
+          Number(first)
+      )
+      .map(
+        (year) => ({
+          value: year,
+          label: year,
+        })
+      ),
   ];
 }
 
-export function normalizeDeploymentStatus(status) {
-  const normalizedStatus = String(status || "")
-    .trim()
-    .toLowerCase();
+export function normalizeDeploymentStatus(
+  status
+) {
+  const normalizedStatus =
+    String(
+      status || ""
+    )
+      .trim()
+      .toLowerCase();
 
-  if (normalizedStatus === "active") {
+  if (
+    normalizedStatus ===
+    "active"
+  ) {
     return "Active";
   }
 
-  if (normalizedStatus === "completed") {
+  if (
+    normalizedStatus ===
+    "completed"
+  ) {
     return "Completed";
   }
 
   if (
-    normalizedStatus === "cancelled" ||
-    normalizedStatus === "canceled"
+    normalizedStatus ===
+      "cancelled" ||
+    normalizedStatus ===
+      "canceled"
   ) {
     return "Cancelled";
   }
 
-  if (normalizedStatus === "pending") {
+  if (
+    normalizedStatus ===
+    "pending"
+  ) {
     return "Pending";
   }
 
-  if (normalizedStatus === "separated") {
+  if (
+    normalizedStatus ===
+    "separated"
+  ) {
     return "Separated";
   }
 
-  return String(status || "").trim() || "Pending";
+  return (
+    String(
+      status || ""
+    ).trim() ||
+    "Pending"
+  );
 }
 
-export function formatDisplayDate(dateValue) {
-  const date = parseDate(dateValue);
+export function formatDisplayDate(
+  dateValue
+) {
+  const date =
+    parseDate(dateValue);
 
   if (!date) {
-    return dateValue && dateValue !== "-" ? String(dateValue) : "-";
+    return (
+      dateValue &&
+      dateValue !== "-"
+        ? String(dateValue)
+        : "-"
+    );
   }
 
-  return date.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return date.toLocaleDateString(
+    "en-PH",
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }
+  );
 }
 
-export function formatLongDisplayDate(dateValue) {
-  const date = parseDate(dateValue);
+export function formatLongDisplayDate(
+  dateValue
+) {
+  const date =
+    parseDate(dateValue);
 
   if (!date) {
-    return dateValue && dateValue !== "-"
-      ? String(dateValue)
-      : "Not Set";
+    return (
+      dateValue &&
+      dateValue !== "-"
+        ? String(dateValue)
+        : "Not Set"
+    );
   }
 
-  return date.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return date.toLocaleDateString(
+    "en-PH",
+    {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }
+  );
 }
 
-export function formatDateForInput(dateValue) {
-  if (!dateValue || dateValue === "-") {
+export function formatDateForInput(
+  dateValue
+) {
+  if (
+    !dateValue ||
+    dateValue === "-"
+  ) {
     return "";
   }
 
-  const rawValue = String(dateValue).trim();
-  const dateOnlyMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const rawValue =
+    String(
+      dateValue
+    ).trim();
+
+  const dateOnlyMatch =
+    rawValue.match(
+      /^(\d{4})-(\d{2})-(\d{2})/
+    );
 
   if (dateOnlyMatch) {
     return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}`;
   }
 
-  const date = parseDate(rawValue);
+  const date =
+    parseDate(rawValue);
 
   if (!date) {
     return "";
   }
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year =
+    date.getFullYear();
+
+  const month =
+    String(
+      date.getMonth() + 1
+    ).padStart(
+      2,
+      "0"
+    );
+
+  const day =
+    String(
+      date.getDate()
+    ).padStart(
+      2,
+      "0"
+    );
 
   return `${year}-${month}-${day}`;
 }
 
-export function getStatusBadgeClass(status) {
-  const normalizedStatus = normalizeDeploymentStatus(status);
+export function getStatusBadgeClass(
+  status
+) {
+  const normalizedStatus =
+    normalizeDeploymentStatus(
+      status
+    );
 
   return (
-    STATUS_BADGE_CLASSES[normalizedStatus] ||
+    STATUS_BADGE_CLASSES[
+      normalizedStatus
+    ] ||
     DEFAULT_STATUS_BADGE_CLASS
   );
 }
@@ -190,27 +302,53 @@ export function getDeploymentTimelineInfo(
   deploymentStart,
   separationDate
 ) {
-  if (!deploymentStart || deploymentStart === "-") {
+  if (
+    !deploymentStart ||
+    deploymentStart === "-"
+  ) {
     return "Deployment start date is not available.";
   }
 
-  if (!separationDate || separationDate === "-") {
+  if (
+    !separationDate ||
+    separationDate === "-"
+  ) {
     return "Deployment is continuous and remains active until an authorized separation is recorded.";
   }
 
-  return `Separated on ${formatLongDisplayDate(separationDate)}.`;
+  return `Separated on ${formatLongDisplayDate(
+    separationDate
+  )}.`;
 }
 
-export function normalizeSeparationReason(value, remarks = "") {
-  const reason = String(value || "").trim();
-  const cleanRemarks = normalizeRemarks(remarks);
+export function normalizeSeparationReason(
+  value,
+  remarks = ""
+) {
+  const reason =
+    String(
+      value || ""
+    ).trim();
 
-  if (reason === "Resigned" || reason === "Resignation") {
+  const cleanRemarks =
+    normalizeRemarks(
+      remarks
+    );
+
+  if (
+    reason === "Resigned" ||
+    reason === "Resignation"
+  ) {
     return "Resignation";
   }
 
-  if (reason === "Terminated" || reason === "Termination") {
-    return cleanRemarks.startsWith("[Other Separation]")
+  if (
+    reason === "Terminated" ||
+    reason === "Termination"
+  ) {
+    return cleanRemarks.startsWith(
+      "[Other Separation]"
+    )
       ? "Other Separation"
       : "Termination";
   }
@@ -222,24 +360,97 @@ export function buildDeploymentStatusPayload({
   separationReason,
   separationRemarks,
 }) {
-  const reason = String(separationReason || "").trim();
-  const endRemarks = normalizeRemarks(separationRemarks);
+  const reason =
+    String(
+      separationReason ||
+        ""
+    ).trim();
 
-  if (COMPLETED_DEPLOYMENT_REASONS.has(reason)) {
+  const endRemarks =
+    normalizeRemarks(
+      separationRemarks
+    );
+
+  /*
+   * Normal deployment completion reasons
+   * remain unchanged.
+   */
+  if (
+    COMPLETED_DEPLOYMENT_REASONS.has(
+      reason
+    )
+  ) {
     return {
-      status: "Completed",
-      endReason: reason,
+      status:
+        "Completed",
+
+      endReason:
+        reason,
+
       endRemarks,
     };
   }
 
+  /*
+   * "Other Separation" is an intentional UI
+   * option, but the backend lifecycle model
+   * accepts only the authoritative cancelled
+   * reasons:
+   *
+   * - Resigned
+   * - AWOL
+   * - Terminated
+   *
+   * Preserve the existing compatibility format:
+   *
+   * UI reason:
+   *   Other Separation
+   *
+   * Backend reason:
+   *   Terminated
+   *
+   * Remarks:
+   *   [Other Separation] <details>
+   *
+   * normalizeSeparationReason() already converts
+   * this representation back to "Other Separation"
+   * for display.
+   */
+  if (
+    reason ===
+    "Other Separation"
+  ) {
+    if (!endRemarks) {
+      throw new Error(
+        "Please provide details for Other Separation."
+      );
+    }
+
+    return {
+      status:
+        "Cancelled",
+
+      endReason:
+        "Terminated",
+
+      endRemarks:
+        `[Other Separation] ${endRemarks}`.trim(),
+    };
+  }
+
   const cancelledReason =
-    CANCELLED_DEPLOYMENT_REASON_MAP[reason];
+    CANCELLED_DEPLOYMENT_REASON_MAP[
+      reason
+    ];
 
   if (cancelledReason) {
     return {
-      status: "Cancelled",
-      endReason: cancelledReason,
+      status:
+        "Cancelled",
+
+      endReason:
+        cancelledReason,
+
       endRemarks,
     };
   }
@@ -254,16 +465,31 @@ export function buildLegacySeparationPayload({
   separationReason,
   separationRemarks,
 }) {
-  const cleanRemarks = normalizeRemarks(separationRemarks);
-  const isResignation = separationReason === "Resignation";
+  const cleanRemarks =
+    normalizeRemarks(
+      separationRemarks
+    );
+
+  const isResignation =
+    separationReason ===
+    "Resignation";
+
   const isOtherSeparation =
-    separationReason === "Other Separation";
+    separationReason ===
+    "Other Separation";
 
   return {
-    contractEnd: separationDate,
-    endReason: isResignation ? "Resigned" : "Terminated",
-    endRemarks: isOtherSeparation
-      ? `[Other Separation] ${cleanRemarks}`.trim()
-      : cleanRemarks,
+    contractEnd:
+      separationDate,
+
+    endReason:
+      isResignation
+        ? "Resigned"
+        : "Terminated",
+
+    endRemarks:
+      isOtherSeparation
+        ? `[Other Separation] ${cleanRemarks}`.trim()
+        : cleanRemarks,
   };
 }

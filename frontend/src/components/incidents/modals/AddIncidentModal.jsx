@@ -61,6 +61,9 @@ import {
 const INCIDENT_FORM_META_URL =
   `${API_BASE}/incidents/form-meta`;
 
+const INCIDENT_EMPLOYEE_HISTORY_URL =
+  `${API_BASE}/incidents/employee`;
+
 const EMPLOYEE_SEARCH_DEBOUNCE_MS =
   350;
 
@@ -180,6 +183,9 @@ export default function AddIncidentModal({
   const employeeSearchRequestRef =
     useRef(null);
 
+  const employeeIncidentHistoryRequestRef =
+    useRef(null);
+
   const [
     formData,
     setFormData,
@@ -209,6 +215,21 @@ export default function AddIncidentModal({
     selectedEmployeeOption,
     setSelectedEmployeeOption,
   ] = useState(null);
+
+  const [
+    employeeIncidentHistory,
+    setEmployeeIncidentHistory,
+  ] = useState([]);
+
+  const [
+    isLoadingEmployeeIncidentHistory,
+    setIsLoadingEmployeeIncidentHistory,
+  ] = useState(false);
+
+  const [
+    employeeIncidentHistoryError,
+    setEmployeeIncidentHistoryError,
+  ] = useState("");
 
   const [
     violationSearch,
@@ -317,7 +338,17 @@ export default function AddIncidentModal({
         false
       );
 
+      if (
+        employeeIncidentHistoryRequestRef.current
+      ) {
+        employeeIncidentHistoryRequestRef.current.abort();
+
+        employeeIncidentHistoryRequestRef.current =
+          null;
+      }
+
       closeCustomAlert();
+
       onClose();
     }, [
       closeCustomAlert,
@@ -337,16 +368,41 @@ export default function AddIncidentModal({
             createInitialFormData()
           );
 
-          setEmployeeSearch("");
-          setEmployeeOptions([]);
+          setEmployeeSearch(
+            ""
+          );
+
+          setEmployeeOptions(
+            []
+          );
+
           setIsSearchingEmployees(
             false
           );
-          setEmployeeSearchError("");
+
+          setEmployeeSearchError(
+            ""
+          );
+
           setSelectedEmployeeOption(
             null
           );
-          setViolationSearch("");
+
+          setEmployeeIncidentHistory(
+            []
+          );
+
+          setIsLoadingEmployeeIncidentHistory(
+            false
+          );
+
+          setEmployeeIncidentHistoryError(
+            ""
+          );
+
+          setViolationSearch(
+            ""
+          );
 
           setShowEmployeeDropdown(
             false
@@ -356,13 +412,17 @@ export default function AddIncidentModal({
             false
           );
 
-          setIsReviewing(false);
+          setIsReviewing(
+            false
+          );
 
           setDuplicateConfirmed(
             false
           );
 
-          setIsSaving(false);
+          setIsSaving(
+            false
+          );
 
           closeCustomAlert();
         },
@@ -395,6 +455,12 @@ export default function AddIncidentModal({
       ) {
         employeeSearchRequestRef.current.abort();
       }
+
+      if (
+        employeeIncidentHistoryRequestRef.current
+      ) {
+        employeeIncidentHistoryRequestRef.current.abort();
+      }
     };
   }, []);
 
@@ -403,31 +469,30 @@ export default function AddIncidentModal({
       return undefined;
     }
 
-    const handleClickOutside = (
-      event
-    ) => {
-      if (
-        employeeBoxRef.current &&
-        !employeeBoxRef.current.contains(
-          event.target
-        )
-      ) {
-        setShowEmployeeDropdown(
-          false
-        );
-      }
+    const handleClickOutside =
+      (event) => {
+        if (
+          employeeBoxRef.current &&
+          !employeeBoxRef.current.contains(
+            event.target
+          )
+        ) {
+          setShowEmployeeDropdown(
+            false
+          );
+        }
 
-      if (
-        violationBoxRef.current &&
-        !violationBoxRef.current.contains(
-          event.target
-        )
-      ) {
-        setShowViolationDropdown(
-          false
-        );
-      }
-    };
+        if (
+          violationBoxRef.current &&
+          !violationBoxRef.current.contains(
+            event.target
+          )
+        ) {
+          setShowViolationDropdown(
+            false
+          );
+        }
+      };
 
     document.addEventListener(
       "mousedown",
@@ -440,7 +505,9 @@ export default function AddIncidentModal({
         handleClickOutside
       );
     };
-  }, [isOpen]);
+  }, [
+    isOpen,
+  ]);
 
   useEffect(() => {
     if (
@@ -516,7 +583,9 @@ export default function AddIncidentModal({
             }
 
             if (
-              requestController.signal.aborted
+              requestController
+                .signal
+                .aborted
             ) {
               return;
             }
@@ -594,13 +663,15 @@ export default function AddIncidentModal({
           } finally {
             if (
               employeeSearchRequestRef.current ===
-                requestController
+              requestController
             ) {
               employeeSearchRequestRef.current =
                 null;
 
               if (
-                !requestController.signal.aborted
+                !requestController
+                  .signal
+                  .aborted
               ) {
                 setIsSearchingEmployees(
                   false
@@ -629,6 +700,157 @@ export default function AddIncidentModal({
     selectedEmployeeOption,
   ]);
 
+  const loadEmployeeIncidentHistory =
+    useCallback(
+      async (
+        employeeId
+      ) => {
+        const normalizedEmployeeId =
+          String(
+            employeeId ||
+              ""
+          ).trim();
+
+        if (
+          !normalizedEmployeeId
+        ) {
+          setEmployeeIncidentHistory(
+            []
+          );
+
+          setEmployeeIncidentHistoryError(
+            ""
+          );
+
+          setIsLoadingEmployeeIncidentHistory(
+            false
+          );
+
+          return [];
+        }
+
+        if (
+          employeeIncidentHistoryRequestRef.current
+        ) {
+          employeeIncidentHistoryRequestRef.current.abort();
+        }
+
+        const requestController =
+          new AbortController();
+
+        employeeIncidentHistoryRequestRef.current =
+          requestController;
+
+        setEmployeeIncidentHistory(
+          []
+        );
+
+        setEmployeeIncidentHistoryError(
+          ""
+        );
+
+        setIsLoadingEmployeeIncidentHistory(
+          true
+        );
+
+        try {
+          const response =
+            await authenticatedFetch(
+              `${INCIDENT_EMPLOYEE_HISTORY_URL}/${encodeURIComponent(
+                normalizedEmployeeId
+              )}`,
+              {
+                signal:
+                  requestController.signal,
+
+                headers: {
+                  Accept:
+                    "application/json",
+                },
+              }
+            );
+
+          const data =
+            await response
+              .json()
+              .catch(
+                () => null
+              );
+
+          if (!response.ok) {
+            throw new Error(
+              data?.error ||
+                data?.message ||
+                `Incident history request failed with status ${response.status}`
+            );
+          }
+
+          if (
+            requestController
+              .signal
+              .aborted
+          ) {
+            return [];
+          }
+
+          const history =
+            Array.isArray(
+              data
+            )
+              ? data
+              : [];
+
+          setEmployeeIncidentHistory(
+            history
+          );
+
+          return history;
+        } catch (error) {
+          if (
+            error?.name ===
+            "AbortError"
+          ) {
+            return [];
+          }
+
+          console.error(
+            "Incident employee history error:",
+            error
+          );
+
+          setEmployeeIncidentHistory(
+            []
+          );
+
+          setEmployeeIncidentHistoryError(
+            error?.message ||
+              "Unable to load the selected employee's complete incident history."
+          );
+
+          return [];
+        } finally {
+          if (
+            employeeIncidentHistoryRequestRef.current ===
+            requestController
+          ) {
+            employeeIncidentHistoryRequestRef.current =
+              null;
+
+            if (
+              !requestController
+                .signal
+                .aborted
+            ) {
+              setIsLoadingEmployeeIncidentHistory(
+                false
+              );
+            }
+          }
+        }
+      },
+      []
+    );
+
   const filteredEmployees =
     employeeOptions;
 
@@ -653,35 +875,44 @@ export default function AddIncidentModal({
       }
 
       return violationOptions
-        .filter((item) => {
-          const searchableText =
-            [
-              item.category,
-              item.section,
-              item.violation,
-              item.description,
-              item.penaltyLevel,
-              item.severity,
+        .filter(
+          (
+            item
+          ) => {
+            const searchableText =
+              [
+                item.category,
+                item.section,
+                item.violation,
+                item.description,
+                item.penaltyLevel,
+                item.severity,
 
-              ...(
-                item.penalties ||
-                []
-              ).map(
-                getPenaltySearchValue
-              ),
-            ]
-              .join(" ")
-              .replace(
-                /<[^>]*>/g,
-                ""
-              )
-              .toLowerCase();
+                ...(
+                  item.penalties ||
+                  []
+                ).map(
+                  getPenaltySearchValue
+                ),
+              ]
+                .join(
+                  " "
+                )
+                .replace(
+                  /<[^>]*>/g,
+                  ""
+                )
+                .toLowerCase();
 
-          return searchableText.includes(
-            keyword
-          );
-        })
-        .slice(0, 12);
+            return searchableText.includes(
+              keyword
+            );
+          }
+        )
+        .slice(
+          0,
+          12
+        );
     }, [
       isViolationPolicyReady,
       violationOptions,
@@ -695,11 +926,11 @@ export default function AddIncidentModal({
       }
 
       return getDuplicateIncidentCandidates(
-        existingIncidents,
+        employeeIncidentHistory,
         formData
       );
     }, [
-      existingIncidents,
+      employeeIncidentHistory,
       formData,
     ]);
 
@@ -726,7 +957,7 @@ export default function AddIncidentModal({
 
         const offenseCount =
           getNextOffenseCount(
-            existingIncidents,
+            employeeIncidentHistory,
             employeeId,
             violation
           );
@@ -744,7 +975,9 @@ export default function AddIncidentModal({
 
         const selectedRule =
           violationOptions.find(
-            (rule) =>
+            (
+              rule
+            ) =>
               rule.violation ===
               violation
           );
@@ -752,7 +985,8 @@ export default function AddIncidentModal({
         const severity =
           computeAutoSeverity({
             baseSeverity:
-              selectedRule?.severity ||
+              selectedRule
+                ?.severity ||
               "Minor",
 
             offenseCount,
@@ -768,14 +1002,71 @@ export default function AddIncidentModal({
         };
       },
       [
-        existingIncidents,
+        employeeIncidentHistory,
         violationOptions,
       ]
     );
 
+  useEffect(() => {
+    if (
+      isLoadingEmployeeIncidentHistory ||
+      employeeIncidentHistoryError
+    ) {
+      return;
+    }
+
+    setFormData(
+      (
+        current
+      ) => {
+        if (
+          !current?.employeeId ||
+          !current?.violation
+        ) {
+          return current;
+        }
+
+        const penaltyData =
+          computePenaltyData({
+            employeeId:
+              current.employeeId,
+
+            violation:
+              current.violation,
+
+            penalties:
+              current.penalties,
+
+            description:
+              current.description,
+          });
+
+        return {
+          ...current,
+          ...penaltyData,
+
+          duplicateVerified:
+            false,
+
+          duplicateVerificationNote:
+            "",
+        };
+      }
+    );
+
+    resetDuplicateVerification();
+  }, [
+    computePenaltyData,
+    employeeIncidentHistoryError,
+    isLoadingEmployeeIncidentHistory,
+    resetDuplicateVerification,
+  ]);
+
   const handleSelectEmployee =
     useCallback(
-      (selectedEmployee) => {
+      (
+        selectedEmployee
+      ) => {
         const activeDeployment =
           selectedEmployee
             ?.activeDeployment ||
@@ -785,7 +1076,8 @@ export default function AddIncidentModal({
           !activeDeployment
         ) {
           showCustomAlert({
-            type: "error",
+            type:
+              "error",
 
             title:
               "Deployment Not Available",
@@ -802,7 +1094,9 @@ export default function AddIncidentModal({
         );
 
         setFormData(
-          (current) => ({
+          (
+            current
+          ) => ({
             ...current,
 
             employeeId:
@@ -818,12 +1112,21 @@ export default function AddIncidentModal({
                 .company ||
               "",
 
-            offenseCount: 1,
-            selectedPenalty: null,
-            sanction: "",
-            severity: "",
+            offenseCount:
+              1,
+
+            selectedPenalty:
+              null,
+
+            sanction:
+              "",
+
+            severity:
+              "",
+
             duplicateVerified:
               false,
+
             duplicateVerificationNote:
               "",
           })
@@ -845,11 +1148,18 @@ export default function AddIncidentModal({
           false
         );
 
-        setIsReviewing(false);
+        setIsReviewing(
+          false
+        );
 
         resetDuplicateVerification();
+
+        void loadEmployeeIncidentHistory(
+          selectedEmployee.id
+        );
       },
       [
+        loadEmployeeIncidentHistory,
         resetDuplicateVerification,
         showCustomAlert,
       ]
@@ -857,7 +1167,9 @@ export default function AddIncidentModal({
 
   const handleEmployeeInputChange =
     useCallback(
-      (event) => {
+      (
+        event
+      ) => {
         setEmployeeSearch(
           event.target.value
         );
@@ -878,12 +1190,37 @@ export default function AddIncidentModal({
           true
         );
 
-        setIsReviewing(false);
+        setIsReviewing(
+          false
+        );
 
         resetDuplicateVerification();
 
+        if (
+          employeeIncidentHistoryRequestRef.current
+        ) {
+          employeeIncidentHistoryRequestRef.current.abort();
+
+          employeeIncidentHistoryRequestRef.current =
+            null;
+        }
+
+        setEmployeeIncidentHistory(
+          []
+        );
+
+        setIsLoadingEmployeeIncidentHistory(
+          false
+        );
+
+        setEmployeeIncidentHistoryError(
+          ""
+        );
+
         setFormData(
-          (current) => ({
+          (
+            current
+          ) => ({
             ...current,
             ...getClearedEmployeeFields(),
           })
@@ -896,7 +1233,9 @@ export default function AddIncidentModal({
 
   const handleSelectViolation =
     useCallback(
-      (selectedRule) => {
+      (
+        selectedRule
+      ) => {
         if (
           !isViolationPolicyReady
         ) {
@@ -904,7 +1243,9 @@ export default function AddIncidentModal({
         }
 
         setFormData(
-          (current) => {
+          (
+            current
+          ) => {
             const penalties =
               selectedRule.penalties ||
               [];
@@ -964,7 +1305,9 @@ export default function AddIncidentModal({
           false
         );
 
-        setIsReviewing(false);
+        setIsReviewing(
+          false
+        );
 
         resetDuplicateVerification();
       },
@@ -977,7 +1320,9 @@ export default function AddIncidentModal({
 
   const handleViolationInputChange =
     useCallback(
-      (event) => {
+      (
+        event
+      ) => {
         setViolationSearch(
           event.target.value
         );
@@ -986,12 +1331,16 @@ export default function AddIncidentModal({
           true
         );
 
-        setIsReviewing(false);
+        setIsReviewing(
+          false
+        );
 
         resetDuplicateVerification();
 
         setFormData(
-          (current) => ({
+          (
+            current
+          ) => ({
             ...current,
             ...getClearedViolationFields(),
           })
@@ -1004,19 +1353,27 @@ export default function AddIncidentModal({
 
   const handleChange =
     useCallback(
-      (event) => {
+      (
+        event
+      ) => {
         const {
           name,
           value,
-        } = event.target;
+        } =
+          event.target;
 
-        setIsReviewing(false);
+        setIsReviewing(
+          false
+        );
 
         setFormData(
-          (current) => {
+          (
+            current
+          ) => {
             const updated = {
               ...current,
-              [name]: value,
+              [name]:
+                value,
             };
 
             if (
@@ -1047,7 +1404,9 @@ export default function AddIncidentModal({
           }
         );
       },
-      [computePenaltyData]
+      [
+        computePenaltyData,
+      ]
     );
 
   const validateForm =
@@ -1057,7 +1416,9 @@ export default function AddIncidentModal({
         !formData?.employee
       ) {
         showCustomAlert({
-          type: "error",
+          type:
+            "error",
+
           title:
             "Employee Required",
 
@@ -1069,10 +1430,46 @@ export default function AddIncidentModal({
       }
 
       if (
+        isLoadingEmployeeIncidentHistory
+      ) {
+        showCustomAlert({
+          type:
+            "error",
+
+          title:
+            "Incident History Loading",
+
+          message:
+            "Please wait until the selected employee's complete incident history finishes loading.",
+        });
+
+        return false;
+      }
+
+      if (
+        employeeIncidentHistoryError
+      ) {
+        showCustomAlert({
+          type:
+            "error",
+
+          title:
+            "Incident History Unavailable",
+
+          message:
+            employeeIncidentHistoryError,
+        });
+
+        return false;
+      }
+
+      if (
         isLoadingViolationPolicy
       ) {
         showCustomAlert({
-          type: "error",
+          type:
+            "error",
+
           title:
             "Violation Policy Loading",
 
@@ -1089,7 +1486,9 @@ export default function AddIncidentModal({
           0
       ) {
         showCustomAlert({
-          type: "error",
+          type:
+            "error",
+
           title:
             "Violation Policy Unavailable",
 
@@ -1101,9 +1500,13 @@ export default function AddIncidentModal({
         return false;
       }
 
-      if (!formData?.violation) {
+      if (
+        !formData?.violation
+      ) {
         showCustomAlert({
-          type: "error",
+          type:
+            "error",
+
           title:
             "Violation Required",
 
@@ -1116,14 +1519,20 @@ export default function AddIncidentModal({
 
       const selectedRuleExists =
         violationOptions.some(
-          (rule) =>
+          (
+            rule
+          ) =>
             rule.violation ===
             formData.violation
         );
 
-      if (!selectedRuleExists) {
+      if (
+        !selectedRuleExists
+      ) {
         showCustomAlert({
-          type: "error",
+          type:
+            "error",
+
           title:
             "Violation Policy Changed",
 
@@ -1135,10 +1544,13 @@ export default function AddIncidentModal({
       }
 
       if (
-        !formData?.description?.trim()
+        !formData
+          ?.description
+          ?.trim()
       ) {
         showCustomAlert({
-          type: "error",
+          type:
+            "error",
 
           title:
             "Incident Description Required",
@@ -1152,7 +1564,9 @@ export default function AddIncidentModal({
 
       return true;
     }, [
+      employeeIncidentHistoryError,
       formData,
+      isLoadingEmployeeIncidentHistory,
       isLoadingViolationPolicy,
       showCustomAlert,
       violationOptions,
@@ -1161,10 +1575,14 @@ export default function AddIncidentModal({
 
   const handleReview =
     useCallback(
-      (event) => {
+      (
+        event
+      ) => {
         event.preventDefault();
 
-        if (!validateForm()) {
+        if (
+          !validateForm()
+        ) {
           return;
         }
 
@@ -1184,7 +1602,9 @@ export default function AddIncidentModal({
           });
 
         setFormData(
-          (current) => ({
+          (
+            current
+          ) => ({
             ...current,
             ...penaltyData,
           })
@@ -1198,10 +1618,13 @@ export default function AddIncidentModal({
           false
         );
 
-        setIsReviewing(true);
+        setIsReviewing(
+          true
+        );
 
         showCustomAlert({
-          type: "success",
+          type:
+            "success",
 
           title:
             "Report Ready for Review",
@@ -1219,174 +1642,193 @@ export default function AddIncidentModal({
     );
 
   const handleFinalSave =
-    useCallback(async () => {
-      if (
-        isSaving ||
-        !validateForm()
-      ) {
-        return;
-      }
-
-      const selectedEmployeeId =
-        String(
-          selectedEmployeeOption
-            ?.id ||
-          ""
-        );
-
-      const formEmployeeId =
-        String(
-          formData.employeeId ||
-          ""
-        );
-
-      const activeDeployment =
-        selectedEmployeeOption
-          ?.activeDeployment ||
-        null;
-
-      if (
-        !activeDeployment ||
-        !selectedEmployeeId ||
-        selectedEmployeeId !==
-          formEmployeeId
-      ) {
-        showCustomAlert({
-          type: "error",
-
-          title:
-            "Invalid Employee",
-
-          message:
-            "Please select a currently deployed employee from the server search results before saving.",
-        });
-
-        return;
-      }
-
-      if (
-        needsDuplicateVerification &&
-        !duplicateConfirmed
-      ) {
-        showCustomAlert({
-          type: "error",
-
-          title:
-            "Duplicate Verification Required",
-
-          message:
-            "A related active incident exists for the same employee and violation. Please verify the duplicate-check box before saving.",
-        });
-
-        return;
-      }
-
-      const penaltyData =
-        computePenaltyData({
-          employeeId:
-            formData.employeeId,
-
-          violation:
-            formData.violation,
-
-          penalties:
-            formData.penalties,
-
-          description:
-            formData.description,
-        });
-
-      const finalIncident =
-        buildFinalIncident({
-          formData: {
-            ...formData,
-
-            duplicateVerified:
-              needsDuplicateVerification
-                ? duplicateConfirmed
-                : false,
-
-            duplicateVerificationNote:
-              needsDuplicateVerification
-                ? "Possible duplicate or related active incident was verified by HR before saving."
-                : "",
-          },
-
-          penaltyData,
-          existingIncidents,
-        });
-
-      try {
-        setIsSaving(true);
-
-        closeCustomAlert();
-
-        const saved =
-          await onSave(
-            finalIncident
-          );
-
+    useCallback(
+      async () => {
         if (
-          saved === false
+          isSaving ||
+          !validateForm()
         ) {
-          setIsSaving(false);
           return;
         }
 
-        showCustomAlert({
-          type: "success",
-
-          title:
-            "Incident Report Saved",
-
-          message:
-            "The incident report has been successfully saved to the database.",
-        });
-
-        closeTimerRef.current =
-          window.setTimeout(
-            () => {
-              closeCustomAlert();
-
-              setIsSaving(
-                false
-              );
-
-              onClose();
-            },
-            900
+        const selectedEmployeeId =
+          String(
+            selectedEmployeeOption
+              ?.id ||
+              ""
           );
-      } catch (error) {
-        console.error(
-          "Final save incident error:",
-          error
-        );
 
-        setIsSaving(false);
+        const formEmployeeId =
+          String(
+            formData.employeeId ||
+              ""
+          );
 
-        showCustomAlert({
-          type: "error",
-          title: "Save Failed",
+        const activeDeployment =
+          selectedEmployeeOption
+            ?.activeDeployment ||
+          null;
 
-          message:
-            error?.message ||
-            "The incident report could not be saved. Please try again.",
-        });
-      }
-    }, [
-      closeCustomAlert,
-      computePenaltyData,
-      duplicateConfirmed,
-      existingIncidents,
-      formData,
-      isSaving,
-      needsDuplicateVerification,
-      onClose,
-      onSave,
-      selectedEmployeeOption,
-      showCustomAlert,
-      validateForm,
-    ]);
+        if (
+          !activeDeployment ||
+          !selectedEmployeeId ||
+          selectedEmployeeId !==
+            formEmployeeId
+        ) {
+          showCustomAlert({
+            type:
+              "error",
+
+            title:
+              "Invalid Employee",
+
+            message:
+              "Please select a currently deployed employee from the server search results before saving.",
+          });
+
+          return;
+        }
+
+        if (
+          needsDuplicateVerification &&
+          !duplicateConfirmed
+        ) {
+          showCustomAlert({
+            type:
+              "error",
+
+            title:
+              "Duplicate Verification Required",
+
+            message:
+              "A related active incident exists for the same employee and violation. Please verify the duplicate-check box before saving.",
+          });
+
+          return;
+        }
+
+        const penaltyData =
+          computePenaltyData({
+            employeeId:
+              formData.employeeId,
+
+            violation:
+              formData.violation,
+
+            penalties:
+              formData.penalties,
+
+            description:
+              formData.description,
+          });
+
+        const finalIncident =
+          buildFinalIncident({
+            formData: {
+              ...formData,
+
+              duplicateVerified:
+                needsDuplicateVerification
+                  ? duplicateConfirmed
+                  : false,
+
+              duplicateVerificationNote:
+                needsDuplicateVerification
+                  ? "Possible duplicate or related active incident was verified by HR before saving."
+                  : "",
+            },
+
+            penaltyData,
+
+            existingIncidents:
+              employeeIncidentHistory,
+          });
+
+        try {
+          setIsSaving(
+            true
+          );
+
+          closeCustomAlert();
+
+          const saved =
+            await onSave(
+              finalIncident
+            );
+
+          if (
+            saved ===
+            false
+          ) {
+            setIsSaving(
+              false
+            );
+
+            return;
+          }
+
+          showCustomAlert({
+            type:
+              "success",
+
+            title:
+              "Incident Report Saved",
+
+            message:
+              "The incident report has been successfully saved to the database.",
+          });
+
+          closeTimerRef.current =
+            window.setTimeout(
+              () => {
+                closeCustomAlert();
+
+                setIsSaving(
+                  false
+                );
+
+                onClose();
+              },
+              900
+            );
+        } catch (error) {
+          console.error(
+            "Final save incident error:",
+            error
+          );
+
+          setIsSaving(
+            false
+          );
+
+          showCustomAlert({
+            type:
+              "error",
+
+            title:
+              "Save Failed",
+
+            message:
+              error?.message ||
+              "The incident report could not be saved. Please try again.",
+          });
+        }
+      },
+      [
+        closeCustomAlert,
+        computePenaltyData,
+        duplicateConfirmed,
+        employeeIncidentHistory,
+        formData,
+        isSaving,
+        needsDuplicateVerification,
+        onClose,
+        onSave,
+        selectedEmployeeOption,
+        showCustomAlert,
+        validateForm,
+      ]
+    );
 
   if (
     !isOpen ||
@@ -1398,7 +1840,9 @@ export default function AddIncidentModal({
   return (
     <>
       <BaseModal
-        onClose={handleClose}
+        onClose={
+          handleClose
+        }
         title={
           isReviewing
             ? "Review Incident Report"
@@ -1415,7 +1859,9 @@ export default function AddIncidentModal({
             : "red"
         }
         size="lg"
-        preventClose={isSaving}
+        preventClose={
+          isSaving
+        }
         initialFocusRef={
           employeeInputRef
         }
@@ -1438,7 +1884,9 @@ export default function AddIncidentModal({
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <Field
                   label="Incident ID"
-                  icon={<FiHash />}
+                  icon={
+                    <FiHash />
+                  }
                 >
                   <input
                     type="text"
@@ -1458,15 +1906,19 @@ export default function AddIncidentModal({
                 >
                   <input
                     type="text"
-                    value={formatDateTime(
-                      formData.reportedAt
-                    )}
+                    value={
+                      formatDateTime(
+                        formData.reportedAt
+                      )
+                    }
                     disabled
                     className="input-field bg-gray-100 text-gray-600 dark:bg-slate-800"
                   />
                 </Field>
 
-                <Field label="Status">
+                <Field
+                  label="Status"
+                >
                   <input
                     type="text"
                     value="Open"
@@ -1479,7 +1931,9 @@ export default function AddIncidentModal({
 
             <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950/50">
               <SectionTitle
-                icon={<FiUser />}
+                icon={
+                  <FiUser />
+                }
                 title="Employee Details"
               />
 
@@ -1632,6 +2086,26 @@ export default function AddIncidentModal({
                         No deployed
                         employee found.
                       </div>
+                    )}
+
+                  {selectedEmployeeOption &&
+                    isLoadingEmployeeIncidentHistory && (
+                      <p className="mt-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        Loading complete incident history...
+                      </p>
+                    )}
+
+                  {selectedEmployeeOption &&
+                    !isLoadingEmployeeIncidentHistory &&
+                    employeeIncidentHistoryError && (
+                      <p
+                        role="alert"
+                        className="mt-2 text-xs font-medium text-red-600 dark:text-red-300"
+                      >
+                        {
+                          employeeIncidentHistoryError
+                        }
+                      </p>
                     )}
                 </div>
 
@@ -1789,7 +2263,9 @@ export default function AddIncidentModal({
                         className="absolute z-30 mt-2 max-h-72 w-full overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
                       >
                         {filteredViolations.map(
-                          (item) => (
+                          (
+                            item
+                          ) => (
                             <button
                               key={
                                 item.key
@@ -1906,6 +2382,7 @@ export default function AddIncidentModal({
                     {
                       formData.offenseCount
                     }
+
                     {getOrdinalSuffix(
                       Number(
                         formData.offenseCount
@@ -1943,7 +2420,9 @@ export default function AddIncidentModal({
               >
                 <textarea
                   name="description"
-                  rows={5}
+                  rows={
+                    5
+                  }
                   value={
                     formData.description
                   }
@@ -1977,6 +2456,7 @@ export default function AddIncidentModal({
                 type="submit"
                 disabled={
                   isSaving ||
+                  isLoadingEmployeeIncidentHistory ||
                   !isViolationPolicyReady
                 }
                 className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2035,9 +2515,11 @@ export default function AddIncidentModal({
 
               <ReviewItem
                 label="Reported Date and Time"
-                value={formatDateTime(
-                  formData.reportedAt
-                )}
+                value={
+                  formatDateTime(
+                    formData.reportedAt
+                  )
+                }
               />
 
               <ReviewItem
@@ -2147,6 +2629,7 @@ export default function AddIncidentModal({
                 }
                 disabled={
                   isSaving ||
+                  isLoadingEmployeeIncidentHistory ||
                   !isViolationPolicyReady
                 }
                 className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
