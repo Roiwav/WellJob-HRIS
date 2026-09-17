@@ -129,6 +129,10 @@ const express = require("express");
 const cors = require("cors");
 const compression = require("compression");
 
+// DATABASE
+const db =
+  require("./config/db");
+
 // MAINTENANCE MIDDLEWARE
 const checkMaintenanceMode =
   require(
@@ -497,12 +501,80 @@ const PORT =
     10
   );
 
-// START SERVER
-app.listen(
-  PORT,
-  () => {
-    console.log(
-      `Server running on port ${PORT}`
+/*
+ * ==================================================
+ * DATABASE STARTUP HEALTH CHECK
+ * ==================================================
+ *
+ * The HTTP server must not begin listening until
+ * the configured MySQL database is reachable.
+ *
+ * This prevents the process from advertising
+ * "Server running" while every database-backed
+ * request is guaranteed to fail.
+ */
+async function verifyDatabaseConnection() {
+  await db
+    .promise()
+    .query(
+      "SELECT 1 AS database_health_check"
     );
+}
+
+/*
+ * ==================================================
+ * START SERVER
+ * ==================================================
+ *
+ * Startup order:
+ * 1. Environment validation
+ * 2. Database connectivity verification
+ * 3. HTTP listener activation
+ *
+ * If the initial database check fails, terminate
+ * with a non-zero exit code so the deployment
+ * environment can report the backend as unhealthy.
+ */
+async function startServer() {
+  try {
+    await verifyDatabaseConnection();
+
+    console.log(
+      "Database connection verified."
+    );
+
+    app.listen(
+      PORT,
+      () => {
+        console.log(
+          `Server running on port ${PORT}`
+        );
+      }
+    );
+  } catch (error) {
+    console.error(
+      "FATAL STARTUP ERROR: Database connection could not be established.",
+      error
+    );
+
+    /*
+     * mysql2 pools may keep handles alive after a
+     * failed connection attempt. Close the pool
+     * before exiting whenever possible.
+     */
+    try {
+      await db
+        .promise()
+        .end();
+    } catch (closeError) {
+      console.error(
+        "Database pool cleanup failed during startup shutdown:",
+        closeError
+      );
+    }
+
+    process.exit(1);
   }
-);
+}
+
+startServer();
