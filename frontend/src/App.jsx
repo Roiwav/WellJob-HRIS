@@ -1,4 +1,6 @@
 import React, {
+  Suspense,
+  lazy,
   useEffect,
   useState,
 } from "react";
@@ -18,24 +20,68 @@ import {
 
 import MainLayout from "./layout/MainLayout";
 
-// Pages
-import Dashboard from "./pages/Dashboard";
-import Employees from "./pages/Employees";
-import ArchivedEmployees from "./pages/ArchivedEmployees";
-import Deployments from "./pages/Deployments";
-import Incidents from "./pages/Incidents";
-import KPIReports from "./pages/KPIReports";
-import Login from "./pages/Login";
-import Notifications from "./pages/Notifications";
-import Settings from "./pages/Settings";
-import SuperAdminPortal from "./pages/SuperAdminPortal";
-import ChangePassword from "./pages/ChangePassword";
-import SystemConfiguration from "./pages/SystemConfiguration";
-import SystemMaintenance from "./pages/SystemMaintenance";
+// Route-level code splitting.
+// Each page is downloaded only when its route is visited.
+const Dashboard = lazy(() =>
+  import("./pages/Dashboard")
+);
+
+const Employees = lazy(() =>
+  import("./pages/Employees")
+);
+
+const ArchivedEmployees = lazy(() =>
+  import("./pages/ArchivedEmployees")
+);
+
+const Deployments = lazy(() =>
+  import("./pages/Deployments")
+);
+
+const Incidents = lazy(() =>
+  import("./pages/Incidents")
+);
+
+const KPIReports = lazy(() =>
+  import("./pages/KPIReports")
+);
+
+const Login = lazy(() =>
+  import("./pages/Login")
+);
+
+const Notifications = lazy(() =>
+  import("./pages/Notifications")
+);
+
+const Settings = lazy(() =>
+  import("./pages/Settings")
+);
+
+const SuperAdminPortal = lazy(() =>
+  import("./pages/SuperAdminPortal")
+);
+
+const ChangePassword = lazy(() =>
+  import("./pages/ChangePassword")
+);
+
+const SystemConfiguration = lazy(() =>
+  import("./pages/SystemConfiguration")
+);
+
+const SystemMaintenance = lazy(() =>
+  import("./pages/SystemMaintenance")
+);
 
 // Audit pages
-import TechnicalAuditLogs from "./pages/TechnicalAuditLogs";
-import OperationalAuditLogs from "./pages/OperationalAuditLogs";
+const TechnicalAuditLogs = lazy(() =>
+  import("./pages/TechnicalAuditLogs")
+);
+
+const OperationalAuditLogs = lazy(() =>
+  import("./pages/OperationalAuditLogs")
+);
 
 // Authentication
 import {
@@ -254,6 +300,39 @@ function dispatchSessionInvalidEvent(
   );
 }
 
+function RouteLoadingFallback() {
+  return (
+    <div
+      className="flex min-h-[40vh] items-center justify-center px-4 py-10"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="text-center">
+        <div
+          className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-indigo-600 dark:border-white/10 dark:border-t-indigo-400"
+          aria-hidden="true"
+        />
+
+        <p className="mt-3 text-sm font-semibold text-gray-600 dark:text-gray-300">
+          Loading...
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function LazyRoute({ children }) {
+  return (
+    <Suspense
+      fallback={
+        <RouteLoadingFallback />
+      }
+    >
+      {children}
+    </Suspense>
+  );
+}
+
 function MaintenanceScreen() {
   const [
     isChecking,
@@ -413,7 +492,9 @@ function ApplicationContent({
       <Route
         path="/login"
         element={
-          <Login />
+          <LazyRoute>
+            <Login />
+          </LazyRoute>
         }
       />
 
@@ -434,7 +515,9 @@ function ApplicationContent({
         <Route
           path="/change-password"
           element={
-            <ChangePassword />
+            <LazyRoute>
+              <ChangePassword />
+            </LazyRoute>
           }
         />
 
@@ -462,7 +545,9 @@ function ApplicationContent({
             <Route
               path="/"
               element={
-                <Dashboard />
+                <LazyRoute>
+                  <Dashboard />
+                </LazyRoute>
               }
             />
           </Route>
@@ -480,28 +565,36 @@ function ApplicationContent({
             <Route
               path="/employees"
               element={
-                <Employees />
+                <LazyRoute>
+                  <Employees />
+                </LazyRoute>
               }
             />
 
             <Route
               path="/deployments"
               element={
-                <Deployments />
+                <LazyRoute>
+                  <Deployments />
+                </LazyRoute>
               }
             />
 
             <Route
               path="/incidents"
               element={
-                <Incidents />
+                <LazyRoute>
+                  <Incidents />
+                </LazyRoute>
               }
             />
 
             <Route
               path="/notifications"
               element={
-                <Notifications />
+                <LazyRoute>
+                  <Notifications />
+                </LazyRoute>
               }
             />
           </Route>
@@ -519,7 +612,9 @@ function ApplicationContent({
             <Route
               path="/employees/archive"
               element={
-                <ArchivedEmployees />
+                <LazyRoute>
+                  <ArchivedEmployees />
+                </LazyRoute>
               }
             />
           </Route>
@@ -537,7 +632,9 @@ function ApplicationContent({
             <Route
               path="/kpi"
               element={
-                <KPIReports />
+                <LazyRoute>
+                  <KPIReports />
+                </LazyRoute>
               }
             />
           </Route>
@@ -555,7 +652,9 @@ function ApplicationContent({
             <Route
               path="/system-configuration"
               element={
-                <SystemConfiguration />
+                <LazyRoute>
+                  <SystemConfiguration />
+                </LazyRoute>
               }
             />
           </Route>
@@ -573,21 +672,27 @@ function ApplicationContent({
             <Route
               path="/settings"
               element={
-                <Settings />
+                <LazyRoute>
+                  <Settings />
+                </LazyRoute>
               }
             />
 
             <Route
               path="/system-maintenance"
               element={
-                <SystemMaintenance />
+                <LazyRoute>
+                  <SystemMaintenance />
+                </LazyRoute>
               }
             />
 
             <Route
               path="/technical-audit-logs"
               element={
-                <TechnicalAuditLogs />
+                <LazyRoute>
+                  <TechnicalAuditLogs />
+                </LazyRoute>
               }
             />
           </Route>
@@ -605,14 +710,18 @@ function ApplicationContent({
             <Route
               path="/super-admin"
               element={
-                <SuperAdminPortal />
+                <LazyRoute>
+                  <SuperAdminPortal />
+                </LazyRoute>
               }
             />
 
             <Route
               path="/operational-audit-logs"
               element={
-                <OperationalAuditLogs />
+                <LazyRoute>
+                  <OperationalAuditLogs />
+                </LazyRoute>
               }
             />
           </Route>
