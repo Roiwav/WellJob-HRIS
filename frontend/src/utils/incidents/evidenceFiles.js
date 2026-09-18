@@ -448,18 +448,16 @@ export function normalizeEvidenceFiles(
           file.created_at,
 
         /*
-         * TEMPORARY MIGRATION COMPATIBILITY:
-         *
-         * Preserve the legacy URL field for now
-         * because ModalUI.jsx has not yet been
-         * migrated.
-         *
-         * The next frontend step will stop using
-         * this URL for persisted evidence.
-         *
-         * Do not remove /documents from the backend
-         * until that consumer migration is complete.
-         */
+ * LEGACY RESPONSE COMPATIBILITY:
+ *
+ * Preserve an existing URL field when one is
+ * supplied by older API responses or imported
+ * data. Persisted evidence previews no longer
+ * depend on this value; ModalUI opens saved
+ * evidence through the authenticated protected
+ * evidence endpoint using incidentId/evidenceId.
+ */
+
         url:
           file.url ||
           file.fileUrl ||

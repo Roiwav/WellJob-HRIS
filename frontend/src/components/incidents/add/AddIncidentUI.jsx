@@ -14,6 +14,46 @@ import {
 import Button from "../../ui/Button";
 import Dialog from "../../ui/Dialog";
 
+function getSafePolicyDescriptionText(value) {
+  const rawValue =
+    String(value || "").trim();
+
+  if (!rawValue) {
+    return "";
+  }
+
+  const withReadableBreaks =
+    rawValue
+      .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+      .replace(
+        /<\s*\/\s*(p|div|li|ul|ol)\s*>/gi,
+        "\n"
+      )
+      .replace(
+        /<\s*li(?:\s[^>]*)?>/gi,
+        "• "
+      );
+
+  if (typeof DOMParser !== "undefined") {
+    const parser = new DOMParser();
+    const document = parser.parseFromString(
+      withReadableBreaks,
+      "text/html"
+    );
+
+    return String(
+      document.body.textContent || ""
+    )
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  return withReadableBreaks
+    .replace(/<[^>]*>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function SectionTitle({ icon, title }) {
   return (
     <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">
@@ -93,13 +133,11 @@ export function PolicyCard({ formData }) {
         {formData.violationSection}
       </p>
 
-      <div
-        className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400"
-        dangerouslySetInnerHTML={{
-          __html:
-            formData.violationDescription || "",
-        }}
-      />
+      <p className="mt-2 whitespace-pre-line text-sm leading-6 text-gray-600 dark:text-gray-400">
+        {getSafePolicyDescriptionText(
+          formData.violationDescription
+        )}
+      </p>
     </div>
   );
 }

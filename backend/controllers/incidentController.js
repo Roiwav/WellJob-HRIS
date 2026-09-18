@@ -17,10 +17,6 @@ const {
   computeIncidentClassification,
 } = require("../utils/violationPolicyService");
 
-const API_BASE =
-  process.env.API_BASE_URL ||
-  "http://localhost:5000";
-
 const WORKFLOW_ACTION = {
   START: "START_INVESTIGATION",
   SUBMIT_RESOLUTION:
@@ -990,13 +986,6 @@ function serializeEvidenceItem(
       item.file_path
     );
 
-  const normalizedApiBase =
-    String(API_BASE || "")
-      .replace(
-        /\/+$/,
-        ""
-      );
-
   const isExternalUrl =
     /^https?:\/\//i.test(
       filePath
@@ -1012,11 +1001,9 @@ function serializeEvidenceItem(
     filePath,
 
     url:
-      !filePath
-        ? null
-        : isExternalUrl
-          ? filePath
-          : `${normalizedApiBase}${filePath}`,
+      isExternalUrl
+        ? filePath
+        : null,
   };
 }
 
