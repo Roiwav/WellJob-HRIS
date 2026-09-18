@@ -3,13 +3,39 @@ const path = require("path");
 
 const db = require("../config/db");
 
-const EMPLOYEE_DOCUMENT_DIRECTORY =
-  path.resolve(
-    __dirname,
-    "..",
-    "documents",
-    "employees"
-  );
+/*
+ * Approved employee-document storage namespaces.
+ *
+ * - documents/employees:
+ *   Current employee upload workflow.
+ *
+ * - documents/seed-defense:
+ *   Historical/synthetic defense dataset references
+ *   already stored in employee_documents.file_path.
+ *
+ * Each stored reference is converted back into a path
+ * underneath one of these explicitly approved roots.
+ */
+const DOCUMENT_STORAGE_ROOTS = [
+  {
+    marker: "documents/employees/",
+    directory: path.resolve(
+      __dirname,
+      "..",
+      "documents",
+      "employees"
+    ),
+  },
+  {
+    marker: "documents/seed-defense/",
+    directory: path.resolve(
+      __dirname,
+      "..",
+      "documents",
+      "seed-defense"
+    ),
+  },
+];
 
 const EMPLOYEE_DOCUMENT_CONTENT_TYPES = {
   ".pdf": "application/pdf",
@@ -18,24 +44,18 @@ const EMPLOYEE_DOCUMENT_CONTENT_TYPES = {
   ".jpeg": "image/jpeg",
 };
 
-function normalizeDocumentId(
-  value
-) {
-  const rawValue =
-    String(
-      value || ""
-    ).trim();
+function normalizeDocumentId(value) {
+  const rawValue = String(
+    value || ""
+  ).trim();
 
-  if (
-    !/^\d+$/.test(
-      rawValue
-    )
-  ) {
+  if (!/^\d+$/.test(rawValue)) {
     return null;
   }
 
-  const documentId =
-    Number(rawValue);
+  const documentId = Number(
+    rawValue
+  );
 
   if (
     !Number.isSafeInteger(
@@ -49,82 +69,141 @@ function normalizeDocumentId(
   return documentId;
 }
 
+function normalizeSlashes(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\\/g, "/");
+}
+
+function stripQueryAndFragment(value) {
+  return String(value || "")
+    .split(/[?#]/, 1)[0];
+}
+
+/*
+ * Convert supported current/historical references
+ * into a safe absolute path beneath an approved
+ * document root.
+ *
+ * Supported shapes include:
+ *
+ * documents/employees/file.pdf
+ * /documents/employees/file.pdf
+ * backend/documents/employees/file.pdf
+ * C:/.../backend/documents/employees/file.pdf
+ *
+ * documents/seed-defense/file.pdf
+ * /documents/seed-defense/file.pdf
+ * backend/documents/seed-defense/file.pdf
+ * C:/.../backend/documents/seed-defense/file.pdf
+ *
+ * URL-shaped historical references containing one
+ * of the approved markers are also normalized to the
+ * local approved storage root.
+ */
 function resolveStoredDocumentPath(
   storedFilePath
 ) {
-  const normalizedPath =
-    String(
-      storedFilePath || ""
-    )
-      .trim()
-      .replace(/\\/g, "/")
-      .replace(/^\/+/, "");
-
-  if (!normalizedPath) {
-    return null;
-  }
-
-  /*
-   * Only employee-document paths already stored
-   * by the existing employee upload workflow are
-   * accepted.
-   */
-  if (
-    !normalizedPath.startsWith(
-      "documents/employees/"
-    )
-  ) {
-    return null;
-  }
-
-  const absolutePath =
-    path.resolve(
-      __dirname,
-      "..",
-      normalizedPath
+  const cleanedPath =
+    stripQueryAndFragment(
+      normalizeSlashes(
+        storedFilePath
+      )
     );
 
-  const relativePath =
-    path.relative(
-      EMPLOYEE_DOCUMENT_DIRECTORY,
-      absolutePath
-    );
-
-  /*
-   * Reject:
-   * - the directory root itself
-   * - ../ traversal
-   * - any absolute path produced by path.relative
-   */
-  if (
-    !relativePath ||
-    relativePath.startsWith(
-      ".."
-    ) ||
-    path.isAbsolute(
-      relativePath
-    )
-  ) {
+  if (!cleanedPath) {
     return null;
   }
 
-  return absolutePath;
+  const lowerPath =
+    cleanedPath.toLowerCase();
+
+  for (
+    const storageRoot of
+      DOCUMENT_STORAGE_ROOTS
+  ) {
+    const markerIndex =
+      lowerPath.lastIndexOf(
+        storageRoot.marker
+      );
+
+    if (markerIndex < 0) {
+      continue;
+    }
+
+    const relativePath =
+      cleanedPath
+        .slice(
+          markerIndex +
+            storageRoot.marker.length
+        )
+        .replace(/^\/+/, "");
+
+    if (!relativePath) {
+      return null;
+    }
+
+    const absolutePath =
+      path.resolve(
+        storageRoot.directory,
+        relativePath
+      );
+
+    const relativeFromRoot =
+      path.relative(
+        storageRoot.directory,
+        absolutePath
+      );
+
+    /*
+     * Reject:
+     * - the storage root itself
+     * - ../ traversal
+     * - absolute escape paths
+     */
+    if (
+      !relativeFromRoot ||
+      relativeFromRoot.startsWith(
+        ".."
+      ) ||
+      path.isAbsolute(
+        relativeFromRoot
+      )
+    ) {
+      return null;
+    }
+
+    return {
+      absolutePath,
+      storageRoot:
+        storageRoot.directory,
+    };
+  }
+
+  return null;
 }
 
 async function resolveRealDocumentPath(
-  absolutePath
+  pathCandidate
 ) {
+  if (
+    !pathCandidate?.absolutePath ||
+    !pathCandidate?.storageRoot
+  ) {
+    return null;
+  }
+
   try {
     const [
       realDocumentDirectory,
       realFilePath,
     ] = await Promise.all([
       fs.promises.realpath(
-        EMPLOYEE_DOCUMENT_DIRECTORY
+        pathCandidate.storageRoot
       ),
 
       fs.promises.realpath(
-        absolutePath
+        pathCandidate.absolutePath
       ),
     ]);
 
@@ -136,11 +215,11 @@ async function resolveRealDocumentPath(
 
     /*
      * Perform containment verification again
-     * using real paths.
+     * using real filesystem paths.
      *
-     * This also protects against a filesystem
-     * symlink inside the employee document
-     * directory resolving outside that directory.
+     * This prevents a symlink inside an approved
+     * document directory from resolving outside
+     * that directory.
      */
     if (
       !relativePath ||
@@ -157,10 +236,8 @@ async function resolveRealDocumentPath(
     return realFilePath;
   } catch (error) {
     if (
-      error?.code ===
-        "ENOENT" ||
-      error?.code ===
-        "ENOTDIR"
+      error?.code === "ENOENT" ||
+      error?.code === "ENOTDIR"
     ) {
       return null;
     }
@@ -222,9 +299,11 @@ function getSafeResponseFileName(
  * 1. The client provides only the database document ID.
  * 2. file_path comes exclusively from employee_documents.
  * 3. The DB row must still belong to an existing employee.
- * 4. The path must remain inside:
- *    backend/documents/employees
- * 5. Existing files and database paths are never renamed
+ * 4. The resolved path must remain inside an explicitly
+ *    approved backend document storage root.
+ * 5. Historical seed-defense references are supported
+ *    without rewriting existing database rows.
+ * 6. Existing files and database paths are never renamed
  *    or deleted by this endpoint.
  */
 async function getEmployeeDocumentFile(
@@ -246,9 +325,7 @@ async function getEmployeeDocumentFile(
         });
     }
 
-    const [
-      documentRows,
-    ] =
+    const [documentRows] =
       await db
         .promise()
         .query(
@@ -263,9 +340,7 @@ async function getEmployeeDocumentFile(
           WHERE ed.id = ?
           LIMIT 1
           `,
-          [
-            documentId,
-          ]
+          [documentId]
         );
 
     if (
@@ -282,12 +357,12 @@ async function getEmployeeDocumentFile(
     const documentRecord =
       documentRows[0];
 
-    const candidatePath =
+    const pathCandidate =
       resolveStoredDocumentPath(
         documentRecord.file_path
       );
 
-    if (!candidatePath) {
+    if (!pathCandidate) {
       return res
         .status(404)
         .json({
@@ -298,7 +373,7 @@ async function getEmployeeDocumentFile(
 
     const realFilePath =
       await resolveRealDocumentPath(
-        candidatePath
+        pathCandidate
       );
 
     if (!realFilePath) {
@@ -335,9 +410,7 @@ async function getEmployeeDocumentFile(
       throw error;
     }
 
-    if (
-      !fileStats.isFile()
-    ) {
+    if (!fileStats.isFile()) {
       return res
         .status(404)
         .json({
@@ -354,9 +427,6 @@ async function getEmployeeDocumentFile(
     /*
      * Do not serve unexpected executable or
      * unsupported extensions through this endpoint.
-     *
-     * Full magic-byte upload validation will be
-     * handled separately during upload hardening.
      */
     if (!contentType) {
       return res
@@ -440,9 +510,7 @@ async function getEmployeeDocumentFile(
           }
         );
 
-        if (
-          res.headersSent
-        ) {
+        if (res.headersSent) {
           res.destroy(
             error
           );
@@ -464,7 +532,8 @@ async function getEmployeeDocumentFile(
           )
           .json({
             error:
-              statusCode === 404
+              statusCode ===
+              404
                 ? "Employee document file not found."
                 : "Unable to load employee document.",
           });
@@ -475,7 +544,8 @@ async function getEmployeeDocumentFile(
       "GET EMPLOYEE DOCUMENT ERROR:",
       {
         documentId:
-          req.params?.documentId ||
+          req.params
+            ?.documentId ||
           null,
 
         message:
