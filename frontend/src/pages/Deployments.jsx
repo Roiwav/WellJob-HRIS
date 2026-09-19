@@ -5,15 +5,18 @@ import {
   useRef,
   useState,
 } from "react";
+
 import {
   FiBriefcase,
   FiCalendar,
   FiRefreshCw,
 } from "react-icons/fi";
+
 import axios from "axios";
 
 import { useAuth } from "../context/useAuth";
 import { API_BASE } from "../config/api";
+import { ROLES } from "../constants/roles";
 
 import DeploymentTable from "../components/deployments/table/DeploymentTable";
 import DeploymentModal from "../components/deployments/modals/DeploymentModal";
@@ -95,7 +98,8 @@ function getAuthenticatedHeaders(
       ) || ""
     ).trim();
 
-  let normalizedHeaders = {};
+  let normalizedHeaders =
+    {};
 
   /*
    * Support either a plain object or a Headers
@@ -211,9 +215,7 @@ async function requestJson(
           () => null
         );
 
-    if (
-      !response.ok
-    ) {
+    if (!response.ok) {
       if (
         response.status ===
         401
@@ -369,6 +371,7 @@ function normalizeDeployment(
       deploymentId,
 
     deploymentId,
+
     employeeId,
 
     employee:
@@ -524,7 +527,28 @@ export default function Deployments() {
 
   const isSuperAdmin =
     user?.role ===
-    "SUPER_ADMIN";
+    ROLES.SUPER_ADMIN;
+
+  const isHRCoordinator =
+    user?.role ===
+    ROLES.HR_COORDINATOR;
+
+  /*
+   * Super Admin retains the existing view-only
+   * deployment behavior.
+   *
+   * HR Coordinator is also strictly view-only.
+   */
+  const isReadOnlyDeploymentAccess =
+    isSuperAdmin ||
+    isHRCoordinator;
+
+  const assignedCompany =
+    String(
+      user?.assignedCompany ??
+        user?.assigned_company ??
+        ""
+    ).trim();
 
   const [
     selectedDeployment,
@@ -576,9 +600,12 @@ export default function Deployments() {
     setPagination,
   ] = useState({
     page: 1,
+
     pageSize:
       DEPLOYMENT_PAGE_SIZE,
+
     total: 0,
+
     totalPages: 0,
   });
 
@@ -587,11 +614,17 @@ export default function Deployments() {
     setDeploymentSummary,
   ] = useState({
     companies: [],
+
     totalDeployments: 0,
+
     totalCompanies: 0,
+
     activeDeployments: 0,
+
     completedDeployments: 0,
+
     cancelledDeployments: 0,
+
     topCompany: null,
   });
 
@@ -638,15 +671,18 @@ export default function Deployments() {
         {
           label:
             "All Years",
+
           value:
             "",
         },
+
         ...availableYears.map(
           (year) => ({
             label:
               String(
                 year
               ),
+
             value:
               String(
                 year
@@ -772,6 +808,16 @@ export default function Deployments() {
                 selectedYear,
             });
 
+          /*
+           * SECURITY:
+           *
+           * Do NOT send a company query parameter for
+           * HR Coordinator.
+           *
+           * Backend authMiddleware +
+           * deploymentController determine the company
+           * from req.user.assignedCompany.
+           */
           const data =
             await requestJson(
               `${DEPLOYMENT_API_URL}?${params.toString()}`
@@ -911,9 +957,7 @@ export default function Deployments() {
           }
 
           return true;
-        } catch (
-          error
-        ) {
+        } catch (error) {
           if (
             requestId !==
               latestRequestIdRef.current
@@ -1043,9 +1087,7 @@ export default function Deployments() {
   const openView =
     useCallback(
       (deployment) => {
-        if (
-          !deployment
-        ) {
+        if (!deployment) {
           return;
         }
 
@@ -1075,11 +1117,20 @@ export default function Deployments() {
       async (
         updatedDeployment
       ) => {
+        /*
+         * Frontend defense in depth.
+         *
+         * Backend PATCH route remains authoritative,
+         * but read-only roles should never attempt
+         * the request from the UI.
+         */
         if (
-          isSuperAdmin
+          isReadOnlyDeploymentAccess
         ) {
           setFetchError(
-            "Super Admin access is view-only for deployment records."
+            isHRCoordinator
+              ? "HR Coordinator access is view-only for deployment records."
+              : "Super Admin access is view-only for deployment records."
           );
 
           return false;
@@ -1091,9 +1142,7 @@ export default function Deployments() {
           updatedDeployment
             ?.deployment_id;
 
-        if (
-          !deploymentId
-        ) {
+        if (!deploymentId) {
           setFetchError(
             "Unable to update deployment because the deployment ID is missing."
           );
@@ -1141,9 +1190,7 @@ export default function Deployments() {
           );
 
           return true;
-        } catch (
-          error
-        ) {
+        } catch (error) {
           console.error(
             "Error updating deployment status:",
             error
@@ -1161,7 +1208,8 @@ export default function Deployments() {
       },
       [
         fetchDeployments,
-        isSuperAdmin,
+        isHRCoordinator,
+        isReadOnlyDeploymentAccess,
       ]
     );
 
@@ -1189,9 +1237,18 @@ export default function Deployments() {
   const handleResetFilters =
     useCallback(() => {
       setSearch("");
-      setSelectedMonth("");
-      setSelectedYear("");
-      setPage(1);
+
+      setSelectedMonth(
+        ""
+      );
+
+      setSelectedYear(
+        ""
+      );
+
+      setPage(
+        1
+      );
     }, []);
 
   const visibleDeployments =
@@ -1205,9 +1262,15 @@ export default function Deployments() {
     );
 
   const pageDescription =
-    isSuperAdmin
-      ? "View continuous employee assignments and recorded separations. Super Admin access is view-only."
-      : "Monitor continuous employee assignments and record employee separations.";
+    isHRCoordinator
+      ? (
+          assignedCompany
+            ? `View deployment assignments for ${assignedCompany}. HR Coordinator access is view-only.`
+            : "View deployment assignments for your assigned client company. HR Coordinator access is view-only."
+        )
+      : isSuperAdmin
+        ? "View continuous employee assignments and recorded separations. Super Admin access is view-only."
+        : "Monitor continuous employee assignments and record employee separations.";
 
   return (
     <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
@@ -1270,6 +1333,9 @@ export default function Deployments() {
           summary={
             deploymentSummary
           }
+          isHRCoordinator={
+            isHRCoordinator
+          }
         />
       )}
 
@@ -1299,8 +1365,14 @@ export default function Deployments() {
           <SearchInput
             label="Search deployments"
             hideLabel
-            placeholder="Search ID, employee, company, location, or status..."
-            value={search}
+            placeholder={
+              isHRCoordinator
+                ? "Search employee, location, status, or deployment ID..."
+                : "Search ID, employee, company, location, or status..."
+            }
+            value={
+              search
+            }
             disabled={
               isLoading ||
               isRefreshing
@@ -1351,7 +1423,8 @@ export default function Deployments() {
               disabled={
                 isLoading ||
                 isRefreshing
-              }              onChange={(
+              }
+              onChange={(
                 event
               ) => {
                 setSelectedMonth(
@@ -1401,18 +1474,19 @@ export default function Deployments() {
             disabled={
               isLoading ||
               isRefreshing
-            }              onChange={(
-                event
-              ) => {
-                setSelectedYear(
-                  event.target
-                    .value
-                );
+            }
+            onChange={(
+              event
+            ) => {
+              setSelectedYear(
+                event.target
+                  .value
+              );
 
-                setPage(
-                  1
-                );
-              }}
+              setPage(
+                1
+              );
+            }}
             className={
               SELECT_CLASS_NAME
             }
@@ -1458,6 +1532,9 @@ export default function Deployments() {
           isSuperAdmin={
             isSuperAdmin
           }
+          isReadOnly={
+            isHRCoordinator
+          }
         />
       ) : (
         <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900 sm:p-6">
@@ -1475,7 +1552,9 @@ export default function Deployments() {
             description={
               hasActiveFilters
                 ? "No deployment records matched the current search and date filters."
-                : "Deployment records will appear once employees are assigned."
+                : isHRCoordinator
+                  ? "No deployment records are currently available for your assigned company."
+                  : "Deployment records will appear once employees are assigned."
             }
             secondaryActionLabel={
               hasActiveFilters
@@ -1595,6 +1674,7 @@ export default function Deployments() {
 
 function ClientDeploymentSummary({
   summary,
+  isHRCoordinator = false,
 }) {
   const [
     showAllCompanies,
@@ -1671,15 +1751,20 @@ function ClientDeploymentSummary({
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-              Client Deployment Summary
+              {isHRCoordinator
+                ? "Assigned Client Deployment Summary"
+                : "Client Deployment Summary"}
             </h2>
 
             <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Overview of assigned employees per client company.
+              {isHRCoordinator
+                ? "Overview of deployment records for your assigned client company."
+                : "Overview of assigned employees per client company."}
             </p>
           </div>
 
-          {summaryData.topCompany && (
+          {!isHRCoordinator &&
+            summaryData.topCompany && (
             <div className="w-fit max-w-full rounded-2xl border border-indigo-100 bg-white px-4 py-3 dark:border-indigo-500/20 dark:bg-slate-900">
               <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
                 Highest Deployment
@@ -1711,7 +1796,13 @@ function ClientDeploymentSummary({
           )}
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <div
+          className={
+            isHRCoordinator
+              ? "mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4"
+              : "mt-5 grid grid-cols-2 gap-3 lg:grid-cols-5"
+          }
+        >
           <SummaryStatCard
             label="Total"
             value={
@@ -1721,14 +1812,16 @@ function ClientDeploymentSummary({
             helper="All records"
           />
 
-          <SummaryStatCard
-            label="Companies"
-            value={
-              summaryData
-                .totalCompanies
-            }
-            helper="Client companies"
-          />
+          {!isHRCoordinator && (
+            <SummaryStatCard
+              label="Companies"
+              value={
+                summaryData
+                  .totalCompanies
+              }
+              helper="Client companies"
+            />
+          )}
 
           <SummaryStatCard
             label="Active"
@@ -1766,27 +1859,22 @@ function ClientDeploymentSummary({
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-              Distribution by Client
+              {isHRCoordinator
+                ? "Assigned Client"
+                : "Distribution by Client"}
             </h3>
 
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Showing{" "}
-              {
-                visibleCompanies.length
-              }{" "}
-              of{" "}
-              {
-                summaryData
-                  .companies
-                  .length
-              }{" "}
-              companies.
+              {isHRCoordinator
+                ? "Deployment statistics are limited to your assigned company."
+                : `Showing ${visibleCompanies.length} of ${summaryData.companies.length} companies.`}
             </p>
           </div>
 
-          {summaryData
-            .companies
-            .length > 6 && (
+          {!isHRCoordinator &&
+            summaryData
+              .companies
+              .length > 6 && (
             <Button
               variant="secondary"
               size="sm"
@@ -1816,13 +1904,18 @@ function ClientDeploymentSummary({
                 key={
                   item.company
                 }
-                item={item}
+                item={
+                  item
+                }
                 rank={
                   index + 1
                 }
                 totalDeployments={
                   summaryData
                     .totalDeployments
+                }
+                showRank={
+                  !isHRCoordinator
                 }
               />
             )
@@ -1883,6 +1976,7 @@ function ClientCompanyRow({
   item,
   rank,
   totalDeployments,
+  showRank = true,
 }) {
   const percentage =
     totalDeployments > 0
@@ -1901,9 +1995,11 @@ function ClientCompanyRow({
   return (
     <article className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 transition hover:border-indigo-300 hover:bg-white hover:shadow-sm dark:border-white/10 dark:bg-slate-950/40 dark:hover:border-indigo-500/50 dark:hover:bg-slate-950">
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-500 shadow-sm dark:bg-slate-900 dark:text-slate-400">
-          #{rank}
-        </div>
+        {showRank && (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-500 shadow-sm dark:bg-slate-900 dark:text-slate-400">
+            #{rank}
+          </div>
+        )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">

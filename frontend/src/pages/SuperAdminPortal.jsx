@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import {
+  FiBriefcase,
   FiCheckCircle,
   FiCopy,
   FiLock,
@@ -60,6 +61,12 @@ const ROLE_CONFIG = {
     usernamePrefix: "hm",
   },
 
+  [ROLES.HR_COORDINATOR]: {
+    label: "HR Coordinator",
+    prefix: "HC",
+    usernamePrefix: "hc",
+  },
+
   [ROLES.IT_SUPPORT]: {
     label: "IT Support",
     prefix: "IT",
@@ -71,6 +78,8 @@ const ROLE_LABELS = {
   SUPER_ADMIN: "Super Admin",
   HR_MANAGER: "HR Manager",
   HR_STAFF: "HR Staff",
+  HR_COORDINATOR:
+    "HR Coordinator",
   IT_SUPPORT: "IT Support",
 };
 
@@ -289,6 +298,27 @@ function getAccountStatus(
     : "Inactive";
 }
 
+function getAssignedCompany(
+  account
+) {
+  return String(
+    account?.assignedCompany ??
+      account?.assigned_company ??
+      ""
+  ).trim();
+}
+
+function isHrCoordinatorAccount(
+  account
+) {
+  return (
+    normalizeRole(
+      account?.role
+    ) ===
+    ROLES.HR_COORDINATOR
+  );
+}
+
 function isProtectedAccount(
   account
 ) {
@@ -409,6 +439,16 @@ export default function SuperAdminPortal() {
   const [accounts, setAccounts] =
     useState([]);
 
+  const [
+    companyOptions,
+    setCompanyOptions,
+  ] = useState([]);
+
+  const [
+    selectedCompany,
+    setSelectedCompany,
+  ] = useState("");
+
   const [name, setName] =
     useState("");
 
@@ -462,6 +502,11 @@ export default function SuperAdminPortal() {
   ] = useState(false);
 
   const [
+    isLoadingCompanyOptions,
+    setIsLoadingCompanyOptions,
+  ] = useState(true);
+
+  const [
     isSubmitting,
     setIsSubmitting,
   ] = useState(false);
@@ -490,6 +535,7 @@ export default function SuperAdminPortal() {
     temporaryPassword: "",
     name: "",
     roleLabel: "",
+    assignedCompany: "",
   });
 
   const [
@@ -512,6 +558,16 @@ export default function SuperAdminPortal() {
     setToggleTarget,
   ] = useState(null);
 
+  const [
+    assignmentTarget,
+    setAssignmentTarget,
+  ] = useState(null);
+
+  const [
+    assignmentCompany,
+    setAssignmentCompany,
+  ] = useState("");
+
   const isMountedRef =
     useRef(true);
 
@@ -520,6 +576,10 @@ export default function SuperAdminPortal() {
     ROLE_CONFIG[
       ROLES.HR_STAFF
     ];
+
+  const isCreatingHrCoordinator =
+    role ===
+    ROLES.HR_COORDINATOR;
 
   const isProcessing =
     Boolean(
@@ -630,12 +690,148 @@ export default function SuperAdminPortal() {
       []
     );
 
+  const fetchCompanyOptions =
+    useCallback(
+      async ({
+        showLoading = false,
+        showError = true,
+      } = {}) => {
+        if (
+          showLoading
+        ) {
+          setIsLoadingCompanyOptions(
+            true
+          );
+        }
+
+        try {
+          if (showError) {
+            setPageError("");
+          }
+
+          const data =
+            await requestJson(
+              `${USERS_API_URL}/company-options`
+            );
+
+          if (
+            !isMountedRef.current
+          ) {
+            return false;
+          }
+
+          const companies =
+            Array.isArray(
+              data?.companies
+            )
+              ? data.companies
+                  .map(
+                    (company) =>
+                      String(
+                        company ||
+                          ""
+                      ).trim()
+                  )
+                  .filter(Boolean)
+              : [];
+
+          setCompanyOptions(
+            Array.from(
+              new Set(
+                companies
+              )
+            ).sort(
+              (
+                first,
+                second
+              ) =>
+                first.localeCompare(
+                  second
+                )
+            )
+          );
+
+          return true;
+        } catch (error) {
+          console.error(
+            "Fetch company options error:",
+            error
+          );
+
+          if (
+            showError &&
+            isMountedRef.current
+          ) {
+            setPageError(
+              getApiError(
+                error,
+                "Unable to load client company options."
+              )
+            );
+          }
+
+          return false;
+        } finally {
+          if (
+            showLoading &&
+            isMountedRef.current
+          ) {
+            setIsLoadingCompanyOptions(
+              false
+            );
+          }
+        }
+      },
+      []
+    );
+
   useEffect(() => {
-    void fetchUsers({
-      showInitialLoading:
-        true,
-    });
-  }, [fetchUsers]);
+    void Promise.all([
+      fetchUsers({
+        showInitialLoading:
+          true,
+      }),
+
+      fetchCompanyOptions({
+        showLoading:
+          true,
+      }),
+    ]);
+  }, [
+    fetchCompanyOptions,
+    fetchUsers,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isCreatingHrCoordinator
+    ) {
+      if (selectedCompany) {
+        setSelectedCompany(
+          ""
+        );
+      }
+
+      return;
+    }
+
+    if (
+      selectedCompany &&
+      !companyOptions.some(
+        (company) =>
+          company ===
+          selectedCompany
+      )
+    ) {
+      setSelectedCompany(
+        ""
+      );
+    }
+  }, [
+    companyOptions,
+    isCreatingHrCoordinator,
+    selectedCompany,
+  ]);
 
   const nextGeneratedAccount =
     useMemo(() => {
@@ -780,6 +976,9 @@ export default function SuperAdminPortal() {
                 getRoleLabel(
                   account?.role
                 ),
+                getAssignedCompany(
+                  account
+                ),
                 getAccountStatus(
                   account
                 ),
@@ -827,10 +1026,19 @@ export default function SuperAdminPortal() {
         return;
       }
 
-      await fetchUsers({
-        showRefreshing: true,
-      });
+      await Promise.all([
+        fetchUsers({
+          showRefreshing:
+            true,
+        }),
+
+        fetchCompanyOptions({
+          showError:
+            true,
+        }),
+      ]);
     }, [
+      fetchCompanyOptions,
       fetchUsers,
       isBusy,
       isLoadingAccounts,
@@ -874,6 +1082,24 @@ export default function SuperAdminPortal() {
       }
 
       if (
+        isCreatingHrCoordinator
+      ) {
+        if (
+          !selectedCompany
+        ) {
+          return "Please assign a client company to the HR Coordinator account.";
+        }
+
+        if (
+          !companyOptions.includes(
+            selectedCompany
+          )
+        ) {
+          return "Please select a valid client company assignment.";
+        }
+      }
+
+      if (
         !userId ||
         !username
       ) {
@@ -882,8 +1108,11 @@ export default function SuperAdminPortal() {
 
       return "";
     }, [
+      companyOptions,
+      isCreatingHrCoordinator,
       name,
       role,
+      selectedCompany,
       userId,
       username,
     ]);
@@ -981,6 +1210,11 @@ export default function SuperAdminPortal() {
 
                   role,
 
+                  assignedCompany:
+                    isCreatingHrCoordinator
+                      ? selectedCompany
+                      : undefined,
+
                   temporaryPassword:
                     generatedPassword,
                 }),
@@ -1013,6 +1247,17 @@ export default function SuperAdminPortal() {
             getRoleLabel(
               role
             ),
+
+          assignedCompany:
+            data?.account
+              ?.assignedCompany ||
+            data?.account
+              ?.assigned_company ||
+            (
+              isCreatingHrCoordinator
+                ? selectedCompany
+                : ""
+            ),
         });
 
         setIsConfirmDialogOpen(
@@ -1027,6 +1272,10 @@ export default function SuperAdminPortal() {
 
         setRole(
           ROLES.HR_STAFF
+        );
+
+        setSelectedCompany(
+          ""
         );
 
         setValidationError("");
@@ -1062,8 +1311,10 @@ export default function SuperAdminPortal() {
     }, [
       fetchUsers,
       isBusy,
+      isCreatingHrCoordinator,
       name,
       role,
+      selectedCompany,
       validateForm,
     ]);
 
@@ -1090,6 +1341,14 @@ export default function SuperAdminPortal() {
     const credentials = [
       `Full Name: ${createdAccount.name}`,
       `Role: ${createdAccount.roleLabel}`,
+
+      ...(createdAccount
+        .assignedCompany
+        ? [
+            `Assigned Company: ${createdAccount.assignedCompany}`,
+          ]
+        : []),
+
       `User ID: ${createdAccount.userId}`,
       `Username: ${createdAccount.username}`,
       `Temporary Password: ${createdAccount.temporaryPassword}`,
@@ -1527,6 +1786,205 @@ export default function SuperAdminPortal() {
       toggleTarget,
     ]);
 
+  const handleOpenAssignment =
+    useCallback(
+      (account) => {
+        if (
+          !account?.id ||
+          isBusy ||
+          !isHrCoordinatorAccount(
+            account
+          )
+        ) {
+          return;
+        }
+
+        setPageError("");
+
+        setAssignmentTarget(
+          account
+        );
+
+        setAssignmentCompany(
+          getAssignedCompany(
+            account
+          )
+        );
+      },
+      [
+        isBusy,
+      ]
+    );
+
+  const handleCloseAssignment =
+    useCallback(() => {
+      if (
+        processingAction ===
+        "assignment"
+      ) {
+        return;
+      }
+
+      setAssignmentTarget(
+        null
+      );
+
+      setAssignmentCompany(
+        ""
+      );
+    }, [
+      processingAction,
+    ]);
+
+  const handleConfirmAssignment =
+    useCallback(async () => {
+      if (
+        !assignmentTarget?.id ||
+        isBusy ||
+        !isHrCoordinatorAccount(
+          assignmentTarget
+        )
+      ) {
+        return;
+      }
+
+      const normalizedCompany =
+        String(
+          assignmentCompany ||
+            ""
+        ).trim();
+
+      if (
+        !normalizedCompany ||
+        !companyOptions.includes(
+          normalizedCompany
+        )
+      ) {
+        setPageError(
+          "Please select a valid client company assignment."
+        );
+
+        return;
+      }
+
+      const accountName =
+        getAccountName(
+          assignmentTarget
+        );
+
+      try {
+        setProcessingAction(
+          "assignment"
+        );
+
+        setPageError("");
+
+        const data =
+          await requestJson(
+            `${USERS_API_URL}/${encodeURIComponent(
+              assignmentTarget.id
+            )}/assigned-company`,
+            {
+              method: "PUT",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify({
+                  assignedCompany:
+                    normalizedCompany,
+                }),
+            }
+          );
+
+        if (
+          !isMountedRef.current
+        ) {
+          return;
+        }
+
+        const updatedCompany =
+          String(
+            data?.assignedCompany ||
+              data?.assigned_company ||
+              normalizedCompany
+          ).trim();
+
+        setAccounts(
+          (currentAccounts) =>
+            currentAccounts.map(
+              (account) =>
+                String(
+                  account?.id
+                ) ===
+                String(
+                  assignmentTarget.id
+                )
+                  ? {
+                      ...account,
+
+                      assigned_company:
+                        updatedCompany,
+
+                      assignedCompany:
+                        updatedCompany,
+                    }
+                  : account
+            )
+        );
+
+        setAssignmentTarget(
+          null
+        );
+
+        setAssignmentCompany(
+          ""
+        );
+
+        setSuccessMessage(
+          `${accountName} is now assigned to ${updatedCompany}. The coordinator must sign in again if an existing session was active.`
+        );
+
+        void fetchUsers({
+          showError:
+            false,
+        });
+      } catch (error) {
+        console.error(
+          "Update HR Coordinator company assignment error:",
+          error
+        );
+
+        if (
+          isMountedRef.current
+        ) {
+          setPageError(
+            getApiError(
+              error,
+              "Unable to update the HR Coordinator company assignment."
+            )
+          );
+        }
+      } finally {
+        if (
+          isMountedRef.current
+        ) {
+          setProcessingAction(
+            ""
+          );
+        }
+      }
+    }, [
+      assignmentCompany,
+      assignmentTarget,
+      companyOptions,
+      fetchUsers,
+      isBusy,
+    ]);
+
   const resetAccountName =
     getAccountName(
       resetTarget
@@ -1542,6 +2000,16 @@ export default function SuperAdminPortal() {
       toggleTarget
     );
 
+  const assignmentAccountName =
+    getAccountName(
+      assignmentTarget
+    );
+
+  const assignmentCurrentCompany =
+    getAssignedCompany(
+      assignmentTarget
+    );
+
   const willActivate =
     toggleCurrentStatus !==
     "Active";
@@ -1551,7 +2019,7 @@ export default function SuperAdminPortal() {
       <PageHeader
         eyebrow="System Administration"
         title="Super Admin Portal"
-        description="Create, review, and securely manage internal system accounts."
+        description="Create, review, and securely manage internal system accounts, including company-scoped HR Coordinator access."
         icon={
           <FiShield
             size={22}
@@ -1671,7 +2139,7 @@ export default function SuperAdminPortal() {
                 </h2>
 
                 <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-                  Create an internal account and assign an authorized system role.
+                  Create an internal account, assign an authorized system role, and bind HR Coordinator access to a specific client company.
                 </p>
               </div>
             </div>
@@ -1736,10 +2204,22 @@ export default function SuperAdminPortal() {
                     onChange={(
                       event
                     ) => {
-                      setRole(
+                      const nextRole =
                         event.target
-                          .value
+                          .value;
+
+                      setRole(
+                        nextRole
                       );
+
+                      if (
+                        nextRole !==
+                        ROLES.HR_COORDINATOR
+                      ) {
+                        setSelectedCompany(
+                          ""
+                        );
+                      }
 
                       setValidationError(
                         ""
@@ -1764,6 +2244,14 @@ export default function SuperAdminPortal() {
 
                     <option
                       value={
+                        ROLES.HR_COORDINATOR
+                      }
+                    >
+                      HR Coordinator
+                    </option>
+
+                    <option
+                      value={
                         ROLES.IT_SUPPORT
                       }
                     >
@@ -1772,6 +2260,74 @@ export default function SuperAdminPortal() {
                   </select>
                 </div>
               </div>
+
+              {isCreatingHrCoordinator && (
+                <div>
+                  <label
+                    htmlFor="super-admin-assigned-company"
+                    className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300"
+                  >
+                    Assigned Client Company
+                  </label>
+
+                  <select
+                    id="super-admin-assigned-company"
+                    value={
+                      selectedCompany
+                    }
+                    disabled={
+                      isBusy ||
+                      isLoadingCompanyOptions
+                    }
+                    className={
+                      CONTROL_CLASS_NAME
+                    }
+                    onChange={(
+                      event
+                    ) => {
+                      setSelectedCompany(
+                        event.target
+                          .value
+                      );
+
+                      setValidationError(
+                        ""
+                      );
+                    }}
+                  >
+                    <option value="">
+                      {isLoadingCompanyOptions
+                        ? "Loading client companies..."
+                        : companyOptions.length
+                          ? "Select client company"
+                          : "No client companies available"}
+                    </option>
+
+                    {companyOptions.map(
+                      (
+                        company
+                      ) => (
+                        <option
+                          key={
+                            company
+                          }
+                          value={
+                            company
+                          }
+                        >
+                          {
+                            company
+                          }
+                        </option>
+                      )
+                    )}
+                  </select>
+
+                  <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                    HR Coordinator access will be limited to employee, deployment, and incident data for this assigned client company.
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div>
@@ -1836,7 +2392,21 @@ export default function SuperAdminPortal() {
                 <strong>
                   {username}
                 </strong>
-                .
+                {isCreatingHrCoordinator &&
+                selectedCompany
+                  ? (
+                    <>
+                      {" "}
+                      assigned to{" "}
+                      <strong>
+                        {
+                          selectedCompany
+                        }
+                      </strong>
+                      .
+                    </>
+                  )
+                  : "."}
               </div>
 
               {validationError && (
@@ -1863,7 +2433,11 @@ export default function SuperAdminPortal() {
                   }
                   disabled={
                     isBusy ||
-                    isLoadingAccounts
+                    isLoadingAccounts ||
+                    (
+                      isCreatingHrCoordinator &&
+                      isLoadingCompanyOptions
+                    )
                   }
                 >
                   Create Account
@@ -1891,7 +2465,7 @@ export default function SuperAdminPortal() {
             </h2>
 
             <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              Review and manage internal accounts created for HR and IT support roles.
+              Review and manage internal accounts created for HR, HR Coordinator, and IT support roles.
             </p>
           </header>
 
@@ -1923,7 +2497,7 @@ export default function SuperAdminPortal() {
                 <SearchInput
                   label="Search created accounts"
                   hideLabel
-                  placeholder="Search ID, name, username, role, or status..."
+                  placeholder="Search ID, name, username, role, company, or status..."
                   value={search}
                   disabled={
                     isLoadingAccounts ||
@@ -1996,6 +2570,14 @@ export default function SuperAdminPortal() {
 
                   <option
                     value={
+                      ROLES.HR_COORDINATOR
+                    }
+                  >
+                    HR Coordinator
+                  </option>
+
+                  <option
+                    value={
                       ROLES.IT_SUPPORT
                     }
                   >
@@ -2010,14 +2592,14 @@ export default function SuperAdminPortal() {
             <div className="p-5 sm:p-6">
               <LoadingSkeleton
                 rows={6}
-                columns={6}
+                columns={7}
                 showHeader
               />
             </div>
           ) : filteredAccounts.length >
             0 ? (
             <div className="max-h-[650px] overflow-auto">
-              <table className="w-full min-w-[1020px] border-separate border-spacing-0 text-left text-sm">
+              <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
                   <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     <th className="px-5 py-4 sm:px-6">
@@ -2034,6 +2616,10 @@ export default function SuperAdminPortal() {
 
                     <th className="px-5 py-4 sm:px-6">
                       Role
+                    </th>
+
+                    <th className="px-5 py-4 sm:px-6">
+                      Assigned Company
                     </th>
 
                     <th className="px-5 py-4 sm:px-6">
@@ -2068,6 +2654,16 @@ export default function SuperAdminPortal() {
 
                       const isProtected =
                         isProtectedAccount(
+                          account
+                        );
+
+                      const isHrCoordinator =
+                        isHrCoordinatorAccount(
+                          account
+                        );
+
+                      const assignedCompany =
+                        getAssignedCompany(
                           account
                         );
 
@@ -2107,6 +2703,33 @@ export default function SuperAdminPortal() {
                             </span>
                           </td>
 
+                          <td className="px-5 py-4 sm:px-6">
+                            {isHrCoordinator ? (
+                              <span
+                                title={
+                                  assignedCompany ||
+                                  "No company assigned"
+                                }
+                                className="inline-flex max-w-[260px] items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+                              >
+                                <FiBriefcase
+                                  size={12}
+                                  aria-hidden="true"
+                                  className="shrink-0"
+                                />
+
+                                <span className="truncate">
+                                  {assignedCompany ||
+                                    "Not Assigned"}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 dark:text-gray-500">
+                                —
+                              </span>
+                            )}
+                          </td>
+
                           <td className="whitespace-nowrap px-5 py-4 sm:px-6">
                             <StatusBadge
                               status={
@@ -2122,6 +2745,28 @@ export default function SuperAdminPortal() {
                                 <ProtectedAction />
                               ) : (
                                 <>
+                                  {isHrCoordinator && (
+                                    <IconButton
+                                      label={`Assign client company for ${accountName}`}
+                                      title="Assign Client Company"
+                                      variant="secondary"
+                                      size="md"
+                                      disabled={
+                                        isBusy ||
+                                        isLoadingCompanyOptions
+                                      }
+                                      onClick={() =>
+                                        handleOpenAssignment(
+                                          account
+                                        )
+                                      }
+                                    >
+                                      <FiBriefcase
+                                        aria-hidden="true"
+                                      />
+                                    </IconButton>
+                                  )}
+
                                   <IconButton
                                     label={`Reset password for ${accountName}`}
                                     title="Reset Password"
@@ -2246,7 +2891,11 @@ export default function SuperAdminPortal() {
           isSubmitting ||
           !name.trim() ||
           !userId ||
-          !username
+          !username ||
+          (
+            isCreatingHrCoordinator &&
+            !selectedCompany
+          )
         }
         closeOnBackdrop={
           !isSubmitting
@@ -2274,6 +2923,15 @@ export default function SuperAdminPortal() {
               getRoleLabel(role)
             }
           />
+
+          {isCreatingHrCoordinator && (
+            <AccountDetailRow
+              label="Assigned Company"
+              value={
+                selectedCompany
+              }
+            />
+          )}
 
           <AccountDetailRow
             label="User ID"
@@ -2360,6 +3018,17 @@ export default function SuperAdminPortal() {
             }
           />
 
+          {createdAccount
+            .assignedCompany && (
+            <AccountDetailRow
+              label="Assigned Company"
+              value={
+                createdAccount
+                  .assignedCompany
+              }
+            />
+          )}
+
           <AccountDetailRow
             label="User ID"
             value={
@@ -2397,6 +3066,145 @@ export default function SuperAdminPortal() {
         <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">
           Do not send temporary credentials through public or unsecured channels.
         </p>
+      </Dialog>
+
+      <Dialog
+        open={
+          Boolean(
+            assignmentTarget
+          )
+        }
+        onClose={
+          handleCloseAssignment
+        }
+        title="Assign HR Coordinator Company"
+        description={`Set the client company scope for ${assignmentAccountName}. Changing the assignment invalidates the coordinator's existing login session.`}
+        tone="info"
+        size="md"
+        closeOnOverlay={
+          processingAction !==
+          "assignment"
+        }
+        closeOnEscape={
+          processingAction !==
+          "assignment"
+        }
+        showCloseButton
+        bodyClassName="space-y-5 p-6"
+        footer={
+          <div className="flex w-full flex-col-reverse justify-end gap-3 sm:flex-row">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={
+                processingAction ===
+                "assignment"
+              }
+              onClick={
+                handleCloseAssignment
+              }
+            >
+              Cancel
+            </Button>
+
+            <Button
+              type="button"
+              leftIcon={
+                <FiBriefcase
+                  aria-hidden="true"
+                />
+              }
+              loading={
+                processingAction ===
+                "assignment"
+              }
+              disabled={
+                isBusy ||
+                !assignmentTarget?.id ||
+                !assignmentCompany ||
+                !companyOptions.includes(
+                  assignmentCompany
+                )
+              }
+              onClick={
+                handleConfirmAssignment
+              }
+            >
+              Save Assignment
+            </Button>
+          </div>
+        }
+      >
+        <div>
+          <label
+            htmlFor="hr-coordinator-company-assignment"
+            className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300"
+          >
+            Assigned Client Company
+          </label>
+
+          <select
+            id="hr-coordinator-company-assignment"
+            value={
+              assignmentCompany
+            }
+            disabled={
+              processingAction ===
+                "assignment" ||
+              isLoadingCompanyOptions
+            }
+            className={
+              CONTROL_CLASS_NAME
+            }
+            onChange={(
+              event
+            ) =>
+              setAssignmentCompany(
+                event.target
+                  .value
+              )
+            }
+          >
+            <option value="">
+              {isLoadingCompanyOptions
+                ? "Loading client companies..."
+                : companyOptions.length
+                  ? "Select client company"
+                  : "No client companies available"}
+            </option>
+
+            {companyOptions.map(
+              (
+                company
+              ) => (
+                <option
+                  key={
+                    company
+                  }
+                  value={
+                    company
+                  }
+                >
+                  {
+                    company
+                  }
+                </option>
+              )
+            )}
+          </select>
+
+          <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+            Current assignment:{" "}
+            <strong className="font-bold text-gray-700 dark:text-gray-200">
+              {assignmentCurrentCompany ||
+                "Not Assigned"}
+            </strong>
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+          The coordinator will only access Employees, Deployment Tracking, and Incident Report data allowed for the selected company. Any existing coordinator session is revoked when the company changes.
+        </div>
       </Dialog>
 
       <ConfirmDialog
@@ -2602,7 +3410,7 @@ export default function SuperAdminPortal() {
       </ConfirmDialog>
 
       <SuccessToast
-        title="Account Status Updated"
+        title="Account Updated"
         message={
           successMessage
         }

@@ -15,6 +15,11 @@ const STATUS = {
   CLOSED: "closed",
 };
 
+const INVESTIGATOR_ROLES = new Set([
+  "HR_MANAGER",
+  "HR_STAFF",
+]);
+
 const REVIEWER_ROLES = new Set([
   "HR_MANAGER",
   "SUPER_ADMIN",
@@ -41,10 +46,14 @@ function normalizeIdentity(value) {
 }
 
 function normalizeRole(value) {
-  const role = String(value ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, "_");
+  const role =
+    String(value ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(
+        /[\s-]+/g,
+        "_"
+      );
 
   if (
     role === "SUPERADMIN" ||
@@ -68,13 +77,35 @@ function normalizeRole(value) {
     return "HR_STAFF";
   }
 
+  if (
+    role === "HRCOORDINATOR" ||
+    role === "HR_COORDINATOR"
+  ) {
+    return "HR_COORDINATOR";
+  }
+
+  if (
+    role === "ITSUPPORT" ||
+    role === "IT_SUPPORT"
+  ) {
+    return "IT_SUPPORT";
+  }
+
   return role;
 }
 
 function normalizeStatus(value) {
-  return normalizeIdentity(value)
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ");
+  return normalizeIdentity(
+    value
+  )
+    .replace(
+      /[_-]+/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    );
 }
 
 function buildUserAliases(user) {
@@ -94,12 +125,19 @@ function buildUserAliases(user) {
       user?.displayName,
       user?.display_name,
     ]
-      .map(normalizeIdentity)
-      .filter(Boolean)
+      .map(
+        normalizeIdentity
+      )
+      .filter(
+        Boolean
+      )
   );
 }
 
-function hasAliasMatch(aliases, values = []) {
+function hasAliasMatch(
+  aliases,
+  values = []
+) {
   if (
     !(aliases instanceof Set) ||
     aliases.size === 0
@@ -107,71 +145,136 @@ function hasAliasMatch(aliases, values = []) {
     return false;
   }
 
-  return values.some((value) => {
-    const normalizedValue =
-      normalizeIdentity(value);
+  return values.some(
+    (value) => {
+      const normalizedValue =
+        normalizeIdentity(
+          value
+        );
 
-    return (
-      normalizedValue &&
-      aliases.has(normalizedValue)
-    );
-  });
+      return (
+        normalizedValue &&
+        aliases.has(
+          normalizedValue
+        )
+      );
+    }
+  );
 }
 
-function getLastActionType(incident) {
+function getLastActionType(
+  incident
+) {
   return normalizeIdentity(
     incident?.lastActionType ||
       incident?.last_action_type
   ).toUpperCase();
 }
 
-function getInvestigatorValues(incident) {
+function getInvestigatorValues(
+  incident
+) {
   const lastActionType =
-    getLastActionType(incident);
+    getLastActionType(
+      incident
+    );
 
   const lastActionValues =
     lastActionType ===
     "START_INVESTIGATION"
       ? [
-          incident?.lastActionById,
-          incident?.last_action_by_id,
-          incident?.lastActionByUsername,
-          incident?.last_action_by_username,
-          incident?.lastActionByName,
-          incident?.last_action_by_name,
+          incident
+            ?.lastActionById,
+          incident
+            ?.last_action_by_id,
+          incident
+            ?.lastActionByUsername,
+          incident
+            ?.last_action_by_username,
+          incident
+            ?.lastActionByName,
+          incident
+            ?.last_action_by_name,
         ]
       : [];
 
   return [
-    incident?.investigation?.startedById,
-    incident?.investigation?.started_by_id,
-    incident?.investigation?.startedByUsername,
-    incident?.investigation?.started_by_username,
-    incident?.investigation?.startedByName,
-    incident?.investigation?.started_by_name,
-    incident?.investigationStartedById,
-    incident?.investigation_started_by_id,
-    incident?.investigationStartedByUsername,
-    incident?.investigation_started_by_username,
-    incident?.investigationStartedByName,
-    incident?.investigation_started_by_name,
+    incident
+      ?.investigation
+      ?.startedById,
+
+    incident
+      ?.investigation
+      ?.started_by_id,
+
+    incident
+      ?.investigation
+      ?.startedByUsername,
+
+    incident
+      ?.investigation
+      ?.started_by_username,
+
+    incident
+      ?.investigation
+      ?.startedByName,
+
+    incident
+      ?.investigation
+      ?.started_by_name,
+
+    incident
+      ?.investigationStartedById,
+
+    incident
+      ?.investigation_started_by_id,
+
+    incident
+      ?.investigationStartedByUsername,
+
+    incident
+      ?.investigation_started_by_username,
+
+    incident
+      ?.investigationStartedByName,
+
+    incident
+      ?.investigation_started_by_name,
+
     ...lastActionValues,
-  ].filter(Boolean);
+  ].filter(
+    Boolean
+  );
 }
 
-function getInvestigatorName(incident) {
+function getInvestigatorName(
+  incident
+) {
   const lastActionType =
-    getLastActionType(incident);
+    getLastActionType(
+      incident
+    );
 
   return (
-    incident?.investigation?.startedByName ||
-    incident?.investigation?.started_by_name ||
-    incident?.investigationStartedByName ||
-    incident?.investigation_started_by_name ||
-    (lastActionType === "START_INVESTIGATION"
-      ? incident?.lastActionByName ||
-        incident?.last_action_by_name
-      : "") ||
+    incident
+      ?.investigation
+      ?.startedByName ||
+    incident
+      ?.investigation
+      ?.started_by_name ||
+    incident
+      ?.investigationStartedByName ||
+    incident
+      ?.investigation_started_by_name ||
+    (
+      lastActionType ===
+      "START_INVESTIGATION"
+        ? incident
+            ?.lastActionByName ||
+          incident
+            ?.last_action_by_name
+        : ""
+    ) ||
     "Assigned HR"
   );
 }
@@ -184,7 +287,9 @@ function ActionButton({
   disabled = false,
 }) {
   const variantStyle =
-    ACTION_BUTTON_STYLES[variant] ||
+    ACTION_BUTTON_STYLES[
+      variant
+    ] ||
     ACTION_BUTTON_STYLES.view;
 
   return (
@@ -209,7 +314,10 @@ function DisabledActionPill({
   return (
     <span
       role="status"
-      title={title || label}
+      title={
+        title ||
+        label
+      }
       className="inline-flex max-w-[190px] items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-300"
     >
       <span
@@ -235,30 +343,81 @@ export default function ActionButtons({
   onResolve,
   onReview,
 }) {
-  const status = normalizeStatus(
-    incident?.status
-  );
+  const status =
+    normalizeStatus(
+      incident?.status
+    );
 
-  const currentRole = normalizeRole(
-    currentUser?.role
-  );
+  const currentRole =
+    normalizeRole(
+      currentUser?.role
+    );
+
+  /*
+   * ==================================================
+   * INCIDENT ROLE CAPABILITIES
+   * ==================================================
+   *
+   * HR_MANAGER:
+   * - investigate
+   * - submit proof
+   * - review
+   *
+   * HR_STAFF:
+   * - investigate
+   * - submit proof
+   *
+   * SUPER_ADMIN:
+   * - review only
+   *
+   * HR_COORDINATOR:
+   * - view only from this action component
+   * - incident creation is handled by the page
+   * - no investigation
+   * - no proof submission
+   * - no case review
+   */
+  const isInvestigator =
+    INVESTIGATOR_ROLES.has(
+      currentRole
+    );
 
   const isReviewer =
     isSuperAdmin ||
-    REVIEWER_ROLES.has(currentRole);
+    REVIEWER_ROLES.has(
+      currentRole
+    );
+
+  const isHrCoordinator =
+    currentRole ===
+    "HR_COORDINATOR";
 
   const investigatorName =
-    getInvestigatorName(incident);
+    getInvestigatorName(
+      incident
+    );
 
-  const currentUserAliases = useMemo(
-    () => buildUserAliases(currentUser),
-    [currentUser]
-  );
+  const currentUserAliases =
+    useMemo(
+      () =>
+        buildUserAliases(
+          currentUser
+        ),
+      [
+        currentUser,
+      ]
+    );
 
-  const investigatorValues = useMemo(
-    () => getInvestigatorValues(incident),
-    [incident]
-  );
+  const investigatorValues =
+    useMemo(
+      () =>
+        getInvestigatorValues(
+          incident
+        ),
+      [
+        incident,
+      ]
+    );
 
   const currentUserIsInvestigator =
     useMemo(
@@ -277,9 +436,14 @@ export default function ActionButtons({
     return null;
   }
 
+  /*
+   * Authorized reviewers receive the review action
+   * only while the incident is waiting for review.
+   */
   if (
     isReviewer &&
-    status === STATUS.FOR_REVIEW
+    status ===
+      STATUS.FOR_REVIEW
   ) {
     return (
       <ActionButton
@@ -292,15 +456,26 @@ export default function ActionButtons({
         title="Review submitted case"
         variant="review"
         onClick={() =>
-          onReview?.(incident)
+          onReview?.(
+            incident
+          )
         }
       />
     );
   }
 
+  /*
+   * Only HR Manager / HR Staff may start an
+   * investigation.
+   *
+   * This intentionally prevents HR Coordinator from
+   * receiving the action merely because the user is
+   * not a Super Admin.
+   */
   if (
-    !isSuperAdmin &&
-    status === STATUS.OPEN
+    isInvestigator &&
+    status ===
+      STATUS.OPEN
   ) {
     return (
       <ActionButton
@@ -313,17 +488,26 @@ export default function ActionButtons({
         title="Start investigation"
         variant="start"
         onClick={() =>
-          onStartReview?.(incident)
+          onStartReview?.(
+            incident
+          )
         }
       />
     );
   }
 
+  /*
+   * Investigation proof submission remains available
+   * only to HR Manager / HR Staff.
+   */
   if (
-    !isSuperAdmin &&
-    status === STATUS.INVESTIGATING
+    isInvestigator &&
+    status ===
+      STATUS.INVESTIGATING
   ) {
-    if (currentUserIsInvestigator) {
+    if (
+      currentUserIsInvestigator
+    ) {
       return (
         <ActionButton
           icon={
@@ -335,7 +519,9 @@ export default function ActionButtons({
           title="Submit or resubmit resolution proof"
           variant="resolve"
           onClick={() =>
-            onResolve?.(incident)
+            onResolve?.(
+              incident
+            )
           }
         />
       );
@@ -355,9 +541,19 @@ export default function ActionButtons({
     );
   }
 
+  /*
+   * Existing HR Staff behavior is preserved while a
+   * submitted case is waiting for an authorized
+   * reviewer.
+   *
+   * HR Coordinator remains able to open the record
+   * because their role is explicitly view-only.
+   */
   if (
     !isReviewer &&
-    status === STATUS.FOR_REVIEW
+    !isHrCoordinator &&
+    status ===
+      STATUS.FOR_REVIEW
   ) {
     return (
       <DisabledActionPill
@@ -373,6 +569,16 @@ export default function ActionButtons({
     );
   }
 
+  /*
+   * HR Coordinator always falls through to View for:
+   *
+   * - Open
+   * - Investigating
+   * - For Review
+   * - Closed
+   *
+   * No mutation callback is exposed.
+   */
   return (
     <ActionButton
       icon={
@@ -382,13 +588,16 @@ export default function ActionButtons({
         />
       }
       title={
-        status === STATUS.CLOSED
+        status ===
+        STATUS.CLOSED
           ? "View closed incident details"
           : "View incident details"
       }
       variant="view"
       onClick={() =>
-        onView?.(incident)
+        onView?.(
+          incident
+        )
       }
     />
   );

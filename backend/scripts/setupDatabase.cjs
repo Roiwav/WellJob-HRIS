@@ -31,6 +31,41 @@ const MIGRATION_RUNNER_PATH =
     "migrateDatabase.cjs"
   );
 
+const REQUIRED_APPLICATION_TABLES = [
+  "users",
+  "employees",
+  "system_settings",
+  "audit_logs",
+  "employee_documents",
+  "deployment_assignments",
+  "employee_status_history",
+  "incidents",
+  "incident_evidence",
+  "incident_timeline",
+  "kpi_decision_history",
+  "smart_alert_states",
+  "smart_suggestion_states",
+  "client_companies",
+  "company_positions",
+];
+
+const REQUIRED_SYSTEM_TABLES = [
+  "schema_migrations",
+];
+
+const EXPECTED_MIGRATIONS = [
+  "add_employee_lifecycle_history.sql",
+  "add_incident_timeline.sql",
+  "smart_suggestion_states.sql",
+  "add_incident_policy_sanction.sql",
+  "add_one_active_deployment_invariant.sql",
+  "add_employee_documents_employee_id_index.sql",
+  "add_employee_documents_expiration_index.sql",
+  "add_audit_logs_category_created_index.sql",
+  "add_hr_coordinator_scope.sql",
+  "add_company_position_master_data.sql",
+];
+
 function requiredEnv(
   name,
   {
@@ -202,6 +237,7 @@ function runMigrationRunner(
 
         env: {
           ...process.env,
+
           DB_NAME:
             databaseName,
         },
@@ -242,29 +278,435 @@ function runMigrationRunner(
   }
 }
 
+async function tableExists(
+  connection,
+  tableName
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND TABLE_TYPE = 'BASE TABLE'
+      `,
+      [
+        tableName,
+      ]
+    );
+
+  return (
+    Number(
+      rows[0]?.count ||
+        0
+    ) > 0
+  );
+}
+
+async function columnExists(
+  connection,
+  tableName,
+  columnName
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+      `,
+      [
+        tableName,
+        columnName,
+      ]
+    );
+
+  return (
+    Number(
+      rows[0]?.count ||
+        0
+    ) > 0
+  );
+}
+
+async function enumColumnContains(
+  connection,
+  tableName,
+  columnName,
+  enumValue
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COLUMN_TYPE AS column_type
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+      LIMIT 1
+      `,
+      [
+        tableName,
+        columnName,
+      ]
+    );
+
+  if (
+    rows.length ===
+    0
+  ) {
+    return false;
+  }
+
+  return String(
+    rows[0]?.column_type ||
+      ""
+  ).includes(
+    `'${String(enumValue)}'`
+  );
+}
+
+async function indexExists(
+  connection,
+  tableName,
+  indexName
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND INDEX_NAME = ?
+      `,
+      [
+        tableName,
+        indexName,
+      ]
+    );
+
+  return (
+    Number(
+      rows[0]?.count ||
+        0
+    ) > 0
+  );
+}
+
+async function columnDefinitionMatches(
+  connection,
+  {
+    tableName,
+    columnName,
+    dataType,
+    maxLength = null,
+    nullable = null,
+    unsigned = false,
+    collationName = null,
+    extraIncludes = null,
+  }
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        DATA_TYPE AS data_type,
+        CHARACTER_MAXIMUM_LENGTH AS character_maximum_length,
+        IS_NULLABLE AS is_nullable,
+        COLUMN_TYPE AS column_type,
+        COLLATION_NAME AS collation_name,
+        EXTRA AS extra
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+      LIMIT 1
+      `,
+      [
+        tableName,
+        columnName,
+      ]
+    );
+
+  if (
+    rows.length ===
+    0
+  ) {
+    return false;
+  }
+
+  const row =
+    rows[0];
+
+  if (
+    String(
+      row.data_type ||
+        ""
+    ).toLowerCase() !==
+    String(
+      dataType ||
+        ""
+    ).toLowerCase()
+  ) {
+    return false;
+  }
+
+  if (
+    maxLength !==
+      null &&
+    Number(
+      row.character_maximum_length
+    ) !==
+      Number(
+        maxLength
+      )
+  ) {
+    return false;
+  }
+
+  if (
+    typeof nullable ===
+    "boolean"
+  ) {
+    const actuallyNullable =
+      String(
+        row.is_nullable ||
+          ""
+      ).toUpperCase() ===
+      "YES";
+
+    if (
+      actuallyNullable !==
+      nullable
+    ) {
+      return false;
+    }
+  }
+
+  if (
+    unsigned &&
+    !String(
+      row.column_type ||
+        ""
+    )
+      .toLowerCase()
+      .includes(
+        "unsigned"
+      )
+  ) {
+    return false;
+  }
+
+  if (
+    collationName &&
+    String(
+      row.collation_name ||
+        ""
+    ).toLowerCase() !==
+      String(
+        collationName
+      ).toLowerCase()
+  ) {
+    return false;
+  }
+
+  if (
+    extraIncludes &&
+    !String(
+      row.extra ||
+        ""
+    )
+      .toLowerCase()
+      .includes(
+        String(
+          extraIncludes
+        ).toLowerCase()
+      )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+async function indexDefinitionMatches(
+  connection,
+  {
+    tableName,
+    indexName,
+    columns,
+    unique = false,
+  }
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COLUMN_NAME AS column_name,
+        SEQ_IN_INDEX AS seq_in_index,
+        NON_UNIQUE AS non_unique
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND INDEX_NAME = ?
+      ORDER BY SEQ_IN_INDEX ASC
+      `,
+      [
+        tableName,
+        indexName,
+      ]
+    );
+
+  if (
+    rows.length !==
+    columns.length
+  ) {
+    return false;
+  }
+
+  const expectedNonUnique =
+    unique
+      ? 0
+      : 1;
+
+  return rows.every(
+    (
+      row,
+      index
+    ) =>
+      String(
+        row.column_name ||
+          ""
+      ) ===
+        String(
+          columns[
+            index
+          ] ||
+            ""
+        ) &&
+      Number(
+        row.seq_in_index
+      ) ===
+        index +
+          1 &&
+      Number(
+        row.non_unique
+      ) ===
+        expectedNonUnique
+  );
+}
+
+async function foreignKeyDefinitionMatches(
+  connection,
+  {
+    tableName,
+    constraintName,
+    columnName,
+    referencedTableName,
+    referencedColumnName,
+    updateRule,
+    deleteRule,
+  }
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        kcu.COLUMN_NAME AS column_name,
+        kcu.REFERENCED_TABLE_NAME AS referenced_table_name,
+        kcu.REFERENCED_COLUMN_NAME AS referenced_column_name,
+        rc.UPDATE_RULE AS update_rule,
+        rc.DELETE_RULE AS delete_rule
+      FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS kcu
+      INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS AS rc
+        ON rc.CONSTRAINT_SCHEMA =
+          kcu.CONSTRAINT_SCHEMA
+        AND rc.CONSTRAINT_NAME =
+          kcu.CONSTRAINT_NAME
+        AND rc.TABLE_NAME =
+          kcu.TABLE_NAME
+      WHERE kcu.TABLE_SCHEMA = DATABASE()
+        AND kcu.TABLE_NAME = ?
+        AND kcu.CONSTRAINT_NAME = ?
+      LIMIT 1
+      `,
+      [
+        tableName,
+        constraintName,
+      ]
+    );
+
+  if (
+    rows.length ===
+    0
+  ) {
+    return false;
+  }
+
+  const row =
+    rows[0];
+
+  return (
+    String(
+      row.column_name ||
+        ""
+    ) ===
+      String(
+        columnName ||
+          ""
+      ) &&
+    String(
+      row.referenced_table_name ||
+        ""
+    ) ===
+      String(
+        referencedTableName ||
+          ""
+      ) &&
+    String(
+      row.referenced_column_name ||
+        ""
+    ) ===
+      String(
+        referencedColumnName ||
+          ""
+      ) &&
+    String(
+      row.update_rule ||
+        ""
+    ).toUpperCase() ===
+      String(
+        updateRule ||
+          ""
+      ).toUpperCase() &&
+    String(
+      row.delete_rule ||
+        ""
+    ).toUpperCase() ===
+      String(
+        deleteRule ||
+          ""
+      ).toUpperCase()
+  );
+}
+
 async function verifyCoreSchema(
   connection
 ) {
   const requiredTables = [
-    "users",
-    "employees",
-    "employee_documents",
-    "deployment_assignments",
-    "employee_status_history",
-    "incidents",
-    "incident_evidence",
-    "incident_timeline",
-    "kpi_decision_history",
-    "smart_alert_states",
-    "smart_suggestion_states",
-    "system_settings",
-    "audit_logs",
-    "schema_migrations",
+    ...REQUIRED_APPLICATION_TABLES,
+    ...REQUIRED_SYSTEM_TABLES,
   ];
 
-  const [
-    rows,
-  ] =
+  const [rows] =
     await connection.query(
       `
       SELECT
@@ -292,12 +734,636 @@ async function verifyCoreSchema(
     );
 
   if (
-    missing.length > 0
+    missing.length >
+    0
   ) {
     throw new Error(
       `Database setup verification failed. Missing table(s): ${missing.join(", ")}`
     );
   }
+
+  const usersSupportHrCoordinator =
+    await enumColumnContains(
+      connection,
+      "users",
+      "role",
+      "HR_COORDINATOR"
+    );
+
+  if (
+    !usersSupportHrCoordinator
+  ) {
+    throw new Error(
+      "Database setup verification failed. users.role does not include HR_COORDINATOR."
+    );
+  }
+
+  const assignedCompanyExists =
+    await columnExists(
+      connection,
+      "users",
+      "assigned_company"
+    );
+
+  if (
+    !assignedCompanyExists
+  ) {
+    throw new Error(
+      "Database setup verification failed. users.assigned_company is missing."
+    );
+  }
+
+  const hrCoordinatorScopeIndexExists =
+    await indexExists(
+      connection,
+      "users",
+      "idx_users_role_assigned_company"
+    );
+
+  if (
+    !hrCoordinatorScopeIndexExists
+  ) {
+    throw new Error(
+      "Database setup verification failed. idx_users_role_assigned_company is missing."
+    );
+  }
+
+  const clientCompanyColumnChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "id",
+
+          dataType:
+            "bigint",
+
+          nullable:
+            false,
+
+          unsigned:
+            true,
+
+          extraIncludes:
+            "auto_increment",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "company_name",
+
+          dataType:
+            "varchar",
+
+          maxLength:
+            255,
+
+          nullable:
+            false,
+
+          collationName:
+            "utf8mb4_unicode_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "is_active",
+
+          dataType:
+            "tinyint",
+
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "created_at",
+
+          dataType:
+            "timestamp",
+
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "updated_at",
+
+          dataType:
+            "timestamp",
+
+          nullable:
+            false,
+
+          extraIncludes:
+            "on update",
+        }
+      ),
+    ]);
+
+  if (
+    clientCompanyColumnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    throw new Error(
+      "Database setup verification failed. client_companies column definitions do not match the canonical schema."
+    );
+  }
+
+  const clientCompanyIndexChecks =
+    await Promise.all([
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          indexName:
+            "PRIMARY",
+
+          columns: [
+            "id",
+          ],
+
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          indexName:
+            "uq_client_companies_company_name",
+
+          columns: [
+            "company_name",
+          ],
+
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          indexName:
+            "idx_client_companies_active_name",
+
+          columns: [
+            "is_active",
+            "company_name",
+          ],
+        }
+      ),
+    ]);
+
+  if (
+    clientCompanyIndexChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    throw new Error(
+      "Database setup verification failed. client_companies indexes do not match the canonical schema."
+    );
+  }
+
+  const companyPositionColumnChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "id",
+
+          dataType:
+            "bigint",
+
+          nullable:
+            false,
+
+          unsigned:
+            true,
+
+          extraIncludes:
+            "auto_increment",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "company_id",
+
+          dataType:
+            "bigint",
+
+          nullable:
+            false,
+
+          unsigned:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "position_name",
+
+          dataType:
+            "varchar",
+
+          maxLength:
+            150,
+
+          nullable:
+            false,
+
+          collationName:
+            "utf8mb4_unicode_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "is_active",
+
+          dataType:
+            "tinyint",
+
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "created_at",
+
+          dataType:
+            "timestamp",
+
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "updated_at",
+
+          dataType:
+            "timestamp",
+
+          nullable:
+            false,
+
+          extraIncludes:
+            "on update",
+        }
+      ),
+    ]);
+
+  if (
+    companyPositionColumnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    throw new Error(
+      "Database setup verification failed. company_positions column definitions do not match the canonical schema."
+    );
+  }
+
+  const companyPositionIndexChecks =
+    await Promise.all([
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          indexName:
+            "PRIMARY",
+
+          columns: [
+            "id",
+          ],
+
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          indexName:
+            "uq_company_positions_company_position",
+
+          columns: [
+            "company_id",
+            "position_name",
+          ],
+
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          indexName:
+            "idx_company_positions_company_active_name",
+
+          columns: [
+            "company_id",
+            "is_active",
+            "position_name",
+          ],
+        }
+      ),
+    ]);
+
+  if (
+    companyPositionIndexChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    throw new Error(
+      "Database setup verification failed. company_positions indexes do not match the canonical schema."
+    );
+  }
+
+  const companyPositionForeignKey =
+    await foreignKeyDefinitionMatches(
+      connection,
+      {
+        tableName:
+          "company_positions",
+
+        constraintName:
+          "fk_company_positions_company",
+
+        columnName:
+          "company_id",
+
+        referencedTableName:
+          "client_companies",
+
+        referencedColumnName:
+          "id",
+
+        updateRule:
+          "CASCADE",
+
+        deleteRule:
+          "RESTRICT",
+      }
+    );
+
+  if (
+    !companyPositionForeignKey
+  ) {
+    throw new Error(
+      "Database setup verification failed. fk_company_positions_company does not match the canonical foreign-key definition."
+    );
+  }
+
+  const [migrationRows] =
+    await connection.query(
+      `
+      SELECT
+        migration_name,
+        checksum_sha256,
+        execution_mode
+      FROM schema_migrations
+      ORDER BY id ASC
+      `
+    );
+
+  if (
+    migrationRows.length !==
+    EXPECTED_MIGRATIONS.length
+  ) {
+    throw new Error(
+      `Database setup verification failed. Expected ${EXPECTED_MIGRATIONS.length} recorded migrations but found ${migrationRows.length}.`
+    );
+  }
+
+  const expectedMigrationSet =
+    new Set(
+      EXPECTED_MIGRATIONS
+    );
+
+  const recordedMigrationNames =
+    migrationRows.map(
+      (row) =>
+        String(
+          row.migration_name ||
+            ""
+        )
+    );
+
+  const recordedMigrationSet =
+    new Set(
+      recordedMigrationNames
+    );
+
+  if (
+    recordedMigrationSet.size !==
+    recordedMigrationNames.length
+  ) {
+    throw new Error(
+      "Database setup verification failed. Duplicate migration names were found in schema_migrations."
+    );
+  }
+
+  const missingMigrations =
+    EXPECTED_MIGRATIONS.filter(
+      (migrationName) =>
+        !recordedMigrationSet.has(
+          migrationName
+        )
+    );
+
+  const unexpectedMigrations =
+    [
+      ...recordedMigrationSet,
+    ].filter(
+      (migrationName) =>
+        !expectedMigrationSet.has(
+          migrationName
+        )
+    );
+
+  if (
+    missingMigrations.length >
+      0 ||
+    unexpectedMigrations.length >
+      0
+  ) {
+    const details = [];
+
+    if (
+      missingMigrations.length >
+      0
+    ) {
+      details.push(
+        `missing: ${missingMigrations.join(", ")}`
+      );
+    }
+
+    if (
+      unexpectedMigrations.length >
+      0
+    ) {
+      details.push(
+        `unexpected: ${unexpectedMigrations.join(", ")}`
+      );
+    }
+
+    throw new Error(
+      `Database setup verification failed. Migration ledger mismatch (${details.join("; ")}).`
+    );
+  }
+
+  for (
+    const row of
+      migrationRows
+  ) {
+    const migrationName =
+      String(
+        row.migration_name ||
+          ""
+      );
+
+    const checksum =
+      String(
+        row.checksum_sha256 ||
+          ""
+      );
+
+    const executionMode =
+      String(
+        row.execution_mode ||
+          ""
+      );
+
+    if (
+      !/^[a-f0-9]{64}$/i.test(
+        checksum
+      )
+    ) {
+      throw new Error(
+        `Database setup verification failed. Invalid migration checksum format for ${migrationName}.`
+      );
+    }
+
+    if (
+      ![
+        "executed",
+        "adopted",
+      ].includes(
+        executionMode
+      )
+    ) {
+      throw new Error(
+        `Database setup verification failed. Invalid execution mode "${executionMode}" for ${migrationName}.`
+      );
+    }
+  }
+
+  console.log(
+    `Verified ${REQUIRED_APPLICATION_TABLES.length} application tables and ${REQUIRED_SYSTEM_TABLES.length} migration ledger table.`
+  );
+
+  console.log(
+    "Verified HR Coordinator scope."
+  );
+
+  console.log(
+    "Verified exact client-company and company-position master-data schema."
+  );
+
+  console.log(
+    `Verified all ${EXPECTED_MIGRATIONS.length} expected migration ledger records.`
+  );
 }
 
 async function main() {
@@ -392,6 +1458,7 @@ async function main() {
     databaseConnection =
       await mysql.createConnection({
         ...connectionOptions,
+
         database:
           databaseName,
       });

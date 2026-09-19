@@ -27,7 +27,12 @@ const COMPLIANCE_STATUS_ALIASES = {
 
 function normalizeComplianceStatus(status) {
   const value = String(status || "").trim();
-  return COMPLIANCE_STATUS_ALIASES[value] || value || "No Data";
+
+  return (
+    COMPLIANCE_STATUS_ALIASES[value] ||
+    value ||
+    "No Data"
+  );
 }
 
 function getEmployeeId(employee) {
@@ -39,7 +44,10 @@ function getEmployeeId(employee) {
   );
 }
 
-function getEmployeeKey(employee, index) {
+function getEmployeeKey(
+  employee,
+  index
+) {
   return (
     employee?.uid ||
     employee?.employeeId ||
@@ -56,9 +64,18 @@ function EmployeeEmptyState({
   onClearSearch,
   onClearFilters,
 }) {
-  const search = String(searchQuery || "").trim();
-  const canClearSearch = typeof onClearSearch === "function";
-  const canClearFilters = typeof onClearFilters === "function";
+  const search =
+    String(
+      searchQuery || ""
+    ).trim();
+
+  const canClearSearch =
+    typeof onClearSearch ===
+    "function";
+
+  const canClearFilters =
+    typeof onClearFilters ===
+    "function";
 
   if (totalRecords === 0) {
     return (
@@ -84,23 +101,36 @@ function EmployeeEmptyState({
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={<FiSearch aria-hidden="true" />}
-              onClick={onClearSearch}
+              leftIcon={
+                <FiSearch
+                  aria-hidden="true"
+                />
+              }
+              onClick={
+                onClearSearch
+              }
             >
               Clear Search
             </Button>
           )}
 
-          {hasFilters && canClearFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              leftIcon={<FiSliders aria-hidden="true" />}
-              onClick={onClearFilters}
-            >
-              Clear Filters
-            </Button>
-          )}
+          {hasFilters &&
+            canClearFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={
+                  <FiSliders
+                    aria-hidden="true"
+                  />
+                }
+                onClick={
+                  onClearFilters
+                }
+              >
+                Clear Filters
+              </Button>
+            )}
         </div>
       </div>
     );
@@ -120,8 +150,14 @@ function EmployeeEmptyState({
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={<FiSliders aria-hidden="true" />}
-              onClick={onClearFilters}
+              leftIcon={
+                <FiSliders
+                  aria-hidden="true"
+                />
+              }
+              onClick={
+                onClearFilters
+              }
             >
               Clear Filters
             </Button>
@@ -153,30 +189,74 @@ export default function EmployeeTable({
   onArchive,
   isSuperAdmin = false,
   isHRManager = false,
+  isHRCoordinator = false,
 }) {
-  const safeEmployees = Array.isArray(employees) ? employees : [];
-  const numericTotalRecords = Number(totalRecords);
+  const safeEmployees =
+    Array.isArray(
+      employees
+    )
+      ? employees
+      : [];
 
-  const safeTotalRecords = Number.isFinite(numericTotalRecords)
-    ? numericTotalRecords
-    : safeEmployees.length;
+  const numericTotalRecords =
+    Number(
+      totalRecords
+    );
+
+  const safeTotalRecords =
+    Number.isFinite(
+      numericTotalRecords
+    )
+      ? numericTotalRecords
+      : safeEmployees.length;
 
   const complianceResolver =
-    typeof getComplianceStatus === "function"
+    typeof getComplianceStatus ===
+    "function"
       ? getComplianceStatus
       : getDefaultComplianceStatus;
 
-  const canEdit = !isSuperAdmin && typeof onEdit === "function";
+  /*
+   * ==================================================
+   * EMPLOYEE TABLE ACCESS
+   * ==================================================
+   *
+   * SUPER_ADMIN:
+   * - view only
+   *
+   * HR_COORDINATOR:
+   * - view only
+   *
+   * HR_MANAGER / HR_STAFF:
+   * - editing follows existing permissions
+   *
+   * HR_MANAGER:
+   * - archive follows existing permission
+   */
+  const isReadOnly =
+    isSuperAdmin ||
+    isHRCoordinator;
+
+  const canEdit =
+    !isReadOnly &&
+    typeof onEdit ===
+      "function";
+
   const canArchive =
     isHRManager &&
-    !isSuperAdmin &&
-    typeof onArchive === "function";
+    !isReadOnly &&
+    typeof onArchive ===
+      "function";
 
   const recordCountLabel =
-    safeTotalRecords > safeEmployees.length
+    safeTotalRecords >
+    safeEmployees.length
       ? `${safeEmployees.length} of ${safeTotalRecords} records`
       : `${safeEmployees.length} ${
-          safeEmployees.length === 1 ? "record" : "records"
+          safeEmployees.length ===
+          1
+            ? "record"
+            : "records"
         }`;
 
   return (
@@ -188,31 +268,45 @@ export default function EmployeeTable({
               aria-hidden="true"
               className="shrink-0 text-indigo-600 dark:text-indigo-400"
             />
+
             Employee Records
           </h2>
 
           <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-            View registered employees, employment status, company assignment,
-            and compliance condition.
+            View registered employees, employment status,
+            company assignment, and compliance condition.
           </p>
         </div>
 
         <span
-          aria-label={recordCountLabel}
+          aria-label={
+            recordCountLabel
+          }
           className="w-fit rounded-full bg-indigo-50 px-4 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300"
         >
           {recordCountLabel}
         </span>
       </div>
 
-      {safeEmployees.length === 0 ? (
+      {safeEmployees.length ===
+      0 ? (
         <div className="p-5 sm:p-6">
           <EmployeeEmptyState
-            totalRecords={safeTotalRecords}
-            searchQuery={searchQuery}
-            hasFilters={hasFilters}
-            onClearSearch={onClearSearch}
-            onClearFilters={onClearFilters}
+            totalRecords={
+              safeTotalRecords
+            }
+            searchQuery={
+              searchQuery
+            }
+            hasFilters={
+              hasFilters
+            }
+            onClearSearch={
+              onClearSearch
+            }
+            onClearFilters={
+              onClearFilters
+            }
           />
         </div>
       ) : (
@@ -220,128 +314,215 @@ export default function EmployeeTable({
           <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left">
             <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
               <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                <th scope="col" className="px-6 py-4">
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Employee ID
                 </th>
-                <th scope="col" className="px-6 py-4">
+
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Full Name
                 </th>
-                <th scope="col" className="px-6 py-4">
+
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Company
                 </th>
-                <th scope="col" className="px-6 py-4">
+
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Status
                 </th>
-                <th scope="col" className="px-6 py-4">
+
+                <th
+                  scope="col"
+                  className="px-6 py-4"
+                >
                   Compliance
                 </th>
-                <th scope="col" className="px-6 py-4 text-right">
+
+                <th
+                  scope="col"
+                  className="px-6 py-4 text-right"
+                >
                   Actions
                 </th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-              {safeEmployees.map((employee, index) => {
-                const employeeId = getEmployeeId(employee);
-                const employeeName = getEmployeeDisplayName(employee);
-                const employeeCompany = getEmployeeCompany(employee);
+              {safeEmployees.map(
+                (
+                  employee,
+                  index
+                ) => {
+                  const employeeId =
+                    getEmployeeId(
+                      employee
+                    );
 
-                const complianceStatus = normalizeComplianceStatus(
-                  employee?.complianceStatus ||
-                    complianceResolver(employee?.documents)
-                );
+                  const employeeName =
+                    getEmployeeDisplayName(
+                      employee
+                    );
 
-                return (
-                  <tr
-                    key={getEmployeeKey(employee, index)}
-                    className="transition-colors hover:bg-indigo-50/50 dark:hover:bg-white/5"
-                  >
-                    <td className="whitespace-nowrap px-6 py-4 align-middle">
-                      <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">
-                        {employeeId}
-                      </span>
-                    </td>
+                  const employeeCompany =
+                    getEmployeeCompany(
+                      employee
+                    );
 
-                    <td className="whitespace-nowrap px-6 py-4 align-middle">
-                      <div className="min-w-0">
-                        <p
-                          title={employeeName}
-                          className="max-w-[260px] truncate font-semibold text-gray-900 dark:text-white"
-                        >
-                          {employeeName}
-                        </p>
+                  const complianceStatus =
+                    normalizeComplianceStatus(
+                      employee
+                        ?.complianceStatus ||
+                        complianceResolver(
+                          employee
+                            ?.documents
+                        )
+                    );
 
-                        {employee?.position && (
+                  return (
+                    <tr
+                      key={getEmployeeKey(
+                        employee,
+                        index
+                      )}
+                      className="transition-colors hover:bg-indigo-50/50 dark:hover:bg-white/5"
+                    >
+                      <td className="whitespace-nowrap px-6 py-4 align-middle">
+                        <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                          {
+                            employeeId
+                          }
+                        </span>
+                      </td>
+
+                      <td className="whitespace-nowrap px-6 py-4 align-middle">
+                        <div className="min-w-0">
                           <p
-                            title={employee.position}
-                            className="mt-1 max-w-[260px] truncate text-xs text-gray-500 dark:text-gray-400"
+                            title={
+                              employeeName
+                            }
+                            className="max-w-[260px] truncate font-semibold text-gray-900 dark:text-white"
                           >
-                            {employee.position}
+                            {
+                              employeeName
+                            }
                           </p>
-                        )}
-                      </div>
-                    </td>
 
-                    <td className="px-6 py-4 align-middle">
-                      <p
-                        title={employeeCompany}
-                        className="max-w-[240px] truncate text-sm font-semibold text-gray-700 dark:text-gray-300"
-                      >
-                        {employeeCompany}
-                      </p>
-                    </td>
+                          {employee?.position && (
+                            <p
+                              title={
+                                employee.position
+                              }
+                              className="mt-1 max-w-[260px] truncate text-xs text-gray-500 dark:text-gray-400"
+                            >
+                              {
+                                employee.position
+                              }
+                            </p>
+                          )}
+                        </div>
+                      </td>
 
-                    <td className="px-6 py-4 align-middle">
-                      <StatusBadge
-                        status={employee?.status || "Floating / Standby"}
-                      />
-                    </td>
-
-                    <td className="px-6 py-4 align-middle">
-                      <ComplianceBadge status={complianceStatus} />
-                    </td>
-
-                    <td className="px-6 py-4 align-middle">
-                      <div className="flex items-center justify-end gap-2">
-                        <IconButton
-                          label={`View ${employeeName}`}
-                          title="View Employee"
-                          variant="primary"
-                          size="md"
-                          onClick={() => openModal?.(employee)}
+                      <td className="px-6 py-4 align-middle">
+                        <p
+                          title={
+                            employeeCompany
+                          }
+                          className="max-w-[240px] truncate text-sm font-semibold text-gray-700 dark:text-gray-300"
                         >
-                          <FiEye aria-hidden="true" />
-                        </IconButton>
+                          {
+                            employeeCompany
+                          }
+                        </p>
+                      </td>
 
-                        {canEdit && (
-                          <IconButton
-                            label={`Edit ${employeeName}`}
-                            title="Edit Employee"
-                            variant="secondary"
-                            size="md"
-                            onClick={() => onEdit(employee)}
-                          >
-                            <FiEdit2 aria-hidden="true" />
-                          </IconButton>
-                        )}
+                      <td className="px-6 py-4 align-middle">
+                        <StatusBadge
+                          status={
+                            employee
+                              ?.status ||
+                            "Floating / Standby"
+                          }
+                        />
+                      </td>
 
-                        {canArchive && (
+                      <td className="px-6 py-4 align-middle">
+                        <ComplianceBadge
+                          status={
+                            complianceStatus
+                          }
+                        />
+                      </td>
+
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex items-center justify-end gap-2">
                           <IconButton
-                            label={`Archive ${employeeName}`}
-                            title="Archive Employee"
-                            variant="warning"
+                            label={`View ${employeeName}`}
+                            title="View Employee"
+                            variant="primary"
                             size="md"
-                            onClick={() => onArchive(employee)}
+                            onClick={() =>
+                              openModal?.(
+                                employee
+                              )
+                            }
                           >
-                            <FiArchive aria-hidden="true" />
+                            <FiEye
+                              aria-hidden="true"
+                            />
                           </IconButton>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+
+                          {canEdit && (
+                            <IconButton
+                              label={`Edit ${employeeName}`}
+                              title="Edit Employee"
+                              variant="secondary"
+                              size="md"
+                              onClick={() =>
+                                onEdit(
+                                  employee
+                                )
+                              }
+                            >
+                              <FiEdit2
+                                aria-hidden="true"
+                              />
+                            </IconButton>
+                          )}
+
+                          {canArchive && (
+                            <IconButton
+                              label={`Archive ${employeeName}`}
+                              title="Archive Employee"
+                              variant="warning"
+                              size="md"
+                              onClick={() =>
+                                onArchive(
+                                  employee
+                                )
+                              }
+                            >
+                              <FiArchive
+                                aria-hidden="true"
+                              />
+                            </IconButton>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+              )}
             </tbody>
           </table>
         </div>

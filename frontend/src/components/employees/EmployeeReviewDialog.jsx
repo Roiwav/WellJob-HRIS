@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import {
   FiAlertTriangle,
   FiCheck,
@@ -11,7 +16,10 @@ import {
   getDocumentPreviewUrl,
   getSelectedDocuments,
 } from "../../utils/employees/employeeFormHelpers";
-import { fetchEmployeeDocumentPreview } from "../../utils/employees/employeeDocumentPreview";
+
+import {
+  fetchEmployeeDocumentPreview,
+} from "../../utils/employees/employeeDocumentPreview";
 
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
@@ -22,35 +30,59 @@ import {
   getDocumentStatus,
   toProperName,
 } from "./employeeConstants";
+
 import {
   ReviewBox,
   StatusPill,
 } from "./EmployeeComponents";
 
-function DocumentPreview({ document }) {
-  const localPreviewUrl = useMemo(
-    () => getDocumentPreviewUrl(document),
-    [document]
-  );
+function DocumentPreview({
+  document,
+}) {
+  const localPreviewUrl =
+    useMemo(
+      () =>
+        getDocumentPreviewUrl(
+          document
+        ),
+      [
+        document,
+      ]
+    );
 
   const localPreviewType =
-    getDocumentPreviewType(document);
+    getDocumentPreviewType(
+      document
+    );
 
-  useEffect(() => {
-    return () => {
-      if (localPreviewUrl) {
-        URL.revokeObjectURL(
+  useEffect(
+    () => {
+      return () => {
+        if (
           localPreviewUrl
-        );
-      }
-    };
-  }, [localPreviewUrl]);
+        ) {
+          URL.revokeObjectURL(
+            localPreviewUrl
+          );
+        }
+      };
+    },
+    [
+      localPreviewUrl,
+    ]
+  );
 
-  if (localPreviewUrl) {
+  if (
+    localPreviewUrl
+  ) {
     return (
       <PreviewContent
-        previewUrl={localPreviewUrl}
-        previewType={localPreviewType}
+        previewUrl={
+          localPreviewUrl
+        }
+        previewType={
+          localPreviewType
+        }
         fileName={
           getDocumentFileName(
             document
@@ -63,7 +95,9 @@ function DocumentPreview({ document }) {
 
   return (
     <PersistedDocumentPreview
-      document={document}
+      document={
+        document
+      }
     />
   );
 }
@@ -74,12 +108,13 @@ function PersistedDocumentPreview({
   const [
     preview,
     setPreview,
-  ] = useState({
-    url: "",
-    type: "",
-    loading: true,
-    error: "",
-  });
+  ] =
+    useState({
+      url: "",
+      type: "",
+      loading: true,
+      error: "",
+    });
 
   const fileName =
     getDocumentFileName(
@@ -87,97 +122,120 @@ function PersistedDocumentPreview({
     ) ||
     "Employee document";
 
-  useEffect(() => {
-    const controller =
-      new AbortController();
+  useEffect(
+    () => {
+      const controller =
+        new AbortController();
 
-    let previewUrl = "";
+      let previewUrl =
+        "";
 
-    async function loadPersistedPreview() {
-      try {
-        const result =
-          await fetchEmployeeDocumentPreview(
-            document?.id,
-            {
-              signal:
-                controller.signal,
-            }
-          );
+      async function loadPersistedPreview() {
+        try {
+          const result =
+            await fetchEmployeeDocumentPreview(
+              document?.id,
+              {
+                signal:
+                  controller.signal,
+              }
+            );
 
-        previewUrl =
-          result.url;
+          previewUrl =
+            result.url;
+
+          if (
+            controller.signal
+              .aborted
+          ) {
+            URL.revokeObjectURL(
+              previewUrl
+            );
+
+            previewUrl =
+              "";
+
+            return;
+          }
+
+          setPreview({
+            url:
+              result.url,
+
+            type:
+              result.type,
+
+            loading:
+              false,
+
+            error:
+              "",
+          });
+        } catch (
+          error
+        ) {
+          if (
+            error?.name ===
+              "AbortError" ||
+            controller.signal
+              .aborted
+          ) {
+            return;
+          }
+
+          setPreview({
+            url:
+              "",
+
+            type:
+              "",
+
+            loading:
+              false,
+
+            error:
+              error?.message ||
+              "Unable to load this document preview.",
+          });
+        }
+      }
+
+      void loadPersistedPreview();
+
+      return () => {
+        controller.abort();
 
         if (
-          controller.signal.aborted
+          previewUrl
         ) {
           URL.revokeObjectURL(
             previewUrl
           );
-
-          previewUrl = "";
-
-          return;
         }
+      };
+    },
+    [
+      document,
+    ]
+  );
 
-        setPreview({
-          url:
-            result.url,
-          type:
-            result.type,
-          loading:
-            false,
-          error:
-            "",
-        });
-      } catch (error) {
-        if (
-          error?.name ===
-            "AbortError" ||
-          controller.signal.aborted
-        ) {
-          return;
-        }
-
-        setPreview({
-          url:
-            "",
-          type:
-            "",
-          loading:
-            false,
-          error:
-            error?.message ||
-            "Unable to load this document preview.",
-        });
-      }
-    }
-
-    void loadPersistedPreview();
-
-    return () => {
-      controller.abort();
-
-      if (previewUrl) {
-        URL.revokeObjectURL(
-          previewUrl
-        );
-      }
-    };
-  }, [document]);
-
-  if (preview.loading) {
+  if (
+    preview.loading
+  ) {
     return (
       <p
         className="mt-3 text-xs text-gray-400"
         role="status"
       >
-        Loading protected document
-        preview...
+        Loading protected
+        document preview...
       </p>
     );
   }
 
-  if (preview.error) {
+  if (
+    preview.error
+  ) {
     return (
       <p
         className="mt-3 text-xs text-red-600 dark:text-red-300"
@@ -188,10 +246,13 @@ function PersistedDocumentPreview({
     );
   }
 
-  if (!preview.url) {
+  if (
+    !preview.url
+  ) {
     return (
       <p className="mt-3 text-xs text-gray-400">
-        No file preview available.
+        No file preview
+        available.
       </p>
     );
   }
@@ -204,7 +265,9 @@ function PersistedDocumentPreview({
       previewType={
         preview.type
       }
-      fileName={fileName}
+      fileName={
+        fileName
+      }
     />
   );
 }
@@ -220,8 +283,12 @@ function PreviewContent({
   ) {
     return (
       <img
-        src={previewUrl}
-        alt={fileName}
+        src={
+          previewUrl
+        }
+        alt={
+          fileName
+        }
         className="mt-3 max-h-52 max-w-full rounded-xl border border-gray-200 object-contain dark:border-white/10"
       />
     );
@@ -233,8 +300,12 @@ function PreviewContent({
   ) {
     return (
       <iframe
-        src={previewUrl}
-        title={fileName}
+        src={
+          previewUrl
+        }
+        title={
+          fileName
+        }
         className="mt-3 h-52 w-full rounded-xl border border-gray-200 dark:border-white/10"
       />
     );
@@ -242,7 +313,9 @@ function PreviewContent({
 
   return (
     <a
-      href={previewUrl}
+      href={
+        previewUrl
+      }
       target="_blank"
       rel="noreferrer"
       className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-white/5"
@@ -271,7 +344,8 @@ export default function EmployeeReviewDialog({
   onConfirm,
 }) {
   const isEditMode =
-    mode === "edit";
+    mode ===
+    "edit";
 
   const isDeployed =
     formData?.status ===
@@ -280,7 +354,8 @@ export default function EmployeeReviewDialog({
   const [
     acknowledgedWarning,
     setAcknowledgedWarning,
-  ] = useState("");
+  ] =
+    useState("");
 
   const requiresAcknowledgement =
     Boolean(
@@ -313,27 +388,33 @@ export default function EmployeeReviewDialog({
       ? "Verify all changes before updating the employee record."
       : "Verify all employee information before saving the new record.";
 
-  const handleClose = () => {
-    if (!isSaving) {
-      onClose?.();
-    }
-  };
+  const handleClose =
+    () => {
+      if (
+        !isSaving
+      ) {
+        onClose?.();
+      }
+    };
 
-  const handleConfirm = () => {
-    if (
-      isSaving ||
-      (
-        requiresAcknowledgement &&
-        !complianceAcknowledged
-      )
-    ) {
-      return;
-    }
+  const handleConfirm =
+    () => {
+      if (
+        isSaving ||
+        (
+          requiresAcknowledgement &&
+          !complianceAcknowledged
+        )
+      ) {
+        return;
+      }
 
-    onConfirm?.();
-  };
+      onConfirm?.();
+    };
 
-  if (!open) {
+  if (
+    !open
+  ) {
     return null;
   }
 
@@ -462,7 +543,8 @@ export default function EmployeeReviewDialog({
 
               <div className="min-w-0">
                 <p className="font-extrabold">
-                  Compliance Requirements Pending
+                  Compliance
+                  Requirements Pending
                 </p>
 
                 <p className="mt-1 break-words leading-6">
@@ -494,10 +576,12 @@ export default function EmployeeReviewDialog({
                   />
 
                   <span className="leading-5">
-                    I acknowledge that some
-                    compliance requirements are
-                    still pending and may be
-                    submitted later.
+                    I acknowledge that
+                    some compliance
+                    requirements are
+                    still pending and
+                    may be submitted
+                    later.
                   </span>
                 </label>
               </div>
@@ -543,6 +627,16 @@ export default function EmployeeReviewDialog({
           />
 
           <ReviewBox
+            label="Position"
+            value={
+              isDeployed
+                ? formData?.position ||
+                  "-"
+                : "Not Assigned"
+            }
+          />
+
+          <ReviewBox
             label="Start Date"
             value={
               isDeployed
@@ -582,7 +676,9 @@ export default function EmployeeReviewDialog({
           {selectedDocuments.length ? (
             <div className="space-y-3">
               {selectedDocuments.map(
-                (document) => {
+                (
+                  document
+                ) => {
                   const isExpirable =
                     Boolean(
                       document.expirable

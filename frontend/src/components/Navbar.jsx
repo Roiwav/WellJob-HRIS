@@ -41,6 +41,12 @@ const ROLE_CONFIGS = {
     roleName: "HR Staff",
   },
 
+  HR_COORDINATOR: {
+    label: "HC",
+    color: "bg-violet-600",
+    roleName: "HR Coordinator",
+  },
+
   IT_SUPPORT: {
     label: "IT",
     color: "bg-green-600",
@@ -63,7 +69,82 @@ const DEFAULT_ROLE_CONFIG = {
 const SMART_ALERT_POLL_INTERVAL =
   30000;
 
-function getAlertKey(alert) {
+function normalizeRole(
+  value
+) {
+  const role =
+    String(
+      value || ""
+    )
+      .trim()
+      .toUpperCase()
+      .replace(
+        /[\s-]+/g,
+        "_"
+      );
+
+  if (
+    [
+      "SUPERADMIN",
+      "SUPER_ADMIN",
+      "ADMIN",
+    ].includes(
+      role
+    )
+  ) {
+    return "SUPER_ADMIN";
+  }
+
+  if (
+    [
+      "HRMANAGER",
+      "HR_MANAGER",
+    ].includes(
+      role
+    )
+  ) {
+    return "HR_MANAGER";
+  }
+
+  if (
+    [
+      "HRSTAFF",
+      "HR_STAFF",
+    ].includes(
+      role
+    )
+  ) {
+    return "HR_STAFF";
+  }
+
+  if (
+    [
+      "HRCOORDINATOR",
+      "HR_COORDINATOR",
+    ].includes(
+      role
+    )
+  ) {
+    return "HR_COORDINATOR";
+  }
+
+  if (
+    [
+      "ITSUPPORT",
+      "IT_SUPPORT",
+    ].includes(
+      role
+    )
+  ) {
+    return "IT_SUPPORT";
+  }
+
+  return role || "USER";
+}
+
+function getAlertKey(
+  alert
+) {
   return String(
     alert?.alertKey ||
       alert?.id ||
@@ -110,8 +191,14 @@ export default function Navbar({
     useRef(null);
 
   const currentRole =
-    user?.role ||
-    "USER";
+    normalizeRole(
+      user?.role ||
+        "USER"
+    );
+
+  const isHRCoordinator =
+    currentRole ===
+    "HR_COORDINATOR";
 
   const {
     canView,
@@ -137,6 +224,39 @@ export default function Navbar({
     }
   );
 
+  /*
+   * ==================================================
+   * SMART NOTIFICATION ACCESS
+   * ==================================================
+   *
+   * HR Coordinator intentionally does not receive
+   * the existing Smart Alerts / Smart Notifications
+   * interface.
+   *
+   * This remains a local defense-in-depth guard even
+   * if the notification hook changes later.
+   */
+  const canViewSmartNotifications =
+    Boolean(
+      canView &&
+        !isHRCoordinator
+    );
+
+  /*
+   * Do not synchronously reset React state from an
+   * effect when access changes.
+   *
+   * Instead, derive the effective UI state from the
+   * current authorization. This keeps the notification
+   * interface closed and completely unrendered for
+   * HR Coordinator without creating cascading renders.
+   */
+  const notificationsAreOpen =
+    Boolean(
+      canViewSmartNotifications &&
+        openNotifications
+    );
+
   const roleConfig =
     useMemo(
       () =>
@@ -144,7 +264,9 @@ export default function Navbar({
           currentRole
         ] ||
         DEFAULT_ROLE_CONFIG,
-      [currentRole]
+      [
+        currentRole,
+      ]
     );
 
   const displayName =
@@ -159,165 +281,90 @@ export default function Navbar({
     user?.username ||
     "-";
 
-  useEffect(() => {
-    const currentAlertKey =
-      getAlertKey(
-        popupAlert
-      );
+  const assignedCompany =
+    String(
+      user?.assignedCompany ??
+        user?.assigned_company ??
+        ""
+    ).trim();
 
-    const previousAlertKey =
-      previousPopupAlertKeyRef.current;
+  useEffect(
+    () => {
+      if (
+        !canViewSmartNotifications
+      ) {
+        /*
+         * Refs/timers are external mutable resources,
+         * so cleaning them up here is appropriate.
+         *
+         * No React setState call is required because
+         * notificationsAreOpen is authorization-derived.
+         */
+        previousPopupAlertKeyRef.current =
+          "";
 
-    if (!currentAlertKey) {
-      previousPopupAlertKeyRef.current =
-        "";
-
-      return undefined;
-    }
-
-    previousPopupAlertKeyRef.current =
-      currentAlertKey;
-
-    if (
-      currentAlertKey ===
-        previousAlertKey ||
-      openNotifications
-    ) {
-      return undefined;
-    }
-
-    let secondFrame;
-
-    const firstFrame =
-      window.requestAnimationFrame(
-        () => {
-          setAnimateNotificationBell(
-            false
-          );
-
-          secondFrame =
-            window.requestAnimationFrame(
-              () => {
-                setAnimateNotificationBell(
-                  true
-                );
-              }
-            );
-        }
-      );
-
-    if (
-      bellAnimationTimerRef.current
-    ) {
-      window.clearTimeout(
-        bellAnimationTimerRef.current
-      );
-    }
-
-    bellAnimationTimerRef.current =
-      window.setTimeout(
-        () => {
-          setAnimateNotificationBell(
-            false
+        if (
+          bellAnimationTimerRef.current
+        ) {
+          window.clearTimeout(
+            bellAnimationTimerRef.current
           );
 
           bellAnimationTimerRef.current =
             null;
-        },
-        2600
-      );
+        }
 
-    return () => {
-      window.cancelAnimationFrame(
-        firstFrame
-      );
-
-      if (secondFrame) {
-        window.cancelAnimationFrame(
-          secondFrame
-        );
+        return undefined;
       }
-    };
-  }, [
-    popupAlert,
-    openNotifications,
-  ]);
 
-  useEffect(() => {
-    const handleClickOutside =
-      (event) => {
-        if (
-          profileRef.current &&
-          !profileRef.current.contains(
-            event.target
-          )
-        ) {
-          setOpenProfile(
-            false
-          );
-        }
+      const currentAlertKey =
+        getAlertKey(
+          popupAlert
+        );
 
-        if (
-          notificationRef.current &&
-          !notificationRef.current.contains(
-            event.target
-          )
-        ) {
-          setOpenNotifications(
-            false
-          );
-        }
-      };
+      const previousAlertKey =
+        previousPopupAlertKeyRef.current;
 
-    const handleEscapeKey =
-      (event) => {
-        if (
-          event.key ===
-          "Escape"
-        ) {
-          setOpenProfile(
-            false
-          );
+      if (
+        !currentAlertKey
+      ) {
+        previousPopupAlertKeyRef.current =
+          "";
 
-          setOpenNotifications(
-            false
-          );
-        }
-      };
+        return undefined;
+      }
 
-    if (
-      openProfile ||
-      openNotifications
-    ) {
-      document.addEventListener(
-        "mousedown",
-        handleClickOutside
-      );
+      previousPopupAlertKeyRef.current =
+        currentAlertKey;
 
-      document.addEventListener(
-        "keydown",
-        handleEscapeKey
-      );
-    }
+      if (
+        currentAlertKey ===
+          previousAlertKey ||
+        notificationsAreOpen
+      ) {
+        return undefined;
+      }
 
-    return () => {
-      document.removeEventListener(
-        "mousedown",
-        handleClickOutside
-      );
+      let secondFrame;
 
-      document.removeEventListener(
-        "keydown",
-        handleEscapeKey
-      );
-    };
-  }, [
-    openProfile,
-    openNotifications,
-  ]);
+      const firstFrame =
+        window.requestAnimationFrame(
+          () => {
+            setAnimateNotificationBell(
+              false
+            );
 
-  useEffect(() => {
-    return () => {
+            secondFrame =
+              window.requestAnimationFrame(
+                () => {
+                  setAnimateNotificationBell(
+                    true
+                  );
+                }
+              );
+          }
+        );
+
       if (
         bellAnimationTimerRef.current
       ) {
@@ -325,8 +372,135 @@ export default function Navbar({
           bellAnimationTimerRef.current
         );
       }
-    };
-  }, []);
+
+      bellAnimationTimerRef.current =
+        window.setTimeout(
+          () => {
+            setAnimateNotificationBell(
+              false
+            );
+
+            bellAnimationTimerRef.current =
+              null;
+          },
+          2600
+        );
+
+      return () => {
+        window.cancelAnimationFrame(
+          firstFrame
+        );
+
+        if (
+          secondFrame
+        ) {
+          window.cancelAnimationFrame(
+            secondFrame
+          );
+        }
+      };
+    },
+    [
+      canViewSmartNotifications,
+      notificationsAreOpen,
+      popupAlert,
+    ]
+  );
+
+  useEffect(
+    () => {
+      const handleClickOutside =
+        (
+          event
+        ) => {
+          if (
+            profileRef.current &&
+            !profileRef.current.contains(
+              event.target
+            )
+          ) {
+            setOpenProfile(
+              false
+            );
+          }
+
+          if (
+            notificationRef.current &&
+            !notificationRef.current.contains(
+              event.target
+            )
+          ) {
+            setOpenNotifications(
+              false
+            );
+          }
+        };
+
+      const handleEscapeKey =
+        (
+          event
+        ) => {
+          if (
+            event.key ===
+            "Escape"
+          ) {
+            setOpenProfile(
+              false
+            );
+
+            setOpenNotifications(
+              false
+            );
+          }
+        };
+
+      if (
+        openProfile ||
+        notificationsAreOpen
+      ) {
+        document.addEventListener(
+          "mousedown",
+          handleClickOutside
+        );
+
+        document.addEventListener(
+          "keydown",
+          handleEscapeKey
+        );
+      }
+
+      return () => {
+        document.removeEventListener(
+          "mousedown",
+          handleClickOutside
+        );
+
+        document.removeEventListener(
+          "keydown",
+          handleEscapeKey
+        );
+      };
+    },
+    [
+      openProfile,
+      notificationsAreOpen,
+    ]
+  );
+
+  useEffect(
+    () => {
+      return () => {
+        if (
+          bellAnimationTimerRef.current
+        ) {
+          window.clearTimeout(
+            bellAnimationTimerRef.current
+          );
+        }
+      };
+    },
+    []
+  );
 
   const stopBellAnimation =
     () => {
@@ -347,8 +521,13 @@ export default function Navbar({
     };
 
   const openAlertTarget =
-    async (alert) => {
-      if (!alert) {
+    async (
+      alert
+    ) => {
+      if (
+        !alert ||
+        !canViewSmartNotifications
+      ) {
         return;
       }
 
@@ -362,7 +541,9 @@ export default function Navbar({
         await markAlertAsRead(
           alert.alertKey
         );
-      } catch (error) {
+      } catch (
+        error
+      ) {
         console.error(
           "Failed to mark smart alert as read:",
           error
@@ -400,14 +581,18 @@ export default function Navbar({
 
   const handleToggleNotifications =
     () => {
-      if (!canView) {
+      if (
+        !canViewSmartNotifications
+      ) {
         return;
       }
 
       stopBellAnimation();
 
       setOpenNotifications(
-        (current) =>
+        (
+          current
+        ) =>
           !current
       );
 
@@ -418,7 +603,9 @@ export default function Navbar({
 
   const handleViewNotifications =
     () => {
-      if (!canView) {
+      if (
+        !canViewSmartNotifications
+      ) {
         return;
       }
 
@@ -434,7 +621,7 @@ export default function Navbar({
   const handleClearReadAlerts =
     async () => {
       if (
-        !canView ||
+        !canViewSmartNotifications ||
         !hasReadAlerts ||
         isClearingRead
       ) {
@@ -443,7 +630,9 @@ export default function Navbar({
 
       try {
         await clearReadAlerts();
-      } catch (error) {
+      } catch (
+        error
+      ) {
         console.error(
           "Failed to clear read smart alerts:",
           error
@@ -452,8 +641,11 @@ export default function Navbar({
     };
 
   const handleDismissToast =
-    async (alert) => {
+    async (
+      alert
+    ) => {
       if (
+        !canViewSmartNotifications ||
         !alert?.alertKey
       ) {
         return;
@@ -463,7 +655,9 @@ export default function Navbar({
         await dismissAlert(
           alert.alertKey
         );
-      } catch (error) {
+      } catch (
+        error
+      ) {
         console.error(
           "Failed to dismiss smart alert:",
           error
@@ -481,7 +675,9 @@ export default function Navbar({
         "token"
       );
 
-      setUser(null);
+      setUser(
+        null
+      );
 
       setOpenProfile(
         false
@@ -494,7 +690,8 @@ export default function Navbar({
       navigate(
         "/login",
         {
-          replace: true,
+          replace:
+            true,
         }
       );
     };
@@ -507,7 +704,7 @@ export default function Navbar({
         </h2>
 
         <div className="flex items-center gap-3">
-          {canView && (
+          {canViewSmartNotifications && (
             <div
               className="relative"
               ref={
@@ -522,12 +719,13 @@ export default function Navbar({
                 className="relative flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 transition hover:bg-gray-100 hover:text-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/15 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
                 title="Smart Alerts"
                 aria-label={`Smart Alerts${
-                  unreadCount > 0
+                  unreadCount >
+                  0
                     ? `, ${unreadCount} unread`
                     : ""
                 }`}
                 aria-expanded={
-                  openNotifications
+                  notificationsAreOpen
                 }
                 aria-haspopup="dialog"
               >
@@ -536,7 +734,7 @@ export default function Navbar({
                   aria-hidden="true"
                   className={
                     animateNotificationBell &&
-                    !openNotifications
+                    !notificationsAreOpen
                       ? "notification-bell-icon-new"
                       : ""
                   }
@@ -553,7 +751,7 @@ export default function Navbar({
                 )}
               </button>
 
-              {openNotifications && (
+              {notificationsAreOpen && (
                 <div
                   role="dialog"
                   aria-label="Smart Alerts"
@@ -778,6 +976,7 @@ export default function Navbar({
                         <FiEye
                           aria-hidden="true"
                         />
+
                         View All
                         Smart Alerts
                       </button>
@@ -799,13 +998,17 @@ export default function Navbar({
 
           <div
             className="relative"
-            ref={profileRef}
+            ref={
+              profileRef
+            }
           >
             <button
               type="button"
               onClick={() => {
                 setOpenProfile(
-                  (current) =>
+                  (
+                    current
+                  ) =>
                     !current
                 );
 
@@ -846,11 +1049,11 @@ export default function Navbar({
             </button>
 
             {openProfile && (
-              <div className="absolute right-0 z-[80] mt-3 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900">
+              <div className="absolute right-0 z-[80] mt-3 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900">
                 <div className="border-b border-gray-100 px-4 py-4 dark:border-white/10">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-start gap-3">
                     <div
-                      className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold text-white ${roleConfig.color}`}
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${roleConfig.color}`}
                     >
                       <FiUser
                         size={
@@ -876,6 +1079,21 @@ export default function Navbar({
                           roleConfig.roleName
                         }
                       </p>
+
+                      {isHRCoordinator &&
+                        assignedCompany && (
+                          <p
+                            title={
+                              assignedCompany
+                            }
+                            className="mt-1 truncate text-xs font-semibold text-violet-600 dark:text-violet-300"
+                          >
+                            Client:{" "}
+                            {
+                              assignedCompany
+                            }
+                          </p>
+                        )}
                     </div>
                   </div>
                 </div>
@@ -890,6 +1108,7 @@ export default function Navbar({
                   <FiLogOut
                     aria-hidden="true"
                   />
+
                   Logout
                 </button>
               </div>
@@ -898,19 +1117,21 @@ export default function Navbar({
         </div>
       </div>
 
-      <SmartAlertToast
-        alert={
-          openNotifications
-            ? null
-            : popupAlert
-        }
-        onDismiss={
-          handleDismissToast
-        }
-        onView={
-          openAlertTarget
-        }
-      />
+      {canViewSmartNotifications && (
+        <SmartAlertToast
+          alert={
+            notificationsAreOpen
+              ? null
+              : popupAlert
+          }
+          onDismiss={
+            handleDismissToast
+          }
+          onView={
+            openAlertTarget
+          }
+        />
+      )}
     </>
   );
 }

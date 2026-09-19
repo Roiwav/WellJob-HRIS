@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+import { createPortal } from "react-dom";
 import { FiX } from "react-icons/fi";
 
 const FOCUSABLE_SELECTOR = [
@@ -259,20 +260,16 @@ export default function Dialog({
     requestClose,
   ]);
 
-  if (!open) {
+  if (!open || typeof document === "undefined") {
     return null;
   }
 
-  const handleOverlayPointerDown = (
-    event
-  ) => {
+  const handleOverlayPointerDown = (event) => {
     pointerStartedOnOverlayRef.current =
       event.target === event.currentTarget;
   };
 
-  const handleOverlayPointerUp = (
-    event
-  ) => {
+  const handleOverlayPointerUp = (event) => {
     const endedOnOverlay =
       event.target === event.currentTarget;
 
@@ -285,8 +282,7 @@ export default function Dialog({
       requestClose();
     }
 
-    pointerStartedOnOverlayRef.current =
-      false;
+    pointerStartedOnOverlayRef.current = false;
   };
 
   const sizeClass =
@@ -301,7 +297,7 @@ export default function Dialog({
     TONE_CLASSES[tone] ||
     TONE_CLASSES.default;
 
-  return (
+  const dialogContent = (
     <div
       className={[
         "fixed inset-0 z-[9999] flex items-center justify-center",
@@ -310,9 +306,7 @@ export default function Dialog({
       ]
         .filter(Boolean)
         .join(" ")}
-      onPointerDown={
-        handleOverlayPointerDown
-      }
+      onPointerDown={handleOverlayPointerDown}
       onPointerUp={handleOverlayPointerUp}
     >
       <div
@@ -431,5 +425,10 @@ export default function Dialog({
         )}
       </div>
     </div>
+  );
+
+  return createPortal(
+    dialogContent,
+    document.body
   );
 }

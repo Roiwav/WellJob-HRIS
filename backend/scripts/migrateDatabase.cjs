@@ -39,6 +39,7 @@ const MIGRATIONS = [
       );
     },
   },
+
   {
     name: "add_incident_timeline.sql",
     isApplied: async (connection) =>
@@ -47,6 +48,7 @@ const MIGRATIONS = [
         "incident_timeline"
       ),
   },
+
   {
     name: "smart_suggestion_states.sql",
     isApplied: async (connection) =>
@@ -55,6 +57,7 @@ const MIGRATIONS = [
         "smart_suggestion_states"
       ),
   },
+
   {
     name: "add_incident_policy_sanction.sql",
     isApplied: async (connection) =>
@@ -64,6 +67,7 @@ const MIGRATIONS = [
         "policy_sanction"
       ),
   },
+
   {
     name: "add_one_active_deployment_invariant.sql",
     isApplied: async (connection) => {
@@ -87,6 +91,7 @@ const MIGRATIONS = [
       );
     },
   },
+
   {
     name: "add_employee_documents_employee_id_index.sql",
     isApplied: async (connection) =>
@@ -96,6 +101,7 @@ const MIGRATIONS = [
         "idx_employee_documents_employee_id"
       ),
   },
+
   {
     name: "add_employee_documents_expiration_index.sql",
     isApplied: async (connection) =>
@@ -105,6 +111,7 @@ const MIGRATIONS = [
         "idx_employee_documents_expiration_name_employee"
       ),
   },
+
   {
     name: "add_audit_logs_category_created_index.sql",
     isApplied: async (connection) =>
@@ -112,6 +119,88 @@ const MIGRATIONS = [
         connection,
         "audit_logs",
         "idx_audit_logs_category_created_id"
+      ),
+  },
+
+  {
+    name: "add_hr_coordinator_scope.sql",
+    isApplied: async (connection) => {
+      const roleSupportsHrCoordinator =
+        await enumColumnContains(
+          connection,
+          "users",
+          "role",
+          "HR_COORDINATOR"
+        );
+
+      const assignedCompanyColumn =
+        await columnExists(
+          connection,
+          "users",
+          "assigned_company"
+        );
+
+      const roleCompanyIndex =
+        await indexExists(
+          connection,
+          "users",
+          "idx_users_role_assigned_company"
+        );
+
+      return (
+        roleSupportsHrCoordinator &&
+        assignedCompanyColumn &&
+        roleCompanyIndex
+      );
+    },
+  },
+
+  /*
+   * ==================================================
+   * CLIENT COMPANY + POSITION MASTER DATA
+   * ==================================================
+   *
+   * This migration creates the authoritative option
+   * lists used by System Configuration.
+   *
+   * Existing string-based operational fields remain
+   * intact so historical deployment/company/position
+   * snapshots are preserved.
+   *
+   * The state check also validates the legacy-data
+   * backfill. This prevents a partially executed
+   * migration from being incorrectly adopted merely
+   * because its tables happen to exist.
+   */
+  {
+    name: "add_company_position_master_data.sql",
+
+    /*
+     * Once recorded, only the persistent schema contract is
+     * checked on future migration runs.
+     *
+     * Historical backfill completeness is verified only while
+     * adopting an existing unrecorded state or immediately
+     * after migration #10 executes.
+     */
+    isApplied: async (connection) =>
+      companyPositionMasterDataSchemaIsApplied(
+        connection
+      ),
+
+    canAdopt: async (connection) =>
+      companyPositionMasterDataIsApplied(
+        connection
+      ),
+
+    verifyApplied: async (connection) =>
+      companyPositionMasterDataIsApplied(
+        connection
+      ),
+
+    preflight: async (connection) =>
+      validateCompanyPositionMasterDataSource(
+        connection
       ),
   },
 ];
@@ -171,23 +260,28 @@ function getConnectionOptions() {
     host: requiredEnv(
       "DB_HOST"
     ),
+
     port,
+
     user: requiredEnv(
       "DB_USER"
     ),
+
     password: requiredEnv(
       "DB_PASSWORD",
       {
         allowEmpty: true,
       }
     ),
+
     database: requiredEnv(
       "DB_NAME"
     ),
 
     /*
-     * Migration files are trusted, repository-owned
-     * SQL and may contain multiple statements.
+     * Migration files are trusted,
+     * repository-owned SQL and may contain
+     * multiple statements.
      */
     multipleStatements: true,
   };
@@ -283,6 +377,7 @@ async function ensureMigrationTable(
       applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
       PRIMARY KEY (id),
+
       UNIQUE KEY uq_schema_migrations_name (
         migration_name
       )
@@ -351,7 +446,8 @@ async function tableExists(
   const [rows] =
     await connection.query(
       `
-      SELECT COUNT(*) AS count
+      SELECT
+        COUNT(*) AS count
       FROM INFORMATION_SCHEMA.TABLES
       WHERE TABLE_SCHEMA = DATABASE()
         AND TABLE_NAME = ?
@@ -365,7 +461,7 @@ async function tableExists(
   return (
     Number(
       rows[0]?.count ||
-      0
+        0
     ) > 0
   );
 }
@@ -378,7 +474,8 @@ async function columnExists(
   const [rows] =
     await connection.query(
       `
-      SELECT COUNT(*) AS count
+      SELECT
+        COUNT(*) AS count
       FROM INFORMATION_SCHEMA.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE()
         AND TABLE_NAME = ?
@@ -393,8 +490,49 @@ async function columnExists(
   return (
     Number(
       rows[0]?.count ||
-      0
+        0
     ) > 0
+  );
+}
+
+async function enumColumnContains(
+  connection,
+  tableName,
+  columnName,
+  enumValue
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COLUMN_TYPE AS column_type
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+      LIMIT 1
+      `,
+      [
+        tableName,
+        columnName,
+      ]
+    );
+
+  if (
+    rows.length ===
+    0
+  ) {
+    return false;
+  }
+
+  const columnType =
+    String(
+      rows[0]?.column_type ||
+        ""
+    );
+
+  return columnType.includes(
+    `'${String(enumValue)}'`
   );
 }
 
@@ -406,7 +544,8 @@ async function indexExists(
   const [rows] =
     await connection.query(
       `
-      SELECT COUNT(*) AS count
+      SELECT
+        COUNT(*) AS count
       FROM INFORMATION_SCHEMA.STATISTICS
       WHERE TABLE_SCHEMA = DATABASE()
         AND TABLE_NAME = ?
@@ -421,7 +560,7 @@ async function indexExists(
   return (
     Number(
       rows[0]?.count ||
-      0
+        0
     ) > 0
   );
 }
@@ -434,7 +573,8 @@ async function uniqueIndexExists(
   const [rows] =
     await connection.query(
       `
-      SELECT COUNT(*) AS count
+      SELECT
+        COUNT(*) AS count
       FROM INFORMATION_SCHEMA.STATISTICS
       WHERE TABLE_SCHEMA = DATABASE()
         AND TABLE_NAME = ?
@@ -450,8 +590,1024 @@ async function uniqueIndexExists(
   return (
     Number(
       rows[0]?.count ||
-      0
+        0
     ) > 0
+  );
+}
+
+async function columnDefinitionMatches(
+  connection,
+  {
+    tableName,
+    columnName,
+    dataType,
+    maxLength = null,
+    nullable = null,
+    unsigned = false,
+    collationName = null,
+    extraIncludes = null,
+  }
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        DATA_TYPE AS data_type,
+        CHARACTER_MAXIMUM_LENGTH AS character_maximum_length,
+        IS_NULLABLE AS is_nullable,
+        COLUMN_TYPE AS column_type,
+        COLLATION_NAME AS collation_name,
+        EXTRA AS extra
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+      LIMIT 1
+      `,
+      [
+        tableName,
+        columnName,
+      ]
+    );
+
+  if (
+    rows.length ===
+    0
+  ) {
+    return false;
+  }
+
+  const row =
+    rows[0];
+
+  if (
+    String(
+      row.data_type ||
+        ""
+    ).toLowerCase() !==
+    String(
+      dataType ||
+        ""
+    ).toLowerCase()
+  ) {
+    return false;
+  }
+
+  if (
+    maxLength !==
+      null &&
+    Number(
+      row.character_maximum_length
+    ) !==
+      Number(
+        maxLength
+      )
+  ) {
+    return false;
+  }
+
+  if (
+    typeof nullable ===
+    "boolean"
+  ) {
+    const actuallyNullable =
+      String(
+        row.is_nullable ||
+          ""
+      ).toUpperCase() ===
+      "YES";
+
+    if (
+      actuallyNullable !==
+      nullable
+    ) {
+      return false;
+    }
+  }
+
+  if (
+    unsigned &&
+    !String(
+      row.column_type ||
+        ""
+    )
+      .toLowerCase()
+      .includes(
+        "unsigned"
+      )
+  ) {
+    return false;
+  }
+
+  if (
+    collationName &&
+    String(
+      row.collation_name ||
+        ""
+    ).toLowerCase() !==
+      String(
+        collationName
+      ).toLowerCase()
+  ) {
+    return false;
+  }
+
+  if (
+    extraIncludes &&
+    !String(
+      row.extra ||
+        ""
+    )
+      .toLowerCase()
+      .includes(
+        String(
+          extraIncludes
+        ).toLowerCase()
+      )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+async function indexDefinitionMatches(
+  connection,
+  {
+    tableName,
+    indexName,
+    columns,
+    unique = false,
+  }
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COLUMN_NAME AS column_name,
+        SEQ_IN_INDEX AS seq_in_index,
+        NON_UNIQUE AS non_unique
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND INDEX_NAME = ?
+      ORDER BY SEQ_IN_INDEX ASC
+      `,
+      [
+        tableName,
+        indexName,
+      ]
+    );
+
+  if (
+    rows.length !==
+    columns.length
+  ) {
+    return false;
+  }
+
+  const expectedNonUnique =
+    unique
+      ? 0
+      : 1;
+
+  return rows.every(
+    (
+      row,
+      index
+    ) =>
+      String(
+        row.column_name ||
+          ""
+      ) ===
+        String(
+          columns[
+            index
+          ] ||
+            ""
+        ) &&
+      Number(
+        row.seq_in_index
+      ) ===
+        index +
+          1 &&
+      Number(
+        row.non_unique
+      ) ===
+        expectedNonUnique
+  );
+}
+
+async function foreignKeyExists(
+  connection,
+  {
+    tableName,
+    constraintName,
+    columnName,
+    referencedTableName,
+    referencedColumnName,
+    updateRule,
+    deleteRule,
+  }
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        kcu.COLUMN_NAME AS column_name,
+        kcu.REFERENCED_TABLE_NAME AS referenced_table_name,
+        kcu.REFERENCED_COLUMN_NAME AS referenced_column_name,
+        rc.UPDATE_RULE AS update_rule,
+        rc.DELETE_RULE AS delete_rule
+      FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS kcu
+      INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS AS rc
+        ON rc.CONSTRAINT_SCHEMA =
+          kcu.CONSTRAINT_SCHEMA
+        AND rc.CONSTRAINT_NAME =
+          kcu.CONSTRAINT_NAME
+        AND rc.TABLE_NAME =
+          kcu.TABLE_NAME
+      WHERE kcu.TABLE_SCHEMA = DATABASE()
+        AND kcu.TABLE_NAME = ?
+        AND kcu.CONSTRAINT_NAME = ?
+      LIMIT 1
+      `,
+      [
+        tableName,
+        constraintName,
+      ]
+    );
+
+  if (
+    rows.length ===
+    0
+  ) {
+    return false;
+  }
+
+  const row =
+    rows[0];
+
+  return (
+    String(
+      row.column_name ||
+        ""
+    ) ===
+      String(
+        columnName ||
+          ""
+      ) &&
+    String(
+      row.referenced_table_name ||
+        ""
+    ) ===
+      String(
+        referencedTableName ||
+          ""
+      ) &&
+    String(
+      row.referenced_column_name ||
+        ""
+    ) ===
+      String(
+        referencedColumnName ||
+          ""
+      ) &&
+    String(
+      row.update_rule ||
+        ""
+    ).toUpperCase() ===
+      String(
+        updateRule ||
+          ""
+      ).toUpperCase() &&
+    String(
+      row.delete_rule ||
+        ""
+    ).toUpperCase() ===
+      String(
+        deleteRule ||
+          ""
+      ).toUpperCase()
+  );
+}
+
+async function validateCompanyPositionMasterDataSource(
+  connection
+) {
+  const [
+    companyLengthRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        MAX(
+          CHAR_LENGTH(
+            source.company_name
+          )
+        ) AS max_company_length
+      FROM (
+        SELECT
+          CONVERT(
+            TRIM(company)
+            USING utf8mb4
+          ) AS company_name
+        FROM deployment_assignments
+        WHERE company IS NOT NULL
+          AND TRIM(company) <> ''
+
+        UNION ALL
+
+        SELECT
+          CONVERT(
+            TRIM(company)
+            USING utf8mb4
+          ) AS company_name
+        FROM employees
+        WHERE company IS NOT NULL
+          AND TRIM(company) <> ''
+
+        UNION ALL
+
+        SELECT
+          CONVERT(
+            TRIM(company)
+            USING utf8mb4
+          ) AS company_name
+        FROM incidents
+        WHERE company IS NOT NULL
+          AND TRIM(company) <> ''
+
+        UNION ALL
+
+        SELECT
+          CONVERT(
+            TRIM(assigned_company)
+            USING utf8mb4
+          ) AS company_name
+        FROM users
+        WHERE assigned_company IS NOT NULL
+          AND TRIM(assigned_company) <> ''
+      ) AS source
+      `
+    );
+
+  const maxCompanyLength =
+    Number(
+      companyLengthRows[
+        0
+      ]?.max_company_length ||
+        0
+    );
+
+  if (
+    maxCompanyLength >
+    255
+  ) {
+    throw new Error(
+      "Migration #10 preflight failed: an existing company value exceeds 255 characters."
+    );
+  }
+
+  const [
+    positionLengthRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        MAX(
+          CHAR_LENGTH(
+            CONVERT(
+              TRIM(position)
+              USING utf8mb4
+            )
+          )
+        ) AS max_position_length
+      FROM deployment_assignments
+      WHERE position IS NOT NULL
+        AND TRIM(position) <> ''
+      `
+    );
+
+  const maxPositionLength =
+    Number(
+      positionLengthRows[
+        0
+      ]?.max_position_length ||
+        0
+    );
+
+  if (
+    maxPositionLength >
+    150
+  ) {
+    throw new Error(
+      "Migration #10 preflight failed: an existing deployment position exceeds 150 characters."
+    );
+  }
+}
+
+/*
+ * ==================================================
+ * COMPANY / POSITION MASTER-DATA STATE CHECK
+ * ==================================================
+ *
+ * Verification includes:
+ *
+ * - required master tables
+ * - required columns
+ * - unique and lookup indexes
+ * - company-position foreign key
+ * - backfilled existing company names
+ * - backfilled existing deployment positions
+ *
+ * The backfill verification is important because
+ * MySQL/MariaDB DDL may auto-commit. If the migration
+ * previously stopped after creating the tables but
+ * before completing its INSERT statements, this
+ * function returns false rather than adopting an
+ * incomplete state.
+ */
+async function companyPositionMasterDataSchemaIsApplied(
+  connection
+) {
+  const clientCompaniesTable =
+    await tableExists(
+      connection,
+      "client_companies"
+    );
+
+  const companyPositionsTable =
+    await tableExists(
+      connection,
+      "company_positions"
+    );
+
+  if (
+    !clientCompaniesTable ||
+    !companyPositionsTable
+  ) {
+    return false;
+  }
+
+  const requiredColumnChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "id",
+
+          dataType:
+            "bigint",
+
+          nullable:
+            false,
+
+          unsigned:
+            true,
+
+          extraIncludes:
+            "auto_increment",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "company_name",
+
+          dataType:
+            "varchar",
+
+          maxLength:
+            255,
+
+          nullable:
+            false,
+
+          collationName:
+            "utf8mb4_unicode_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "is_active",
+
+          dataType:
+            "tinyint",
+
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "created_at",
+
+          dataType:
+            "timestamp",
+
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          columnName:
+            "updated_at",
+
+          dataType:
+            "timestamp",
+
+          nullable:
+            false,
+
+          extraIncludes:
+            "on update",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "id",
+
+          dataType:
+            "bigint",
+
+          nullable:
+            false,
+
+          unsigned:
+            true,
+
+          extraIncludes:
+            "auto_increment",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "company_id",
+
+          dataType:
+            "bigint",
+
+          nullable:
+            false,
+
+          unsigned:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "position_name",
+
+          dataType:
+            "varchar",
+
+          maxLength:
+            150,
+
+          nullable:
+            false,
+
+          collationName:
+            "utf8mb4_unicode_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "is_active",
+
+          dataType:
+            "tinyint",
+
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "created_at",
+
+          dataType:
+            "timestamp",
+
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          columnName:
+            "updated_at",
+
+          dataType:
+            "timestamp",
+
+          nullable:
+            false,
+
+          extraIncludes:
+            "on update",
+        }
+      ),
+    ]);
+
+  if (
+    requiredColumnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const requiredIndexChecks =
+    await Promise.all([
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          indexName:
+            "PRIMARY",
+
+          columns: [
+            "id",
+          ],
+
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          indexName:
+            "uq_client_companies_company_name",
+
+          columns: [
+            "company_name",
+          ],
+
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "client_companies",
+
+          indexName:
+            "idx_client_companies_active_name",
+
+          columns: [
+            "is_active",
+            "company_name",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          indexName:
+            "PRIMARY",
+
+          columns: [
+            "id",
+          ],
+
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          indexName:
+            "uq_company_positions_company_position",
+
+          columns: [
+            "company_id",
+            "position_name",
+          ],
+
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "company_positions",
+
+          indexName:
+            "idx_company_positions_company_active_name",
+
+          columns: [
+            "company_id",
+            "is_active",
+            "position_name",
+          ],
+        }
+      ),
+    ]);
+
+  if (
+    requiredIndexChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const companyPositionForeignKey =
+    await foreignKeyExists(
+      connection,
+      {
+        tableName:
+          "company_positions",
+
+        constraintName:
+          "fk_company_positions_company",
+
+        columnName:
+          "company_id",
+
+        referencedTableName:
+          "client_companies",
+
+        referencedColumnName:
+          "id",
+
+        updateRule:
+          "CASCADE",
+
+        deleteRule:
+          "RESTRICT",
+      }
+    );
+
+  return Boolean(
+    companyPositionForeignKey
+  );
+}
+
+async function companyPositionMasterDataIsApplied(
+  connection
+) {
+  const schemaApplied =
+    await companyPositionMasterDataSchemaIsApplied(
+      connection
+    );
+
+  if (
+    !schemaApplied
+  ) {
+    return false;
+  }
+
+  const [
+    missingCompanyRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS missing_count
+      FROM (
+        SELECT DISTINCT
+          source.company_name
+        FROM (
+          SELECT
+            CONVERT(
+              TRIM(company)
+              USING utf8mb4
+            ) COLLATE utf8mb4_unicode_ci
+              AS company_name
+          FROM deployment_assignments
+          WHERE company IS NOT NULL
+            AND TRIM(company) <> ''
+
+          UNION
+
+          SELECT
+            CONVERT(
+              TRIM(company)
+              USING utf8mb4
+            ) COLLATE utf8mb4_unicode_ci
+              AS company_name
+          FROM employees
+          WHERE company IS NOT NULL
+            AND TRIM(company) <> ''
+
+          UNION
+
+          SELECT
+            CONVERT(
+              TRIM(company)
+              USING utf8mb4
+            ) COLLATE utf8mb4_unicode_ci
+              AS company_name
+          FROM incidents
+          WHERE company IS NOT NULL
+            AND TRIM(company) <> ''
+
+          UNION
+
+          SELECT
+            CONVERT(
+              TRIM(assigned_company)
+              USING utf8mb4
+            ) COLLATE utf8mb4_unicode_ci
+              AS company_name
+          FROM users
+          WHERE assigned_company IS NOT NULL
+            AND TRIM(assigned_company) <> ''
+        ) AS source
+
+        WHERE source.company_name IS NOT NULL
+          AND source.company_name <> ''
+      ) AS existing_companies
+
+      LEFT JOIN client_companies AS master_company
+        ON (
+          CONVERT(
+            TRIM(
+              master_company.company_name
+            )
+            USING utf8mb4
+          ) COLLATE utf8mb4_unicode_ci
+        ) =
+        existing_companies.company_name
+
+      WHERE master_company.id IS NULL
+      `
+    );
+
+  const missingCompanyCount =
+    Number(
+      missingCompanyRows[
+        0
+      ]?.missing_count ||
+        0
+    );
+
+  if (
+    missingCompanyCount >
+    0
+  ) {
+    return false;
+  }
+
+  const [
+    missingPositionRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS missing_count
+      FROM (
+        SELECT DISTINCT
+          CONVERT(
+            TRIM(company)
+            USING utf8mb4
+          ) COLLATE utf8mb4_unicode_ci
+            AS company_name,
+
+          CONVERT(
+            TRIM(position)
+            USING utf8mb4
+          ) COLLATE utf8mb4_unicode_ci
+            AS position_name
+
+        FROM deployment_assignments
+
+        WHERE company IS NOT NULL
+          AND TRIM(company) <> ''
+
+          AND position IS NOT NULL
+          AND TRIM(position) <> ''
+      ) AS existing_positions
+
+      INNER JOIN client_companies AS master_company
+        ON (
+          CONVERT(
+            TRIM(
+              master_company.company_name
+            )
+            USING utf8mb4
+          ) COLLATE utf8mb4_unicode_ci
+        ) =
+        existing_positions.company_name
+
+      LEFT JOIN company_positions AS master_position
+        ON master_position.company_id =
+          master_company.id
+
+        AND (
+          CONVERT(
+            TRIM(
+              master_position.position_name
+            )
+            USING utf8mb4
+          ) COLLATE utf8mb4_unicode_ci
+        ) =
+        existing_positions.position_name
+
+      WHERE master_position.id IS NULL
+      `
+    );
+
+  const missingPositionCount =
+    Number(
+      missingPositionRows[
+        0
+      ]?.missing_count ||
+        0
+    );
+
+  return (
+    missingPositionCount ===
+    0
   );
 }
 
@@ -461,7 +1617,8 @@ async function acquireMigrationLock(
   const [rows] =
     await connection.query(
       `
-      SELECT GET_LOCK(?, 15) AS acquired
+      SELECT
+        GET_LOCK(?, 15) AS acquired
       `,
       [
         MIGRATION_LOCK_NAME,
@@ -485,7 +1642,8 @@ async function releaseMigrationLock(
   try {
     await connection.query(
       `
-      SELECT RELEASE_LOCK(?) AS released
+      SELECT
+        RELEASE_LOCK(?) AS released
       `,
       [
         MIGRATION_LOCK_NAME,
@@ -506,7 +1664,8 @@ async function runMigrations() {
       getConnectionOptions()
     );
 
-  let lockAcquired = false;
+  let lockAcquired =
+    false;
 
   try {
     console.log(
@@ -521,7 +1680,8 @@ async function runMigrations() {
       connection
     );
 
-    lockAcquired = true;
+    lockAcquired =
+      true;
 
     await ensureMigrationTable(
       connection
@@ -532,9 +1692,14 @@ async function runMigrations() {
         connection
       );
 
-    let executedCount = 0;
-    let adoptedCount = 0;
-    let skippedCount = 0;
+    let executedCount =
+      0;
+
+    let adoptedCount =
+      0;
+
+    let skippedCount =
+      0;
 
     for (
       const migration of
@@ -584,7 +1749,8 @@ async function runMigrations() {
           );
         }
 
-        skippedCount += 1;
+        skippedCount +=
+          1;
 
         console.log(
           `SKIP    ${migration.name}`
@@ -599,8 +1765,12 @@ async function runMigrations() {
        * end-state already exists, adopt it into the
        * ledger without re-running DDL.
        */
+      const adoptionChecker =
+        migration.canAdopt ||
+        migration.isApplied;
+
       const alreadyPresent =
-        await migration.isApplied(
+        await adoptionChecker(
           connection
         );
 
@@ -612,19 +1782,35 @@ async function runMigrations() {
           {
             migrationName:
               migration.name,
+
             checksum,
+
             executionMode:
               "adopted",
           }
         );
 
-        adoptedCount += 1;
+        adoptedCount +=
+          1;
 
         console.log(
           `ADOPT   ${migration.name}`
         );
 
         continue;
+      }
+
+      if (
+        typeof migration.preflight ===
+        "function"
+      ) {
+        console.log(
+          `CHECK   ${migration.name}`
+        );
+
+        await migration.preflight(
+          connection
+        );
       }
 
       console.log(
@@ -644,8 +1830,12 @@ async function runMigrations() {
         sql
       );
 
+      const verificationChecker =
+        migration.verifyApplied ||
+        migration.isApplied;
+
       const appliedSuccessfully =
-        await migration.isApplied(
+        await verificationChecker(
           connection
         );
 
@@ -662,13 +1852,16 @@ async function runMigrations() {
         {
           migrationName:
             migration.name,
+
           checksum,
+
           executionMode:
             "executed",
         }
       );
 
-      executedCount += 1;
+      executedCount +=
+        1;
 
       console.log(
         `PASS    ${migration.name}`
@@ -682,10 +1875,13 @@ async function runMigrations() {
     console.table({
       "Executed now":
         executedCount,
+
       "Adopted existing":
         adoptedCount,
+
       "Already recorded":
         skippedCount,
+
       "Total migrations":
         MIGRATIONS.length,
     });
@@ -714,6 +1910,7 @@ runMigrations().catch(
         error
     );
 
-    process.exitCode = 1;
+    process.exitCode =
+      1;
   }
 );

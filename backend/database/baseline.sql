@@ -22,6 +22,7 @@
 
 SET NAMES utf8mb4;
 
+
 /*
  * ================================================================
  * 1. USERS
@@ -33,22 +34,39 @@ CREATE TABLE IF NOT EXISTS users (
   full_name VARCHAR(150) NOT NULL,
   username VARCHAR(100) NOT NULL,
   password VARCHAR(255) NOT NULL,
+
   role ENUM(
     'SUPER_ADMIN',
     'HR_MANAGER',
     'HR_STAFF',
+    'HR_COORDINATOR',
     'IT_SUPPORT'
   ) NOT NULL,
+
+  assigned_company VARCHAR(255) DEFAULT NULL,
+
   status ENUM(
     'Active',
     'Inactive'
   ) DEFAULT 'Active',
+
   must_change_password TINYINT(1) NOT NULL DEFAULT 1,
   token_version INT UNSIGNED NOT NULL DEFAULT 1,
 
   PRIMARY KEY (id),
-  UNIQUE KEY username (username),
-  UNIQUE KEY user_id (user_id)
+
+  UNIQUE KEY username (
+    username
+  ),
+
+  UNIQUE KEY user_id (
+    user_id
+  ),
+
+  KEY idx_users_role_assigned_company (
+    role,
+    assigned_company
+  )
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_general_ci;
@@ -71,6 +89,7 @@ CREATE TABLE IF NOT EXISTS employees (
   contractEndReason VARCHAR(100) DEFAULT NULL,
   contractEndRemarks TEXT DEFAULT NULL,
   contractEndedAt DATETIME DEFAULT NULL,
+
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     ON UPDATE CURRENT_TIMESTAMP,
 
@@ -100,6 +119,7 @@ CREATE TABLE IF NOT EXISTS system_settings (
   setting_value LONGTEXT NOT NULL,
 
   PRIMARY KEY (id),
+
   UNIQUE KEY setting_name (
     setting_name
   )
@@ -118,10 +138,12 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   user_id VARCHAR(20) DEFAULT NULL,
   username VARCHAR(100) DEFAULT NULL,
   role VARCHAR(50) DEFAULT NULL,
+
   category ENUM(
     'TECHNICAL',
     'OPERATIONAL'
   ) NOT NULL DEFAULT 'TECHNICAL',
+
   action VARCHAR(100) NOT NULL,
   description TEXT NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -197,6 +219,7 @@ CREATE TABLE IF NOT EXISTS deployment_assignments (
   ended_at DATETIME DEFAULT NULL,
   created_by_user_id INT DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     ON UPDATE CURRENT_TIMESTAMP,
 
@@ -317,24 +340,31 @@ CREATE TABLE IF NOT EXISTS incidents (
   policy_sanction VARCHAR(255) DEFAULT NULL,
   recommendation VARCHAR(255) DEFAULT NULL,
   resolution_notes TEXT DEFAULT NULL,
+
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
   updated_at TIMESTAMP NULL DEFAULT NULL
     ON UPDATE CURRENT_TIMESTAMP,
+
   locked_by INT DEFAULT NULL,
   locked_at DATETIME DEFAULT NULL,
+
   last_action_by_id VARCHAR(50) DEFAULT NULL,
   last_action_by_username VARCHAR(100) DEFAULT NULL,
   last_action_by_name VARCHAR(150) DEFAULT NULL,
   last_action_type VARCHAR(80) DEFAULT NULL,
   last_action_at DATETIME DEFAULT NULL,
+
   investigation_started_by_id VARCHAR(50) DEFAULT NULL,
   investigation_started_by_username VARCHAR(100) DEFAULT NULL,
   investigation_started_by_name VARCHAR(150) DEFAULT NULL,
   investigation_started_at DATETIME DEFAULT NULL,
+
   resolution_submitted_by_id VARCHAR(50) DEFAULT NULL,
   resolution_submitted_by_username VARCHAR(100) DEFAULT NULL,
   resolution_submitted_by_name VARCHAR(150) DEFAULT NULL,
   resolution_submitted_at DATETIME DEFAULT NULL,
+
   reviewed_by_id VARCHAR(50) DEFAULT NULL,
   reviewed_by_username VARCHAR(100) DEFAULT NULL,
   reviewed_by_name VARCHAR(150) DEFAULT NULL,
@@ -462,6 +492,7 @@ CREATE TABLE IF NOT EXISTS kpi_decision_history (
   suggested_hr_action_reason TEXT DEFAULT NULL,
   corrective_action_basis TEXT DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
   updated_at TIMESTAMP NULL DEFAULT NULL
     ON UPDATE CURRENT_TIMESTAMP,
 
@@ -498,6 +529,7 @@ CREATE TABLE IF NOT EXISTS smart_alert_states (
   read_at TIMESTAMP NULL DEFAULT NULL,
   dismissed_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
   updated_at TIMESTAMP NULL DEFAULT NULL
     ON UPDATE CURRENT_TIMESTAMP,
 
@@ -530,6 +562,7 @@ CREATE TABLE IF NOT EXISTS smart_suggestion_states (
   dismiss_reason TEXT DEFAULT NULL,
   dismissed_at DATETIME DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     ON UPDATE CURRENT_TIMESTAMP,
 
@@ -552,6 +585,98 @@ CREATE TABLE IF NOT EXISTS smart_suggestion_states (
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_general_ci;
+
+
+/*
+ * ================================================================
+ * 14. CLIENT COMPANIES
+ * ================================================================
+ *
+ * Central master list for WellJob client companies.
+ *
+ * Operational tables continue storing company names as snapshots
+ * for backward compatibility and historical preservation.
+ *
+ * New selectable company options should come from this table.
+ *
+ * Companies are deactivated instead of hard-deleted.
+ * ================================================================
+ */
+CREATE TABLE IF NOT EXISTS client_companies (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  company_name VARCHAR(255) NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+
+  created_at TIMESTAMP NOT NULL
+    DEFAULT CURRENT_TIMESTAMP,
+
+  updated_at TIMESTAMP NOT NULL
+    DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+
+  UNIQUE KEY uq_client_companies_company_name (
+    company_name
+  ),
+
+  KEY idx_client_companies_active_name (
+    is_active,
+    company_name
+  )
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+
+/*
+ * ================================================================
+ * 15. COMPANY POSITIONS
+ * ================================================================
+ *
+ * Company-specific deployment position master list.
+ *
+ * deployment_assignments.position remains the actual position
+ * snapshot stored for each deployment assignment.
+ *
+ * Position choices are deactivated instead of hard-deleted so
+ * historical deployment records remain valid.
+ * ================================================================
+ */
+CREATE TABLE IF NOT EXISTS company_positions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  company_id BIGINT UNSIGNED NOT NULL,
+  position_name VARCHAR(150) NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+
+  created_at TIMESTAMP NOT NULL
+    DEFAULT CURRENT_TIMESTAMP,
+
+  updated_at TIMESTAMP NOT NULL
+    DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+
+  UNIQUE KEY uq_company_positions_company_position (
+    company_id,
+    position_name
+  ),
+
+  KEY idx_company_positions_company_active_name (
+    company_id,
+    is_active,
+    position_name
+  ),
+
+  CONSTRAINT fk_company_positions_company
+    FOREIGN KEY (company_id)
+    REFERENCES client_companies(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
 
 
 /*

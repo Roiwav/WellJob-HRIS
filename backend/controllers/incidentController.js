@@ -236,6 +236,15 @@ function normalizeRole(value) {
 
   if (
     [
+      "HRCOORDINATOR",
+      "HR_COORDINATOR",
+    ].includes(role)
+  ) {
+    return "HR_COORDINATOR";
+  }
+
+  if (
+    [
       "ITSUPPORT",
       "IT_SUPPORT",
     ].includes(role)
@@ -244,6 +253,82 @@ function normalizeRole(value) {
   }
 
   return role || "USER";
+}
+
+function normalizeAssignedCompany(
+  value
+) {
+  const normalized =
+    String(value ?? "")
+      .trim()
+      .replace(/\s+/g, " ");
+
+  return normalized || null;
+}
+
+function isHrCoordinatorRequest(
+  req
+) {
+  return (
+    normalizeRole(
+      req?.user?.role
+    ) ===
+    "HR_COORDINATOR"
+  );
+}
+
+function getHrCoordinatorAssignedCompany(
+  req
+) {
+  return normalizeAssignedCompany(
+    req?.user?.assignedCompany ??
+      req?.user?.assigned_company
+  );
+}
+
+function companyNamesMatch(
+  left,
+  right
+) {
+  const normalizedLeft =
+    normalizeAssignedCompany(
+      left
+    );
+
+  const normalizedRight =
+    normalizeAssignedCompany(
+      right
+    );
+
+  if (
+    !normalizedLeft ||
+    !normalizedRight
+  ) {
+    return false;
+  }
+
+  return (
+    normalizedLeft.toLowerCase() ===
+    normalizedRight.toLowerCase()
+  );
+}
+
+function buildIncidentCompanyScopeCondition(
+  incidentAlias = "i"
+) {
+  return `
+    LOWER(
+      TRIM(
+        COALESCE(
+          ${incidentAlias}.company,
+          ''
+        )
+      )
+    ) =
+    LOWER(
+      TRIM(?)
+    )
+  `;
 }
 
 function isInvestigatorRole(
@@ -498,6 +583,30 @@ exports.getIncidentFormMeta =
     res
   ) => {
     try {
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
       const employeeSearch =
         String(
           req.query
@@ -527,6 +636,31 @@ exports.getIncidentFormMeta =
 
       const idSearch =
         `%${normalizedEmployeeId}%`;
+
+      const coordinatorScopeSql =
+        isHrCoordinator
+          ? `
+              AND LOWER(
+                TRIM(
+                  COALESCE(
+                    da.company,
+                    ''
+                  )
+                )
+              ) = LOWER(TRIM(?))
+            `
+          : "";
+
+      const queryParams = [
+        textSearch,
+        idSearch,
+        textSearch,
+        ...(isHrCoordinator
+          ? [
+              coordinatorCompany,
+            ]
+          : []),
+      ];
 
       const [rows] =
         await db
@@ -566,6 +700,7 @@ exports.getIncidentFormMeta =
                   )
                 ) LIKE ?
               )
+              ${coordinatorScopeSql}
               AND NOT EXISTS (
                 SELECT 1
                 FROM deployment_assignments conflicting
@@ -579,11 +714,7 @@ exports.getIncidentFormMeta =
               e.id ASC
             LIMIT 8
             `,
-            [
-              textSearch,
-              idSearch,
-              textSearch,
-            ]
+            queryParams
           );
 
       return res.json({
@@ -1800,8 +1931,30 @@ function serializeIncidentSummary(
 }
 
 async function getIncidentWithEvidence(
-  id
+  id,
+  {
+    coordinatorCompany = null,
+  } = {}
 ) {
+  const companyScopeSql =
+    coordinatorCompany
+      ? `
+        AND
+        ${buildIncidentCompanyScopeCondition(
+          "i"
+        )}
+      `
+      : "";
+
+  const queryParams = [
+    id,
+    ...(coordinatorCompany
+      ? [
+          coordinatorCompany,
+        ]
+      : []),
+  ];
+
   const [rows] =
     await db
       .promise()
@@ -1816,11 +1969,10 @@ async function getIncidentWithEvidence(
         LEFT JOIN employees e
           ON e.id = i.employee_id
         WHERE i.id = ?
+          ${companyScopeSql}
         LIMIT 1
         `,
-        [
-          id,
-        ]
+        queryParams
       );
 
   if (!rows.length) {
@@ -2102,13 +2254,28 @@ function normalizeIncidentSummarySearch(
 }
 
 function buildIncidentSummaryFilters(
-  query = {}
+  query = {},
+  {
+    coordinatorCompany = null,
+  } = {}
 ) {
   const conditions =
     [];
 
   const params =
     [];
+
+  if (coordinatorCompany) {
+    conditions.push(
+      buildIncidentCompanyScopeCondition(
+        "i"
+      )
+    );
+
+    params.push(
+      coordinatorCompany
+    );
+  }
 
   const caseTab =
     normalizeIncidentSummaryCaseTab(
@@ -2231,6 +2398,30 @@ exports.getIncidents =
     res
   ) => {
     try {
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
       const view =
         String(
           req.query?.view ||
@@ -2279,7 +2470,10 @@ exports.getIncidents =
           params,
         } =
           buildIncidentSummaryFilters(
-            req.query || {}
+            req.query || {},
+            {
+              coordinatorCompany,
+            }
           );
 
         const [
@@ -2309,7 +2503,8 @@ exports.getIncidents =
              */
             db
               .promise()
-              .query(`
+              .query(
+                `
                 SELECT
                   COUNT(*) AS all_count,
 
@@ -2318,7 +2513,7 @@ exports.getIncidents =
                       WHEN LOWER(
                         TRIM(
                           COALESCE(
-                            status,
+                            i.status,
                             ''
                           )
                         )
@@ -2336,7 +2531,7 @@ exports.getIncidents =
                       WHEN LOWER(
                         TRIM(
                           COALESCE(
-                            status,
+                            i.status,
                             ''
                           )
                         )
@@ -2354,7 +2549,7 @@ exports.getIncidents =
                       WHEN LOWER(
                         TRIM(
                           COALESCE(
-                            status,
+                            i.status,
                             ''
                           )
                         )
@@ -2367,8 +2562,21 @@ exports.getIncidents =
                     END
                   ) AS closed_count
 
-                FROM incidents
-              `),
+                FROM incidents i
+                ${
+                  coordinatorCompany
+                    ? `WHERE ${buildIncidentCompanyScopeCondition(
+                        "i"
+                      )}`
+                    : ""
+                }
+                `,
+                coordinatorCompany
+                  ? [
+                      coordinatorCompany,
+                    ]
+                  : []
+              ),
           ]);
 
         const total =
@@ -2576,7 +2784,7 @@ exports.getIncidentsByEmployee =
     res
   ) => {
     try {
-          const {
+      const {
         employeeId,
       } =
         req.params;
@@ -2585,6 +2793,30 @@ exports.getIncidentsByEmployee =
         name,
       } =
         req.query;
+
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
 
       const lookupEmployeeId =
         normalizeEmployeeLookupId(
@@ -2636,6 +2868,25 @@ exports.getIncidentsByEmployee =
         );
       }
 
+      const coordinatorScopeSql =
+        coordinatorCompany
+          ? `
+            AND
+            ${buildIncidentCompanyScopeCondition(
+              "i"
+            )}
+          `
+          : "";
+
+      const queryParams = [
+        ...params,
+        ...(coordinatorCompany
+          ? [
+              coordinatorCompany,
+            ]
+          : []),
+      ];
+
       const [incidents] =
         await db
           .promise()
@@ -2649,15 +2900,18 @@ exports.getIncidentsByEmployee =
             FROM incidents i
             LEFT JOIN employees e
               ON e.id = i.employee_id
-            WHERE ${conditions.join(
-              " OR "
-            )}
+            WHERE (
+              ${conditions.join(
+                " OR "
+              )}
+            )
+            ${coordinatorScopeSql}
             ORDER BY
               i.incident_date ASC,
               i.created_at ASC,
               i.id ASC
             `,
-            params
+            queryParams
           );
 
       if (
@@ -2772,9 +3026,36 @@ exports.getIncidentById =
     res
   ) => {
     try {
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
       const incident =
         await getIncidentWithEvidence(
-          req.params.id
+          req.params.id,
+          {
+            coordinatorCompany,
+          }
         );
 
       if (!incident) {
@@ -3056,6 +3337,49 @@ exports.createIncident =
           409,
           "The selected employee no longer has an active deployment assignment. Refresh the form and try again."
         );
+      }
+
+      /*
+       * HR Coordinator may create an incident only
+       * for an employee whose current active
+       * deployment belongs to the coordinator's
+       * assigned company.
+       *
+       * Company values supplied by the browser are
+       * never authoritative.
+       */
+      if (
+        actor.role ===
+        "HR_COORDINATOR"
+      ) {
+        const coordinatorCompany =
+          getHrCoordinatorAssignedCompany(
+            req
+          );
+
+        if (!coordinatorCompany) {
+          rejectIncidentCreation(
+            403,
+            "HR Coordinator company assignment is required."
+          );
+        }
+
+        if (
+          !companyNamesMatch(
+            activeDeployment.company,
+            coordinatorCompany
+          )
+        ) {
+          /*
+           * Use the same public response as an unknown
+           * employee so cross-company employee IDs
+           * cannot be enumerated.
+           */
+          rejectIncidentCreation(
+            404,
+            "Selected employee not found."
+          );
+        }
       }
 
       const finalEmployeeName =

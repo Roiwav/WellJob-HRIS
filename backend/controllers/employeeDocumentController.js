@@ -44,6 +44,47 @@ const EMPLOYEE_DOCUMENT_CONTENT_TYPES = {
   ".jpeg": "image/jpeg",
 };
 
+/*
+ * ==================================================
+ * AUTHORIZATION HELPERS
+ * ==================================================
+ */
+
+function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function normalizeAssignedCompany(value) {
+  const normalized = String(
+    value ?? ""
+  )
+    .trim()
+    .replace(/\s+/g, " ");
+
+  return normalized || null;
+}
+
+function isHrCoordinatorRequest(req) {
+  return (
+    normalizeRole(
+      req.user?.role
+    ) ===
+    "HR_COORDINATOR"
+  );
+}
+
+function getHrCoordinatorAssignedCompany(
+  req
+) {
+  return normalizeAssignedCompany(
+    req.user?.assignedCompany ??
+      req.user?.assigned_company
+  );
+}
+
 function normalizeDocumentId(value) {
   const rawValue = String(
     value || ""
@@ -175,6 +216,7 @@ function resolveStoredDocumentPath(
 
     return {
       absolutePath,
+
       storageRoot:
         storageRoot.directory,
     };
@@ -268,7 +310,8 @@ function getSafeResponseFileName(
 ) {
   return path
     .basename(
-      filePath || "document"
+      filePath ||
+        "document"
     )
     .replace(
       /["\r\n]/g,
@@ -289,7 +332,8 @@ function getSafeResponseFileName(
  * authorizeRoles(
  *   "SUPER_ADMIN",
  *   "HR_MANAGER",
- *   "HR_STAFF"
+ *   "HR_STAFF",
+ *   "HR_COORDINATOR"
  * )
  * ->
  * getEmployeeDocumentFile
@@ -297,14 +341,36 @@ function getSafeResponseFileName(
  * Security rules:
  *
  * 1. The client provides only the database document ID.
- * 2. file_path comes exclusively from employee_documents.
- * 3. The DB row must still belong to an existing employee.
- * 4. The resolved path must remain inside an explicitly
- *    approved backend document storage root.
- * 5. Historical seed-defense references are supported
- *    without rewriting existing database rows.
- * 6. Existing files and database paths are never renamed
- *    or deleted by this endpoint.
+ *
+ * 2. file_path comes exclusively from
+ *    employee_documents.
+ *
+ * 3. The DB row must still belong to an existing
+ *    employee.
+ *
+ * 4. HR Coordinator may access a document only when
+ *    the employee currently has an ACTIVE deployment
+ *    assignment matching req.user.assignedCompany.
+ *
+ * 5. HR Coordinator cannot access archived/inactive
+ *    employee documents.
+ *
+ * 6. Cross-company document IDs return the same 404
+ *    response as nonexistent document IDs to prevent
+ *    record enumeration.
+ *
+ * 7. Company scope comes only from authenticated
+ *    server-side req.user information. Query/body
+ *    company values are never trusted.
+ *
+ * 8. The resolved filesystem path must remain inside
+ *    an explicitly approved backend document root.
+ *
+ * 9. Historical seed-defense references continue to
+ *    work without rewriting stored DB paths.
+ *
+ * 10. Existing files and DB paths are never modified
+ *     by this endpoint.
  */
 async function getEmployeeDocumentFile(
   req,
@@ -325,24 +391,137 @@ async function getEmployeeDocumentFile(
         });
     }
 
+    const isHrCoordinator =
+      isHrCoordinatorRequest(
+        req
+      );
+
+    const coordinatorCompany =
+      isHrCoordinator
+        ? getHrCoordinatorAssignedCompany(
+            req
+          )
+        : null;
+
+    /*
+     * Defense in depth.
+     *
+     * authMiddleware should already reject an
+     * HR Coordinator account without a company.
+     *
+     * Never allow this controller to fall back to
+     * unrestricted document access if that upstream
+     * protection is accidentally changed later.
+     */
+    if (
+      isHrCoordinator &&
+      !coordinatorCompany
+    ) {
+      return res
+        .status(403)
+        .json({
+          error:
+            "HR Coordinator company assignment is required.",
+        });
+    }
+
+    let documentSql;
+    let documentParams;
+
+    if (isHrCoordinator) {
+      /*
+       * IMPORTANT:
+       *
+       * The authoritative coordinator scope is based
+       * on CURRENT active deployment assignment.
+       *
+       * We intentionally do not rely only on
+       * employees.company because deployment history
+       * may contain previous company assignments.
+       */
+      documentSql = `
+        SELECT
+          ed.id,
+          ed.employee_id,
+          ed.file_path
+        FROM employee_documents AS ed
+
+        INNER JOIN employees AS e
+          ON e.id = ed.employee_id
+
+        WHERE ed.id = ?
+
+          AND e.archived = 0
+
+          AND e.status <> 'Inactive'
+
+          AND EXISTS (
+            SELECT 1
+            FROM deployment_assignments AS da_scope
+            WHERE
+              da_scope.employee_id =
+                e.id
+
+              AND da_scope.status =
+                'Active'
+
+              AND da_scope.company = ?
+          )
+
+        LIMIT 1
+      `;
+
+      documentParams = [
+        documentId,
+        coordinatorCompany,
+      ];
+    } else {
+      /*
+       * Preserve existing access behavior for:
+       *
+       * - SUPER_ADMIN
+       * - HR_MANAGER
+       * - HR_STAFF
+       */
+      documentSql = `
+        SELECT
+          ed.id,
+          ed.employee_id,
+          ed.file_path
+        FROM employee_documents AS ed
+
+        INNER JOIN employees AS e
+          ON e.id = ed.employee_id
+
+        WHERE ed.id = ?
+
+        LIMIT 1
+      `;
+
+      documentParams = [
+        documentId,
+      ];
+    }
+
     const [documentRows] =
       await db
         .promise()
         .query(
-          `
-          SELECT
-            ed.id,
-            ed.employee_id,
-            ed.file_path
-          FROM employee_documents ed
-          INNER JOIN employees e
-            ON e.id = ed.employee_id
-          WHERE ed.id = ?
-          LIMIT 1
-          `,
-          [documentId]
+          documentSql,
+          documentParams
         );
 
+    /*
+     * SECURITY:
+     *
+     * For HR Coordinator this response intentionally
+     * covers both:
+     *
+     * - nonexistent document
+     * - existing document outside assigned company
+     *
+     * Do not reveal which one occurred.
+     */
     if (
       documentRows.length === 0
     ) {
@@ -487,8 +666,11 @@ async function getEmployeeDocumentFile(
     return res.sendFile(
       realFilePath,
       {
-        dotfiles: "deny",
-        cacheControl: false,
+        dotfiles:
+          "deny",
+
+        cacheControl:
+          false,
       },
       (error) => {
         if (!error) {
@@ -510,7 +692,9 @@ async function getEmployeeDocumentFile(
           }
         );
 
-        if (res.headersSent) {
+        if (
+          res.headersSent
+        ) {
           res.destroy(
             error
           );

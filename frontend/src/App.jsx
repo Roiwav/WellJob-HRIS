@@ -107,13 +107,37 @@ const AUTHENTICATED_ROLES = [
   ROLES.SUPER_ADMIN,
   ROLES.HR_MANAGER,
   ROLES.HR_STAFF,
+  ROLES.HR_COORDINATOR,
   ROLES.IT_SUPPORT,
 ];
 
+/*
+ * Existing HR modules that remain available only
+ * to internal Welljob HR users.
+ *
+ * HR Coordinator is intentionally excluded from:
+ * - Dashboard
+ * - KPI Reports
+ * - existing Smart Notifications page
+ */
 const HR_MODULE_ROLES = [
   ROLES.SUPER_ADMIN,
   ROLES.HR_MANAGER,
   ROLES.HR_STAFF,
+];
+
+/*
+ * Operational records visible to HR Coordinator.
+ *
+ * Backend authorization and company scoping remain
+ * authoritative. Route access here is only the
+ * frontend navigation layer.
+ */
+const WORKFORCE_RECORD_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.HR_MANAGER,
+  ROLES.HR_STAFF,
+  ROLES.HR_COORDINATOR,
 ];
 
 const SYSTEM_CONFIGURATION_ROLES = [
@@ -552,12 +576,12 @@ function ApplicationContent({
             />
           </Route>
 
-          {/* HR modules */}
+          {/* Employee, Deployment, and Incident records */}
           <Route
             element={
               <ProtectedRoute
                 allowedRoles={
-                  HR_MODULE_ROLES
+                  WORKFORCE_RECORD_ROLES
                 }
               />
             }
@@ -588,7 +612,18 @@ function ApplicationContent({
                 </LazyRoute>
               }
             />
+          </Route>
 
+          {/* Existing HR Smart Notifications */}
+          <Route
+            element={
+              <ProtectedRoute
+                allowedRoles={
+                  HR_MODULE_ROLES
+                }
+              />
+            }
+          >
             <Route
               path="/notifications"
               element={

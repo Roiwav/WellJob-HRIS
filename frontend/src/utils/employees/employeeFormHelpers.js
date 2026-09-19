@@ -21,6 +21,7 @@ export const MAX_DOCUMENT_SIZE =
 export const INITIAL_EMPLOYEE_FORM_ERRORS = {
   name: "",
   company: "",
+  position: "",
   contractStart: "",
   duplicateId: "",
   duplicateConfirm: "",
@@ -91,9 +92,14 @@ export function parseEmployeeDocuments(
   }
 
   try {
-    const parsed = JSON.parse(documents);
+    const parsed =
+      JSON.parse(
+        documents
+      );
 
-    return Array.isArray(parsed)
+    return Array.isArray(
+      parsed
+    )
       ? parsed
       : [];
   } catch {
@@ -142,7 +148,9 @@ export function getDocumentExpirationValue(
   );
 }
 
-export function normalizeDateInput(value) {
+export function normalizeDateInput(
+  value
+) {
   if (!value) {
     return "";
   }
@@ -164,13 +172,22 @@ export function normalizeDateInput(value) {
   const year =
     parsedDate.getFullYear();
 
-  const month = String(
-    parsedDate.getMonth() + 1
-  ).padStart(2, "0");
+  const month =
+    String(
+      parsedDate.getMonth() +
+        1
+    ).padStart(
+      2,
+      "0"
+    );
 
-  const day = String(
-    parsedDate.getDate()
-  ).padStart(2, "0");
+  const day =
+    String(
+      parsedDate.getDate()
+    ).padStart(
+      2,
+      "0"
+    );
 
   return `${year}-${month}-${day}`;
 }
@@ -197,9 +214,12 @@ export function createEmployeeDocuments(
         );
 
       return {
-        id: matchedDocument?.id,
+        id:
+          matchedDocument?.id,
 
-        name: option.name,
+        name:
+          option.name,
+
         expirable:
           option.expirable,
 
@@ -234,6 +254,7 @@ export function createInitialEmployeeFormData(
       name: "",
       status: "Deployed",
       company: "",
+      position: "",
       contractStart: "",
       documents:
         createEmployeeDocuments(),
@@ -260,7 +281,17 @@ export function createInitialEmployeeFormData(
         ? String(
             employee?.company ||
               ""
-          )
+          ).trim()
+        : "",
+
+    position:
+      status === "Deployed"
+        ? String(
+            employee?.position ||
+              employee?.deploymentPosition ||
+              employee?.deployment_position ||
+              ""
+          ).trim()
         : "",
 
     contractStart:
@@ -309,7 +340,9 @@ export function hasDocumentFile(
   document
 ) {
   return Boolean(
-    isFile(document?.file) ||
+    isFile(
+      document?.file
+    ) ||
       document?.filePath ||
       document?.file_path ||
       document?.url
@@ -469,15 +502,28 @@ export function validateEmployeeForm({
     documents: {},
   };
 
-  const name = String(
-    formData?.name || ""
-  )
-    .trim()
-    .replace(/\s+/g, " ");
+  const name =
+    String(
+      formData?.name ||
+        ""
+    )
+      .trim()
+      .replace(
+        /\s+/g,
+        " "
+      );
 
-  const company = String(
-    formData?.company || ""
-  ).trim();
+  const company =
+    String(
+      formData?.company ||
+        ""
+    ).trim();
+
+  const position =
+    String(
+      formData?.position ||
+        ""
+    ).trim();
 
   const isDeployed =
     formData?.status ===
@@ -509,6 +555,14 @@ export function validateEmployeeForm({
   ) {
     errors.company =
       "Company assignment is required for deployed employees.";
+  }
+
+  if (
+    isDeployed &&
+    !position
+  ) {
+    errors.position =
+      "Position is required for deployed employees.";
   }
 
   if (
@@ -582,14 +636,16 @@ export function validateEmployeeForm({
       errors.documents
     ).some(Boolean);
 
-  const isValid = ![
-    errors.name,
-    errors.company,
-    errors.contractStart,
-    errors.duplicateId,
-    errors.duplicateConfirm,
-    hasDocumentErrors,
-  ].some(Boolean);
+  const isValid =
+    ![
+      errors.name,
+      errors.company,
+      errors.position,
+      errors.contractStart,
+      errors.duplicateId,
+      errors.duplicateConfirm,
+      hasDocumentErrors,
+    ].some(Boolean);
 
   return {
     isValid,
@@ -623,7 +679,8 @@ export function calculateEmployeeFormCompletion(
 
   if (
     String(
-      formData?.name || ""
+      formData?.name ||
+        ""
     ).trim()
   ) {
     score += 25;
@@ -638,10 +695,21 @@ export function calculateEmployeeFormCompletion(
   if (
     !isDeployed ||
     String(
-      formData?.company || ""
+      formData?.company ||
+        ""
     ).trim()
   ) {
-    score += 15;
+    score += 10;
+  }
+
+  if (
+    !isDeployed ||
+    String(
+      formData?.position ||
+        ""
+    ).trim()
+  ) {
+    score += 10;
   }
 
   if (
@@ -652,17 +720,21 @@ export function calculateEmployeeFormCompletion(
   }
 
   if (
-    totalDocuments > 0
+    totalDocuments >
+    0
   ) {
     score +=
       (
         completedCount /
         totalDocuments
-      ) * 40;
+      ) *
+      35;
   }
 
   return Math.min(
-    Math.round(score),
+    Math.round(
+      score
+    ),
     100
   );
 }
@@ -718,6 +790,16 @@ export function buildEmployeeFormData(
     isDeployed
       ? String(
           formData?.company ||
+            ""
+        ).trim()
+      : ""
+  );
+
+  requestData.append(
+    "position",
+    isDeployed
+      ? String(
+          formData?.position ||
             ""
         ).trim()
       : ""
@@ -823,7 +905,10 @@ export function getDocumentFileName(
 
   return (
     filePath
-      .replace(/\\/g, "/")
+      .replace(
+        /\\/g,
+        "/"
+      )
       .split("/")
       .pop()
       ?.split("?")[0] ||

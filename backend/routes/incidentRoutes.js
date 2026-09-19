@@ -99,6 +99,10 @@ function allowWorkflowEvidenceOnlyForSubmission(
  * HR_STAFF:
  * - operational incident access
  *
+ * HR_COORDINATOR:
+ * - assigned-company incident view access
+ * - company scope enforced by controller
+ *
  * IT_SUPPORT:
  * - no incident-record access
  */
@@ -108,7 +112,8 @@ router.get(
   authorizeRoles(
     "SUPER_ADMIN",
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
   getIncidents
 );
@@ -116,6 +121,10 @@ router.get(
 /*
  * Lightweight deployed-employee search for the
  * Add Incident form.
+ *
+ * HR Coordinator is allowed because they may create
+ * incident reports, but the controller must return
+ * employees only from the assigned company.
  *
  * Must remain above /incidents/:id so Express does
  * not interpret "form-meta" as an incident ID.
@@ -125,7 +134,8 @@ router.get(
   verifyToken,
   authorizeRoles(
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
   getIncidentFormMeta
 );
@@ -133,6 +143,9 @@ router.get(
 /*
  * Must remain above /incidents/:id so Express
  * does not interpret "employee" as an incident ID.
+ *
+ * HR Coordinator access is company-scoped by the
+ * controller.
  */
 router.get(
   "/incidents/employee/:employeeId",
@@ -140,7 +153,8 @@ router.get(
   authorizeRoles(
     "SUPER_ADMIN",
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
   getIncidentsByEmployee
 );
@@ -157,6 +171,7 @@ router.get(
  * - SUPER_ADMIN
  * - HR_MANAGER
  * - HR_STAFF
+ * - HR_COORDINATOR (assigned company only)
  *
  * IT_SUPPORT remains excluded.
  */
@@ -166,7 +181,8 @@ router.get(
   authorizeRoles(
     "SUPER_ADMIN",
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
   getIncidentEvidenceFile
 );
@@ -175,6 +191,10 @@ router.get(
  * ==================================================
  * VIEW ONE INCIDENT
  * ==================================================
+ *
+ * HR Coordinator may view an incident only when it
+ * belongs to the coordinator's assigned company.
+ * Controller-level authorization remains required.
  */
 router.get(
   "/incidents/:id",
@@ -182,7 +202,8 @@ router.get(
   authorizeRoles(
     "SUPER_ADMIN",
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
   getIncidentById
 );
@@ -192,7 +213,12 @@ router.get(
  * CREATE INCIDENT
  * ==================================================
  *
- * HR_MANAGER / HR_STAFF only.
+ * HR_MANAGER / HR_STAFF / HR_COORDINATOR.
+ *
+ * HR_COORDINATOR may create a report only for an
+ * employee under the coordinator's assigned company.
+ * The controller validates that relationship before
+ * the incident is inserted.
  *
  * Authentication and RBAC execute before Multer,
  * preventing unauthorized requests from writing
@@ -211,7 +237,8 @@ router.post(
   verifyToken,
   authorizeRoles(
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
   upload.incidentEvidence,
   createIncident
@@ -226,6 +253,13 @@ router.post(
  * - SUPER_ADMIN
  * - HR_MANAGER
  * - HR_STAFF
+ *
+ * HR_COORDINATOR is intentionally excluded from:
+ * - START_INVESTIGATION
+ * - SUBMIT_RESOLUTION
+ * - SUBMIT_INVESTIGATION
+ * - CLOSE_INCIDENT
+ * - RETURN_INCIDENT
  *
  * Controller remains authoritative for workflow
  * authorization and state transitions.
@@ -268,6 +302,8 @@ router.patch(
  *
  * Destructive administrative operation.
  * Restricted to HR_MANAGER.
+ *
+ * HR Coordinator cannot delete incidents.
  */
 router.delete(
   "/incidents/:id",

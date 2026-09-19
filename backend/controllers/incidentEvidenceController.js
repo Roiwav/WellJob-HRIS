@@ -42,6 +42,95 @@ const SUPPORTED_EVIDENCE_TYPES =
     ".jpeg": "image/jpeg",
   });
 
+function normalizeRole(value) {
+  const role =
+    String(value || "")
+      .trim()
+      .toUpperCase()
+      .replace(
+        /[\s-]+/g,
+        "_"
+      );
+
+  if (
+    [
+      "SUPERADMIN",
+      "SUPER_ADMIN",
+    ].includes(role)
+  ) {
+    return "SUPER_ADMIN";
+  }
+
+  if (
+    [
+      "HRMANAGER",
+      "HR_MANAGER",
+    ].includes(role)
+  ) {
+    return "HR_MANAGER";
+  }
+
+  if (
+    [
+      "HRSTAFF",
+      "HR_STAFF",
+    ].includes(role)
+  ) {
+    return "HR_STAFF";
+  }
+
+  if (
+    [
+      "HRCOORDINATOR",
+      "HR_COORDINATOR",
+    ].includes(role)
+  ) {
+    return "HR_COORDINATOR";
+  }
+
+  if (
+    [
+      "ITSUPPORT",
+      "IT_SUPPORT",
+    ].includes(role)
+  ) {
+    return "IT_SUPPORT";
+  }
+
+  return role || "USER";
+}
+
+function normalizeAssignedCompany(
+  value
+) {
+  const normalized =
+    String(value ?? "")
+      .trim()
+      .replace(/\s+/g, " ");
+
+  return normalized || null;
+}
+
+function isHrCoordinatorRequest(
+  req
+) {
+  return (
+    normalizeRole(
+      req?.user?.role
+    ) ===
+    "HR_COORDINATOR"
+  );
+}
+
+function getHrCoordinatorAssignedCompany(
+  req
+) {
+  return normalizeAssignedCompany(
+    req?.user?.assignedCompany ??
+      req?.user?.assigned_company
+  );
+}
+
 function normalizePositiveInteger(
   value
 ) {
@@ -318,8 +407,14 @@ async function resolveEvidenceFile(
  * SUPER_ADMIN
  * HR_MANAGER
  * HR_STAFF
+ * HR_COORDINATOR
  *
  * IT_SUPPORT is intentionally excluded.
+ *
+ * HR Coordinator access is additionally restricted
+ * here to incident.company = req.user.assignedCompany.
+ * The server-side authenticated user scope is the only
+ * authoritative company value.
  */
 exports.getIncidentEvidenceFile =
   async (
@@ -351,6 +446,60 @@ exports.getIncidentEvidenceFile =
           });
       }
 
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      /*
+       * authMiddleware should already reject an
+       * unassigned HR Coordinator. This controller
+       * remains fail-closed as defense in depth.
+       */
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
+      const companyScopeSql =
+        isHrCoordinator
+          ? `
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  i.company,
+                  ''
+                )
+              )
+            ) = LOWER(TRIM(?))
+          `
+          : "";
+
+      const queryParams = [
+        evidenceId,
+        incidentId,
+
+        ...(isHrCoordinator
+          ? [
+              coordinatorCompany,
+            ]
+          : []),
+      ];
+
       /*
        * Query by BOTH IDs.
        *
@@ -359,6 +508,9 @@ exports.getIncidentEvidenceFile =
        *
        * The incidents join also confirms that the
        * parent incident still exists.
+       *
+       * For HR Coordinator, the same query also
+       * enforces the incident's saved company snapshot.
        */
       const [rows] =
         await db
@@ -370,23 +522,32 @@ exports.getIncidentEvidenceFile =
               ie.incident_id,
               ie.file_name,
               ie.file_path
+
             FROM incident_evidence ie
+
             INNER JOIN incidents i
-              ON i.id = ie.incident_id
+              ON i.id =
+                ie.incident_id
+
             WHERE
               ie.id = ?
-              AND ie.incident_id = ?
+
+              AND
+              ie.incident_id = ?
+
+              ${companyScopeSql}
+
             LIMIT 1
             `,
-            [
-              evidenceId,
-              incidentId,
-            ]
+            queryParams
           );
 
       /*
-       * Do not reveal whether the evidence exists
-       * under a different incident.
+       * Do not reveal whether:
+       *
+       * - the evidence does not exist
+       * - it belongs to a different incident
+       * - it belongs to another company
        */
       if (
         rows.length === 0
@@ -511,11 +672,26 @@ exports.getIncidentEvidenceFile =
           if (
             !res.headersSent
           ) {
+            const statusCode =
+              error?.code ===
+                "ENOENT" ||
+              error?.status ===
+                404 ||
+              error?.statusCode ===
+                404
+                ? 404
+                : 500;
+
             res
-              .status(500)
+              .status(
+                statusCode
+              )
               .json({
                 error:
-                  "Unable to retrieve incident evidence file.",
+                  statusCode ===
+                  404
+                    ? "Incident evidence file not found."
+                    : "Unable to retrieve incident evidence file.",
               });
           }
         }

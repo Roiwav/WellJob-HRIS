@@ -325,8 +325,13 @@ export default function DeploymentTable({
   openView,
   onUpdateRow,
   isSuperAdmin = false,
+  isReadOnly = false,
 }) {
   const [separationTarget, setSeparationTarget] = useState(null);
+
+  const readOnly =
+    isSuperAdmin ||
+    isReadOnly;
 
   const safeDeployments = Array.isArray(deployments)
     ? deployments
@@ -338,34 +343,54 @@ export default function DeploymentTable({
         deployment?.status
       );
 
-      if (isSuperAdmin || status !== "Active") {
+      if (
+        readOnly ||
+        status !== "Active"
+      ) {
         return;
       }
 
-      setSeparationTarget(deployment);
+      setSeparationTarget(
+        deployment
+      );
     },
-    [isSuperAdmin]
+    [readOnly]
   );
 
   const handleCloseSeparationModal = useCallback(() => {
-    setSeparationTarget(null);
+    setSeparationTarget(
+      null
+    );
   }, []);
 
   const handleSubmitSeparation = useCallback(
     async (updatedDeployment) => {
-      if (typeof onUpdateRow !== "function") {
+      if (
+        readOnly ||
+        typeof onUpdateRow !== "function"
+      ) {
         return false;
       }
 
-      const wasSaved = await onUpdateRow(updatedDeployment);
+      const wasSaved =
+        await onUpdateRow(
+          updatedDeployment
+        );
 
       if (wasSaved) {
-        setSeparationTarget(null);
+        setSeparationTarget(
+          null
+        );
       }
 
-      return Boolean(wasSaved);
+      return Boolean(
+        wasSaved
+      );
     },
-    [onUpdateRow]
+    [
+      onUpdateRow,
+      readOnly,
+    ]
   );
 
   return (
@@ -382,7 +407,9 @@ export default function DeploymentTable({
             </h3>
 
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              View and monitor employee deployment assignments.
+              {readOnly
+                ? "View employee deployment assignments."
+                : "View and monitor employee deployment assignments."}
             </p>
           </div>
 
@@ -401,24 +428,31 @@ export default function DeploymentTable({
                 <th scope="col" className="px-6 py-4">
                   Employee ID
                 </th>
+
                 <th scope="col" className="px-6 py-4">
                   Employee
                 </th>
+
                 <th scope="col" className="px-6 py-4">
                   Company
                 </th>
+
                 <th scope="col" className="px-6 py-4">
                   Location
                 </th>
+
                 <th scope="col" className="px-6 py-4">
                   Deployment Start
                 </th>
+
                 <th scope="col" className="px-6 py-4">
                   Separation
                 </th>
+
                 <th scope="col" className="px-6 py-4">
                   Status
                 </th>
+
                 <th
                   scope="col"
                   className="px-6 py-4 text-center"
@@ -432,14 +466,18 @@ export default function DeploymentTable({
               {safeDeployments.length > 0 ? (
                 safeDeployments.map((deployment, index) => {
                   const employeeName =
-                    getEmployeeName(deployment);
+                    getEmployeeName(
+                      deployment
+                    );
 
-                  const status = normalizeDeploymentStatus(
-                    deployment.status
-                  );
+                  const status =
+                    normalizeDeploymentStatus(
+                      deployment.status
+                    );
 
                   const canSeparateEmployee =
-                    !isSuperAdmin && status === "Active";
+                    !readOnly &&
+                    status === "Active";
 
                   const separationReason =
                     deployment.separationReason ||
@@ -455,7 +493,9 @@ export default function DeploymentTable({
                     >
                       <td className="whitespace-nowrap px-6 py-4 align-middle">
                         <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                          {getEmployeeId(deployment)}
+                          {getEmployeeId(
+                            deployment
+                          )}
                         </span>
                       </td>
 
@@ -467,13 +507,15 @@ export default function DeploymentTable({
 
                       <td className="px-6 py-4 align-middle">
                         <p className="max-w-[220px] truncate text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          {deployment.company || "-"}
+                          {deployment.company ||
+                            "-"}
                         </p>
                       </td>
 
                       <td className="px-6 py-4 align-middle">
                         <p className="max-w-[220px] truncate text-sm font-medium text-gray-600 dark:text-gray-300">
-                          {deployment.location || "-"}
+                          {deployment.location ||
+                            "-"}
                         </p>
                       </td>
 
@@ -500,7 +542,12 @@ export default function DeploymentTable({
                       </td>
 
                       <td className="px-6 py-4 align-middle">
-                        <StatusBadge status={status} size="md" />
+                        <StatusBadge
+                          status={
+                            status
+                          }
+                          size="md"
+                        />
                       </td>
 
                       <td className="px-6 py-4 align-middle">
@@ -517,7 +564,9 @@ export default function DeploymentTable({
                                 )
                               }
                             >
-                              <FiEdit2 aria-hidden="true" />
+                              <FiEdit2
+                                aria-hidden="true"
+                              />
                             </IconButton>
                           )}
 
@@ -526,9 +575,15 @@ export default function DeploymentTable({
                             title="View Deployment"
                             variant="primary"
                             size="md"
-                            onClick={() => openView?.(deployment)}
+                            onClick={() =>
+                              openView?.(
+                                deployment
+                              )
+                            }
                           >
-                            <FiEye aria-hidden="true" />
+                            <FiEye
+                              aria-hidden="true"
+                            />
                           </IconButton>
                         </div>
                       </td>
@@ -554,8 +609,7 @@ export default function DeploymentTable({
                       </p>
 
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Deployment records will appear here once
-                        an employee is deployed.
+                        Deployment records will appear here once an employee is deployed.
                       </p>
                     </div>
                   </td>
@@ -566,18 +620,25 @@ export default function DeploymentTable({
         </div>
       </section>
 
-      {separationTarget && (
-        <SeparationModal
-          key={
-            separationTarget.deploymentId ||
-            separationTarget.id ||
-            separationTarget.employeeId
-          }
-          deployment={separationTarget}
-          onClose={handleCloseSeparationModal}
-          onSubmit={handleSubmitSeparation}
-        />
-      )}
+      {!readOnly &&
+        separationTarget && (
+          <SeparationModal
+            key={
+              separationTarget.deploymentId ||
+              separationTarget.id ||
+              separationTarget.employeeId
+            }
+            deployment={
+              separationTarget
+            }
+            onClose={
+              handleCloseSeparationModal
+            }
+            onSubmit={
+              handleSubmitSeparation
+            }
+          />
+        )}
     </>
   );
 }

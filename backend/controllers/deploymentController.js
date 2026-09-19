@@ -5,6 +5,17 @@ const {
   AUDIT_CATEGORY,
 } = require("../utils/auditLogger");
 
+/*
+ * Legacy company-to-location display mapping.
+ *
+ * This remains temporarily to preserve the existing
+ * deployment location display/search behavior.
+ *
+ * Client company and position selection itself is no
+ * longer sourced from this object. New selectable
+ * companies come from client_companies and selectable
+ * positions come from company_positions.
+ */
 const COMPANY_LOCATIONS = {
   "SM Supermalls": "Calamba City, Laguna",
   "Robinsons Retail Holdings": "Calamba City, Laguna",
@@ -44,6 +55,14 @@ const CANCELLED_REASONS = new Set([
   "Terminated",
 ]);
 
+const DEPLOYMENT_OPTION_ROLES = new Set([
+  "HR_MANAGER",
+  "HR_STAFF",
+]);
+
+const DEFAULT_DEPLOYMENT_PAGE_SIZE = 50;
+const MAX_DEPLOYMENT_PAGE_SIZE = 100;
+
 function normalizeDate(value) {
   if (!value) {
     return "-";
@@ -75,12 +94,68 @@ function normalizeText(value) {
 function normalizeNullableText(
   value
 ) {
-  const normalized =
-    String(
-      value || ""
-    ).trim();
+  const normalized = String(
+    value || ""
+  ).trim();
 
   return normalized || null;
+}
+
+function normalizeRole(value) {
+  return String(
+    value || ""
+  )
+    .trim()
+    .toUpperCase()
+    .replace(
+      /[\s-]+/g,
+      "_"
+    );
+}
+
+function isHrCoordinatorRequest(
+  req
+) {
+  return (
+    normalizeRole(
+      req?.user?.role
+    ) ===
+    "HR_COORDINATOR"
+  );
+}
+
+function canReadDeploymentOptions(
+  req
+) {
+  return DEPLOYMENT_OPTION_ROLES.has(
+    normalizeRole(
+      req?.user?.role
+    )
+  );
+}
+
+function getHrCoordinatorAssignedCompany(
+  req
+) {
+  return normalizeNullableText(
+    req?.user?.assignedCompany ??
+      req?.user?.assigned_company
+  );
+}
+
+function buildCoordinatorCompanyCondition(
+  assignmentAlias = "da"
+) {
+  return `
+    LOWER(
+      TRIM(
+        ${assignmentAlias}.company
+      )
+    ) =
+    LOWER(
+      TRIM(?)
+    )
+  `;
 }
 
 function isCurrentlyDeployedEmployee(
@@ -113,17 +188,6 @@ function getActorUserId(req) {
   );
 }
 
-/*
- * ==================================================
- * TRUSTED AUDIT ACTOR
- * ==================================================
- *
- * Audit identity is derived only from the verified
- * authentication payload attached to req.user.
- *
- * No actor identity is accepted from req.body,
- * query parameters, or route parameters.
- */
 function getActor(req) {
   const user =
     req?.user || {};
@@ -144,7 +208,9 @@ function getActor(req) {
 
   return {
     userId:
-      getActorUserId(req),
+      getActorUserId(
+        req
+      ),
 
     username,
 
@@ -233,12 +299,6 @@ function mapAssignment(row) {
   };
 }
 
-const DEFAULT_DEPLOYMENT_PAGE_SIZE =
-  50;
-
-const MAX_DEPLOYMENT_PAGE_SIZE =
-  100;
-
 function toPositiveInteger(
   value,
   fallback
@@ -286,12 +346,29 @@ function buildDeploymentSummaryFilters({
   search,
   month,
   year,
+  coordinatorCompany = null,
 }) {
   const where = [
     "e.archived = 0",
   ];
 
   const params = [];
+
+  /*
+   * HR Coordinator company filtering is based only
+   * on the authenticated server-side company scope.
+   */
+  if (coordinatorCompany) {
+    where.push(
+      buildCoordinatorCompanyCondition(
+        "da"
+      )
+    );
+
+    params.push(
+      coordinatorCompany
+    );
+  }
 
   const searchTerms =
     normalizeDeploymentSearch(
@@ -347,14 +424,51 @@ function buildDeploymentSummaryFilters({
 
     where.push(`
       (
-        CAST(da.id AS CHAR) LIKE ?
-        OR CAST(da.employee_id AS CHAR) LIKE ?
-        OR LOWER(COALESCE(e.name, '')) LIKE ?
-        OR LOWER(COALESCE(da.company, '')) LIKE ?
-        OR LOWER(COALESCE(da.position, '')) LIKE ?
-        OR LOWER(COALESCE(da.status, '')) LIKE ?
-        OR LOWER(COALESCE(da.end_reason, '')) LIKE ?
+        CAST(
+          da.id AS CHAR
+        ) LIKE ?
+
+        OR CAST(
+          da.employee_id AS CHAR
+        ) LIKE ?
+
+        OR LOWER(
+          COALESCE(
+            e.name,
+            ''
+          )
+        ) LIKE ?
+
+        OR LOWER(
+          COALESCE(
+            da.company,
+            ''
+          )
+        ) LIKE ?
+
+        OR LOWER(
+          COALESCE(
+            da.position,
+            ''
+          )
+        ) LIKE ?
+
+        OR LOWER(
+          COALESCE(
+            da.status,
+            ''
+          )
+        ) LIKE ?
+
+        OR LOWER(
+          COALESCE(
+            da.end_reason,
+            ''
+          )
+        ) LIKE ?
+
         OR 'permanent' LIKE ?
+
         ${locationSql}
       )
     `);
@@ -419,25 +533,25 @@ function buildDeploymentSummary(
         total:
           Number(
             row.total ||
-            0
+              0
           ),
 
         active:
           Number(
             row.active ||
-            0
+              0
           ),
 
         completed:
           Number(
             row.completed ||
-            0
+              0
           ),
 
         cancelled:
           Number(
             row.cancelled ||
-            0
+              0
           ),
       })
     );
@@ -501,11 +615,357 @@ function buildDeploymentSummary(
   };
 }
 
+/*
+ * ==================================================
+ * GET ACTIVE DEPLOYMENT COMPANY OPTIONS
+ * ==================================================
+ *
+ * Operational read-only endpoint.
+ *
+ * This is intentionally separate from the System
+ * Configuration management endpoints.
+ *
+ * HR Manager / HR Staff:
+ * - may read active company choices for deployment
+ *
+ * HR Coordinator:
+ * - cannot modify deployments and therefore does not
+ *   need this operational selection endpoint
+ *
+ * Super Admin:
+ * - deployment mutation is not part of the current
+ *   Super Admin role design
+ */
+exports.getDeploymentCompanyOptions =
+  async (
+    req,
+    res
+  ) => {
+    if (
+      !canReadDeploymentOptions(
+        req
+      )
+    ) {
+      return res
+        .status(403)
+        .json({
+          success:
+            false,
+
+          error:
+            "You are not allowed to access deployment company options.",
+        });
+    }
+
+    try {
+      const [rows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              id,
+              company_name
+            FROM client_companies
+            WHERE is_active = 1
+            ORDER BY
+              company_name ASC,
+              id ASC
+            `
+          );
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          companies:
+            rows.map(
+              (row) => ({
+                id:
+                  Number(
+                    row.id
+                  ),
+
+                company:
+                  normalizeNullableText(
+                    row.company_name
+                  ),
+
+                companyName:
+                  normalizeNullableText(
+                    row.company_name
+                  ),
+
+                company_name:
+                  normalizeNullableText(
+                    row.company_name
+                  ),
+              })
+            ),
+        });
+    } catch (error) {
+      console.error(
+        "GET DEPLOYMENT COMPANY OPTIONS ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          error:
+            "Failed to fetch deployment company options.",
+        });
+    }
+  };
+
+/*
+ * ==================================================
+ * GET ACTIVE DEPLOYMENT POSITION OPTIONS
+ * ==================================================
+ *
+ * Returns ACTIVE positions belonging to one ACTIVE
+ * client company.
+ *
+ * The company is resolved from the master table, not
+ * trusted directly from the browser.
+ */
+exports.getDeploymentPositionOptions =
+  async (
+    req,
+    res
+  ) => {
+    if (
+      !canReadDeploymentOptions(
+        req
+      )
+    ) {
+      return res
+        .status(403)
+        .json({
+          success:
+            false,
+
+          error:
+            "You are not allowed to access deployment position options.",
+        });
+    }
+
+    const requestedCompany =
+      normalizeNullableText(
+        req.query?.company
+      );
+
+    if (
+      !requestedCompany
+    ) {
+      return res
+        .status(400)
+        .json({
+          success:
+            false,
+
+          error:
+            "Company is required.",
+        });
+    }
+
+    try {
+      /*
+       * Resolve the canonical ACTIVE company first.
+       *
+       * This allows the API to distinguish:
+       *
+       * - invalid/inactive company
+       * - valid company with zero configured positions
+       */
+      const [companyRows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              id,
+              company_name
+            FROM client_companies
+            WHERE is_active = 1
+              AND LOWER(
+                TRIM(
+                  company_name
+                )
+              ) =
+              LOWER(
+                TRIM(?)
+              )
+            LIMIT 1
+            `,
+            [
+              requestedCompany,
+            ]
+          );
+
+      if (
+        companyRows.length ===
+        0
+      ) {
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            error:
+              "Active client company was not found.",
+          });
+      }
+
+      const company =
+        companyRows[0];
+
+      const [positionRows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              id,
+              position_name
+            FROM company_positions
+            WHERE company_id = ?
+              AND is_active = 1
+            ORDER BY
+              position_name ASC,
+              id ASC
+            `,
+            [
+              company.id,
+            ]
+          );
+
+      const canonicalCompanyName =
+        normalizeNullableText(
+          company.company_name
+        );
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          company: {
+            id:
+              Number(
+                company.id
+              ),
+
+            company:
+              canonicalCompanyName,
+
+            companyName:
+              canonicalCompanyName,
+
+            company_name:
+              canonicalCompanyName,
+          },
+
+          positions:
+            positionRows.map(
+              (row) => {
+                const positionName =
+                  normalizeNullableText(
+                    row.position_name
+                  );
+
+                return {
+                  id:
+                    Number(
+                      row.id
+                    ),
+
+                  position:
+                    positionName,
+
+                  positionName,
+
+                  position_name:
+                    positionName,
+                };
+              }
+            ),
+        });
+    } catch (error) {
+      console.error(
+        "GET DEPLOYMENT POSITION OPTIONS ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          error:
+            "Failed to fetch deployment position options.",
+        });
+    }
+  };
+
+/*
+ * ==================================================
+ * GET DEPLOYMENTS
+ * ==================================================
+ *
+ * HR Coordinator:
+ *
+ * - may view deployment records
+ * - receives only deployment rows belonging to
+ *   their assigned company
+ * - summary cards are company-scoped
+ * - available year filters are company-scoped
+ * - query/body values cannot override scope
+ */
 exports.getDeployments = async (
   req,
   res
 ) => {
   try {
+    const isHrCoordinator =
+      isHrCoordinatorRequest(
+        req
+      );
+
+    const coordinatorCompany =
+      isHrCoordinator
+        ? getHrCoordinatorAssignedCompany(
+            req
+          )
+        : null;
+
+    /*
+     * authMiddleware already rejects an
+     * unassigned coordinator.
+     *
+     * Keep this defense here so no controller change
+     * can accidentally turn the request unrestricted.
+     */
+    if (
+      isHrCoordinator &&
+      !coordinatorCompany
+    ) {
+      return res
+        .status(403)
+        .json({
+          error:
+            "HR Coordinator company assignment is required.",
+        });
+    }
+
     const view =
       String(
         req.query?.view ||
@@ -514,6 +974,11 @@ exports.getDeployments = async (
         .trim()
         .toLowerCase();
 
+    /*
+     * ==================================================
+     * PAGINATED SUMMARY VIEW
+     * ==================================================
+     */
     if (
       view === "summary"
     ) {
@@ -623,8 +1088,13 @@ exports.getDeployments = async (
           search,
           month,
           year,
+          coordinatorCompany,
         });
 
+      /*
+       * Data and count queries inherit the exact same
+       * authorization filter.
+       */
       const dataSql = `
         SELECT
           da.id AS deploymentId,
@@ -642,13 +1112,19 @@ exports.getDeployments = async (
           da.updated_at AS updatedAt,
           e.status AS employeeStatus,
           e.archived
+
         FROM deployment_assignments AS da
+
         INNER JOIN employees AS e
-          ON e.id = da.employee_id
+          ON e.id =
+            da.employee_id
+
         ${whereSql}
+
         ORDER BY
           da.start_date DESC,
           da.id DESC
+
         LIMIT ${pageSize}
         OFFSET ${offset}
       `;
@@ -656,11 +1132,38 @@ exports.getDeployments = async (
       const countSql = `
         SELECT
           COUNT(*) AS total
+
         FROM deployment_assignments AS da
+
         INNER JOIN employees AS e
-          ON e.id = da.employee_id
+          ON e.id =
+            da.employee_id
+
         ${whereSql}
       `;
+
+      /*
+       * Summary and year-filter metadata also need
+       * company authorization. Otherwise the
+       * coordinator could infer statistics belonging
+       * to other clients even if table rows are hidden.
+       */
+      const companyScopeSql =
+        isHrCoordinator
+          ? `
+            AND
+            ${buildCoordinatorCompanyCondition(
+              "da"
+            )}
+          `
+          : "";
+
+      const companyScopeParams =
+        isHrCoordinator
+          ? [
+              coordinatorCompany,
+            ]
+          : [];
 
       const companySummarySql = `
         SELECT
@@ -673,20 +1176,35 @@ exports.getDeployments = async (
             ),
             '-'
           ) AS company,
+
           COUNT(*) AS total,
+
           SUM(
-            da.status = 'Active'
+            da.status =
+              'Active'
           ) AS active,
+
           SUM(
-            da.status = 'Completed'
+            da.status =
+              'Completed'
           ) AS completed,
+
           SUM(
-            da.status = 'Cancelled'
+            da.status =
+              'Cancelled'
           ) AS cancelled
+
         FROM deployment_assignments AS da
+
         INNER JOIN employees AS e
-          ON e.id = da.employee_id
-        WHERE e.archived = 0
+          ON e.id =
+            da.employee_id
+
+        WHERE
+          e.archived = 0
+
+          ${companyScopeSql}
+
         GROUP BY
           COALESCE(
             NULLIF(
@@ -697,6 +1215,7 @@ exports.getDeployments = async (
             ),
             '-'
           )
+
         ORDER BY
           total DESC,
           company ASC
@@ -707,11 +1226,22 @@ exports.getDeployments = async (
           YEAR(
             da.start_date
           ) AS year
+
         FROM deployment_assignments AS da
+
         INNER JOIN employees AS e
-          ON e.id = da.employee_id
-        WHERE e.archived = 0
-          AND da.start_date IS NOT NULL
+          ON e.id =
+            da.employee_id
+
+        WHERE
+          e.archived = 0
+
+          AND
+          da.start_date
+            IS NOT NULL
+
+          ${companyScopeSql}
+
         ORDER BY
           year DESC
       `;
@@ -723,23 +1253,33 @@ exports.getDeployments = async (
         yearOptionsResult,
       ] =
         await Promise.all([
-          db.promise().query(
-            dataSql,
-            filterParams
-          ),
+          db
+            .promise()
+            .query(
+              dataSql,
+              filterParams
+            ),
 
-          db.promise().query(
-            countSql,
-            filterParams
-          ),
+          db
+            .promise()
+            .query(
+              countSql,
+              filterParams
+            ),
 
-          db.promise().query(
-            companySummarySql
-          ),
+          db
+            .promise()
+            .query(
+              companySummarySql,
+              companyScopeParams
+            ),
 
-          db.promise().query(
-            yearOptionsSql
-          ),
+          db
+            .promise()
+            .query(
+              yearOptionsSql,
+              companyScopeParams
+            ),
         ]);
 
       const [rows] =
@@ -811,6 +1351,31 @@ exports.getDeployments = async (
       });
     }
 
+    /*
+     * ==================================================
+     * LEGACY/FULL DEPLOYMENT RESPONSE
+     * ==================================================
+     *
+     * Preserve the existing response format while
+     * applying company scope for HR Coordinator.
+     */
+    const companyScopeSql =
+      isHrCoordinator
+        ? `
+          AND
+          ${buildCoordinatorCompanyCondition(
+            "da"
+          )}
+        `
+        : "";
+
+    const companyScopeParams =
+      isHrCoordinator
+        ? [
+            coordinatorCompany,
+          ]
+        : [];
+
     const [rows] =
       await db
         .promise()
@@ -832,14 +1397,23 @@ exports.getDeployments = async (
             da.updated_at AS updatedAt,
             e.status AS employeeStatus,
             e.archived
+
           FROM deployment_assignments AS da
+
           INNER JOIN employees AS e
-            ON e.id = da.employee_id
-          WHERE e.archived = 0
+            ON e.id =
+              da.employee_id
+
+          WHERE
+            e.archived = 0
+
+            ${companyScopeSql}
+
           ORDER BY
             da.start_date DESC,
             da.id DESC
-          `
+          `,
+          companyScopeParams
         );
 
     return res.json(
@@ -865,623 +1439,645 @@ exports.getDeployments = async (
 /*
  * ==================================================
  * UPDATE DEPLOYMENT STATUS
- * F-03 — DEPLOYMENT LIFECYCLE AUDIT LOGGING
  * ==================================================
  *
- * The lifecycle mutation remains server-authoritative.
+ * HR Coordinator is read-only.
  *
- * The following operations participate in one
- * database transaction:
- *
- * - deployment assignment status/end update;
- * - employee lifecycle status update;
- * - employee status history insert;
- * - operational audit log insert.
- *
- * The audit row is written using the SAME active
- * database connection before COMMIT.
- *
- * If audit logging fails, throwOnError causes the
- * entire lifecycle transaction to roll back so a
- * successful business mutation cannot exist without
- * its corresponding audit event.
+ * Route middleware already blocks this mutation,
+ * but the controller independently enforces the
+ * restriction as defense in depth.
  */
-exports.updateDeploymentStatus = async (
-  req,
-  res
-) => {
-  const {
-    deploymentId,
-  } = req.params;
+exports.updateDeploymentStatus =
+  async (
+    req,
+    res
+  ) => {
+    if (
+      isHrCoordinatorRequest(
+        req
+      )
+    ) {
+      return res
+        .status(403)
+        .json({
+          error:
+            "HR Coordinator accounts have read-only deployment access.",
+        });
+    }
 
-  const {
-    status,
-    endReason,
-    endRemarks,
-  } = req.body || {};
+    const {
+      deploymentId,
+    } =
+      req.params;
 
-  if (!deploymentId) {
-    return res
-      .status(400)
-      .json({
-        error:
-          "Deployment ID is required.",
-      });
-  }
+    const {
+      status,
+      endReason,
+      endRemarks,
+    } =
+      req.body || {};
 
-  if (
-    ![
-      "Completed",
-      "Cancelled",
-    ].includes(
-      status
-    )
-  ) {
-    return res
-      .status(400)
-      .json({
-        error:
-          "Deployment status must be Completed or Cancelled.",
-      });
-  }
-
-  const requestedReason =
-    normalizeNullableText(
-      endReason
-    );
-
-  let finalReason =
-    requestedReason;
-
-  if (
-    status ===
-    "Completed"
-  ) {
-    finalReason =
-      requestedReason ||
-      "Completed Contract";
+    if (!deploymentId) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Deployment ID is required.",
+        });
+    }
 
     if (
-      !COMPLETED_REASONS.has(
-        finalReason
+      ![
+        "Completed",
+        "Cancelled",
+      ].includes(
+        status
       )
     ) {
       return res
         .status(400)
         .json({
           error:
-            "Invalid completed deployment reason.",
+            "Deployment status must be Completed or Cancelled.",
         });
     }
-  }
 
-  if (
-    status ===
-    "Cancelled"
-  ) {
-    if (
-      !finalReason ||
-      !CANCELLED_REASONS.has(
-        finalReason
-      )
-    ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Cancelled deployments require Resigned, AWOL, or Terminated.",
-        });
-    }
-  }
-
-  const finalRemarks =
-    normalizeNullableText(
-      endRemarks
-    );
-
-  const employeeStatus =
-    getEmployeeStatus(
-      status
-    );
-
-  /*
-   * Actor identity comes only from verified
-   * req.user authentication data.
-   */
-  const actor =
-    getActor(req);
-
-  const actorUserId =
-    actor.userId;
-
-  let connection = null;
-
-  let transactionStarted =
-    false;
-
-  try {
-    connection =
-      await db
-        .promise()
-        .getConnection();
-
-    await connection
-      .beginTransaction();
-
-    transactionStarted =
-      true;
-
-    /*
-     * Resolve the employee that owns the target
-     * deployment assignment.
-     */
-    const [
-      assignmentLookup,
-    ] =
-      await connection.query(
-        `
-        SELECT
-          employee_id
-        FROM deployment_assignments
-        WHERE id = ?
-        LIMIT 1
-        `,
-        [
-          deploymentId,
-        ]
+    const requestedReason =
+      normalizeNullableText(
+        endReason
       );
 
+    let finalReason =
+      requestedReason;
+
     if (
-      assignmentLookup.length ===
-      0
+      status ===
+      "Completed"
     ) {
-      await connection
-        .rollback();
+      finalReason =
+        requestedReason ||
+        "Completed Contract";
 
-      transactionStarted =
-        false;
-
-      return res
-        .status(404)
-        .json({
-          error:
-            "Deployment assignment not found.",
-        });
-    }
-
-    const employeeId =
-      assignmentLookup[0]
-        .employee_id;
-
-    /*
-     * Employee row is locked first so lifecycle
-     * state cannot be changed concurrently by
-     * another employee lifecycle operation.
-     */
-    const [
-      employeeRows,
-    ] =
-      await connection.query(
-        `
-        SELECT
-          id,
-          name,
-          status,
-          archived
-        FROM employees
-        WHERE id = ?
-        LIMIT 1
-        FOR UPDATE
-        `,
-        [
-          employeeId,
-        ]
-      );
-
-    if (
-      employeeRows.length ===
-      0
-    ) {
-      await connection
-        .rollback();
-
-      transactionStarted =
-        false;
-
-      return res
-        .status(404)
-        .json({
-          error:
-            "Employee not found.",
-        });
-    }
-
-    const employee =
-      employeeRows[0];
-
-    if (
-      Number(
-        employee.archived ||
-          0
-      ) === 1
-    ) {
-      await connection
-        .rollback();
-
-      transactionStarted =
-        false;
-
-      return res
-        .status(409)
-        .json({
-          error:
-            "Archived employees cannot have their deployment status updated.",
-        });
-    }
-
-    if (
-      !isCurrentlyDeployedEmployee(
-        employee
-      )
-    ) {
-      await connection
-        .rollback();
-
-      transactionStarted =
-        false;
-
-      return res
-        .status(409)
-        .json({
-          error:
-            "Only a currently deployed employee can have an active deployment ended.",
-        });
-    }
-
-    /*
-     * Lock the exact target deployment assignment.
-     *
-     * Its current status is also retained so the
-     * audit trail can record the authoritative
-     * before -> after lifecycle transition.
-     */
-    const [
-      assignmentRows,
-    ] =
-      await connection.query(
-        `
-        SELECT
-          id,
-          employee_id,
-          company,
-          start_date,
-          status
-        FROM deployment_assignments
-        WHERE id = ?
-          AND employee_id = ?
-        LIMIT 1
-        FOR UPDATE
-        `,
-        [
-          deploymentId,
-          employeeId,
-        ]
-      );
-
-    if (
-      assignmentRows.length ===
-      0
-    ) {
-      await connection
-        .rollback();
-
-      transactionStarted =
-        false;
-
-      return res
-        .status(404)
-        .json({
-          error:
-            "Deployment assignment not found.",
-        });
-    }
-
-    const activeAssignment =
-      assignmentRows[0];
-
-    if (
-      activeAssignment.status !==
-      "Active"
-    ) {
-      await connection
-        .rollback();
-
-      transactionStarted =
-        false;
-
-      return res
-        .status(409)
-        .json({
-          error:
-            "Only an active deployment assignment can be completed or cancelled.",
-        });
-    }
-
-    /*
-     * Preserve the existing one-active-assignment
-     * integrity validation.
-     */
-    const [
-      activeAssignments,
-    ] =
-      await connection.query(
-        `
-        SELECT
-          id
-        FROM deployment_assignments
-        WHERE employee_id = ?
-          AND status = 'Active'
-        ORDER BY
-          id ASC
-        LIMIT 2
-        FOR UPDATE
-        `,
-        [
-          employeeId,
-        ]
-      );
-
-    if (
-      activeAssignments.length !==
-        1 ||
-      Number(
-        activeAssignments[0]
-          ?.id
-      ) !==
-        Number(
-          deploymentId
+      if (
+        !COMPLETED_REASONS.has(
+          finalReason
         )
-    ) {
-      await connection
-        .rollback();
-
-      transactionStarted =
-        false;
-
-      return res
-        .status(409)
-        .json({
-          error:
-            "Deployment assignment integrity conflict detected for this employee.",
-        });
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid completed deployment reason.",
+          });
+      }
     }
 
-    /*
-     * Update the deployment lifecycle record.
-     */
-    await connection.query(
-      `
-      UPDATE deployment_assignments
-      SET
-        end_date = CURDATE(),
-        end_reason = ?,
-        end_remarks = ?,
-        status = ?,
-        ended_at = NOW()
-      WHERE id = ?
-        AND status = 'Active'
-      `,
-      [
-        finalReason,
-        finalRemarks,
-        status,
-        deploymentId,
-      ]
-    );
-
-    /*
-     * Update the employee's authoritative
-     * workforce lifecycle status.
-     *
-     * Completed deployment:
-     *   -> Floating / Standby
-     *
-     * Cancelled deployment:
-     *   -> Inactive
-     */
-    await connection.query(
-      `
-      UPDATE employees
-      SET
-        status = ?,
-        contractEnd = CURDATE(),
-        contractEndReason = ?,
-        contractEndRemarks = ?,
-        contractEndedAt = NOW()
-      WHERE id = ?
-      `,
-      [
-        employeeStatus,
-        finalReason,
-        finalRemarks,
-        employeeId,
-      ]
-    );
-
-    /*
-     * Preserve the existing lifecycle history
-     * behavior.
-     */
-    await connection.query(
-      `
-      INSERT INTO employee_status_history
-      (
-        employee_id,
-        from_status,
-        to_status,
-        effective_at,
-        reason,
-        remarks,
-        source_event,
-        changed_by_user_id
-      )
-      VALUES (
-        ?,
-        'Deployed',
-        ?,
-        NOW(),
-        ?,
-        ?,
-        'DEPLOYMENT_STATUS_UPDATED',
-        ?
-      )
-      `,
-      [
-        employeeId,
-        employeeStatus,
-        finalReason,
-        finalRemarks,
-        actorUserId,
-      ]
-    );
-
-    /*
-     * ==================================================
-     * F-03 TRANSACTIONAL OPERATIONAL AUDIT
-     * ==================================================
-     *
-     * This audit INSERT uses the same MySQL
-     * transaction as the deployment, employee,
-     * and status-history mutations above.
-     *
-     * throwOnError = true is intentional:
-     *
-     * audit failure
-     *      ->
-     * exception
-     *      ->
-     * catch()
-     *      ->
-     * transaction rollback
-     *
-     * This prevents a lifecycle mutation from
-     * committing without its required audit trail.
-     */
-    const remarksAuditText =
-      finalRemarks
-        ? ` Remarks: ${finalRemarks}.`
-        : "";
-
-    await logAudit(
-      {
-        userId:
-          actor.userId,
-
-        username:
-          actor.username,
-
-        fullName:
-          actor.fullName,
-
-        role:
-          actor.role,
-
-        category:
-          AUDIT_CATEGORY.OPERATIONAL,
-
-        action:
-          "DEPLOYMENT_STATUS_UPDATED",
-
-        description:
-          `${actor.fullName} updated deployment #${deploymentId} for ${employee.name} (Employee #${employeeId}, ${activeAssignment.company || "Unknown Company"}) from ${activeAssignment.status} to ${status}. Employee status changed from ${employee.status} to ${employeeStatus}. Reason: ${finalReason}.${remarksAuditText}`,
-      },
-      {
-        connection,
-        throwOnError: true,
+    if (
+      status ===
+      "Cancelled"
+    ) {
+      if (
+        !finalReason ||
+        !CANCELLED_REASONS.has(
+          finalReason
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Cancelled deployments require Resigned, AWOL, or Terminated.",
+          });
       }
-    );
+    }
 
-    /*
-     * Commit only after ALL lifecycle records
-     * and the audit event have succeeded.
-     */
-    await connection.commit();
+    const finalRemarks =
+      normalizeNullableText(
+        endRemarks
+      );
 
-    transactionStarted =
+    const employeeStatus =
+      getEmployeeStatus(
+        status
+      );
+
+    const actor =
+      getActor(
+        req
+      );
+
+    const actorUserId =
+      actor.userId;
+
+    let connection =
+      null;
+
+    let transactionStarted =
       false;
 
-    return res.json({
-      success: true,
+    try {
+      connection =
+        await db
+          .promise()
+          .getConnection();
 
-      message:
-        status ===
-        "Cancelled"
-          ? "Deployment cancelled successfully."
-          : "Deployment marked as completed successfully.",
+      await connection
+        .beginTransaction();
 
-      deploymentId:
-        Number(
-          deploymentId
-        ),
+      transactionStarted =
+        true;
 
-      assignmentId:
-        Number(
-          deploymentId
-        ),
+      /*
+       * Resolve target employee.
+       */
+      const [
+        assignmentLookup,
+      ] =
+        await connection.query(
+          `
+          SELECT
+            employee_id
 
-      employeeId,
+          FROM
+            deployment_assignments
 
-      company:
-        activeAssignment.company,
+          WHERE
+            id = ?
 
-      deploymentStatus:
-        status,
+          LIMIT 1
+          `,
+          [
+            deploymentId,
+          ]
+        );
 
-      employeeStatus,
-
-      endReason:
-        finalReason,
-
-      endRemarks:
-        finalRemarks,
-    });
-  } catch (err) {
-    /*
-     * Any failure before successful commit,
-     * including audit insertion failure,
-     * rolls the entire lifecycle mutation back.
-     */
-    if (
-      connection &&
-      transactionStarted
-    ) {
-      try {
+      if (
+        assignmentLookup.length ===
+        0
+      ) {
         await connection
           .rollback();
-      } catch (
-        rollbackError
-      ) {
-        console.error(
-          "UPDATE DEPLOYMENT STATUS ROLLBACK ERROR:",
-          rollbackError
+
+        transactionStarted =
+          false;
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "Deployment assignment not found.",
+          });
+      }
+
+      const employeeId =
+        assignmentLookup[
+          0
+        ].employee_id;
+
+      /*
+       * Lock employee lifecycle row.
+       */
+      const [
+        employeeRows,
+      ] =
+        await connection.query(
+          `
+          SELECT
+            id,
+            name,
+            status,
+            archived
+
+          FROM employees
+
+          WHERE
+            id = ?
+
+          LIMIT 1
+
+          FOR UPDATE
+          `,
+          [
+            employeeId,
+          ]
         );
+
+      if (
+        employeeRows.length ===
+        0
+      ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "Employee not found.",
+          });
+      }
+
+      const employee =
+        employeeRows[0];
+
+      if (
+        Number(
+          employee.archived ||
+            0
+        ) === 1
+      ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
+        return res
+          .status(409)
+          .json({
+            error:
+              "Archived employees cannot have their deployment status updated.",
+          });
+      }
+
+      if (
+        !isCurrentlyDeployedEmployee(
+          employee
+        )
+      ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
+        return res
+          .status(409)
+          .json({
+            error:
+              "Only a currently deployed employee can have an active deployment ended.",
+          });
+      }
+
+      /*
+       * Lock exact deployment assignment.
+       */
+      const [
+        assignmentRows,
+      ] =
+        await connection.query(
+          `
+          SELECT
+            id,
+            employee_id,
+            company,
+            start_date,
+            status
+
+          FROM
+            deployment_assignments
+
+          WHERE
+            id = ?
+
+            AND
+            employee_id = ?
+
+          LIMIT 1
+
+          FOR UPDATE
+          `,
+          [
+            deploymentId,
+            employeeId,
+          ]
+        );
+
+      if (
+        assignmentRows.length ===
+        0
+      ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "Deployment assignment not found.",
+          });
+      }
+
+      const activeAssignment =
+        assignmentRows[0];
+
+      if (
+        activeAssignment.status !==
+        "Active"
+      ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
+        return res
+          .status(409)
+          .json({
+            error:
+              "Only an active deployment assignment can be completed or cancelled.",
+          });
+      }
+
+      /*
+       * Validate one-active-assignment invariant.
+       */
+      const [
+        activeAssignments,
+      ] =
+        await connection.query(
+          `
+          SELECT
+            id
+
+          FROM
+            deployment_assignments
+
+          WHERE
+            employee_id = ?
+
+            AND
+            status = 'Active'
+
+          ORDER BY
+            id ASC
+
+          LIMIT 2
+
+          FOR UPDATE
+          `,
+          [
+            employeeId,
+          ]
+        );
+
+      if (
+        activeAssignments.length !==
+          1 ||
+        Number(
+          activeAssignments[
+            0
+          ]?.id
+        ) !==
+          Number(
+            deploymentId
+          )
+      ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
+        return res
+          .status(409)
+          .json({
+            error:
+              "Deployment assignment integrity conflict detected for this employee.",
+          });
+      }
+
+      /*
+       * End deployment assignment.
+       */
+      await connection.query(
+        `
+        UPDATE
+          deployment_assignments
+
+        SET
+          end_date =
+            CURDATE(),
+
+          end_reason = ?,
+
+          end_remarks = ?,
+
+          status = ?,
+
+          ended_at =
+            NOW()
+
+        WHERE
+          id = ?
+
+          AND
+          status = 'Active'
+        `,
+        [
+          finalReason,
+          finalRemarks,
+          status,
+          deploymentId,
+        ]
+      );
+
+      /*
+       * Synchronize employee lifecycle status.
+       */
+      await connection.query(
+        `
+        UPDATE
+          employees
+
+        SET
+          status = ?,
+
+          contractEnd =
+            CURDATE(),
+
+          contractEndReason = ?,
+
+          contractEndRemarks = ?,
+
+          contractEndedAt =
+            NOW()
+
+        WHERE
+          id = ?
+        `,
+        [
+          employeeStatus,
+          finalReason,
+          finalRemarks,
+          employeeId,
+        ]
+      );
+
+      /*
+       * Preserve lifecycle history.
+       */
+      await connection.query(
+        `
+        INSERT INTO
+          employee_status_history
+        (
+          employee_id,
+          from_status,
+          to_status,
+          effective_at,
+          reason,
+          remarks,
+          source_event,
+          changed_by_user_id
+        )
+
+        VALUES
+        (
+          ?,
+          'Deployed',
+          ?,
+          NOW(),
+          ?,
+          ?,
+          'DEPLOYMENT_STATUS_UPDATED',
+          ?
+        )
+        `,
+        [
+          employeeId,
+          employeeStatus,
+          finalReason,
+          finalRemarks,
+          actorUserId,
+        ]
+      );
+
+      /*
+       * Audit must succeed within the same
+       * transaction before commit.
+       */
+      const remarksAuditText =
+        finalRemarks
+          ? ` Remarks: ${finalRemarks}.`
+          : "";
+
+      await logAudit(
+        {
+          userId:
+            actor.userId,
+
+          username:
+            actor.username,
+
+          fullName:
+            actor.fullName,
+
+          role:
+            actor.role,
+
+          category:
+            AUDIT_CATEGORY.OPERATIONAL,
+
+          action:
+            "DEPLOYMENT_STATUS_UPDATED",
+
+          description:
+            `${actor.fullName} updated deployment #${deploymentId} for ` +
+            `${employee.name} (Employee #${employeeId}, ` +
+            `${activeAssignment.company || "Unknown Company"}) from ` +
+            `${activeAssignment.status} to ${status}. Employee status changed ` +
+            `from ${employee.status} to ${employeeStatus}. Reason: ` +
+            `${finalReason}.${remarksAuditText}`,
+        },
+        {
+          connection,
+
+          throwOnError:
+            true,
+        }
+      );
+
+      await connection
+        .commit();
+
+      transactionStarted =
+        false;
+
+      return res.json({
+        success:
+          true,
+
+        message:
+          status ===
+          "Cancelled"
+            ? "Deployment cancelled successfully."
+            : "Deployment marked as completed successfully.",
+
+        deploymentId:
+          Number(
+            deploymentId
+          ),
+
+        assignmentId:
+          Number(
+            deploymentId
+          ),
+
+        employeeId,
+
+        company:
+          activeAssignment.company,
+
+        deploymentStatus:
+          status,
+
+        employeeStatus,
+
+        endReason:
+          finalReason,
+
+        endRemarks:
+          finalRemarks,
+      });
+    } catch (err) {
+      if (
+        connection &&
+        transactionStarted
+      ) {
+        try {
+          await connection
+            .rollback();
+        } catch (
+          rollbackError
+        ) {
+          console.error(
+            "UPDATE DEPLOYMENT STATUS ROLLBACK ERROR:",
+            rollbackError
+          );
+        }
+      }
+
+      console.error(
+        "UPDATE DEPLOYMENT STATUS ERROR:",
+        err
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to update deployment status",
+        });
+    } finally {
+      if (connection) {
+        connection.release();
       }
     }
-
-    console.error(
-      "UPDATE DEPLOYMENT STATUS ERROR:",
-      err
-    );
-
-    return res
-      .status(500)
-      .json({
-        error:
-          "Failed to update deployment status",
-      });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
-  }
-};
+  };

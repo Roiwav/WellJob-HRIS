@@ -51,6 +51,14 @@ function isInactiveAccount(status) {
   );
 }
 
+function normalizeAssignedCompany(value) {
+  const normalized = String(
+    value ?? ""
+  ).trim();
+
+  return normalized || null;
+}
+
 function normalizeMustChangePassword(
   value
 ) {
@@ -129,6 +137,23 @@ function buildSafeUser(user) {
     role:
       user.role,
 
+    /*
+     * Safe to expose:
+     *
+     * This is only the coordinator's own assigned
+     * company label. Backend authorization remains
+     * authoritative through authMiddleware.
+     */
+    assigned_company:
+      normalizeAssignedCompany(
+        user.assigned_company
+      ),
+
+    assignedCompany:
+      normalizeAssignedCompany(
+        user.assigned_company
+      ),
+
     status:
       user.status,
 
@@ -181,6 +206,7 @@ exports.login =
               username,
               password,
               role,
+              assigned_company,
               status,
               must_change_password,
               token_version
@@ -377,20 +403,10 @@ exports.login =
        * tokenVersion binds this JWT to the user's
        * current server-side session generation.
        *
-       * Example:
-       *
-       * JWT tokenVersion = 1
-       * DB  token_version = 1
-       * -> valid
-       *
-       * Password reset / deactivation:
-       *
-       * DB token_version = 2
-       *
-       * Old JWT still contains:
-       * tokenVersion = 1
-       *
-       * authMiddleware will reject that old JWT.
+       * The role remains in the JWT for compatibility,
+       * but authMiddleware reloads the CURRENT role and
+       * assigned company from the database for every
+       * protected request.
        */
       const token =
         jwt.sign(

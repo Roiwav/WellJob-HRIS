@@ -3,14 +3,35 @@ import { Outlet } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Sidebar from "../components/Sidebar";
 import SmartSuggestionsWidget from "../components/suggestions/SmartSuggestionsWidget";
+
+import { ROLES } from "../constants/roles";
+import { useAuth } from "../context/useAuth";
 import useTheme from "../hooks/useTheme";
 
 export default function MainLayout() {
-  const { darkMode, toggleTheme } = useTheme();
+  const {
+    darkMode,
+    toggleTheme,
+  } = useTheme();
+
+  const {
+    user,
+  } = useAuth();
+
+  const isHRCoordinator =
+    user?.role ===
+    ROLES.HR_COORDINATOR;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-gray-100 dark:bg-slate-950">
-      <Sidebar toggleTheme={toggleTheme} darkMode={darkMode} />
+      <Sidebar
+        toggleTheme={
+          toggleTheme
+        }
+        darkMode={
+          darkMode
+        }
+      />
 
       <div className="flex min-w-0 flex-1 flex-col text-gray-900 dark:text-white">
         <Navbar />
@@ -20,7 +41,9 @@ export default function MainLayout() {
         </main>
       </div>
 
-      <SmartSuggestionsWidget />
+      {!isHRCoordinator && (
+        <SmartSuggestionsWidget />
+      )}
     </div>
   );
 }
