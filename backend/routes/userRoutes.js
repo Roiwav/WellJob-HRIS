@@ -7,6 +7,7 @@ const {
   getCompanyOptions,
   createUser,
   updateAssignedCompany,
+  updateRecoveryEmail,
   resetPassword,
   toggleStatus,
   changePassword,
@@ -128,6 +129,14 @@ router.put(
  * coordinator's existing session through
  * token_version.
  */
+/* Super Admin only: recovery email registration for managed accounts. */
+router.put(
+  "/users/:id/recovery-email",
+  verifyToken,
+  authorizeRoles("SUPER_ADMIN"),
+  updateRecoveryEmail
+);
+
 router.put(
   "/users/:id/assigned-company",
   verifyToken,

@@ -66,6 +66,14 @@ const ChangePassword = lazy(() =>
   import("./pages/ChangePassword")
 );
 
+const ResetPassword = lazy(() =>
+  import("./pages/ResetPassword")
+);
+
+const VerifyEmail = lazy(() =>
+  import("./pages/VerifyEmail")
+);
+
 const SystemConfiguration = lazy(() =>
   import("./pages/SystemConfiguration")
 );
@@ -124,6 +132,11 @@ const HR_MODULE_ROLES = [
   ROLES.SUPER_ADMIN,
   ROLES.HR_MANAGER,
   ROLES.HR_STAFF,
+];
+
+const NOTIFICATION_ROLES = [
+  ...HR_MODULE_ROLES,
+  ROLES.IT_SUPPORT,
 ];
 
 /*
@@ -522,6 +535,24 @@ function ApplicationContent({
         }
       />
 
+      {/* Public recovery links from email */}
+      <Route
+        path="/reset-password"
+        element={
+          <LazyRoute>
+            <ResetPassword />
+          </LazyRoute>
+        }
+      />
+
+      <Route
+        path="/verify-email"
+        element={
+          <LazyRoute>
+            <VerifyEmail />
+          </LazyRoute>
+        }
+      />
       {/* All authenticated users */}
       <Route
         element={
@@ -614,25 +645,25 @@ function ApplicationContent({
             />
           </Route>
 
-          {/* Existing HR Smart Notifications */}
-          <Route
-            element={
-              <ProtectedRoute
-                allowedRoles={
-                  HR_MODULE_ROLES
+          {/* Notifications: HR incident alerts and authorized recovery reviews */}
+              <Route
+                element={
+                  <ProtectedRoute
+                    allowedRoles={
+                      NOTIFICATION_ROLES
+                    }
+                  />
                 }
-              />
-            }
-          >
-            <Route
-              path="/notifications"
-              element={
-                <LazyRoute>
-                  <Notifications />
-                </LazyRoute>
-              }
-            />
-          </Route>
+              >
+                <Route
+                  path="/notifications"
+                  element={
+                    <LazyRoute>
+                      <Notifications />
+                    </LazyRoute>
+                  }
+                />
+              </Route>
 
           {/* HR Manager employee archive */}
           <Route

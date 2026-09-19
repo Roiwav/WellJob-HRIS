@@ -64,6 +64,7 @@ const EXPECTED_MIGRATIONS = [
   "add_audit_logs_category_created_index.sql",
   "add_hr_coordinator_scope.sql",
   "add_company_position_master_data.sql",
+  "add_user_email_password_reset.sql",
 ];
 
 function requiredEnv(
@@ -785,6 +786,112 @@ async function verifyCoreSchema(
   ) {
     throw new Error(
       "Database setup verification failed. idx_users_role_assigned_company is missing."
+    );
+  }
+
+
+  /*
+   * Registered email and password-reset schema.
+   *
+   * These fields are nullable so existing user
+   * accounts remain valid before email registration.
+   */
+  const passwordResetColumnChecks = await Promise.all([
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email",
+      dataType: "varchar",
+      maxLength: 254,
+      nullable: true,
+      collationName: "utf8mb4_general_ci",
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email_verified_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email_verification_token_hash",
+      dataType: "char",
+      maxLength: 64,
+      nullable: true,
+      collationName: "utf8mb4_general_ci",
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email_verification_expires_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email_verification_requested_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "password_reset_token_hash",
+      dataType: "char",
+      maxLength: 64,
+      nullable: true,
+      collationName: "utf8mb4_general_ci",
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "password_reset_expires_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "password_reset_requested_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+  ]);
+
+  if (passwordResetColumnChecks.some((matches) => !matches)) {
+    throw new Error(
+      "Database setup verification failed. User email/password-reset columns do not match the canonical schema."
+    );
+  }
+
+  const passwordResetIndexChecks = await Promise.all([
+    indexDefinitionMatches(connection, {
+      tableName: "users",
+      indexName: "uq_users_email",
+      columns: ["email"],
+      unique: true,
+    }),
+
+    indexDefinitionMatches(connection, {
+      tableName: "users",
+      indexName: "uq_users_email_verification_token_hash",
+      columns: ["email_verification_token_hash"],
+      unique: true,
+    }),
+
+    indexDefinitionMatches(connection, {
+      tableName: "users",
+      indexName: "uq_users_password_reset_token_hash",
+      columns: ["password_reset_token_hash"],
+      unique: true,
+    }),
+  ]);
+
+  if (passwordResetIndexChecks.some((matches) => !matches)) {
+    throw new Error(
+      "Database setup verification failed. User email/password-reset indexes do not match the canonical schema."
     );
   }
 

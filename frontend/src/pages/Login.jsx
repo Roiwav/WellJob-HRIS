@@ -15,6 +15,19 @@ import Dialog from "../components/ui/Dialog";
 import useTheme from "../hooks/useTheme";
 import { API_BASE } from "../config/api";
 
+const GENERIC_RECOVERY_MESSAGE =
+  "If the submitted details are eligible for recovery, a password-reset link may be sent to the account's verified recovery email.";
+
+const RECOVERY_INPUT_CLASS =
+  "h-11 w-full rounded-xl border border-gray-300 bg-white px-4 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-600 dark:bg-slate-800 dark:text-white";
+
+const RECOVERY_LABEL_CLASS =
+  "block text-sm font-semibold text-gray-700 dark:text-gray-200";
+
+function normalizeIdentityInput(value) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const { setUser } = useAuth();
@@ -24,9 +37,25 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [capsLockOn, setCapsLockOn] = useState(false);
+
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+
+  const [forgotPasswordOpen, setForgotPasswordOpen] =
+    useState(false);
+
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryUsername, setRecoveryUsername] =
+    useState("");
+  const [recoveryFullName, setRecoveryFullName] =
+    useState("");
+
+  const [recoveryError, setRecoveryError] = useState("");
+  const [recoveryMessage, setRecoveryMessage] =
+    useState("");
+
+  const [isRequestingRecovery, setIsRequestingRecovery] =
+    useState(false);
 
   const handleLogin = async (event) => {
     event.preventDefault();
@@ -106,12 +135,9 @@ export default function Login() {
           data.user?.must_change_password === "1",
       };
 
-      // Store the JWT returned by the backend.
-      // Protected API requests will use this value later as:
-      // Authorization: Bearer <token>
+      // Preserve the existing session storage behavior.
       localStorage.setItem("token", token);
 
-      // Preserve the existing frontend user/session behavior.
       localStorage.setItem(
         "user",
         JSON.stringify(normalizedUser)
@@ -131,6 +157,7 @@ export default function Login() {
         SUPER_ADMIN: "/",
         HR_MANAGER: "/",
         HR_STAFF: "/employees",
+        HR_COORDINATOR: "/employees",
         IT_SUPPORT: "/settings",
       };
 
@@ -156,6 +183,173 @@ export default function Login() {
       setError("");
     }
   };
+
+  const clearRecoveryForm = () => {
+    setRecoveryEmail("");
+    setRecoveryUsername("");
+    setRecoveryFullName("");
+    setRecoveryError("");
+    setRecoveryMessage("");
+  };
+
+  const openForgotPassword = () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    clearRecoveryForm();
+    setForgotPasswordOpen(true);
+  };
+
+  const closeForgotPassword = () => {
+    if (isRequestingRecovery) {
+      return;
+    }
+
+    setForgotPasswordOpen(false);
+    clearRecoveryForm();
+  };
+
+  const handleRequestRecovery = async (event) => {
+    event.preventDefault();
+
+    if (isRequestingRecovery || recoveryMessage) {
+      return;
+    }
+
+    const email = recoveryEmail.trim();
+
+    const recoveryAccountUsername =
+      normalizeIdentityInput(recoveryUsername);
+
+    const fullName =
+      normalizeIdentityInput(recoveryFullName);
+
+    if (!email) {
+      setRecoveryError(
+        "Enter your registered recovery email address."
+      );
+
+      return;
+    }
+
+    if (email.length > 254) {
+      setRecoveryError(
+        "Recovery email must not exceed 254 characters."
+      );
+
+      return;
+    }
+
+    if (!recoveryAccountUsername) {
+      setRecoveryError(
+        "Enter the username of your WELLJOB account."
+      );
+
+      return;
+    }
+
+    if (recoveryAccountUsername.length > 150) {
+      setRecoveryError(
+        "Username must not exceed 150 characters."
+      );
+
+      return;
+    }
+
+    if (!fullName) {
+      setRecoveryError(
+        "Enter the full name registered to your WELLJOB account."
+      );
+
+      return;
+    }
+
+    if (fullName.length > 150) {
+      setRecoveryError(
+        "Full name must not exceed 150 characters."
+      );
+
+      return;
+    }
+
+    setRecoveryError("");
+    setIsRequestingRecovery(true);
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/auth/forgot-password`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            username: recoveryAccountUsername,
+            fullName,
+          }),
+        }
+      );
+
+      const data = await response
+        .json()
+        .catch(() => null);
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          setRecoveryError(
+            "Too many recovery requests. Please wait and try again later."
+          );
+
+          return;
+        }
+
+        if (response.status === 503) {
+          setRecoveryError(
+            "Password recovery is temporarily unavailable. Please try again later."
+          );
+
+          return;
+        }
+
+        setRecoveryError(
+          data?.message ||
+            "Unable to process your request right now. Please try again later."
+        );
+
+        return;
+      }
+
+      /*
+       * Do not reveal whether the submitted identity
+       * details matched an existing account.
+       *
+       * The backend will be updated separately to
+       * require all three fields before creating
+       * a pending approval request.
+       */
+      setRecoveryMessage(
+        GENERIC_RECOVERY_MESSAGE
+      );
+
+      setRecoveryEmail("");
+      setRecoveryUsername("");
+      setRecoveryFullName("");
+    } catch {
+      setRecoveryError(
+        "Network error. Check your connection and try again."
+      );
+    } finally {
+      setIsRequestingRecovery(false);
+    }
+  };
+
+  const recoveryFormIncomplete =
+    !recoveryEmail.trim() ||
+    !recoveryUsername.trim() ||
+    !recoveryFullName.trim();
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900">
@@ -262,21 +456,15 @@ export default function Login() {
                   }}
                   onKeyUp={(event) =>
                     setCapsLockOn(
-                      event.getModifierState(
-                        "CapsLock"
-                      )
+                      event.getModifierState("CapsLock")
                     )
                   }
                   onKeyDown={(event) =>
                     setCapsLockOn(
-                      event.getModifierState(
-                        "CapsLock"
-                      )
+                      event.getModifierState("CapsLock")
                     )
                   }
-                  onBlur={() =>
-                    setCapsLockOn(false)
-                  }
+                  onBlur={() => setCapsLockOn(false)}
                   placeholder="Enter your password"
                   className="h-11 w-full rounded-xl border border-gray-300 bg-white px-4 pr-12 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                 />
@@ -315,9 +503,7 @@ export default function Login() {
             <div className="flex justify-end">
               <button
                 type="button"
-                onClick={() =>
-                  setForgotPasswordOpen(true)
-                }
+                onClick={openForgotPassword}
                 disabled={isSubmitting}
                 className="inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-indigo-600 transition hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:text-indigo-300 dark:hover:text-indigo-200"
               >
@@ -371,44 +557,166 @@ export default function Login() {
 
         <Dialog
           open={forgotPasswordOpen}
-          onClose={() =>
-            setForgotPasswordOpen(false)
-          }
+          onClose={closeForgotPassword}
           title="Forgot Password"
-          description="Password reset assistance for authorized Welljob users."
+          description="Enter your registered account details to request password recovery."
           tone="default"
           size="md"
-          closeOnOverlay
-          closeOnEscape
+          closeOnOverlay={!isRequestingRecovery}
+          closeOnEscape={!isRequestingRecovery}
           footer={
             <button
               type="button"
-              onClick={() =>
-                setForgotPasswordOpen(false)
-              }
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30"
+              onClick={closeForgotPassword}
+              disabled={isRequestingRecovery}
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Close
             </button>
           }
         >
-          <div className="space-y-4 text-sm leading-6 text-gray-600 dark:text-gray-300">
-            <p>
-              Please contact Technical IT
-              Support or an authorized system
-              administrator to request a
-              password reset.
-            </p>
+          {recoveryMessage ? (
+            <div className="space-y-4">
+              <div
+                role="status"
+                className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+              >
+                {recoveryMessage}
+              </div>
 
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-              For security, your identity and
-              account must be verified before a
-              temporary password is issued. You
-              will be required to change that
-              temporary password after signing
-              in.
+              <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+                If you receive a reset link, check your inbox
+                and spam folder. Otherwise, contact Technical
+                IT Support or an authorized system
+                administrator for recovery assistance.
+              </p>
             </div>
-          </div>
+          ) : (
+            <form
+              onSubmit={handleRequestRecovery}
+              className="space-y-4"
+            >
+              <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+                Enter the email, username, and full name
+                registered to your WELLJOB account. Your
+                recovery email must already be verified.
+              </p>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="recovery-email"
+                  className={RECOVERY_LABEL_CLASS}
+                >
+                  Registered Recovery Email
+                </label>
+
+                <input
+                  id="recovery-email"
+                  name="recoveryEmail"
+                  type="email"
+                  autoComplete="email"
+                  maxLength={254}
+                  required
+                  value={recoveryEmail}
+                  disabled={isRequestingRecovery}
+                  onChange={(event) => {
+                    setRecoveryEmail(event.target.value);
+                    setRecoveryError("");
+                  }}
+                  placeholder="Enter your registered email"
+                  className={RECOVERY_INPUT_CLASS}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="recovery-username"
+                  className={RECOVERY_LABEL_CLASS}
+                >
+                  Username
+                </label>
+
+                <input
+                  id="recovery-username"
+                  name="recoveryUsername"
+                  type="text"
+                  autoComplete="off"
+                  maxLength={150}
+                  required
+                  value={recoveryUsername}
+                  disabled={isRequestingRecovery}
+                  onChange={(event) => {
+                    setRecoveryUsername(event.target.value);
+                    setRecoveryError("");
+                  }}
+                  placeholder="Enter your account username"
+                  className={RECOVERY_INPUT_CLASS}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="recovery-full-name"
+                  className={RECOVERY_LABEL_CLASS}
+                >
+                  Full Name
+                </label>
+
+                <input
+                  id="recovery-full-name"
+                  name="recoveryFullName"
+                  type="text"
+                  autoComplete="name"
+                  maxLength={150}
+                  required
+                  value={recoveryFullName}
+                  disabled={isRequestingRecovery}
+                  onChange={(event) => {
+                    setRecoveryFullName(event.target.value);
+                    setRecoveryError("");
+                  }}
+                  placeholder="Enter your registered full name"
+                  className={RECOVERY_INPUT_CLASS}
+                />
+              </div>
+
+              {recoveryError && (
+                <div
+                  role="alert"
+                  className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300"
+                >
+                  {recoveryError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={
+                  isRequestingRecovery ||
+                  recoveryFormIncomplete
+                }
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 font-semibold text-white shadow-lg transition hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRequestingRecovery && (
+                  <LoaderCircle
+                    className="h-5 w-5 animate-spin"
+                    aria-hidden="true"
+                  />
+                )}
+
+                {isRequestingRecovery
+                  ? "Submitting request..."
+                  : "Request Password Reset"}
+              </button>
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                If your recovery email is not yet registered
+                and verified, contact Technical IT Support
+                or an authorized system administrator for
+                account recovery assistance.
+              </div>
+            </form>
+          )}
         </Dialog>
 
         <button

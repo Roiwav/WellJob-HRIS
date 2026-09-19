@@ -22,6 +22,7 @@ import { useAuth } from "../context/useAuth";
 import useSmartNotifications from "../hooks/useSmartNotifications";
 
 import SmartAlertToast from "./notifications/SmartAlertToast";
+import RecoveryEmailVerificationAction from "./auth/RecoveryEmailVerificationAction";
 
 import {
   formatSmartAlertDate,
@@ -1097,6 +1098,8 @@ export default function Navbar({
                     </div>
                   </div>
                 </div>
+
+                <RecoveryEmailVerificationAction />
 
                 <button
                   type="button"

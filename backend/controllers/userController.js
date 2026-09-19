@@ -25,6 +25,21 @@ const CREATABLE_ACCOUNT_ROLES = new Set([
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 128;
 
+/* Email is initially unverified. Only a completed email-link flow may
+ * populate email_verified_at; administrative registration must not do so. */
+function parseRecoveryEmail(value) {
+  if (value === undefined || value === null || value === "") {
+    return { valid: true, email: null };
+  }
+  if (typeof value !== "string") return { valid: false, email: null };
+  const email = value.trim().toLowerCase();
+  if (!email) return { valid: true, email: null };
+  const valid = email.length <= 254 &&
+    /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(email) &&
+    !email.split("@")[1].split(".").some(part => part.startsWith("-") || part.endsWith("-"));
+  return { valid, email: valid ? email : null };
+}
+
 function normalizeRole(value) {
   const normalized = String(value || "")
     .trim()
@@ -319,6 +334,12 @@ exports.getUsers =
     res
   ) => {
     try {
+      const requester = await getCanonicalAuthenticatedUser(req);
+      if (!requester || requester.status !== "ACTIVE" ||
+          !["SUPER_ADMIN", "IT_SUPPORT"].includes(requester.role)) {
+        return res.status(403).json({ message: "Access denied." });
+      }
+      const mayViewRecoveryEmail = requester.role === "SUPER_ADMIN";
       const [users] =
         await db.promise().query(
           `
@@ -327,6 +348,8 @@ exports.getUsers =
             user_id,
             full_name,
             username,
+            email,
+            email_verified_at,
             role,
             assigned_company,
             status
@@ -342,9 +365,11 @@ exports.getUsers =
               normalizeCompany(
                 user.assigned_company
               );
-
+            const { email_verified_at: verifiedAt, ...safeUser } = user;
             return {
-              ...user,
+              ...safeUser,
+              email: mayViewRecoveryEmail ? user.email : null,
+              email_verified: mayViewRecoveryEmail && Boolean(user.email && verifiedAt),
               assigned_company:
                 assignedCompany,
               assignedCompany,
@@ -451,8 +476,12 @@ exports.createUser =
     const requestedAssignedCompany =
       req.body?.assignedCompany ??
       req.body?.assigned_company;
+    const recoveryEmail = parseRecoveryEmail(req.body?.email);
 
     try {
+      if (!recoveryEmail.valid) {
+        return res.status(400).json({ message: "Enter a valid recovery email address (maximum 254 characters)." });
+      }
       const trimmedName =
         String(name || "").trim();
 
@@ -607,6 +636,7 @@ exports.createUser =
             user_id,
             full_name,
             username,
+            email,
             password,
             role,
             assigned_company,
@@ -614,6 +644,7 @@ exports.createUser =
             must_change_password
           )
           VALUES (
+            ?,
             ?,
             ?,
             ?,
@@ -628,6 +659,7 @@ exports.createUser =
             userId,
             trimmedName,
             username,
+            recoveryEmail.email,
             hash,
             normalizedRole,
             assignedCompany,
@@ -666,6 +698,8 @@ exports.createUser =
           account: {
             userId,
             username,
+            email: recoveryEmail.email,
+            email_verified: false,
             role:
               normalizedRole,
 
@@ -676,6 +710,10 @@ exports.createUser =
           },
         });
     } catch (error) {
+      if (error?.code === "ER_DUP_ENTRY" &&
+          String(error?.sqlMessage || "").includes("uq_users_email")) {
+        return res.status(409).json({ message: "This recovery email is already registered." });
+      }
       console.error(
         "CREATE USER ERROR:",
         error
@@ -689,6 +727,74 @@ exports.createUser =
         });
     }
   };
+
+/*
+ * ==================================================
+ * REGISTER / UPDATE RECOVERY EMAIL - SUPER ADMIN ONLY
+ * ==================================================
+ * This DOES NOT verify email ownership or send an email.
+ * Changing/clearing the address revokes outstanding recovery links
+ * and authenticated sessions. Email verification is added with SMTP.
+ */
+exports.updateRecoveryEmail = async (req, res) => {
+  const targetId = parsePositiveUserId(req.params?.id);
+  if (!targetId) return res.status(400).json({ message: "A valid user ID is required." });
+  const requested = parseRecoveryEmail(req.body?.email);
+  if (!requested.valid) {
+    return res.status(400).json({ message: "Enter a valid recovery email address (maximum 254 characters)." });
+  }
+  try {
+    const requester = await getCanonicalAuthenticatedUser(req);
+    if (!requester) return res.status(401).json({ message: "Authenticated account not found." });
+    if (requester.status !== "ACTIVE" || requester.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ message: "Only Super Admin can manage recovery email addresses." });
+    }
+    const [users] = await db.promise().query(
+      `SELECT id, user_id, full_name, username, role, email, email_verified_at, token_version
+       FROM users WHERE id = ? LIMIT 1`, [targetId]
+    );
+    if (!users.length) return res.status(404).json({ message: "User not found." });
+    const target = users[0];
+    if (target.id === requester.id || normalizeRole(target.role) === "SUPER_ADMIN") {
+      return res.status(403).json({ message: "Super Admin recovery email cannot be changed through this endpoint." });
+    }
+    const previousEmail = target.email || null;
+    if (previousEmail === requested.email) {
+      return res.json({ message: "Recovery email is already up to date.",
+        email: previousEmail, email_verified: Boolean(previousEmail && target.email_verified_at), unchanged: true });
+    }
+    const [result] = await db.promise().query(
+      `UPDATE users SET
+         email = ?,
+         email_verified_at = NULL,
+         email_verification_token_hash = NULL,
+         email_verification_expires_at = NULL,
+         email_verification_requested_at = NULL,
+         password_reset_token_hash = NULL,
+         password_reset_expires_at = NULL,
+         password_reset_requested_at = NULL,
+         token_version = token_version + 1
+       WHERE id = ? AND token_version = ? AND (email <=> ?)`,
+      [requested.email, targetId, target.token_version, previousEmail]
+    );
+    if (result.affectedRows !== 1) {
+      return res.status(409).json({ message: "The account changed. Refresh and try again." });
+    }
+    const actor = toAuditActor(requester);
+    await logAudit({ userId: actor.userId, username: actor.username,
+      fullName: actor.fullName, role: actor.role, action: "UPDATE_RECOVERY_EMAIL",
+      description: `${actor.fullName} updated the recovery email registration for ${target.full_name} (${target.username}).` });
+    return res.json({ message: "Recovery email saved. The account owner must verify it before password recovery is available.",
+      email: requested.email, email_verified: false, unchanged: false });
+  } catch (error) {
+    if (error?.code === "ER_DUP_ENTRY" &&
+        String(error?.sqlMessage || "").includes("uq_users_email")) {
+      return res.status(409).json({ message: "This recovery email is already registered." });
+    }
+    console.error("UPDATE RECOVERY EMAIL ERROR:", error);
+    return res.status(500).json({ message: "Unable to update recovery email." });
+  }
+};
 
 /*
  * ==================================================
@@ -1095,6 +1201,9 @@ exports.resetPassword =
           SET
             password = ?,
             must_change_password = 1,
+            password_reset_token_hash = NULL,
+            password_reset_expires_at = NULL,
+            password_reset_requested_at = NULL,
             token_version =
               token_version + 1
           WHERE id = ?
@@ -1291,6 +1400,12 @@ exports.toggleStatus =
           UPDATE users
           SET
             status = ?,
+            password_reset_token_hash = NULL,
+            password_reset_expires_at = NULL,
+            password_reset_requested_at = NULL,
+            email_verification_token_hash = NULL,
+            email_verification_expires_at = NULL,
+            email_verification_requested_at = NULL,
             token_version =
               token_version + 1
           WHERE id = ?
@@ -1530,6 +1645,9 @@ exports.changePassword =
           SET
             password = ?,
             must_change_password = 0,
+            password_reset_token_hash = NULL,
+            password_reset_expires_at = NULL,
+            password_reset_requested_at = NULL,
             token_version =
               token_version + 1
           WHERE id = ?

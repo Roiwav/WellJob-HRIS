@@ -203,6 +203,18 @@ const MIGRATIONS = [
         connection
       ),
   },
+
+  {
+    name: "add_user_email_password_reset.sql",
+    isApplied: async (connection) =>
+      passwordResetSchemaIsApplied(connection),
+  },
+
+  {
+    name: "add_password_reset_approval_requests.sql",
+    isApplied: async (connection) =>
+      passwordResetApprovalSchemaIsApplied(connection),
+  },
 ];
 
 function requiredEnv(
@@ -1609,6 +1621,299 @@ async function companyPositionMasterDataIsApplied(
     missingPositionCount ===
     0
   );
+}
+
+
+/*
+ * ==================================================
+ * REGISTERED EMAIL + PASSWORD RESET SCHEMA
+ * ==================================================
+ */
+async function passwordResetSchemaIsApplied(connection) {
+  const columnChecks = await Promise.all([
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email",
+      dataType: "varchar",
+      maxLength: 254,
+      nullable: true,
+      collationName: "utf8mb4_general_ci",
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email_verified_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email_verification_token_hash",
+      dataType: "char",
+      maxLength: 64,
+      nullable: true,
+      collationName: "utf8mb4_general_ci",
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email_verification_expires_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "email_verification_requested_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "password_reset_token_hash",
+      dataType: "char",
+      maxLength: 64,
+      nullable: true,
+      collationName: "utf8mb4_general_ci",
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "password_reset_expires_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+
+    columnDefinitionMatches(connection, {
+      tableName: "users",
+      columnName: "password_reset_requested_at",
+      dataType: "datetime",
+      nullable: true,
+    }),
+  ]);
+
+  if (columnChecks.some((matches) => !matches)) {
+    return false;
+  }
+
+  const indexChecks = await Promise.all([
+    indexDefinitionMatches(connection, {
+      tableName: "users",
+      indexName: "uq_users_email",
+      columns: ["email"],
+      unique: true,
+    }),
+
+    indexDefinitionMatches(connection, {
+      tableName: "users",
+      indexName: "uq_users_email_verification_token_hash",
+      columns: ["email_verification_token_hash"],
+      unique: true,
+    }),
+
+    indexDefinitionMatches(connection, {
+      tableName: "users",
+      indexName: "uq_users_password_reset_token_hash",
+      columns: ["password_reset_token_hash"],
+      unique: true,
+    }),
+  ]);
+
+  return indexChecks.every(Boolean);
+}
+
+
+/*
+ * ==================================================
+ * FORGOT PASSWORD APPROVAL REQUESTS - MIGRATION #12
+ * ==================================================
+ *
+ * Verify the required table structure before adopting
+ * or recording this migration as successfully applied.
+ */
+async function passwordResetApprovalSchemaIsApplied(connection) {
+  const tableName = "password_reset_requests";
+
+  if (!(await tableExists(connection, tableName))) {
+    return false;
+  }
+
+  const columns = [
+    {
+      columnName: "id",
+      dataType: "bigint",
+      nullable: false,
+      unsigned: true,
+      extraIncludes: "auto_increment",
+    },
+    {
+      columnName: "user_id",
+      dataType: "int",
+      nullable: false,
+    },
+    {
+      columnName: "requested_token_version",
+      dataType: "int",
+      nullable: false,
+      unsigned: true,
+    },
+    {
+      columnName: "status",
+      dataType: "enum",
+      nullable: false,
+    },
+    {
+      columnName: "requested_at",
+      dataType: "datetime",
+      nullable: false,
+    },
+    {
+      columnName: "expires_at",
+      dataType: "datetime",
+      nullable: false,
+    },
+    {
+      columnName: "reviewed_by_user_id",
+      dataType: "int",
+      nullable: true,
+    },
+    {
+      columnName: "reviewed_at",
+      dataType: "datetime",
+      nullable: true,
+    },
+    {
+      columnName: "identity_verification_method",
+      dataType: "varchar",
+      maxLength: 32,
+      nullable: true,
+      collationName: "utf8mb4_general_ci",
+    },
+    {
+      columnName: "identity_verified_at",
+      dataType: "datetime",
+      nullable: true,
+    },
+    {
+      columnName: "sent_at",
+      dataType: "datetime",
+      nullable: true,
+    },
+    {
+      columnName: "delivery_failed_at",
+      dataType: "datetime",
+      nullable: true,
+    },
+    {
+      columnName: "updated_at",
+      dataType: "timestamp",
+      nullable: false,
+      extraIncludes: "on update",
+    },
+  ];
+
+  const columnChecks = await Promise.all(
+    columns.map((definition) =>
+      columnDefinitionMatches(connection, {
+        tableName,
+        ...definition,
+      })
+    )
+  );
+
+  if (columnChecks.some((matches) => !matches)) {
+    return false;
+  }
+
+  const requiredStatuses = [
+    "PENDING",
+    "SENDING",
+    "SENT",
+    "REJECTED",
+    "EXPIRED",
+    "SEND_FAILED",
+    "CANCELLED",
+  ];
+
+  const statusChecks = await Promise.all(
+    requiredStatuses.map((status) =>
+      enumColumnContains(
+        connection,
+        tableName,
+        "status",
+        status
+      )
+    )
+  );
+
+  if (statusChecks.some((matches) => !matches)) {
+    return false;
+  }
+
+  const indexes = [
+    {
+      indexName: "PRIMARY",
+      columns: ["id"],
+      unique: true,
+    },
+    {
+      indexName: "idx_password_reset_requests_user_status",
+      columns: ["user_id", "status", "requested_at"],
+    },
+    {
+      indexName: "idx_password_reset_requests_status_expiry",
+      columns: ["status", "expires_at", "requested_at"],
+    },
+    {
+      indexName: "idx_password_reset_requests_reviewer",
+      columns: ["reviewed_by_user_id", "reviewed_at"],
+    },
+  ];
+
+  const indexChecks = await Promise.all(
+    indexes.map((definition) =>
+      indexDefinitionMatches(connection, {
+        tableName,
+        ...definition,
+      })
+    )
+  );
+
+  if (indexChecks.some((matches) => !matches)) {
+    return false;
+  }
+
+  const foreignKeys = [
+    {
+      constraintName: "fk_password_reset_requests_user",
+      columnName: "user_id",
+      referencedTableName: "users",
+      referencedColumnName: "id",
+      updateRule: "RESTRICT",
+      deleteRule: "RESTRICT",
+    },
+    {
+      constraintName: "fk_password_reset_requests_reviewer",
+      columnName: "reviewed_by_user_id",
+      referencedTableName: "users",
+      referencedColumnName: "id",
+      updateRule: "RESTRICT",
+      deleteRule: "RESTRICT",
+    },
+  ];
+
+  const foreignKeyChecks = await Promise.all(
+    foreignKeys.map((definition) =>
+      foreignKeyExists(connection, {
+        tableName,
+        ...definition,
+      })
+    )
+  );
+
+  return foreignKeyChecks.every(Boolean);
 }
 
 async function acquireMigrationLock(

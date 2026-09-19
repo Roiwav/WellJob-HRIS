@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS users (
   user_id VARCHAR(20) DEFAULT NULL,
   full_name VARCHAR(150) NOT NULL,
   username VARCHAR(100) NOT NULL,
+  email VARCHAR(254) DEFAULT NULL,
+  email_verified_at DATETIME DEFAULT NULL,
+  email_verification_token_hash CHAR(64) DEFAULT NULL,
+  email_verification_expires_at DATETIME DEFAULT NULL,
+  email_verification_requested_at DATETIME DEFAULT NULL,
   password VARCHAR(255) NOT NULL,
 
   role ENUM(
@@ -52,6 +57,9 @@ CREATE TABLE IF NOT EXISTS users (
 
   must_change_password TINYINT(1) NOT NULL DEFAULT 1,
   token_version INT UNSIGNED NOT NULL DEFAULT 1,
+  password_reset_token_hash CHAR(64) DEFAULT NULL,
+  password_reset_expires_at DATETIME DEFAULT NULL,
+  password_reset_requested_at DATETIME DEFAULT NULL,
 
   PRIMARY KEY (id),
 
@@ -61,6 +69,15 @@ CREATE TABLE IF NOT EXISTS users (
 
   UNIQUE KEY user_id (
     user_id
+  ),
+  UNIQUE KEY uq_users_email (
+    email
+  ),
+  UNIQUE KEY uq_users_email_verification_token_hash (
+    email_verification_token_hash
+  ),
+  UNIQUE KEY uq_users_password_reset_token_hash (
+    password_reset_token_hash
   ),
 
   KEY idx_users_role_assigned_company (

@@ -11,6 +11,7 @@ import {
   FiCheckCircle,
   FiCopy,
   FiLock,
+  FiMail,
   FiRefreshCw,
   FiShield,
   FiUserCheck,
@@ -132,6 +133,14 @@ function generateTemporaryPassword() {
   ).join("");
 }
 
+function validRecoveryEmail(value) {
+  if (!value.trim()) return true;
+  const normalized = value.trim().toLowerCase();
+  return normalized.length <= 254 &&
+    /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(normalized) &&
+    !normalized.split("@")[1].split(".").some(part => part.startsWith("-") || part.endsWith("-"));
+}
+
 function extractNumberFromUserId(
   userId,
   prefix
@@ -223,11 +232,16 @@ async function requestJson(
         .catch(() => null);
 
     if (!response.ok) {
-      throw new Error(
+      const requestError = new Error(
         data?.message ||
           data?.error ||
           `Request failed with status ${response.status}`
       );
+
+      // Preserve HTTP status for field-specific form errors.
+      requestError.status = response.status;
+
+      throw requestError;
     }
 
     return data;
@@ -452,6 +466,19 @@ export default function SuperAdminPortal() {
   const [name, setName] =
     useState("");
 
+  const [email, setEmail] = useState("");
+
+  // Create-account form error. Separate from the
+  // recovery-email editor's emailError state.
+  const [
+    createEmailError,
+    setCreateEmailError,
+  ] = useState("");
+
+  const [emailTarget, setEmailTarget] = useState(null);
+  const [emailDraft, setEmailDraft] = useState("");
+  const [emailError, setEmailError] = useState("");
+
   const [role, setRole] =
     useState(
       ROLES.HR_STAFF
@@ -536,6 +563,7 @@ export default function SuperAdminPortal() {
     name: "",
     roleLabel: "",
     assignedCompany: "",
+    email: "",
   });
 
   const [
@@ -972,6 +1000,7 @@ export default function SuperAdminPortal() {
                 account?.fullName,
                 account?.name,
                 account?.username,
+                account?.email,
                 account?.role,
                 getRoleLabel(
                   account?.role
@@ -1074,6 +1103,10 @@ export default function SuperAdminPortal() {
         return "Full name must not exceed 150 characters.";
       }
 
+      if (!validRecoveryEmail(email)) {
+        return "Enter a valid recovery email address (maximum 254 characters).";
+      }
+
       if (
         !role ||
         !ROLE_CONFIG[role]
@@ -1110,6 +1143,7 @@ export default function SuperAdminPortal() {
     }, [
       companyOptions,
       isCreatingHrCoordinator,
+      email,
       name,
       role,
       selectedCompany,
@@ -1138,6 +1172,7 @@ export default function SuperAdminPortal() {
         }
 
         setValidationError("");
+        setCreateEmailError("");
         setPageError("");
 
         setIsConfirmDialogOpen(
@@ -1188,6 +1223,8 @@ export default function SuperAdminPortal() {
       try {
         setIsSubmitting(true);
         setPageError("");
+        setValidationError("");
+        setCreateEmailError("");
 
         const generatedPassword =
           generateTemporaryPassword();
@@ -1207,6 +1244,8 @@ export default function SuperAdminPortal() {
                 JSON.stringify({
                   name:
                     trimmedName,
+
+                  email: email.trim(),
 
                   role,
 
@@ -1243,6 +1282,8 @@ export default function SuperAdminPortal() {
           name:
             trimmedName,
 
+          email: email.trim(),
+
           roleLabel:
             getRoleLabel(
               role
@@ -1269,6 +1310,7 @@ export default function SuperAdminPortal() {
         );
 
         setName("");
+        setEmail("");
 
         setRole(
           ROLES.HR_STAFF
@@ -1279,25 +1321,41 @@ export default function SuperAdminPortal() {
         );
 
         setValidationError("");
+        setCreateEmailError("");
 
         await fetchUsers({
           showError: false,
         });
       } catch (error) {
-        console.error(
-          "Create account error:",
-          error
-        );
-
-        if (
-          isMountedRef.current
-        ) {
-          setPageError(
-            getApiError(
-              error,
-              "Unable to create the user account."
-            )
+        if (isMountedRef.current) {
+          const message = getApiError(
+            error,
+            "Unable to create the user account."
           );
+
+          const isDuplicateRecoveryEmail =
+            error?.status === 409 &&
+            /recovery email\s+is\s+already registered/i.test(
+              message
+            );
+
+          // The confirmation dialog must close so the
+          // error is visible beside the editable field.
+          // Keep all entered form values unchanged.
+          setIsConfirmDialogOpen(false);
+          setIsSuccessDialogOpen(false);
+
+          if (isDuplicateRecoveryEmail) {
+            setCreateEmailError(
+              "This recovery email is already registered. Please use a different recovery email."
+            );
+            setValidationError("");
+            setPageError("");
+          } else {
+            setCreateEmailError("");
+            setValidationError(message);
+            setPageError("");
+          }
         }
       } finally {
         if (
@@ -1312,6 +1370,7 @@ export default function SuperAdminPortal() {
       fetchUsers,
       isBusy,
       isCreatingHrCoordinator,
+      email,
       name,
       role,
       selectedCompany,
@@ -1351,6 +1410,7 @@ export default function SuperAdminPortal() {
 
       `User ID: ${createdAccount.userId}`,
       `Username: ${createdAccount.username}`,
+      `Recovery Email: ${createdAccount.email || "Not registered"}`,
       `Temporary Password: ${createdAccount.temporaryPassword}`,
     ].join("\n");
 
@@ -1785,6 +1845,53 @@ export default function SuperAdminPortal() {
       isBusy,
       toggleTarget,
     ]);
+
+  const handleOpenRecoveryEmail = useCallback((account) => {
+    if (!account?.id || isBusy || isProtectedAccount(account)) return;
+    setPageError("");
+    setEmailTarget(account);
+    setEmailDraft(account.email || "");
+    setEmailError("");
+  }, [isBusy]);
+
+  const handleCloseRecoveryEmail = useCallback(() => {
+    if (isProcessing) return;
+    setEmailTarget(null);
+    setEmailDraft("");
+    setEmailError("");
+  }, [isProcessing]);
+
+  const handleSaveRecoveryEmail = useCallback(async () => {
+    if (!emailTarget?.id || isBusy) return;
+    if (!validRecoveryEmail(emailDraft)) {
+      setEmailError("Enter a valid recovery email address (maximum 254 characters).");
+      return;
+    }
+    try {
+      setProcessingAction("email");
+      setEmailError("");
+      const data = await requestJson(
+        `${USERS_API_URL}/${encodeURIComponent(emailTarget.id)}/recovery-email`,
+        { method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: emailDraft.trim() }) }
+      );
+      if (!isMountedRef.current) return;
+      setAccounts(current => current.map(account =>
+        String(account.id) === String(emailTarget.id)
+          ? { ...account, email: data.email, email_verified: data.unchanged ? account.email_verified : false }
+          : account
+      ));
+      setEmailTarget(null);
+      setEmailDraft("");
+      setEmailError("");
+      setSuccessMessage(data.message || "Recovery email updated.");
+      void fetchUsers({ showError: false });
+    } catch (error) {
+      if (isMountedRef.current) setEmailError(getApiError(error, "Unable to save recovery email."));
+    } finally {
+      if (isMountedRef.current) setProcessingAction("");
+    }
+  }, [emailTarget, emailDraft, isBusy, fetchUsers]);
 
   const handleOpenAssignment =
     useCallback(
@@ -2261,6 +2368,51 @@ export default function SuperAdminPortal() {
                 </div>
               </div>
 
+              <div>
+                <label htmlFor="super-admin-recovery-email"
+                  className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Recovery Email (optional until mailer setup)
+                </label>
+                <input
+                  id="super-admin-recovery-email"
+                  type="email"
+                  value={email}
+                  disabled={isBusy}
+                  maxLength={254}
+                  autoComplete="off"
+                  placeholder="name@example.com"
+                  aria-invalid={Boolean(createEmailError)}
+                  aria-describedby={
+                    createEmailError
+                      ? "super-admin-recovery-email-error"
+                      : undefined
+                  }
+                  className={[
+                    CONTROL_CLASS_NAME,
+                    createEmailError
+                      ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                      : "",
+                  ].join(" ")}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setCreateEmailError("");
+                    setValidationError("");
+                  }}
+                />
+                {createEmailError && (
+                  <p
+                    id="super-admin-recovery-email-error"
+                    role="alert"
+                    className="mt-2 text-sm font-semibold text-red-700 dark:text-red-400"
+                  >
+                    {createEmailError}
+                  </p>
+                )}
+                <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                  The account owner must verify this address by email before it can be used for password recovery.
+                </p>
+              </div>
+
               {isCreatingHrCoordinator && (
                 <div>
                   <label
@@ -2497,7 +2649,7 @@ export default function SuperAdminPortal() {
                 <SearchInput
                   label="Search created accounts"
                   hideLabel
-                  placeholder="Search ID, name, username, role, company, or status..."
+                  placeholder="Search ID, name, username, email, role, company, or status..."
                   value={search}
                   disabled={
                     isLoadingAccounts ||
@@ -2592,14 +2744,14 @@ export default function SuperAdminPortal() {
             <div className="p-5 sm:p-6">
               <LoadingSkeleton
                 rows={6}
-                columns={7}
+                columns={8}
                 showHeader
               />
             </div>
           ) : filteredAccounts.length >
             0 ? (
             <div className="max-h-[650px] overflow-auto">
-              <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left text-sm">
+              <table className="w-full min-w-[1330px] border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
                   <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     <th className="px-5 py-4 sm:px-6">
@@ -2613,6 +2765,8 @@ export default function SuperAdminPortal() {
                     <th className="px-5 py-4 sm:px-6">
                       Username
                     </th>
+
+                    <th className="px-5 py-4 sm:px-6">Recovery Email</th>
 
                     <th className="px-5 py-4 sm:px-6">
                       Role
@@ -2695,6 +2849,17 @@ export default function SuperAdminPortal() {
                               "-"}
                           </td>
 
+                          <td className="px-5 py-4 sm:px-6">
+                            <span className="block max-w-[240px] truncate text-gray-700 dark:text-gray-300" title={account.email || "Not registered"}>
+                              {account.email || "Not registered"}
+                            </span>
+                            {account.email && (
+                              <span className={account.email_verified ? "text-xs font-semibold text-emerald-700 dark:text-emerald-400" : "text-xs font-semibold text-amber-700 dark:text-amber-400"}>
+                                {account.email_verified ? "Verified" : "Unverified"}
+                              </span>
+                            )}
+                          </td>
+
                           <td className="whitespace-nowrap px-5 py-4 sm:px-6">
                             <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                               {getRoleLabel(
@@ -2766,6 +2931,12 @@ export default function SuperAdminPortal() {
                                       />
                                     </IconButton>
                                   )}
+
+                                  <IconButton
+                                    label={`Register or edit recovery email for ${accountName}`}
+                                    title="Recovery Email" variant="secondary" size="md"
+                                    disabled={isBusy} onClick={() => handleOpenRecoveryEmail(account)}
+                                  ><FiMail aria-hidden="true" /></IconButton>
 
                                   <IconButton
                                     label={`Reset password for ${accountName}`}
@@ -2944,6 +3115,7 @@ export default function SuperAdminPortal() {
             value={username}
             monospace
           />
+          <AccountDetailRow label="Recovery Email" value={email.trim() || "Not registered"} />
         </div>
       </ConfirmDialog>
 
@@ -3044,6 +3216,7 @@ export default function SuperAdminPortal() {
             }
             monospace
           />
+          <AccountDetailRow label="Recovery Email" value={createdAccount.email || "Not registered"} />
 
           <AccountDetailRow
             label="Temporary Password"
@@ -3065,6 +3238,29 @@ export default function SuperAdminPortal() {
 
         <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">
           Do not send temporary credentials through public or unsecured channels.
+        </p>
+      </Dialog>
+
+      <Dialog open={Boolean(emailTarget)} onClose={handleCloseRecoveryEmail}
+        title="Register Recovery Email"
+        description={`Register or update the recovery email for ${getAccountName(emailTarget)}. Email ownership must be verified before Forgot Password can use it.`}
+        tone="info" size="md" closeOnOverlay={!isProcessing}
+        closeOnEscape={!isProcessing} showCloseButton bodyClassName="space-y-5 p-6"
+        footer={<div className="flex w-full justify-end gap-3">
+          <Button type="button" variant="secondary" disabled={isProcessing} onClick={handleCloseRecoveryEmail}>Cancel</Button>
+          <Button type="button" loading={processingAction === "email"}
+            disabled={isBusy || !emailTarget?.id || !validRecoveryEmail(emailDraft)}
+            onClick={handleSaveRecoveryEmail}>Save Recovery Email</Button>
+        </div>}
+      >
+        <label htmlFor="edit-recovery-email" className="block text-sm font-semibold text-gray-700 dark:text-gray-300">Recovery Email</label>
+        <input id="edit-recovery-email" type="email" value={emailDraft}
+          disabled={isProcessing} maxLength={254} autoComplete="off"
+          placeholder="name@example.com" className={CONTROL_CLASS_NAME}
+          onChange={event => { setEmailDraft(event.target.value); setEmailError(""); }} />
+        {emailError && <p role="alert" className="text-sm font-semibold text-red-700 dark:text-red-400">{emailError}</p>}
+        <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+          Leave blank to remove the address. Changing or removing it revokes existing login sessions and pending recovery links. An email verification link will be available after mailer integration.
         </p>
       </Dialog>
 
