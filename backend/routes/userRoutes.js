@@ -6,6 +6,7 @@ const {
   getUsers,
   getCompanyOptions,
   createUser,
+  resendAccountCredentials,
   updateAssignedCompany,
   updateRecoveryEmail,
   resetPassword,
@@ -25,15 +26,6 @@ const {
  * ==================================================
  * USER ACCOUNT LIST
  * ==================================================
- *
- * SUPER_ADMIN:
- * - account administration
- *
- * IT_SUPPORT:
- * - technical account maintenance
- *
- * Controller-level rules still determine which
- * target accounts may actually be modified.
  */
 router.get(
   "/users",
@@ -49,15 +41,6 @@ router.get(
  * ==================================================
  * HR COORDINATOR COMPANY OPTIONS
  * ==================================================
- *
- * SUPER ADMIN ONLY.
- *
- * Returns the canonical company names already used
- * by employee/deployment records.
- *
- * This endpoint is used by the Super Admin Portal
- * so HR Coordinator assignment uses an existing
- * company instead of unrestricted free-text input.
  */
 router.get(
   "/users/company-options",
@@ -72,12 +55,6 @@ router.get(
  * ==================================================
  * CREATE SYSTEM USER
  * ==================================================
- *
- * Only SUPER_ADMIN may create internal system
- * accounts.
- *
- * HR Coordinator creation additionally requires a
- * valid assigned company, enforced by the controller.
  */
 router.post(
   "/users",
@@ -90,14 +67,32 @@ router.post(
 
 /*
  * ==================================================
- * CHANGE OWN PASSWORD
+ * RESEND FAILED INITIAL ACCOUNT CREDENTIALS
  * ==================================================
  *
- * Any authenticated canonical user may change their
- * own password.
+ * SUPER_ADMIN ONLY.
  *
- * changePassword uses req.user as the trusted
- * authenticated identity.
+ * Controller allows resend only when:
+ * - Account is Inactive
+ * - Initial credentials delivery status is FAILED
+ * - Initial password change is still required
+ *
+ * A new temporary password is generated exclusively
+ * on the backend and sent to the registered email.
+ */
+router.post(
+  "/users/:id/resend-credentials",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN"
+  ),
+  resendAccountCredentials
+);
+
+/*
+ * ==================================================
+ * CHANGE OWN PASSWORD
+ * ==================================================
  */
 router.put(
   "/users/change-password",
@@ -107,36 +102,23 @@ router.put(
 
 /*
  * ==================================================
- * ASSIGN HR COORDINATOR COMPANY
+ * REGISTER / UPDATE RECOVERY EMAIL
  * ==================================================
- *
- * SUPER ADMIN ONLY.
- *
- * HR Coordinator cannot:
- *
- * - assign their own company
- * - change their own company
- * - provide a company scope through normal
- *   employee/deployment/incident requests
- *
- * The controller validates that:
- *
- * - the target account exists
- * - the target is HR_COORDINATOR
- * - the requested company is canonical
- *
- * Changing the assignment also invalidates the
- * coordinator's existing session through
- * token_version.
  */
-/* Super Admin only: recovery email registration for managed accounts. */
 router.put(
   "/users/:id/recovery-email",
   verifyToken,
-  authorizeRoles("SUPER_ADMIN"),
+  authorizeRoles(
+    "SUPER_ADMIN"
+  ),
   updateRecoveryEmail
 );
 
+/*
+ * ==================================================
+ * ASSIGN HR COORDINATOR COMPANY
+ * ==================================================
+ */
 router.put(
   "/users/:id/assigned-company",
   verifyToken,
@@ -150,25 +132,6 @@ router.put(
  * ==================================================
  * RESET USER PASSWORD
  * ==================================================
- *
- * Route-level access:
- *
- * SUPER_ADMIN
- * IT_SUPPORT
- *
- * Controller-level target hierarchy:
- *
- * SUPER_ADMIN
- *   -> HR_MANAGER
- *   -> HR_STAFF
- *   -> HR_COORDINATOR
- *   -> IT_SUPPORT
- *
- * IT_SUPPORT
- *   -> HR_STAFF only
- *
- * SUPER_ADMIN targets and self-targeting are
- * rejected by the controller.
  */
 router.put(
   "/users/reset/:id",
@@ -184,15 +147,6 @@ router.put(
  * ==================================================
  * ACTIVATE / DEACTIVATE USER ACCOUNT
  * ==================================================
- *
- * Uses the same target-role hierarchy as password
- * reset.
- *
- * HR Coordinator may be managed by Super Admin,
- * but not by IT Support.
- *
- * SUPER_ADMIN accounts cannot be toggled through
- * this administrative endpoint.
  */
 router.put(
   "/users/toggle/:id",

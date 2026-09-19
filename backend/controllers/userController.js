@@ -1,5 +1,9 @@
 const bcrypt = require("bcrypt");
 
+const { randomBytes } = require("node:crypto");
+const {
+  sendAccountCredentials,
+} = require("../utils/accountCredentialsMailer");
 const db = require("../config/db");
 const { logAudit } = require("../utils/auditLogger");
 const {
@@ -328,69 +332,107 @@ async function listCanonicalCompanies() {
  * ==================================================
  */
 
-exports.getUsers =
-  async (
-    req,
-    res
-  ) => {
-    try {
-      const requester = await getCanonicalAuthenticatedUser(req);
-      if (!requester || requester.status !== "ACTIVE" ||
-          !["SUPER_ADMIN", "IT_SUPPORT"].includes(requester.role)) {
-        return res.status(403).json({ message: "Access denied." });
-      }
-      const mayViewRecoveryEmail = requester.role === "SUPER_ADMIN";
-      const [users] =
-        await db.promise().query(
-          `
-          SELECT
-            id,
-            user_id,
-            full_name,
-            username,
-            email,
-            email_verified_at,
-            role,
-            assigned_company,
-            status
-          FROM users
-          ORDER BY id DESC
-          `
+exports.getUsers = async (req, res) => {
+  try {
+    const requester = await getCanonicalAuthenticatedUser(req);
+
+    if (
+      !requester ||
+      requester.status !== "ACTIVE" ||
+      !["SUPER_ADMIN", "IT_SUPPORT"].includes(requester.role)
+    ) {
+      return res.status(403).json({
+        message: "Access denied.",
+      });
+    }
+
+    const isSuperAdmin = requester.role === "SUPER_ADMIN";
+
+    const [users] = await db.promise().query(
+      `
+      SELECT
+        id,
+        user_id,
+        full_name,
+        username,
+        email,
+        email_verified_at,
+        role,
+        assigned_company,
+        status,
+        must_change_password,
+        account_credentials_delivery_status
+      FROM users
+      ORDER BY id DESC
+      `
+    );
+
+    return res.json(
+      users.map((user) => {
+        const assignedCompany = normalizeCompany(
+          user.assigned_company
         );
 
-      return res.json(
-        users.map(
-          (user) => {
-            const assignedCompany =
-              normalizeCompany(
-                user.assigned_company
-              );
-            const { email_verified_at: verifiedAt, ...safeUser } = user;
-            return {
-              ...safeUser,
-              email: mayViewRecoveryEmail ? user.email : null,
-              email_verified: mayViewRecoveryEmail && Boolean(user.email && verifiedAt),
-              assigned_company:
-                assignedCompany,
-              assignedCompany,
-            };
-          }
-        )
-      );
-    } catch (error) {
-      console.error(
-        "FETCH USERS ERROR:",
-        error
-      );
+        const deliveryStatus =
+          user.account_credentials_delivery_status ?? null;
 
-      return res
-        .status(500)
-        .json({
-          message:
-            "Fetch users error",
-        });
-    }
-  };
+        const recoveryEmail = parseRecoveryEmail(user.email);
+
+        const canResendInitialCredentials =
+          isSuperAdmin &&
+          normalizeStatus(user.status) === "INACTIVE" &&
+          deliveryStatus === "FAILED" &&
+          Number(user.must_change_password) === 1 &&
+          CREATABLE_ACCOUNT_ROLES.has(
+            normalizeRole(user.role)
+          ) &&
+          recoveryEmail.valid &&
+          Boolean(recoveryEmail.email);
+
+        /*
+         * Do not expose internal password-change state
+         * or credentials-delivery details to IT Support.
+         *
+         * The resend controller independently verifies
+         * eligibility; this frontend flag is for display
+         * purposes only.
+         */
+        const {
+          email_verified_at: verifiedAt,
+          must_change_password: _mustChangePassword,
+          account_credentials_delivery_status:
+            _internalDeliveryStatus,
+          ...safeUser
+        } = user;
+
+        return {
+          ...safeUser,
+
+          email: isSuperAdmin ? user.email : null,
+
+          email_verified:
+            isSuperAdmin &&
+            Boolean(user.email && verifiedAt),
+
+          assigned_company: assignedCompany,
+          assignedCompany,
+
+          account_credentials_delivery_status:
+            isSuperAdmin ? deliveryStatus : null,
+
+          can_resend_initial_credentials:
+            canResendInitialCredentials,
+        };
+      })
+    );
+  } catch (_error) {
+    console.error("FETCH USERS ERROR.");
+
+    return res.status(500).json({
+      message: "Fetch users error",
+    });
+  }
+};
 
 /*
  * ==================================================
@@ -462,271 +504,451 @@ exports.getCompanyOptions =
  * ==================================================
  */
 
-exports.createUser =
-  async (
-    req,
-    res
-  ) => {
-    const {
-      name,
-      role,
-      temporaryPassword,
-    } = req.body || {};
+/*
+ * ==================================================
+ * CREATE USER
+ * ==================================================
+ *
+ * Security rules:
+ * - Only Super Admin can create accounts.
+ * - A valid recipient email is required.
+ * - The backend generates the temporary password.
+ * - Never trust or use a password supplied by the browser.
+ * - Never return credentials in the API response.
+ * - Keep the account inactive until SMTP accepts the
+ *   credentials email.
+ */
 
-    const requestedAssignedCompany =
-      req.body?.assignedCompany ??
-      req.body?.assigned_company;
-    const recoveryEmail = parseRecoveryEmail(req.body?.email);
+exports.createUser = async (req, res) => {
+  const { name, role } = req.body || {};
 
-    try {
-      if (!recoveryEmail.valid) {
-        return res.status(400).json({ message: "Enter a valid recovery email address (maximum 254 characters)." });
-      }
-      const trimmedName =
-        String(name || "").trim();
+  const requestedAssignedCompany =
+    req.body?.assignedCompany ??
+    req.body?.assigned_company;
 
-      const normalizedRole =
-        normalizeRole(role);
+  const recoveryEmail = parseRecoveryEmail(
+    req.body?.email
+  );
 
-      if (!trimmedName) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Full name is required",
-          });
-      }
+  try {
+    /*
+     * --------------------------------------------------
+     * VALIDATE ACCOUNT DETAILS
+     * --------------------------------------------------
+     */
 
-      if (
-        !isValidName(
-          trimmedName
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Full name must contain letters only",
-          });
-      }
-
-      if (
-        !CREATABLE_ACCOUNT_ROLES.has(
-          normalizedRole
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "A valid creatable account role is required.",
-          });
-      }
-
-      if (
-        typeof temporaryPassword !== "string" ||
-        temporaryPassword.length <
-          PASSWORD_MIN_LENGTH ||
-        temporaryPassword.length >
-          PASSWORD_MAX_LENGTH
-      ) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "A valid temporary password is required.",
-          });
-      }
-
-      /*
-       * Defense in depth.
-       *
-       * userRoutes also restricts creation to
-       * Super Admin, but the controller verifies
-       * the canonical authenticated account.
-       */
-      const requester =
-        await getCanonicalAuthenticatedUser(
-          req
-        );
-
-      if (!requester) {
-        return res
-          .status(401)
-          .json({
-            message:
-              "Authenticated account not found.",
-          });
-      }
-
-      if (
-        requester.status !== "ACTIVE" ||
-        requester.role !== "SUPER_ADMIN"
-      ) {
-        return res
-          .status(403)
-          .json({
-            message:
-              "Only Super Admin can create system user accounts.",
-          });
-      }
-
-      let assignedCompany =
-        null;
-
-      /*
-       * HR Coordinator MUST have an active company
-       * from the System Configuration company master.
-       */
-      if (
-        normalizedRole ===
-        "HR_COORDINATOR"
-      ) {
-        assignedCompany =
-          await getCanonicalCompanyName(
-            requestedAssignedCompany
-          );
-
-        if (!assignedCompany) {
-          return res
-            .status(400)
-            .json({
-              message:
-                "A valid active company assignment is required for an HR Coordinator account.",
-            });
-        }
-      } else if (
-        normalizeCompany(
-          requestedAssignedCompany
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Company assignment can only be set for HR Coordinator accounts.",
-          });
-      }
-
-      const actor =
-        toAuditActor(
-          requester
-        );
-
-      const {
-        userId,
-        username,
-      } =
-        await generateAccountCredentials(
-          normalizedRole
-        );
-
-      const hash =
-        await bcrypt.hash(
-          temporaryPassword,
-          10
-        );
-
-      await db
-        .promise()
-        .query(
-          `
-          INSERT INTO users
-          (
-            user_id,
-            full_name,
-            username,
-            email,
-            password,
-            role,
-            assigned_company,
-            status,
-            must_change_password
-          )
-          VALUES (
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            'Active',
-            1
-          )
-          `,
-          [
-            userId,
-            trimmedName,
-            username,
-            recoveryEmail.email,
-            hash,
-            normalizedRole,
-            assignedCompany,
-          ]
-        );
-
-      await logAudit({
-        userId:
-          actor.userId,
-
-        username:
-          actor.username,
-
-        fullName:
-          actor.fullName,
-
-        role:
-          actor.role,
-
-        action:
-          "CREATE_USER",
-
-        description:
-          normalizedRole ===
-          "HR_COORDINATOR"
-            ? `${actor.fullName} created HR Coordinator account for ${trimmedName} (${username}) assigned to ${assignedCompany}.`
-            : `${actor.fullName} created account for ${trimmedName} (${username}, ${normalizedRole}).`,
+    if (!recoveryEmail.valid || !recoveryEmail.email) {
+      return res.status(400).json({
+        message:
+          "A valid recovery email address is required to send the new user's account credentials.",
       });
+    }
 
-      return res
-        .status(201)
-        .json({
-          message:
-            "User created",
+    const trimmedName = String(name || "").trim();
+    const normalizedRole = normalizeRole(role);
 
-          account: {
-            userId,
-            username,
-            email: recoveryEmail.email,
-            email_verified: false,
-            role:
-              normalizedRole,
+    if (!trimmedName) {
+      return res.status(400).json({
+        message: "Full name is required.",
+      });
+    }
 
-            assigned_company:
-              assignedCompany,
+    if (!isValidName(trimmedName)) {
+      return res.status(400).json({
+        message: "Full name must contain letters only.",
+      });
+    }
 
-            assignedCompany,
-          },
-        });
-    } catch (error) {
-      if (error?.code === "ER_DUP_ENTRY" &&
-          String(error?.sqlMessage || "").includes("uq_users_email")) {
-        return res.status(409).json({ message: "This recovery email is already registered." });
-      }
-      console.error(
-        "CREATE USER ERROR:",
-        error
+    if (!CREATABLE_ACCOUNT_ROLES.has(normalizedRole)) {
+      return res.status(400).json({
+        message:
+          "A valid creatable account role is required.",
+      });
+    }
+
+    /*
+     * --------------------------------------------------
+     * AUTHORIZE SUPER ADMIN
+     * --------------------------------------------------
+     */
+
+    const requester =
+      await getCanonicalAuthenticatedUser(req);
+
+    if (!requester) {
+      return res.status(401).json({
+        message: "Authenticated account not found.",
+      });
+    }
+
+    if (
+      requester.status !== "ACTIVE" ||
+      requester.role !== "SUPER_ADMIN"
+    ) {
+      return res.status(403).json({
+        message:
+          "Only Super Admin can create system user accounts.",
+      });
+    }
+
+    /*
+     * --------------------------------------------------
+     * VALIDATE HR COORDINATOR COMPANY ASSIGNMENT
+     * --------------------------------------------------
+     */
+
+    let assignedCompany = null;
+
+    if (normalizedRole === "HR_COORDINATOR") {
+      assignedCompany = await getCanonicalCompanyName(
+        requestedAssignedCompany
       );
 
-      return res
-        .status(500)
-        .json({
+      if (!assignedCompany) {
+        return res.status(400).json({
           message:
-            "Create user error",
+            "A valid active company assignment is required for an HR Coordinator account.",
         });
+      }
+    } else if (normalizeCompany(requestedAssignedCompany)) {
+      return res.status(400).json({
+        message:
+          "Company assignment can only be set for HR Coordinator accounts.",
+      });
     }
-  };
+
+    /*
+     * --------------------------------------------------
+     * GENERATE CREDENTIALS ON THE SERVER ONLY
+     * --------------------------------------------------
+     *
+     * Ignore req.body.temporaryPassword if submitted
+     * by an older frontend.
+     */
+
+    const { userId, username } =
+      await generateAccountCredentials(normalizedRole);
+
+    const temporaryPassword =
+      `${randomBytes(24).toString("base64url")}Aa1!`;
+
+    const passwordHash = await bcrypt.hash(
+      temporaryPassword,
+      10
+    );
+
+    /*
+     * --------------------------------------------------
+     * INSERT INACTIVE ACCOUNT WITH PENDING DELIVERY
+     * --------------------------------------------------
+     */
+
+    let insertedUserId;
+
+    try {
+      const [insertResult] = await db.promise().query(
+        `
+        INSERT INTO users
+        (
+          user_id,
+          full_name,
+          username,
+          email,
+          password,
+          role,
+          assigned_company,
+          status,
+          must_change_password,
+          account_credentials_delivery_status
+        )
+        VALUES (
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          'Inactive',
+          1,
+          'PENDING'
+        )
+        `,
+        [
+          userId,
+          trimmedName,
+          username,
+          recoveryEmail.email,
+          passwordHash,
+          normalizedRole,
+          assignedCompany,
+        ]
+      );
+
+      insertedUserId = insertResult.insertId;
+    } catch (error) {
+      if (
+        error?.code === "ER_DUP_ENTRY" &&
+        String(error?.sqlMessage || "").includes(
+          "uq_users_email"
+        )
+      ) {
+        return res.status(409).json({
+          message:
+            "This recovery email is already registered.",
+        });
+      }
+
+      if (error?.code === "ER_DUP_ENTRY") {
+        return res.status(409).json({
+          message:
+            "An account identifier is already in use. Refresh the account list and try again.",
+        });
+      }
+
+      console.error(
+        "CREATE USER DATABASE INSERT FAILED."
+      );
+
+      return res.status(500).json({
+        message:
+          "Unable to create the account. No credentials email was sent.",
+      });
+    }
+
+    /*
+     * --------------------------------------------------
+     * CLAIM THE INITIAL DELIVERY ATTEMPT
+     * --------------------------------------------------
+     *
+     * If this update fails, do not attempt to send.
+     * The account remains Inactive for investigation.
+     */
+
+    try {
+      const [sendingResult] = await db.promise().query(
+        `
+        UPDATE users
+        SET account_credentials_delivery_status = 'SENDING'
+        WHERE id = ?
+          AND status = 'Inactive'
+          AND account_credentials_delivery_status = 'PENDING'
+        `,
+        [insertedUserId]
+      );
+
+      if (Number(sendingResult.affectedRows) !== 1) {
+        console.error(
+          "CREATE USER DELIVERY CLAIM NOT APPLIED."
+        );
+
+        return res.status(503).json({
+          message:
+            "The account was saved as inactive, but credentials delivery could not be started. Do not create the account again. Contact WELLJOB IT Support.",
+        });
+      }
+    } catch (_error) {
+      console.error(
+        "CREATE USER DELIVERY CLAIM FAILED."
+      );
+
+      return res.status(503).json({
+        message:
+          "The account was saved as inactive, but credentials delivery could not be started. Do not create the account again. Contact WELLJOB IT Support.",
+      });
+    }
+
+    /*
+     * --------------------------------------------------
+     * SEND CREDENTIALS TO THE REGISTERED EMAIL
+     * --------------------------------------------------
+     *
+     * Never return, print, or audit-log the temporary
+     * password.
+     *
+     * A mailer error does not always prove that the
+     * recipient received nothing. A future resend must
+     * generate a NEW password and invalidate the old one.
+     */
+
+    try {
+      await sendAccountCredentials({
+        to: recoveryEmail.email,
+        fullName: trimmedName,
+        userId,
+        username,
+        role: normalizedRole,
+        assignedCompany,
+        temporaryPassword,
+      });
+    } catch (_error) {
+      console.error(
+        "CREATE USER EMAIL DELIVERY FAILED."
+      );
+
+      let failureStatusRecorded = false;
+
+      try {
+        const [failedResult] = await db.promise().query(
+          `
+          UPDATE users
+          SET account_credentials_delivery_status = 'FAILED'
+          WHERE id = ?
+            AND status = 'Inactive'
+            AND account_credentials_delivery_status = 'SENDING'
+          `,
+          [insertedUserId]
+        );
+
+        failureStatusRecorded =
+          Number(failedResult.affectedRows) === 1;
+      } catch (_statusError) {
+        console.error(
+          "CREATE USER DELIVERY FAILURE STATUS UPDATE FAILED."
+        );
+      }
+
+      if (!failureStatusRecorded) {
+        return res.status(503).json({
+          message:
+            "Credentials delivery encountered an error, but the account's delivery status could not be confirmed. Do not create the account again or attempt to resend credentials. Contact WELLJOB IT Support.",
+        });
+      }
+
+      return res.status(503).json({
+        message:
+          "The account was saved as inactive, but its credentials email could not be sent successfully. Do not create the account again. Contact WELLJOB IT Support to resolve the delivery issue.",
+      });
+    }
+
+    /*
+     * --------------------------------------------------
+     * RECORD SMTP ACCEPTANCE BEFORE ACTIVATION
+     * --------------------------------------------------
+     *
+     * SMTP_ACCEPTED means the SMTP server accepted
+     * the message; it does not guarantee inbox delivery.
+     *
+     * If this database update fails after the mailer
+     * succeeds, leave the account Inactive. Do not mark
+     * it FAILED and do not automatically resend.
+     */
+
+    let smtpAcceptanceRecorded = false;
+
+    try {
+      const [acceptedResult] = await db.promise().query(
+        `
+        UPDATE users
+        SET account_credentials_delivery_status = 'SMTP_ACCEPTED'
+        WHERE id = ?
+          AND status = 'Inactive'
+          AND account_credentials_delivery_status = 'SENDING'
+        `,
+        [insertedUserId]
+      );
+
+      smtpAcceptanceRecorded =
+        Number(acceptedResult.affectedRows) === 1;
+    } catch (_error) {
+      console.error(
+        "CREATE USER SMTP ACCEPTANCE STATUS UPDATE FAILED."
+      );
+    }
+
+    if (!smtpAcceptanceRecorded) {
+      return res.status(503).json({
+        message:
+          "The credentials email was accepted for delivery, but the account's delivery status could not be saved. The account remains inactive. Do not create the account again or resend credentials. Contact WELLJOB IT Support.",
+      });
+    }
+
+    /*
+     * --------------------------------------------------
+     * ACTIVATE AFTER RECORDED SMTP ACCEPTANCE
+     * --------------------------------------------------
+     */
+
+    let activationSucceeded = false;
+
+    try {
+      const [activationResult] = await db.promise().query(
+        `
+        UPDATE users
+        SET status = 'Active'
+        WHERE id = ?
+          AND status = 'Inactive'
+          AND email = ?
+          AND account_credentials_delivery_status = 'SMTP_ACCEPTED'
+        `,
+        [
+          insertedUserId,
+          recoveryEmail.email,
+        ]
+      );
+
+      activationSucceeded =
+        Number(activationResult.affectedRows) === 1;
+    } catch (_error) {
+      console.error(
+        "CREATE USER ACTIVATION FAILED."
+      );
+    }
+
+    if (!activationSucceeded) {
+      return res.status(503).json({
+        message:
+          "The credentials email was accepted for delivery, but the account could not be activated. Do not create the account again or resend credentials. Contact WELLJOB IT Support.",
+      });
+    }
+
+    /*
+     * --------------------------------------------------
+     * AUDIT SUCCESS WITHOUT EXPOSING CREDENTIALS
+     * --------------------------------------------------
+     */
+
+    const actor = toAuditActor(requester);
+
+    try {
+      await logAudit({
+        userId: actor.userId,
+        username: actor.username,
+        fullName: actor.fullName,
+        role: actor.role,
+        action: "CREATE_USER",
+        description:
+          normalizedRole === "HR_COORDINATOR"
+            ? `${actor.fullName} created HR Coordinator account for ${trimmedName} (${username}) assigned to ${assignedCompany}. Credentials email accepted for delivery.`
+            : `${actor.fullName} created account for ${trimmedName} (${username}, ${normalizedRole}). Credentials email accepted for delivery.`,
+      });
+    } catch (_error) {
+      console.error(
+        "CREATE USER AUDIT LOG FAILED."
+      );
+    }
+
+    /*
+     * --------------------------------------------------
+     * ADMIN RESPONSE: CONFIRMATION ONLY
+     * --------------------------------------------------
+     */
+
+    return res.status(201).json({
+      message:
+        "Account created. Credentials email accepted for delivery.",
+    });
+  } catch (_error) {
+    console.error(
+      "CREATE USER UNEXPECTED ERROR."
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to complete account creation. Check the account list before trying again.",
+    });
+  }
+};
 
 /*
  * ==================================================
@@ -1271,205 +1493,166 @@ exports.resetPassword =
  * ==================================================
  */
 
-exports.toggleStatus =
-  async (
-    req,
-    res
-  ) => {
-    const targetId =
-      parsePositiveUserId(
-        req.params?.id
-      );
+exports.toggleStatus = async (req, res) => {
+  const targetId = parsePositiveUserId(req.params?.id);
 
-    if (!targetId) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "A valid user ID is required.",
-        });
+  if (!targetId) {
+    return res.status(400).json({
+      message: "A valid user ID is required.",
+    });
+  }
+
+  try {
+    const requester = await getCanonicalAuthenticatedUser(req);
+
+    if (!requester) {
+      return res.status(401).json({
+        message: "Authenticated account not found.",
+      });
+    }
+
+    const [users] = await db.promise().query(
+      `
+      SELECT
+        id,
+        user_id,
+        full_name,
+        username,
+        role,
+        status,
+        account_credentials_delivery_status
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [targetId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        message: "User not found.",
+      });
+    }
+
+    const user = {
+      ...users[0],
+      role: normalizeRole(users[0].role),
+      status: normalizeStatus(users[0].status),
+    };
+
+    const permission = canManageTargetAccount({
+      requester,
+      target: user,
+    });
+
+    if (!permission.allowed) {
+      return res.status(permission.status || 403).json({
+        message:
+          permission.message ||
+          "This account-management action is not permitted.",
+      });
+    }
+
+    if (user.status !== "ACTIVE" && user.status !== "INACTIVE") {
+      return res.status(409).json({
+        message: "User account has an unsupported status.",
+      });
+    }
+
+    const newStatus =
+      user.status === "ACTIVE" ? "Inactive" : "Active";
+
+    /*
+     * Never activate an account while its initial
+     * credentials delivery is PENDING, SENDING, or FAILED.
+     *
+     * NULL is allowed for accounts created before
+     * credentials-delivery tracking was introduced.
+     *
+     * An intentionally deactivated account whose initial
+     * credentials delivery was SMTP_ACCEPTED can still
+     * be reactivated through the existing admin workflow.
+     */
+    if (
+      newStatus === "Active" &&
+      user.account_credentials_delivery_status !== null &&
+      user.account_credentials_delivery_status !==
+        "SMTP_ACCEPTED"
+    ) {
+      return res.status(409).json({
+        message:
+          "This account cannot be activated because its initial credentials delivery is incomplete or failed. Resolve credentials delivery before activating the account.",
+      });
+    }
+
+    const actor = toAuditActor(requester);
+
+    /*
+     * Repeat the delivery-status condition in the UPDATE.
+     * This prevents activation if delivery status changes
+     * between the earlier SELECT and this database write.
+     */
+    const [result] = await db.promise().query(
+      `
+      UPDATE users
+      SET
+        status = ?,
+        password_reset_token_hash = NULL,
+        password_reset_expires_at = NULL,
+        password_reset_requested_at = NULL,
+        email_verification_token_hash = NULL,
+        email_verification_expires_at = NULL,
+        email_verification_requested_at = NULL,
+        token_version = token_version + 1
+      WHERE id = ?
+        AND UPPER(TRIM(status)) = ?
+        AND (
+          ? = 'Inactive'
+          OR account_credentials_delivery_status IS NULL
+          OR account_credentials_delivery_status = 'SMTP_ACCEPTED'
+        )
+      `,
+      [
+        newStatus,
+        targetId,
+        user.status,
+        newStatus,
+      ]
+    );
+
+    if (Number(result.affectedRows) !== 1) {
+      return res.status(409).json({
+        message:
+          "The account status or credentials-delivery state changed before this action could be completed. Refresh the account list and try again.",
+      });
     }
 
     try {
-      const requester =
-        await getCanonicalAuthenticatedUser(
-          req
-        );
-
-      if (!requester) {
-        return res
-          .status(401)
-          .json({
-            message:
-              "Authenticated account not found.",
-          });
-      }
-
-      const [users] =
-        await db.promise().query(
-          `
-          SELECT
-            id,
-            user_id,
-            full_name,
-            username,
-            role,
-            status
-          FROM users
-          WHERE id = ?
-          LIMIT 1
-          `,
-          [targetId]
-        );
-
-      if (
-        users.length === 0
-      ) {
-        return res
-          .status(404)
-          .json({
-            message:
-              "User not found",
-          });
-      }
-
-      const user = {
-        ...users[0],
-
-        role:
-          normalizeRole(
-            users[0].role
-          ),
-
-        status:
-          normalizeStatus(
-            users[0].status
-          ),
-      };
-
-      const permission =
-        canManageTargetAccount({
-          requester,
-          target:
-            user,
-        });
-
-      if (
-        !permission.allowed
-      ) {
-        return res
-          .status(
-            permission.status ||
-              403
-          )
-          .json({
-            message:
-              permission.message ||
-              "This account-management action is not permitted.",
-          });
-      }
-
-      if (
-        user.status !==
-          "ACTIVE" &&
-        user.status !==
-          "INACTIVE"
-      ) {
-        return res
-          .status(409)
-          .json({
-            message:
-              "User account has an unsupported status.",
-          });
-      }
-
-      const actor =
-        toAuditActor(
-          requester
-        );
-
-      const newStatus =
-        user.status ===
-        "ACTIVE"
-          ? "Inactive"
-          : "Active";
-
-      const [result] =
-        await db.promise().query(
-          `
-          UPDATE users
-          SET
-            status = ?,
-            password_reset_token_hash = NULL,
-            password_reset_expires_at = NULL,
-            password_reset_requested_at = NULL,
-            email_verification_token_hash = NULL,
-            email_verification_expires_at = NULL,
-            email_verification_requested_at = NULL,
-            token_version =
-              token_version + 1
-          WHERE id = ?
-            AND UPPER(
-              TRIM(status)
-            ) = ?
-          `,
-          [
-            newStatus,
-            targetId,
-            user.status,
-          ]
-        );
-
-      if (
-        result.affectedRows !==
-        1
-      ) {
-        return res
-          .status(409)
-          .json({
-            message:
-              "User status changed before this request could be completed. Refresh and try again.",
-          });
-      }
-
       await logAudit({
-        userId:
-          actor.userId,
-
-        username:
-          actor.username,
-
-        fullName:
-          actor.fullName,
-
-        role:
-          actor.role,
-
-        action:
-          "TOGGLE_STATUS",
-
+        userId: actor.userId,
+        username: actor.username,
+        fullName: actor.fullName,
+        role: actor.role,
+        action: "TOGGLE_STATUS",
         description:
-          `${actor.fullName} changed ${user.full_name} (${user.username}) to ${newStatus}.`,
+          `${actor.fullName} changed ${user.full_name} ` +
+          `(${user.username}) to ${newStatus}.`,
       });
-
-      return res.json({
-        status:
-          newStatus,
-      });
-    } catch (error) {
-      console.error(
-        "TOGGLE USER STATUS ERROR:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          message:
-            "Toggle error",
-        });
+    } catch (_error) {
+      console.error("TOGGLE USER STATUS AUDIT LOG FAILED.");
     }
-  };
+
+    return res.json({
+      status: newStatus,
+    });
+  } catch (_error) {
+    console.error("TOGGLE USER STATUS ERROR.");
+
+    return res.status(500).json({
+      message: "Unable to change the account status.",
+    });
+  }
+};
 
 /*
  * ==================================================
@@ -1721,3 +1904,333 @@ exports.changePassword =
         });
     }
   };
+
+/*
+ * ==================================================
+ * RESEND INITIAL ACCOUNT CREDENTIALS
+ * ==================================================
+ *
+ * SUPER_ADMIN ONLY.
+ *
+ * Eligible target:
+ * - Inactive
+ * - Initial credentials delivery status is FAILED
+ * - Must still change initial password
+ * - Has a valid registered recovery email
+ *
+ * Generates a new password on the server.
+ * Never returns credentials to the administrator.
+ */
+exports.resendAccountCredentials = async (req, res) => {
+  const targetId = parsePositiveUserId(req.params?.id);
+
+  if (!targetId) {
+    return res.status(400).json({
+      message: "A valid user ID is required.",
+    });
+  }
+
+  try {
+    const requester = await getCanonicalAuthenticatedUser(req);
+
+    if (!requester) {
+      return res.status(401).json({
+        message: "Authenticated account not found.",
+      });
+    }
+
+    if (
+      requester.status !== "ACTIVE" ||
+      requester.role !== "SUPER_ADMIN"
+    ) {
+      return res.status(403).json({
+        message:
+          "Only Super Admin can resend initial account credentials.",
+      });
+    }
+
+    const [users] = await db.promise().query(
+      `
+      SELECT
+        id,
+        user_id,
+        full_name,
+        username,
+        email,
+        role,
+        assigned_company,
+        status,
+        must_change_password,
+        account_credentials_delivery_status
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [targetId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        message: "User not found.",
+      });
+    }
+
+    const target = users[0];
+
+    const targetRole = normalizeRole(target.role);
+    const targetStatus = normalizeStatus(target.status);
+    const recoveryEmail = parseRecoveryEmail(target.email);
+
+    if (
+      targetStatus !== "INACTIVE" ||
+      target.account_credentials_delivery_status !== "FAILED" ||
+      Number(target.must_change_password) !== 1 ||
+      !CREATABLE_ACCOUNT_ROLES.has(targetRole) ||
+      !recoveryEmail.valid ||
+      !recoveryEmail.email
+    ) {
+      return res.status(409).json({
+        message:
+          "This account is not eligible for initial credentials resend. Refresh the account list and check its delivery status.",
+      });
+    }
+
+    /*
+     * Generate a NEW temporary password before claiming
+     * the resend. The administrator never supplies or
+     * receives the password.
+     */
+    const temporaryPassword =
+      `${randomBytes(24).toString("base64url")}Aa1!`;
+
+    const passwordHash = await bcrypt.hash(
+      temporaryPassword,
+      10
+    );
+
+    /*
+     * Atomically claim the FAILED account for delivery.
+     *
+     * The conditions prevent simultaneous resend
+     * requests from sending multiple valid passwords.
+     *
+     * The new password replaces the old one BEFORE
+     * sending, so any earlier credentials email becomes
+     * invalid if it arrives late.
+     */
+    const [claimResult] = await db.promise().query(
+      `
+      UPDATE users
+      SET
+        account_credentials_delivery_status = 'SENDING',
+        password = ?,
+        must_change_password = 1,
+        password_reset_token_hash = NULL,
+        password_reset_expires_at = NULL,
+        password_reset_requested_at = NULL,
+        email_verification_token_hash = NULL,
+        email_verification_expires_at = NULL,
+        email_verification_requested_at = NULL,
+        token_version = token_version + 1
+      WHERE id = ?
+        AND status = 'Inactive'
+        AND account_credentials_delivery_status = 'FAILED'
+        AND must_change_password = 1
+        AND email = ?
+        AND role = ?
+        AND assigned_company <=> ?
+      `,
+      [
+        passwordHash,
+        targetId,
+        recoveryEmail.email,
+        target.role,
+        target.assigned_company,
+      ]
+    );
+
+    if (Number(claimResult.affectedRows) !== 1) {
+      return res.status(409).json({
+        message:
+          "The account changed or another credentials resend is already in progress. Refresh the account list.",
+      });
+    }
+
+    /*
+     * Send credentials exclusively to the registered
+     * account email. Do not log the temporary password.
+     */
+    try {
+      await sendAccountCredentials({
+        to: recoveryEmail.email,
+        fullName: target.full_name,
+        userId: target.user_id,
+        username: target.username,
+        role: targetRole,
+        assignedCompany: target.assigned_company,
+        temporaryPassword,
+      });
+    } catch (_error) {
+      console.error(
+        "RESEND ACCOUNT CREDENTIALS EMAIL DELIVERY FAILED."
+      );
+
+      let failureStatusRecorded = false;
+
+      try {
+        const [failedResult] = await db.promise().query(
+          `
+          UPDATE users
+          SET account_credentials_delivery_status = 'FAILED'
+          WHERE id = ?
+            AND status = 'Inactive'
+            AND account_credentials_delivery_status = 'SENDING'
+            AND password = ?
+            AND email = ?
+          `,
+          [
+            targetId,
+            passwordHash,
+            recoveryEmail.email,
+          ]
+        );
+
+        failureStatusRecorded =
+          Number(failedResult.affectedRows) === 1;
+      } catch (_statusError) {
+        console.error(
+          "RESEND ACCOUNT CREDENTIALS FAILURE STATUS UPDATE FAILED."
+        );
+      }
+
+      if (!failureStatusRecorded) {
+        return res.status(503).json({
+          message:
+            "Credentials delivery failed, and the account's delivery status could not be confirmed. Do not retry yet. Contact WELLJOB IT Support.",
+        });
+      }
+
+      return res.status(503).json({
+        message:
+          "The credentials email could not be sent successfully. The account remains inactive. Check the email service before trying again.",
+      });
+    }
+
+    /*
+     * SMTP acceptance does not guarantee inbox delivery.
+     * Record acceptance BEFORE activating the account.
+     */
+    let acceptanceRecorded = false;
+
+    try {
+      const [acceptedResult] = await db.promise().query(
+        `
+        UPDATE users
+        SET account_credentials_delivery_status = 'SMTP_ACCEPTED'
+        WHERE id = ?
+          AND status = 'Inactive'
+          AND account_credentials_delivery_status = 'SENDING'
+          AND password = ?
+          AND email = ?
+        `,
+        [
+          targetId,
+          passwordHash,
+          recoveryEmail.email,
+        ]
+      );
+
+      acceptanceRecorded =
+        Number(acceptedResult.affectedRows) === 1;
+    } catch (_error) {
+      console.error(
+        "RESEND ACCOUNT CREDENTIALS SMTP ACCEPTANCE UPDATE FAILED."
+      );
+    }
+
+    if (!acceptanceRecorded) {
+      return res.status(503).json({
+        message:
+          "The credentials email was accepted for delivery, but the account's delivery state could not be saved. Do not resend again. Contact WELLJOB IT Support.",
+      });
+    }
+
+    /*
+     * Activate ONLY the same account whose new password
+     * and registered email still match this resend.
+     */
+    let activationSucceeded = false;
+
+    try {
+      const [activationResult] = await db.promise().query(
+        `
+        UPDATE users
+        SET status = 'Active'
+        WHERE id = ?
+          AND status = 'Inactive'
+          AND account_credentials_delivery_status = 'SMTP_ACCEPTED'
+          AND password = ?
+          AND email = ?
+          AND must_change_password = 1
+        `,
+        [
+          targetId,
+          passwordHash,
+          recoveryEmail.email,
+        ]
+      );
+
+      activationSucceeded =
+        Number(activationResult.affectedRows) === 1;
+    } catch (_error) {
+      console.error(
+        "RESEND ACCOUNT CREDENTIALS ACTIVATION FAILED."
+      );
+    }
+
+    if (!activationSucceeded) {
+      return res.status(503).json({
+        message:
+          "The credentials email was accepted for delivery, but the account could not be activated. Do not resend again. Contact WELLJOB IT Support.",
+      });
+    }
+
+    /*
+     * Audit the successful administrative action
+     * without including the temporary password.
+     */
+    const actor = toAuditActor(requester);
+
+    try {
+      await logAudit({
+        userId: actor.userId,
+        username: actor.username,
+        fullName: actor.fullName,
+        role: actor.role,
+        action: "RESEND_ACCOUNT_CREDENTIALS",
+        description:
+          `${actor.fullName} resent initial account credentials ` +
+          `for ${target.full_name} (${target.username}). ` +
+          "Credentials email accepted for delivery.",
+      });
+    } catch (_error) {
+      console.error(
+        "RESEND ACCOUNT CREDENTIALS AUDIT LOG FAILED."
+      );
+    }
+
+    return res.status(200).json({
+      message:
+        "New account credentials email accepted for delivery. The account is now active.",
+    });
+  } catch (_error) {
+    console.error(
+      "RESEND ACCOUNT CREDENTIALS UNEXPECTED ERROR."
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to complete credentials resend. Refresh the account list before trying again.",
+    });
+  }
+};

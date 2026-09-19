@@ -215,6 +215,12 @@ const MIGRATIONS = [
     isApplied: async (connection) =>
       passwordResetApprovalSchemaIsApplied(connection),
   },
+
+  {
+    name: "add_account_credentials_delivery_status.sql",
+    isApplied: async (connection) =>
+      accountCredentialsDeliverySchemaIsApplied(connection),
+  },
 ];
 
 function requiredEnv(
@@ -1916,6 +1922,71 @@ async function passwordResetApprovalSchemaIsApplied(connection) {
   return foreignKeyChecks.every(Boolean);
 }
 
+/*
+ * ==================================================
+ * ACCOUNT CREDENTIALS DELIVERY - MIGRATION #13
+ * ==================================================
+ *
+ * A separate delivery state distinguishes accounts
+ * with failed credentials delivery from accounts
+ * intentionally deactivated by an administrator.
+ *
+ * Existing accounts retain NULL delivery status.
+ */
+async function accountCredentialsDeliverySchemaIsApplied(
+  connection
+) {
+  const deliveryColumnMatches =
+    await columnDefinitionMatches(
+      connection,
+      {
+        tableName: "users",
+        columnName: "account_credentials_delivery_status",
+        dataType: "enum",
+        nullable: true,
+      }
+    );
+
+  if (!deliveryColumnMatches) {
+    return false;
+  }
+
+  const requiredDeliveryStatuses = [
+    "PENDING",
+    "SENDING",
+    "FAILED",
+    "SMTP_ACCEPTED",
+  ];
+
+  const statusChecks = await Promise.all(
+    requiredDeliveryStatuses.map(
+      (status) =>
+        enumColumnContains(
+          connection,
+          "users",
+          "account_credentials_delivery_status",
+          status
+        )
+    )
+  );
+
+  if (statusChecks.some((matches) => !matches)) {
+    return false;
+  }
+
+  return indexDefinitionMatches(
+    connection,
+    {
+      tableName: "users",
+      indexName:
+        "idx_users_account_credentials_delivery_status",
+      columns: [
+        "account_credentials_delivery_status",
+        "status",
+      ],
+    }
+  );
+}
 async function acquireMigrationLock(
   connection
 ) {
