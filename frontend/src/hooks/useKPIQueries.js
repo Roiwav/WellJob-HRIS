@@ -165,14 +165,14 @@ function normalizeBackendIncident(
     "No violation type";
 
   const date =
-    incident?.reportedAt ||
-    incident?.reported_at ||
-    incident?.date ||
     incident?.incidentDate ||
     incident?.incident_date ||
+    incident?.date ||
+    incident?.reportedAt ||
+    incident?.reported_at ||
     incident?.createdAt ||
     incident?.created_at ||
-    new Date().toISOString();
+    null; // Missing source date must not be silently replaced with today.
 
   return {
     ...incident,
