@@ -1,3 +1,4 @@
+
 import {
   useEffect,
   useMemo,
@@ -5,7 +6,9 @@ import {
   useState,
 } from "react";
 
-import { useNavigate } from "react-router-dom";
+import {
+  useNavigate,
+} from "react-router-dom";
 
 import {
   FiAlertTriangle,
@@ -17,17 +20,27 @@ import {
   FiUser,
 } from "react-icons/fi";
 
-import { useAuth } from "../context/useAuth";
+import {
+  useAuth,
+} from "../context/useAuth";
 
 import useSmartNotifications from "../hooks/useSmartNotifications";
 
 import SmartAlertToast from "./notifications/SmartAlertToast";
+
 import RecoveryEmailVerificationAction from "./auth/RecoveryEmailVerificationAction";
+
+import ProfilePictureActions from "./profile/ProfilePictureActions";
 
 import {
   formatSmartAlertDate,
   getAlertPriorityClasses,
 } from "../utils/notifications/smartNotifications";
+
+const API_BASE_URL = String(
+  import.meta.env.VITE_API_URL ||
+    "http://localhost:5000"
+).replace(/\/+$/, "");
 
 const ROLE_CONFIGS = {
   HR_MANAGER: {
@@ -70,28 +83,20 @@ const DEFAULT_ROLE_CONFIG = {
 const SMART_ALERT_POLL_INTERVAL =
   30000;
 
-function normalizeRole(
-  value
-) {
-  const role =
-    String(
-      value || ""
-    )
-      .trim()
-      .toUpperCase()
-      .replace(
-        /[\s-]+/g,
-        "_"
-      );
+function normalizeRole(value) {
+  const role = String(
+    value || ""
+  )
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
 
   if (
     [
       "SUPERADMIN",
       "SUPER_ADMIN",
       "ADMIN",
-    ].includes(
-      role
-    )
+    ].includes(role)
   ) {
     return "SUPER_ADMIN";
   }
@@ -100,9 +105,7 @@ function normalizeRole(
     [
       "HRMANAGER",
       "HR_MANAGER",
-    ].includes(
-      role
-    )
+    ].includes(role)
   ) {
     return "HR_MANAGER";
   }
@@ -111,9 +114,7 @@ function normalizeRole(
     [
       "HRSTAFF",
       "HR_STAFF",
-    ].includes(
-      role
-    )
+    ].includes(role)
   ) {
     return "HR_STAFF";
   }
@@ -122,9 +123,7 @@ function normalizeRole(
     [
       "HRCOORDINATOR",
       "HR_COORDINATOR",
-    ].includes(
-      role
-    )
+    ].includes(role)
   ) {
     return "HR_COORDINATOR";
   }
@@ -133,9 +132,7 @@ function normalizeRole(
     [
       "ITSUPPORT",
       "IT_SUPPORT",
-    ].includes(
-      role
-    )
+    ].includes(role)
   ) {
     return "IT_SUPPORT";
   }
@@ -143,15 +140,221 @@ function normalizeRole(
   return role || "USER";
 }
 
-function getAlertKey(
-  alert
-) {
+function getAlertKey(alert) {
   return String(
     alert?.alertKey ||
       alert?.id ||
       ""
   );
 }
+
+/*
+ * ==================================================
+ * AUTHENTICATED PROFILE PICTURE
+ * ==================================================
+ *
+ * The avatar endpoint requires a Bearer token.
+ *
+ * An ordinary <img src="/api/users/1/avatar">
+ * cannot attach the JWT Authorization header.
+ *
+ * Fetch the image securely and create a temporary
+ * browser object URL for display.
+ *
+ * Object URLs are revoked when the avatar changes
+ * or the component unmounts.
+ */
+
+function useAuthenticatedAvatar(
+  userId,
+  avatarFilename
+) {
+  const [avatarState, setAvatarState] =
+    useState({
+      key: null,
+      url: null,
+    });
+
+  const avatarKey =
+    userId && avatarFilename
+      ? `${userId}:${avatarFilename}`
+      : null;
+
+  useEffect(() => {
+    if (!avatarKey) {
+      return undefined;
+    }
+
+    const token =
+      localStorage.getItem("token");
+
+    if (!token) {
+      return undefined;
+    }
+
+    const controller =
+      new AbortController();
+
+    let objectUrl = null;
+
+    async function loadAvatar() {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/users/${encodeURIComponent(
+            userId
+          )}/avatar`,
+          {
+            method: "GET",
+
+            headers: {
+              Authorization:
+                `Bearer ${token}`,
+            },
+
+            cache: "no-store",
+
+            signal:
+              controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          return;
+        }
+
+        const contentType = String(
+          response.headers.get(
+            "content-type"
+          ) || ""
+        ).toLowerCase();
+
+        if (
+          !contentType.startsWith(
+            "image/webp"
+          )
+        ) {
+          return;
+        }
+
+        const imageBlob =
+          await response.blob();
+
+        if (
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        objectUrl =
+          URL.createObjectURL(
+            imageBlob
+          );
+
+        if (
+          controller.signal.aborted
+        ) {
+          URL.revokeObjectURL(
+            objectUrl
+          );
+
+          objectUrl = null;
+
+          return;
+        }
+
+        setAvatarState({
+          key: avatarKey,
+          url: objectUrl,
+        });
+      } catch (error) {
+        if (
+          error.name !==
+          "AbortError"
+        ) {
+          console.error(
+            "Unable to load profile picture:",
+            error
+          );
+        }
+      }
+    }
+
+    loadAvatar();
+
+    return () => {
+      controller.abort();
+
+      if (objectUrl) {
+        URL.revokeObjectURL(
+          objectUrl
+        );
+      }
+    };
+  }, [
+    avatarKey,
+    userId,
+  ]);
+
+  /*
+   * Do not display a previously loaded image
+   * while a replacement avatar is being fetched.
+   */
+
+  if (
+    !avatarKey ||
+    avatarState.key !==
+      avatarKey
+  ) {
+    return null;
+  }
+
+  return avatarState.url;
+}
+
+/*
+ * ==================================================
+ * REUSABLE AVATAR CIRCLE
+ * ==================================================
+ */
+
+function AvatarCircle({
+  imageUrl,
+  roleConfig,
+  showUserIcon = false,
+  size = "small",
+}) {
+  const sizeClass =
+    size === "large"
+      ? "h-10 w-10"
+      : "h-9 w-9";
+
+  return (
+    <div
+      className={`flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold text-white ${roleConfig.color}`}
+    >
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt=""
+          className="h-full w-full object-cover"
+        />
+      ) : showUserIcon ? (
+        <FiUser
+          size={17}
+          aria-hidden="true"
+        />
+      ) : (
+        roleConfig.label
+      )}
+    </div>
+  );
+}
+
+/*
+ * ==================================================
+ * WELLJOB NAVBAR
+ * ==================================================
+ */
 
 export default function Navbar({
   title = "Welljob Solutions & General Services",
@@ -216,10 +419,6 @@ export default function Navbar({
   } = useSmartNotifications(
     user,
     {
-      /*
-       * Polling covers updates from other devices
-       * that cannot receive local browser events.
-       */
       pollInterval:
         SMART_ALERT_POLL_INTERVAL,
     }
@@ -230,45 +429,31 @@ export default function Navbar({
    * SMART NOTIFICATION ACCESS
    * ==================================================
    *
-   * HR Coordinator intentionally does not receive
-   * the existing Smart Alerts / Smart Notifications
-   * interface.
-   *
-   * This remains a local defense-in-depth guard even
-   * if the notification hook changes later.
+   * Preserve existing HR Coordinator restriction.
    */
+
   const canViewSmartNotifications =
     Boolean(
       canView &&
         !isHRCoordinator
     );
 
-  /*
-   * Do not synchronously reset React state from an
-   * effect when access changes.
-   *
-   * Instead, derive the effective UI state from the
-   * current authorization. This keeps the notification
-   * interface closed and completely unrendered for
-   * HR Coordinator without creating cascading renders.
-   */
   const notificationsAreOpen =
     Boolean(
       canViewSmartNotifications &&
         openNotifications
     );
 
-  const roleConfig =
-    useMemo(
-      () =>
-        ROLE_CONFIGS[
-          currentRole
-        ] ||
-        DEFAULT_ROLE_CONFIG,
-      [
-        currentRole,
-      ]
-    );
+  const roleConfig = useMemo(
+    () =>
+      ROLE_CONFIGS[
+        currentRole
+      ] ||
+      DEFAULT_ROLE_CONFIG,
+    [
+      currentRole,
+    ]
+  );
 
   const displayName =
     user?.name ||
@@ -289,225 +474,40 @@ export default function Navbar({
         ""
     ).trim();
 
-  useEffect(
-    () => {
-      if (
-        !canViewSmartNotifications
-      ) {
-        /*
-         * Refs/timers are external mutable resources,
-         * so cleaning them up here is appropriate.
-         *
-         * No React setState call is required because
-         * notificationsAreOpen is authorization-derived.
-         */
-        previousPopupAlertKeyRef.current =
-          "";
+  /*
+   * ==================================================
+   * PROFILE PICTURE DATA
+   * ==================================================
+   *
+   * Read the avatar information from AuthContext.
+   *
+   * After upload or removal, updateUserAvatar()
+   * changes this information automatically.
+   */
 
-        if (
-          bellAnimationTimerRef.current
-        ) {
-          window.clearTimeout(
-            bellAnimationTimerRef.current
-          );
+  const avatarFilename =
+    user?.avatarFilename ??
+    user?.avatar_filename ??
+    null;
 
-          bellAnimationTimerRef.current =
-            null;
-        }
+  const avatarImageUrl =
+    useAuthenticatedAvatar(
+      user?.id,
+      avatarFilename
+    );
 
-        return undefined;
-      }
+  /*
+   * ==================================================
+   * SMART ALERT BELL ANIMATION
+   * ==================================================
+   */
 
-      const currentAlertKey =
-        getAlertKey(
-          popupAlert
-        );
-
-      const previousAlertKey =
-        previousPopupAlertKeyRef.current;
-
-      if (
-        !currentAlertKey
-      ) {
-        previousPopupAlertKeyRef.current =
-          "";
-
-        return undefined;
-      }
-
+  useEffect(() => {
+    if (
+      !canViewSmartNotifications
+    ) {
       previousPopupAlertKeyRef.current =
-        currentAlertKey;
-
-      if (
-        currentAlertKey ===
-          previousAlertKey ||
-        notificationsAreOpen
-      ) {
-        return undefined;
-      }
-
-      let secondFrame;
-
-      const firstFrame =
-        window.requestAnimationFrame(
-          () => {
-            setAnimateNotificationBell(
-              false
-            );
-
-            secondFrame =
-              window.requestAnimationFrame(
-                () => {
-                  setAnimateNotificationBell(
-                    true
-                  );
-                }
-              );
-          }
-        );
-
-      if (
-        bellAnimationTimerRef.current
-      ) {
-        window.clearTimeout(
-          bellAnimationTimerRef.current
-        );
-      }
-
-      bellAnimationTimerRef.current =
-        window.setTimeout(
-          () => {
-            setAnimateNotificationBell(
-              false
-            );
-
-            bellAnimationTimerRef.current =
-              null;
-          },
-          2600
-        );
-
-      return () => {
-        window.cancelAnimationFrame(
-          firstFrame
-        );
-
-        if (
-          secondFrame
-        ) {
-          window.cancelAnimationFrame(
-            secondFrame
-          );
-        }
-      };
-    },
-    [
-      canViewSmartNotifications,
-      notificationsAreOpen,
-      popupAlert,
-    ]
-  );
-
-  useEffect(
-    () => {
-      const handleClickOutside =
-        (
-          event
-        ) => {
-          if (
-            profileRef.current &&
-            !profileRef.current.contains(
-              event.target
-            )
-          ) {
-            setOpenProfile(
-              false
-            );
-          }
-
-          if (
-            notificationRef.current &&
-            !notificationRef.current.contains(
-              event.target
-            )
-          ) {
-            setOpenNotifications(
-              false
-            );
-          }
-        };
-
-      const handleEscapeKey =
-        (
-          event
-        ) => {
-          if (
-            event.key ===
-            "Escape"
-          ) {
-            setOpenProfile(
-              false
-            );
-
-            setOpenNotifications(
-              false
-            );
-          }
-        };
-
-      if (
-        openProfile ||
-        notificationsAreOpen
-      ) {
-        document.addEventListener(
-          "mousedown",
-          handleClickOutside
-        );
-
-        document.addEventListener(
-          "keydown",
-          handleEscapeKey
-        );
-      }
-
-      return () => {
-        document.removeEventListener(
-          "mousedown",
-          handleClickOutside
-        );
-
-        document.removeEventListener(
-          "keydown",
-          handleEscapeKey
-        );
-      };
-    },
-    [
-      openProfile,
-      notificationsAreOpen,
-    ]
-  );
-
-  useEffect(
-    () => {
-      return () => {
-        if (
-          bellAnimationTimerRef.current
-        ) {
-          window.clearTimeout(
-            bellAnimationTimerRef.current
-          );
-        }
-      };
-    },
-    []
-  );
-
-  const stopBellAnimation =
-    () => {
-      setAnimateNotificationBell(
-        false
-      );
+        "";
 
       if (
         bellAnimationTimerRef.current
@@ -519,183 +519,389 @@ export default function Navbar({
         bellAnimationTimerRef.current =
           null;
       }
-    };
 
-  const openAlertTarget =
-    async (
-      alert
-    ) => {
-      if (
-        !alert ||
-        !canViewSmartNotifications
-      ) {
-        return;
-      }
+      return undefined;
+    }
 
-      setOpenNotifications(
-        false
+    const currentAlertKey =
+      getAlertKey(
+        popupAlert
       );
 
-      stopBellAnimation();
+    const previousAlertKey =
+      previousPopupAlertKeyRef.current;
 
-      try {
-        await markAlertAsRead(
-          alert.alertKey
-        );
-      } catch (
-        error
-      ) {
-        console.error(
-          "Failed to mark smart alert as read:",
-          error
-        );
-      }
+    if (!currentAlertKey) {
+      previousPopupAlertKeyRef.current =
+        "";
 
-      if (
-        alert.route ===
-          "/incidents" &&
-        alert.incidentId
-      ) {
-        navigate(
-          "/incidents",
-          {
-            state: {
-              incidentId:
-                alert.incidentId,
+      return undefined;
+    }
 
-              action:
-                alert.action ||
-                alert.navigationAction ||
-                "view",
-            },
-          }
-        );
+    previousPopupAlertKeyRef.current =
+      currentAlertKey;
 
-        return;
-      }
+    if (
+      currentAlertKey ===
+        previousAlertKey ||
+      notificationsAreOpen
+    ) {
+      return undefined;
+    }
 
-      navigate(
-        alert.route ||
-          "/notifications"
-      );
-    };
+    let secondFrame;
 
-  const handleToggleNotifications =
-    () => {
-      if (
-        !canViewSmartNotifications
-      ) {
-        return;
-      }
+    const firstFrame =
+      window.requestAnimationFrame(
+        () => {
+          setAnimateNotificationBell(
+            false
+          );
 
-      stopBellAnimation();
-
-      setOpenNotifications(
-        (
-          current
-        ) =>
-          !current
-      );
-
-      setOpenProfile(
-        false
-      );
-    };
-
-  const handleViewNotifications =
-    () => {
-      if (
-        !canViewSmartNotifications
-      ) {
-        return;
-      }
-
-      setOpenNotifications(
-        false
-      );
-
-      navigate(
-        "/notifications"
-      );
-    };
-
-  const handleClearReadAlerts =
-    async () => {
-      if (
-        !canViewSmartNotifications ||
-        !hasReadAlerts ||
-        isClearingRead
-      ) {
-        return;
-      }
-
-      try {
-        await clearReadAlerts();
-      } catch (
-        error
-      ) {
-        console.error(
-          "Failed to clear read smart alerts:",
-          error
-        );
-      }
-    };
-
-  const handleDismissToast =
-    async (
-      alert
-    ) => {
-      if (
-        !canViewSmartNotifications ||
-        !alert?.alertKey
-      ) {
-        return;
-      }
-
-      try {
-        await dismissAlert(
-          alert.alertKey
-        );
-      } catch (
-        error
-      ) {
-        console.error(
-          "Failed to dismiss smart alert:",
-          error
-        );
-      }
-    };
-
-  const handleLogout =
-    () => {
-      localStorage.removeItem(
-        "user"
-      );
-
-      localStorage.removeItem(
-        "token"
-      );
-
-      setUser(
-        null
-      );
-
-      setOpenProfile(
-        false
-      );
-
-      setOpenNotifications(
-        false
-      );
-
-      navigate(
-        "/login",
-        {
-          replace:
-            true,
+          secondFrame =
+            window.requestAnimationFrame(
+              () => {
+                setAnimateNotificationBell(
+                  true
+                );
+              }
+            );
         }
       );
+
+    if (
+      bellAnimationTimerRef.current
+    ) {
+      window.clearTimeout(
+        bellAnimationTimerRef.current
+      );
+    }
+
+    bellAnimationTimerRef.current =
+      window.setTimeout(
+        () => {
+          setAnimateNotificationBell(
+            false
+          );
+
+          bellAnimationTimerRef.current =
+            null;
+        },
+        2600
+      );
+
+    return () => {
+      window.cancelAnimationFrame(
+        firstFrame
+      );
+
+      if (secondFrame) {
+        window.cancelAnimationFrame(
+          secondFrame
+        );
+      }
     };
+  }, [
+    canViewSmartNotifications,
+    notificationsAreOpen,
+    popupAlert,
+  ]);
+
+  /*
+   * ==================================================
+   * CLOSE DROPDOWNS
+   * ==================================================
+   */
+
+  useEffect(() => {
+    const handleClickOutside = (
+      event
+    ) => {
+      if (
+        profileRef.current &&
+        !profileRef.current.contains(
+          event.target
+        )
+      ) {
+        setOpenProfile(
+          false
+        );
+      }
+
+      if (
+        notificationRef.current &&
+        !notificationRef.current.contains(
+          event.target
+        )
+      ) {
+        setOpenNotifications(
+          false
+        );
+      }
+    };
+
+    const handleEscapeKey = (
+      event
+    ) => {
+      if (
+        event.key ===
+        "Escape"
+      ) {
+        setOpenProfile(
+          false
+        );
+
+        setOpenNotifications(
+          false
+        );
+      }
+    };
+
+    if (
+      openProfile ||
+      notificationsAreOpen
+    ) {
+      document.addEventListener(
+        "mousedown",
+        handleClickOutside
+      );
+
+      document.addEventListener(
+        "keydown",
+        handleEscapeKey
+      );
+    }
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleClickOutside
+      );
+
+      document.removeEventListener(
+        "keydown",
+        handleEscapeKey
+      );
+    };
+  }, [
+    openProfile,
+    notificationsAreOpen,
+  ]);
+
+  /*
+   * ==================================================
+   * CLEAN UP BELL ANIMATION TIMER
+   * ==================================================
+   */
+
+  useEffect(() => {
+    return () => {
+      if (
+        bellAnimationTimerRef.current
+      ) {
+        window.clearTimeout(
+          bellAnimationTimerRef.current
+        );
+      }
+    };
+  }, []);
+
+  const stopBellAnimation = () => {
+    setAnimateNotificationBell(
+      false
+    );
+
+    if (
+      bellAnimationTimerRef.current
+    ) {
+      window.clearTimeout(
+        bellAnimationTimerRef.current
+      );
+
+      bellAnimationTimerRef.current =
+        null;
+    }
+  };
+
+  /*
+   * ==================================================
+   * OPEN SMART ALERT TARGET
+   * ==================================================
+   */
+
+  const openAlertTarget = async (
+    alert
+  ) => {
+    if (
+      !alert ||
+      !canViewSmartNotifications
+    ) {
+      return;
+    }
+
+    setOpenNotifications(
+      false
+    );
+
+    stopBellAnimation();
+
+    try {
+      await markAlertAsRead(
+        alert.alertKey
+      );
+    } catch (error) {
+      console.error(
+        "Failed to mark smart alert as read:",
+        error
+      );
+    }
+
+    if (
+      alert.route ===
+        "/incidents" &&
+      alert.incidentId
+    ) {
+      navigate(
+        "/incidents",
+        {
+          state: {
+            incidentId:
+              alert.incidentId,
+
+            action:
+              alert.action ||
+              alert.navigationAction ||
+              "view",
+          },
+        }
+      );
+
+      return;
+    }
+
+    navigate(
+      alert.route ||
+        "/notifications"
+    );
+  };
+
+  /*
+   * ==================================================
+   * NOTIFICATION ACTIONS
+   * ==================================================
+   */
+
+  const handleToggleNotifications = () => {
+    if (
+      !canViewSmartNotifications
+    ) {
+      return;
+    }
+
+    stopBellAnimation();
+
+    setOpenNotifications(
+      (current) =>
+        !current
+    );
+
+    setOpenProfile(
+      false
+    );
+  };
+
+  const handleViewNotifications = () => {
+    if (
+      !canViewSmartNotifications
+    ) {
+      return;
+    }
+
+    setOpenNotifications(
+      false
+    );
+
+    navigate(
+      "/notifications"
+    );
+  };
+
+  const handleClearReadAlerts = async () => {
+    if (
+      !canViewSmartNotifications ||
+      !hasReadAlerts ||
+      isClearingRead
+    ) {
+      return;
+    }
+
+    try {
+      await clearReadAlerts();
+    } catch (error) {
+      console.error(
+        "Failed to clear read smart alerts:",
+        error
+      );
+    }
+  };
+
+  const handleDismissToast = async (
+    alert
+  ) => {
+    if (
+      !canViewSmartNotifications ||
+      !alert?.alertKey
+    ) {
+      return;
+    }
+
+    try {
+      await dismissAlert(
+        alert.alertKey
+      );
+    } catch (error) {
+      console.error(
+        "Failed to dismiss smart alert:",
+        error
+      );
+    }
+  };
+
+  /*
+   * ==================================================
+   * EXISTING LOGOUT
+   * ==================================================
+   */
+
+  const handleLogout = () => {
+    localStorage.removeItem(
+      "user"
+    );
+
+    localStorage.removeItem(
+      "token"
+    );
+
+    setUser(
+      null
+    );
+
+    setOpenProfile(
+      false
+    );
+
+    setOpenNotifications(
+      false
+    );
+
+    navigate(
+      "/login",
+      {
+        replace:
+          true,
+      }
+    );
+  };
 
   return (
     <>
@@ -708,9 +914,7 @@ export default function Navbar({
           {canViewSmartNotifications && (
             <div
               className="relative"
-              ref={
-                notificationRef
-              }
+              ref={notificationRef}
             >
               <button
                 type="button"
@@ -720,8 +924,7 @@ export default function Navbar({
                 className="relative flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 transition hover:bg-gray-100 hover:text-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/15 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
                 title="Smart Alerts"
                 aria-label={`Smart Alerts${
-                  unreadCount >
-                  0
+                  unreadCount > 0
                     ? `, ${unreadCount} unread`
                     : ""
                 }`}
@@ -741,11 +944,9 @@ export default function Navbar({
                   }
                 />
 
-                {unreadCount >
-                  0 && (
+                {unreadCount > 0 && (
                   <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-extrabold text-white ring-2 ring-white dark:ring-slate-950">
-                    {unreadCount >
-                    99
+                    {unreadCount > 99
                       ? "99+"
                       : unreadCount}
                   </span>
@@ -761,15 +962,11 @@ export default function Navbar({
                   <div className="flex items-center justify-between gap-4 border-b border-gray-100 px-5 py-4 dark:border-white/10">
                     <div className="min-w-0">
                       <h3 className="text-sm font-black text-gray-900 dark:text-white">
-                        Smart
-                        Alerts
+                        Smart Alerts
                       </h3>
 
                       <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                        Rule-based
-                        incident and
-                        priority
-                        notifications
+                        Rule-based incident and priority notifications
                       </p>
                     </div>
 
@@ -786,8 +983,7 @@ export default function Navbar({
                       title={
                         hasReadAlerts
                           ? `Clear ${readAlertCount} read alert${
-                              readAlertCount ===
-                              1
+                              readAlertCount === 1
                                 ? ""
                                 : "s"
                             }`
@@ -797,8 +993,7 @@ export default function Navbar({
                       {isClearingRead
                         ? "Clearing..."
                         : `Clear Read${
-                            readAlertCount >
-                            0
+                            readAlertCount > 0
                               ? ` (${readAlertCount})`
                               : ""
                           }`}
@@ -807,21 +1002,16 @@ export default function Navbar({
 
                   <div className="max-h-96 overflow-y-auto">
                     {isFetching &&
-                    latestAlerts.length ===
-                      0 ? (
+                    latestAlerts.length === 0 ? (
                       <div
                         role="status"
                         aria-live="polite"
                         className="space-y-3 px-5 py-5"
                       >
                         {[1, 2, 3].map(
-                          (
-                            item
-                          ) => (
+                          (item) => (
                             <div
-                              key={
-                                item
-                              }
+                              key={item}
                               className="flex animate-pulse gap-3 rounded-2xl border border-slate-100 p-3 dark:border-slate-800"
                             >
                               <div className="h-9 w-9 shrink-0 rounded-xl bg-slate-200 dark:bg-slate-700" />
@@ -838,17 +1028,12 @@ export default function Navbar({
                         )}
 
                         <span className="sr-only">
-                          Loading
-                          smart
-                          alerts...
+                          Loading smart alerts...
                         </span>
                       </div>
-                    ) : latestAlerts.length >
-                      0 ? (
+                    ) : latestAlerts.length > 0 ? (
                       latestAlerts.map(
-                        (
-                          alert
-                        ) => {
+                        (alert) => {
                           const styles =
                             getAlertPriorityClasses(
                               alert.priority
@@ -857,9 +1042,7 @@ export default function Navbar({
                           return (
                             <button
                               type="button"
-                              key={
-                                alert.alertKey
-                              }
+                              key={alert.alertKey}
                               onClick={() =>
                                 openAlertTarget(
                                   alert
@@ -894,9 +1077,7 @@ export default function Navbar({
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center justify-between gap-3">
                                   <p className="truncate text-sm font-black text-gray-900 dark:text-white">
-                                    {
-                                      alert.title
-                                    }
+                                    {alert.title}
                                   </p>
 
                                   <span className="shrink-0 text-[11px] text-gray-400">
@@ -907,24 +1088,18 @@ export default function Navbar({
                                 </div>
 
                                 <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                                  {
-                                    alert.message
-                                  }
+                                  {alert.message}
                                 </p>
 
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
                                   <span
                                     className={`rounded-full px-2 py-0.5 text-[10px] font-black ${styles.badge}`}
                                   >
-                                    {
-                                      alert.priority
-                                    }
+                                    {alert.priority}
                                   </span>
 
                                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                    {
-                                      alert.status
-                                    }
+                                    {alert.status}
                                   </span>
 
                                   {!alert.isRead && (
@@ -942,30 +1117,23 @@ export default function Navbar({
                       <div className="px-5 py-10 text-center">
                         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-slate-800">
                           <FiBell
-                            size={
-                              22
-                            }
+                            size={22}
                             aria-hidden="true"
                           />
                         </div>
 
                         <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                          No smart
-                          alerts
+                          No smart alerts
                         </p>
 
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          Priority
-                          incident
-                          alerts will
-                          appear here.
+                          Priority incident alerts will appear here.
                         </p>
                       </div>
                     )}
                   </div>
 
-                  {latestAlerts.length >
-                    0 && (
+                  {latestAlerts.length > 0 && (
                     <div className="border-t border-gray-100 px-5 py-3 dark:border-white/10">
                       <button
                         type="button"
@@ -978,18 +1146,15 @@ export default function Navbar({
                           aria-hidden="true"
                         />
 
-                        View All
-                        Smart Alerts
+                        View All Smart Alerts
                       </button>
                     </div>
                   )}
 
                   {isFetching &&
-                    latestAlerts.length >
-                      0 && (
+                    latestAlerts.length > 0 && (
                       <div className="border-t border-gray-100 px-5 py-2 text-center text-[11px] font-semibold text-gray-400 dark:border-white/10">
-                        Syncing
-                        alerts...
+                        Syncing alerts...
                       </div>
                     )}
                 </div>
@@ -997,19 +1162,21 @@ export default function Navbar({
             </div>
           )}
 
+          {/*
+           * ==================================================
+           * PROFILE DROPDOWN
+           * ==================================================
+           */}
+
           <div
             className="relative"
-            ref={
-              profileRef
-            }
+            ref={profileRef}
           >
             <button
               type="button"
               onClick={() => {
                 setOpenProfile(
-                  (
-                    current
-                  ) =>
+                  (current) =>
                     !current
                 );
 
@@ -1018,24 +1185,18 @@ export default function Navbar({
                 );
               }}
               className="flex max-w-[260px] items-center gap-3 rounded-xl px-2 py-1.5 text-sm text-gray-700 transition hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-indigo-500/15 dark:text-gray-300 dark:hover:bg-white/10"
-              aria-expanded={
-                openProfile
-              }
+              aria-label={`Open profile menu for ${displayName}`}
+              aria-expanded={openProfile}
               aria-haspopup="menu"
             >
-              <div
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${roleConfig.color}`}
-              >
-                {
-                  roleConfig.label
-                }
-              </div>
+              <AvatarCircle
+                imageUrl={avatarImageUrl}
+                roleConfig={roleConfig}
+              />
 
               <div className="hidden min-w-0 text-left sm:block">
                 <p className="max-w-[190px] truncate text-sm font-bold leading-5 text-gray-900 dark:text-white">
-                  {
-                    displayName
-                  }
+                  {displayName}
                 </p>
               </div>
 
@@ -1053,59 +1214,57 @@ export default function Navbar({
               <div className="absolute right-0 z-[80] mt-3 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900">
                 <div className="border-b border-gray-100 px-4 py-4 dark:border-white/10">
                   <div className="flex items-start gap-3">
-                    <div
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${roleConfig.color}`}
-                    >
-                      <FiUser
-                        size={
-                          17
-                        }
-                        aria-hidden="true"
-                      />
-                    </div>
+                    <AvatarCircle
+                      imageUrl={avatarImageUrl}
+                      roleConfig={roleConfig}
+                      showUserIcon
+                      size="large"
+                    />
 
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-gray-900 dark:text-white">
-                        {
-                          displayName
-                        }
+                        {displayName}
                       </p>
 
                       <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                        {
-                          username
-                        }{" "}
-                        •{" "}
-                        {
-                          roleConfig.roleName
-                        }
+                        {username} •{" "}
+                        {roleConfig.roleName}
                       </p>
 
                       {isHRCoordinator &&
                         assignedCompany && (
                           <p
-                            title={
-                              assignedCompany
-                            }
+                            title={assignedCompany}
                             className="mt-1 truncate text-xs font-semibold text-violet-600 dark:text-violet-300"
                           >
                             Client:{" "}
-                            {
-                              assignedCompany
-                            }
+                            {assignedCompany}
                           </p>
                         )}
                     </div>
                   </div>
                 </div>
 
+                {/*
+                 * NEW: SELF-SERVICE PROFILE PICTURE
+                 * All authenticated roles can access it.
+                 */}
+
+                <ProfilePictureActions />
+
+                {/*
+                 * EXISTING: RECOVERY EMAIL VERIFICATION
+                 */}
+
                 <RecoveryEmailVerificationAction />
+
+                {/*
+                 * EXISTING: LOGOUT
+                 */}
 
                 <button
                   type="button"
-                  onClick={
-                    handleLogout
-                  }
+                  onClick={handleLogout}
                   className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-red-500 transition hover:bg-gray-100 dark:hover:bg-white/10"
                 >
                   <FiLogOut

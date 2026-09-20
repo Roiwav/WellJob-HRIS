@@ -1,12 +1,14 @@
 
 /**
- * WELLJOB Solutions - Messenger Database Configuration
+ * ==================================================
+ * WELLJOB SOLUTIONS
+ * MESSENGER DATABASE CONFIGURATION
+ * ==================================================
  *
- * This configuration matches the existing WELLJOB users table.
+ * Uses the existing WELLJOB users table.
  *
- * IMPORTANT:
- * Never accept table or column names from a request body,
- * URL, or user input.
+ * Database table and column identifiers must
+ * never come from request parameters or user input.
  */
 
 const config = {
@@ -24,14 +26,27 @@ const config = {
   // Existing full name column
   fullNameColumn: "full_name",
 
-  // No profile picture column currently exists.
-  // Change this only after adding an avatar column.
-  avatarColumn: null,
+  /*
+   * ==================================================
+   * PROFILE PICTURE COLUMN
+   * ==================================================
+   *
+   * This column was added to the existing users table.
+   *
+   * It contains a server-generated filename such as:
+   * 3498551dd71c804b003b92021e5af57a.webp
+   *
+   * It is NOT a public image URL.
+   */
+  avatarColumn: "avatar_filename",
 };
 
 /**
- * Validate static database identifiers.
+ * ==================================================
+ * VALIDATE STATIC DATABASE IDENTIFIERS
+ * ==================================================
  */
+
 for (const [setting, value] of Object.entries(config)) {
   if (
     value !== null &&
@@ -44,16 +59,37 @@ for (const [setting, value] of Object.entries(config)) {
 }
 
 /**
- * Escape database identifiers.
+ * ==================================================
+ * ESCAPE DATABASE IDENTIFIERS
+ * ==================================================
  */
+
 const col = (name) => `\`${name}\``;
 
 const table = col(config.usersTable);
 
 /**
- * Generate a consistent SELECT statement
- * for retrieving WELLJOB user information.
+ * ==================================================
+ * CONSISTENT CHAT USER SELECT
+ * ==================================================
+ *
+ * avatarFilename:
+ * Contains the database's avatar_filename value.
+ *
+ * avatarUrl:
+ * Retained temporarily as null for compatibility
+ * with the existing Messenger.jsx.
+ *
+ * A stored filename must not be treated as a
+ * publicly accessible image URL.
+ *
+ * The frontend will fetch the image through:
+ *
+ * GET /api/users/:id/avatar
+ *
+ * with the authenticated user's Bearer token.
  */
+
 const userSelect = (alias = "u") =>
   [
     `${alias}.${col(config.userIdColumn)} AS id`,
@@ -67,9 +103,17 @@ const userSelect = (alias = "u") =>
       : "NULL AS fullName",
 
     config.avatarColumn
-      ? `${alias}.${col(config.avatarColumn)} AS avatarUrl`
-      : "NULL AS avatarUrl",
+      ? `${alias}.${col(config.avatarColumn)} AS avatarFilename`
+      : "NULL AS avatarFilename",
+
+    "NULL AS avatarUrl",
   ].join(", ");
+
+/**
+ * ==================================================
+ * EXPORT CONFIGURATION
+ * ==================================================
+ */
 
 module.exports = {
   config,

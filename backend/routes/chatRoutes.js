@@ -182,8 +182,23 @@ function userDto(user) {
     role:
       normalizeRole(user.role),
 
-    avatarUrl:
-      user.avatarUrl ?? null,
+    /*
+     * Profile picture filename from
+     * users.avatar_filename.
+     *
+     * The filename is not a public URL.
+     */
+    avatarFilename:
+      user.avatarFilename ?? null,
+
+    /*
+     * Retained for compatibility with
+     * the existing Messenger frontend.
+     *
+     * The profile picture will be loaded
+     * through an authenticated request.
+     */
+    avatarUrl: null,
   };
 }
 

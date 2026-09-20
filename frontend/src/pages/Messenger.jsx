@@ -1,4 +1,3 @@
-
 import {
   useCallback,
   useEffect,
@@ -15,7 +14,10 @@ import {
 } from "react-icons/fi";
 
 import { chatApi } from "../services/chatApi";
+
 import { useChat } from "../context/ChatContext";
+
+import AuthenticatedAvatar from "../components/profile/AuthenticatedAvatar";
 
 /*
  * ==================================================
@@ -38,97 +40,68 @@ function timeLabel(value) {
 
   const date = new Date(value);
 
-  return Number.isNaN(date.getTime())
+  return Number.isNaN(
+    date.getTime()
+  )
     ? ""
     : date.toLocaleString();
 }
 
 function sameId(first, second) {
-  if (first == null || second == null) {
+  if (
+    first == null ||
+    second == null
+  ) {
     return false;
   }
 
-  return String(first) === String(second);
+  return (
+    String(first) ===
+    String(second)
+  );
 }
 
-function upsertMessage(previous, incoming) {
-  if (!incoming || incoming.id == null) {
+function upsertMessage(
+  previous,
+  incoming
+) {
+  if (
+    !incoming ||
+    incoming.id == null
+  ) {
     return previous;
   }
 
-  const existingIndex = previous.findIndex(
-    (message) => sameId(
-      message.id,
-      incoming.id
-    )
-  );
+  const existingIndex =
+    previous.findIndex(
+      (message) =>
+        sameId(
+          message.id,
+          incoming.id
+        )
+    );
 
   if (existingIndex === -1) {
-    return [...previous, incoming];
+    return [
+      ...previous,
+      incoming,
+    ];
   }
 
-  return previous.map((message, index) =>
-    index === existingIndex
-      ? {
-          ...message,
-          ...incoming,
-        }
-      : message
+  return previous.map(
+    (message, index) =>
+      index === existingIndex
+        ? {
+            ...message,
+            ...incoming,
+          }
+        : message
   );
 }
 
 /*
  * ==================================================
- * AVATAR
- * ==================================================
- */
-
-function Avatar({
-  user,
-  small = false,
-}) {
-  const [broken, setBroken] = useState(false);
-
-  const initials = displayName(user)
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0] || "")
-    .join("")
-    .toUpperCase();
-
-  useEffect(() => {
-    setBroken(false);
-  }, [user?.avatarUrl]);
-
-  const sizeClass = small
-    ? "h-9 w-9"
-    : "h-10 w-10";
-
-  if (user?.avatarUrl && !broken) {
-    return (
-      <img
-        src={user.avatarUrl}
-        alt=""
-        className={`${sizeClass} shrink-0 rounded-full object-cover`}
-        onError={() => setBroken(true)}
-      />
-    );
-  }
-
-  return (
-    <div
-      aria-hidden="true"
-      className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-200`}
-    >
-      {initials || "?"}
-    </div>
-  );
-}
-
-/*
- * ==================================================
- * MESSENGER
+ * WELLJOB MESSENGER
  * ==================================================
  *
  * Full-page:
@@ -137,6 +110,10 @@ function Avatar({
  * Floating:
  * Desktop - user sidebar and chat.
  * Mobile - one panel at a time.
+ *
+ * Profile pictures:
+ * Loaded through AuthenticatedAvatar using
+ * the existing protected avatar API.
  */
 
 export default function Messenger({
@@ -155,43 +132,70 @@ export default function Messenger({
    * ==================================================
    */
 
-  const [users, setUsers] = useState([]);
+  const [
+    users,
+    setUsers,
+  ] = useState([]);
 
-  const [conversations, setConversations] =
-    useState([]);
+  const [
+    conversations,
+    setConversations,
+  ] = useState([]);
 
-  const [activeId, setActiveId] =
-    useState(null);
+  const [
+    activeId,
+    setActiveId,
+  ] = useState(null);
 
-  const [messages, setMessages] =
-    useState([]);
+  const [
+    messages,
+    setMessages,
+  ] = useState([]);
 
-  const [hasMore, setHasMore] =
-    useState(false);
+  const [
+    hasMore,
+    setHasMore,
+  ] = useState(false);
 
-  const [query, setQuery] =
-    useState("");
+  const [
+    query,
+    setQuery,
+  ] = useState("");
 
-  const [draft, setDraft] =
-    useState("");
+  const [
+    draft,
+    setDraft,
+  ] = useState("");
 
-  const [loadingOverview, setLoadingOverview] =
-    useState(true);
+  const [
+    loadingOverview,
+    setLoadingOverview,
+  ] = useState(true);
 
-  const [loadingMessages, setLoadingMessages] =
-    useState(false);
+  const [
+    loadingMessages,
+    setLoadingMessages,
+  ] = useState(false);
 
-  const [loadingOlder, setLoadingOlder] =
-    useState(false);
+  const [
+    loadingOlder,
+    setLoadingOlder,
+  ] = useState(false);
 
-  const [openingUserId, setOpeningUserId] =
-    useState(null);
+  const [
+    openingUserId,
+    setOpeningUserId,
+  ] = useState(null);
 
-  const [sending, setSending] =
-    useState(false);
+  const [
+    sending,
+    setSending,
+  ] = useState(false);
 
-  const [error, setError] =
-    useState("");
+  const [
+    error,
+    setError,
+  ] = useState("");
 
   /*
    * ==================================================
@@ -199,19 +203,26 @@ export default function Messenger({
    * ==================================================
    */
 
-  const messageListRef = useRef(null);
+  const messageListRef =
+    useRef(null);
 
-  const activeIdRef = useRef(activeId);
+  const activeIdRef =
+    useRef(activeId);
 
-  const historyRequestRef = useRef(0);
+  const historyRequestRef =
+    useRef(0);
 
-  const overviewRequestRef = useRef(0);
+  const overviewRequestRef =
+    useRef(0);
 
-  const loadingOlderRef = useRef(false);
+  const loadingOlderRef =
+    useRef(false);
 
-  const preserveScrollRef = useRef(null);
+  const preserveScrollRef =
+    useRef(null);
 
-  activeIdRef.current = activeId;
+  activeIdRef.current =
+    activeId;
 
   /*
    * ==================================================
@@ -219,67 +230,84 @@ export default function Messenger({
    * ==================================================
    */
 
-  const loadOverview = useCallback(async () => {
-    if (!user) {
-      setUsers([]);
-      setConversations([]);
-      setLoadingOverview(false);
-      return;
-    }
+  const loadOverview =
+    useCallback(
+      async () => {
+        if (!user) {
+          setUsers([]);
 
-    const requestId =
-      ++overviewRequestRef.current;
+          setConversations([]);
 
-    try {
-      const [accounts, threads] =
-        await Promise.all([
-          chatApi("/users"),
-          chatApi("/conversations"),
-        ]);
+          setLoadingOverview(
+            false
+          );
 
-      if (
-        requestId !==
-        overviewRequestRef.current
-      ) {
-        return;
-      }
+          return;
+        }
 
-      setUsers(
-        Array.isArray(accounts)
-          ? accounts
-          : []
-      );
+        const requestId =
+          ++overviewRequestRef.current;
 
-      setConversations(
-        Array.isArray(threads)
-          ? threads
-          : []
-      );
-    } catch (cause) {
-      if (
-        requestId ===
-        overviewRequestRef.current
-      ) {
-        setError(
-          cause.message ||
-            "Unable to load Messenger."
-        );
-      }
-    } finally {
-      if (
-        requestId ===
-        overviewRequestRef.current
-      ) {
-        setLoadingOverview(false);
-      }
-    }
-  }, [user]);
+        try {
+          const [
+            accounts,
+            threads,
+          ] = await Promise.all([
+            chatApi("/users"),
+
+            chatApi(
+              "/conversations"
+            ),
+          ]);
+
+          if (
+            requestId !==
+            overviewRequestRef.current
+          ) {
+            return;
+          }
+
+          setUsers(
+            Array.isArray(accounts)
+              ? accounts
+              : []
+          );
+
+          setConversations(
+            Array.isArray(threads)
+              ? threads
+              : []
+          );
+        } catch (cause) {
+          if (
+            requestId ===
+            overviewRequestRef.current
+          ) {
+            setError(
+              cause.message ||
+                "Unable to load Messenger."
+            );
+          }
+        } finally {
+          if (
+            requestId ===
+            overviewRequestRef.current
+          ) {
+            setLoadingOverview(
+              false
+            );
+          }
+        }
+      },
+      [user]
+    );
 
   useEffect(() => {
     loadOverview();
 
     return () => {
-      overviewRequestRef.current += 1;
+      overviewRequestRef.current +=
+        1;
     };
   }, [loadOverview]);
 
@@ -289,19 +317,62 @@ export default function Messenger({
    * ==================================================
    */
 
-  const activeConversation = useMemo(
-    () =>
-      conversations.find((item) =>
-        sameId(
-          item.id,
-          activeId
-        )
-      ),
-    [conversations, activeId]
-  );
+  const activeConversation =
+    useMemo(
+      () =>
+        conversations.find(
+          (item) =>
+            sameId(
+              item.id,
+              activeId
+            )
+        ),
+      [
+        conversations,
+        activeId,
+      ]
+    );
+
+  /*
+   * ==================================================
+   * ACTIVE CHAT PARTNER
+   * ==================================================
+   *
+   * The conversation API returns partner information.
+   *
+   * Prefer the user-directory entry when available
+   * so avatar changes are reflected consistently
+   * between the sidebar and conversation header.
+   */
 
   const activePartner =
-    activeConversation?.partner;
+    useMemo(() => {
+      const partner =
+        activeConversation?.partner;
+
+      if (!partner) {
+        return null;
+      }
+
+      const directoryUser =
+        users.find(
+          (account) =>
+            sameId(
+              account.id,
+              partner.id
+            )
+        );
+
+      return directoryUser
+        ? {
+            ...partner,
+            ...directoryUser,
+          }
+        : partner;
+    }, [
+      activeConversation,
+      users,
+    ]);
 
   /*
    * ==================================================
@@ -309,27 +380,32 @@ export default function Messenger({
    * ==================================================
    */
 
-  const searchedUsers = useMemo(() => {
-    const search = query
-      .trim()
-      .toLowerCase();
+  const searchedUsers =
+    useMemo(() => {
+      const search = query
+        .trim()
+        .toLowerCase();
 
-    if (!search) {
-      return users;
-    }
+      if (!search) {
+        return users;
+      }
 
-    return users.filter((account) =>
-      [
-        account.username,
-        account.fullName,
-        account.role,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(search)
-    );
-  }, [query, users]);
+      return users.filter(
+        (account) =>
+          [
+            account.username,
+            account.fullName,
+            account.role,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(search)
+      );
+    }, [
+      query,
+      users,
+    ]);
 
   /*
    * ==================================================
@@ -337,21 +413,26 @@ export default function Messenger({
    * ==================================================
    */
 
-  const conversationByPartner = useMemo(() => {
-    return new Map(
-      conversations
-        .filter(
-          (conversation) =>
-            conversation.partner?.id != null
-        )
-        .map((conversation) => [
-          String(
-            conversation.partner.id
-          ),
-          conversation,
-        ])
-    );
-  }, [conversations]);
+  const conversationByPartner =
+    useMemo(() => {
+      return new Map(
+        conversations
+          .filter(
+            (conversation) =>
+              conversation.partner
+                ?.id != null
+          )
+          .map(
+            (conversation) => [
+              String(
+                conversation.partner.id
+              ),
+
+              conversation,
+            ]
+          )
+      );
+    }, [conversations]);
 
   /*
    * ==================================================
@@ -359,44 +440,53 @@ export default function Messenger({
    * ==================================================
    */
 
-  const markRead = useCallback(
-    async (conversationId) => {
-      if (conversationId == null) {
-        return;
-      }
+  const markRead =
+    useCallback(
+      async (
+        conversationId
+      ) => {
+        if (
+          conversationId == null
+        ) {
+          return;
+        }
 
-      try {
-        await chatApi(
-          `/conversations/${conversationId}/read`,
-          {
-            method: "POST",
-          }
-        );
+        try {
+          await chatApi(
+            `/conversations/${conversationId}/read`,
+            {
+              method: "POST",
+            }
+          );
 
-        setConversations((previous) =>
-          previous.map((item) =>
-            sameId(
-              item.id,
-              conversationId
-            )
-              ? {
-                  ...item,
-                  unreadCount: 0,
-                }
-              : item
-          )
-        );
+          setConversations(
+            (previous) =>
+              previous.map(
+                (item) =>
+                  sameId(
+                    item.id,
+                    conversationId
+                  )
+                    ? {
+                        ...item,
 
-        await refreshUnread();
-      } catch (cause) {
-        console.error(
-          "MARK CHAT READ ERROR:",
-          cause
-        );
-      }
-    },
-    [refreshUnread]
-  );
+                        unreadCount:
+                          0,
+                      }
+                    : item
+              )
+          );
+
+          await refreshUnread();
+        } catch (cause) {
+          console.error(
+            "MARK CHAT READ ERROR:",
+            cause
+          );
+        }
+      },
+      [refreshUnread]
+    );
 
   /*
    * ==================================================
@@ -405,34 +495,47 @@ export default function Messenger({
    */
 
   useEffect(() => {
-    const conversationId = activeId;
+    const conversationId =
+      activeId;
 
     const requestId =
       ++historyRequestRef.current;
 
     setMessages([]);
+
     setHasMore(false);
+
     setLoadingOlder(false);
 
-    loadingOlderRef.current = false;
-    preserveScrollRef.current = null;
+    loadingOlderRef.current =
+      false;
+
+    preserveScrollRef.current =
+      null;
 
     if (
       conversationId == null ||
       !user
     ) {
-      setLoadingMessages(false);
+      setLoadingMessages(
+        false
+      );
+
       return;
     }
 
-    setLoadingMessages(true);
+    setLoadingMessages(
+      true
+    );
+
     setError("");
 
     async function loadMessages() {
       try {
-        const result = await chatApi(
-          `/conversations/${conversationId}/messages`
-        );
+        const result =
+          await chatApi(
+            `/conversations/${conversationId}/messages`
+          );
 
         if (
           historyRequestRef.current !==
@@ -452,25 +555,31 @@ export default function Messenger({
             ? result.messages
             : [];
 
-        setMessages((previous) =>
-          previous
-            .filter((message) =>
-              sameId(
-                message.conversationId,
-                conversationId
+        setMessages(
+          (previous) =>
+            previous
+              .filter(
+                (message) =>
+                  sameId(
+                    message.conversationId,
+                    conversationId
+                  )
               )
-            )
-            .reduce(
-              upsertMessage,
-              loadedMessages
-            )
+              .reduce(
+                upsertMessage,
+                loadedMessages
+              )
         );
 
         setHasMore(
-          Boolean(result.hasMore)
+          Boolean(
+            result.hasMore
+          )
         );
 
-        markRead(conversationId);
+        markRead(
+          conversationId
+        );
       } catch (cause) {
         if (
           historyRequestRef.current ===
@@ -486,7 +595,9 @@ export default function Messenger({
           historyRequestRef.current ===
           requestId
         ) {
-          setLoadingMessages(false);
+          setLoadingMessages(
+            false
+          );
         }
       }
     }
@@ -494,9 +605,14 @@ export default function Messenger({
     loadMessages();
 
     return () => {
-      historyRequestRef.current += 1;
+      historyRequestRef.current +=
+        1;
     };
-  }, [activeId, user, markRead]);
+  }, [
+    activeId,
+    user,
+    markRead,
+  ]);
 
   /*
    * ==================================================
@@ -521,14 +637,18 @@ export default function Messenger({
         savedScroll.scrollHeight +
         savedScroll.scrollTop;
 
-      preserveScrollRef.current = null;
+      preserveScrollRef.current =
+        null;
 
       return;
     }
 
     container.scrollTop =
       container.scrollHeight;
-  }, [messages, activeId]);
+  }, [
+    messages,
+    activeId,
+  ]);
 
   /*
    * ==================================================
@@ -541,7 +661,9 @@ export default function Messenger({
       return undefined;
     }
 
-    function onMessage(payload = {}) {
+    function onMessage(
+      payload = {}
+    ) {
       const message =
         payload.message;
 
@@ -560,11 +682,12 @@ export default function Messenger({
         return;
       }
 
-      setMessages((previous) =>
-        upsertMessage(
-          previous,
-          message
-        )
+      setMessages(
+        (previous) =>
+          upsertMessage(
+            previous,
+            message
+          )
       );
 
       if (
@@ -579,7 +702,9 @@ export default function Messenger({
       }
     }
 
-    function onRead(payload = {}) {
+    function onRead(
+      payload = {}
+    ) {
       const {
         conversationId,
         readerId,
@@ -596,25 +721,29 @@ export default function Messenger({
           currentUserId
         )
       ) {
-        setMessages((previous) =>
-          previous.map((message) => {
-            if (
-              sameId(
-                message.senderId,
-                currentUserId
-              ) &&
-              !message.readAt
-            ) {
-              return {
-                ...message,
-                readAt:
-                  readAt ||
-                  new Date().toISOString(),
-              };
-            }
+        setMessages(
+          (previous) =>
+            previous.map(
+              (message) => {
+                if (
+                  sameId(
+                    message.senderId,
+                    currentUserId
+                  ) &&
+                  !message.readAt
+                ) {
+                  return {
+                    ...message,
 
-            return message;
-          })
+                    readAt:
+                      readAt ||
+                      new Date().toISOString(),
+                  };
+                }
+
+                return message;
+              }
+            )
         );
       }
 
@@ -683,17 +812,18 @@ export default function Messenger({
     );
 
     try {
-      const response = await chatApi(
-        "/conversations",
-        {
-          method: "POST",
+      const response =
+        await chatApi(
+          "/conversations",
+          {
+            method: "POST",
 
-          body: JSON.stringify({
-            recipientId:
-              account.id,
-          }),
-        }
-      );
+            body: JSON.stringify({
+              recipientId:
+                account.id,
+            }),
+          }
+        );
 
       await loadOverview();
 
@@ -749,16 +879,22 @@ export default function Messenger({
     const container =
       messageListRef.current;
 
-    loadingOlderRef.current = true;
-    setLoadingOlder(true);
+    loadingOlderRef.current =
+      true;
+
+    setLoadingOlder(
+      true
+    );
+
     setError("");
 
     try {
-      const result = await chatApi(
-        `/conversations/${conversationId}/messages?before=${encodeURIComponent(
-          oldestMessageId
-        )}`
-      );
+      const result =
+        await chatApi(
+          `/conversations/${conversationId}/messages?before=${encodeURIComponent(
+            oldestMessageId
+          )}`
+        );
 
       if (
         historyRequestRef.current !==
@@ -791,41 +927,51 @@ export default function Messenger({
         );
 
       if (
-        uniqueOlderMessages.length > 0 &&
+        uniqueOlderMessages.length >
+          0 &&
         container
       ) {
-        preserveScrollRef.current = {
-          scrollTop:
-            container.scrollTop,
+        preserveScrollRef.current =
+          {
+            scrollTop:
+              container.scrollTop,
 
-          scrollHeight:
-            container.scrollHeight,
-        };
+            scrollHeight:
+              container.scrollHeight,
+          };
       }
 
-      setMessages((previous) => {
-        const existingIds =
-          new Set(
-            previous.map(
-              (message) =>
-                String(message.id)
-            )
-          );
-
-        return [
-          ...uniqueOlderMessages.filter(
-            (message) =>
-              !existingIds.has(
-                String(message.id)
+      setMessages(
+        (previous) => {
+          const existingIds =
+            new Set(
+              previous.map(
+                (message) =>
+                  String(
+                    message.id
+                  )
               )
-          ),
+            );
 
-          ...previous,
-        ];
-      });
+          return [
+            ...uniqueOlderMessages.filter(
+              (message) =>
+                !existingIds.has(
+                  String(
+                    message.id
+                  )
+                )
+            ),
+
+            ...previous,
+          ];
+        }
+      );
 
       setHasMore(
-        Boolean(result.hasMore)
+        Boolean(
+          result.hasMore
+        )
       );
     } catch (cause) {
       if (
@@ -838,8 +984,12 @@ export default function Messenger({
         );
       }
     } finally {
-      loadingOlderRef.current = false;
-      setLoadingOlder(false);
+      loadingOlderRef.current =
+        false;
+
+      setLoadingOlder(
+        false
+      );
     }
   }
 
@@ -867,20 +1017,24 @@ export default function Messenger({
       return;
     }
 
-    setSending(true);
+    setSending(
+      true
+    );
+
     setError("");
 
     try {
-      const response = await chatApi(
-        `/conversations/${conversationId}/messages`,
-        {
-          method: "POST",
+      const response =
+        await chatApi(
+          `/conversations/${conversationId}/messages`,
+          {
+            method: "POST",
 
-          body: JSON.stringify({
-            body: text,
-          }),
-        }
-      );
+            body: JSON.stringify({
+              body: text,
+            }),
+          }
+        );
 
       if (
         sameId(
@@ -891,11 +1045,12 @@ export default function Messenger({
         if (
           response.message
         ) {
-          setMessages((previous) =>
-            upsertMessage(
-              previous,
-              response.message
-            )
+          setMessages(
+            (previous) =>
+              upsertMessage(
+                previous,
+                response.message
+              )
           );
         }
 
@@ -914,7 +1069,9 @@ export default function Messenger({
           "Unable to send message."
       );
     } finally {
-      setSending(false);
+      setSending(
+        false
+      );
     }
   }
 
@@ -924,11 +1081,10 @@ export default function Messenger({
    * ==================================================
    *
    * Desktop:
-   * User sidebar and conversation
-   * are shown side by side.
+   * User sidebar and conversation side by side.
    *
    * Mobile:
-   * Show one panel at a time.
+   * One panel at a time.
    */
 
   const userListClass =
@@ -1010,12 +1166,6 @@ export default function Messenger({
          * ======================================
          * USER SIDEBAR
          * ======================================
-         *
-         * Desktop:
-         * Visible beside conversation.
-         *
-         * Mobile:
-         * Hidden while a conversation is open.
          */}
 
         <aside
@@ -1103,7 +1253,16 @@ export default function Messenger({
                         : ""
                     }`}
                   >
-                    <Avatar
+                    {/*
+                     * NEW: Authenticated profile picture.
+                     *
+                     * Displays the uploaded photo when
+                     * avatarFilename is available.
+                     *
+                     * Otherwise, shows user initials.
+                     */}
+
+                    <AuthenticatedAvatar
                       user={account}
                       small={compact}
                     />
@@ -1151,7 +1310,9 @@ export default function Messenger({
           activePartner ? (
             <>
               {/*
-               * Conversation header
+               * ==================================
+               * CONVERSATION HEADER
+               * ==================================
                */}
 
               <header
@@ -1172,7 +1333,12 @@ export default function Messenger({
                   <FiArrowLeft size={18} />
                 </button>
 
-                <Avatar
+                {/*
+                 * NEW: Profile picture of
+                 * the active chat partner.
+                 */}
+
+                <AuthenticatedAvatar
                   user={activePartner}
                   small={compact}
                 />
@@ -1194,7 +1360,9 @@ export default function Messenger({
               </header>
 
               {/*
-               * Message history
+               * ==================================
+               * MESSAGE HISTORY
+               * ==================================
                */}
 
               <div
@@ -1287,7 +1455,9 @@ export default function Messenger({
               </div>
 
               {/*
-               * Message composer
+               * ==================================
+               * MESSAGE COMPOSER
+               * ==================================
                */}
 
               <form
@@ -1309,7 +1479,8 @@ export default function Messenger({
                   }}
                   onKeyDown={(event) => {
                     if (
-                      event.key === "Enter" &&
+                      event.key ===
+                        "Enter" &&
                       !event.shiftKey &&
                       !event.nativeEvent.isComposing
                     ) {
