@@ -1,3 +1,4 @@
+
 import React, {
   Suspense,
   lazy,
@@ -91,6 +92,11 @@ const OperationalAuditLogs = lazy(() =>
   import("./pages/OperationalAuditLogs")
 );
 
+// NEW: Messenger page
+const Messenger = lazy(() =>
+  import("./pages/Messenger")
+);
+
 // Authentication
 import {
   AuthProvider,
@@ -99,6 +105,11 @@ import {
 import {
   useAuth,
 } from "./context/useAuth";
+
+// NEW: Messenger context
+import {
+  ChatProvider,
+} from "./context/ChatContext";
 
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -523,288 +534,318 @@ function ApplicationContent({
     );
   }
 
+  /*
+   * Messenger context is mounted inside
+   * AuthProvider and the existing Router.
+   *
+   * Keeping it here also unmounts the Messenger
+   * frontend for non-IT users when the existing
+   * maintenance screen is displayed.
+   */
   return (
-    <Routes>
-      {/* Public */}
-      <Route
-        path="/login"
-        element={
-          <LazyRoute>
-            <Login />
-          </LazyRoute>
-        }
-      />
-
-      {/* Public recovery links from email */}
-      <Route
-        path="/reset-password"
-        element={
-          <LazyRoute>
-            <ResetPassword />
-          </LazyRoute>
-        }
-      />
-
-      <Route
-        path="/verify-email"
-        element={
-          <LazyRoute>
-            <VerifyEmail />
-          </LazyRoute>
-        }
-      />
-      {/* All authenticated users */}
-      <Route
-        element={
-          <ProtectedRoute
-            allowedRoles={
-              AUTHENTICATED_ROLES
-            }
-          />
-        }
-      >
-        {/*
-         * Password change intentionally remains
-         * outside MainLayout.
-         */}
+    <ChatProvider>
+      <Routes>
+        {/* Public */}
         <Route
-          path="/change-password"
+          path="/login"
           element={
             <LazyRoute>
-              <ChangePassword />
+              <Login />
             </LazyRoute>
           }
         />
 
-        {/*
-         * Protected application shell.
-         *
-         * Navbar, Sidebar, and global widgets
-         * mount only after authentication succeeds.
-         */}
+        {/* Public recovery links from email */}
+        <Route
+          path="/reset-password"
+          element={
+            <LazyRoute>
+              <ResetPassword />
+            </LazyRoute>
+          }
+        />
+
+        <Route
+          path="/verify-email"
+          element={
+            <LazyRoute>
+              <VerifyEmail />
+            </LazyRoute>
+          }
+        />
+
+        {/* All authenticated users */}
         <Route
           element={
-            <MainLayout />
+            <ProtectedRoute
+              allowedRoles={
+                AUTHENTICATED_ROLES
+              }
+            />
           }
         >
-          {/* Dashboard */}
+          {/*
+           * Password change intentionally remains
+           * outside MainLayout.
+           */}
+          <Route
+            path="/change-password"
+            element={
+              <LazyRoute>
+                <ChangePassword />
+              </LazyRoute>
+            }
+          />
+
+          {/*
+           * Protected application shell.
+           *
+           * Navbar, Sidebar, and global widgets
+           * mount only after authentication succeeds.
+           */}
           <Route
             element={
-              <ProtectedRoute
-                allowedRoles={
-                  HR_MODULE_ROLES
-                }
-              />
+              <MainLayout />
             }
           >
+            {/* Dashboard */}
             <Route
-              path="/"
               element={
-                <LazyRoute>
-                  <Dashboard />
-                </LazyRoute>
-              }
-            />
-          </Route>
-
-          {/* Employee, Deployment, and Incident records */}
-          <Route
-            element={
-              <ProtectedRoute
-                allowedRoles={
-                  WORKFORCE_RECORD_ROLES
-                }
-              />
-            }
-          >
-            <Route
-              path="/employees"
-              element={
-                <LazyRoute>
-                  <Employees />
-                </LazyRoute>
-              }
-            />
-
-            <Route
-              path="/deployments"
-              element={
-                <LazyRoute>
-                  <Deployments />
-                </LazyRoute>
-              }
-            />
-
-            <Route
-              path="/incidents"
-              element={
-                <LazyRoute>
-                  <Incidents />
-                </LazyRoute>
-              }
-            />
-          </Route>
-
-          {/* Notifications: HR incident alerts and authorized recovery reviews */}
-              <Route
-                element={
-                  <ProtectedRoute
-                    allowedRoles={
-                      NOTIFICATION_ROLES
-                    }
-                  />
-                }
-              >
-                <Route
-                  path="/notifications"
-                  element={
-                    <LazyRoute>
-                      <Notifications />
-                    </LazyRoute>
+                <ProtectedRoute
+                  allowedRoles={
+                    HR_MODULE_ROLES
                   }
                 />
+              }
+            >
+              <Route
+                path="/"
+                element={
+                  <LazyRoute>
+                    <Dashboard />
+                  </LazyRoute>
+                }
+              />
+            </Route>
+
+            {/* Employee, Deployment, and Incident records */}
+            <Route
+              element={
+                <ProtectedRoute
+                  allowedRoles={
+                    WORKFORCE_RECORD_ROLES
+                  }
+                />
+              }
+            >
+              <Route
+                path="/employees"
+                element={
+                  <LazyRoute>
+                    <Employees />
+                  </LazyRoute>
+                }
+              />
+
+              <Route
+                path="/deployments"
+                element={
+                  <LazyRoute>
+                    <Deployments />
+                  </LazyRoute>
+                }
+              />
+
+              <Route
+                path="/incidents"
+                element={
+                  <LazyRoute>
+                    <Incidents />
+                  </LazyRoute>
+                }
+              />
+            </Route>
+
+            {/*
+             * NEW: Messenger
+             *
+             * All five authenticated WELLJOB roles
+             * can access this route.
+             *
+             * Actual conversation authorization
+             * remains enforced by the backend.
+             */}
+            <Route
+              path="/chat"
+              element={
+                <LazyRoute>
+                  <Messenger />
+                </LazyRoute>
+              }
+            />
+
+            {/* Notifications: HR incident alerts and authorized recovery reviews */}
+            <Route
+              element={
+                <ProtectedRoute
+                  allowedRoles={
+                    NOTIFICATION_ROLES
+                  }
+                />
+              }
+            >
+              <Route
+                path="/notifications"
+                element={
+                  <LazyRoute>
+                    <Notifications />
+                  </LazyRoute>
+                }
+              />
+            </Route>
+
+            {/* HR Manager employee archive */}
+            <Route
+              element={
+                <ProtectedRoute
+                  allowedRoles={[
+                    ROLES.HR_MANAGER,
+                  ]}
+                />
+              }
+            >
+              <Route
+                path="/employees/archive"
+                element={
+                  <LazyRoute>
+                    <ArchivedEmployees />
+                  </LazyRoute>
+                }
+              />
+            </Route>
+
+            {/* KPI */}
+            <Route
+              element={
+                <ProtectedRoute
+                  allowedRoles={
+                    HR_MODULE_ROLES
+                  }
+                />
+              }
+            >
+              <Route
+                path="/kpi"
+                element={
+                  <LazyRoute>
+                    <KPIReports />
+                  </LazyRoute>
+                }
+              />
+            </Route>
+
+            {/* System Configuration */}
+            <Route
+              element={
+                <ProtectedRoute
+                  allowedRoles={
+                    SYSTEM_CONFIGURATION_ROLES
+                  }
+                />
+              }
+            >
+              <Route
+                path="/system-configuration"
+                element={
+                  <LazyRoute>
+                    <SystemConfiguration />
+                  </LazyRoute>
+                }
+              >
               </Route>
+            </Route>
 
-          {/* HR Manager employee archive */}
-          <Route
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  ROLES.HR_MANAGER,
-                ]}
-              />
-            }
-          >
+            {/* IT Support */}
             <Route
-              path="/employees/archive"
               element={
-                <LazyRoute>
-                  <ArchivedEmployees />
-                </LazyRoute>
+                <ProtectedRoute
+                  allowedRoles={[
+                    ROLES.IT_SUPPORT,
+                  ]}
+                />
               }
-            />
-          </Route>
-
-          {/* KPI */}
-          <Route
-            element={
-              <ProtectedRoute
-                allowedRoles={
-                  HR_MODULE_ROLES
+            >
+              <Route
+                path="/settings"
+                element={
+                  <LazyRoute>
+                    <Settings />
+                  </LazyRoute>
                 }
               />
-            }
-          >
-            <Route
-              path="/kpi"
-              element={
-                <LazyRoute>
-                  <KPIReports />
-                </LazyRoute>
-              }
-            />
-          </Route>
 
-          {/* System Configuration */}
-          <Route
-            element={
-              <ProtectedRoute
-                allowedRoles={
-                  SYSTEM_CONFIGURATION_ROLES
+              <Route
+                path="/system-maintenance"
+                element={
+                  <LazyRoute>
+                    <SystemMaintenance />
+                  </LazyRoute>
                 }
               />
-            }
-          >
-            <Route
-              path="/system-configuration"
-              element={
-                <LazyRoute>
-                  <SystemConfiguration />
-                </LazyRoute>
-              }
-            />
-          </Route>
 
-          {/* IT Support */}
-          <Route
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  ROLES.IT_SUPPORT,
-                ]}
+              <Route
+                path="/technical-audit-logs"
+                element={
+                  <LazyRoute>
+                    <TechnicalAuditLogs />
+                  </LazyRoute>
+                }
               />
-            }
-          >
-            <Route
-              path="/settings"
-              element={
-                <LazyRoute>
-                  <Settings />
-                </LazyRoute>
-              }
-            />
+            </Route>
 
+            {/* Super Admin */}
             <Route
-              path="/system-maintenance"
               element={
-                <LazyRoute>
-                  <SystemMaintenance />
-                </LazyRoute>
+                <ProtectedRoute
+                  allowedRoles={[
+                    ROLES.SUPER_ADMIN,
+                  ]}
+                />
               }
-            />
-
-            <Route
-              path="/technical-audit-logs"
-              element={
-                <LazyRoute>
-                  <TechnicalAuditLogs />
-                </LazyRoute>
-              }
-            />
-          </Route>
-
-          {/* Super Admin */}
-          <Route
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  ROLES.SUPER_ADMIN,
-                ]}
+            >
+              <Route
+                path="/super-admin"
+                element={
+                  <LazyRoute>
+                    <SuperAdminPortal />
+                  </LazyRoute>
+                }
               />
-            }
-          >
-            <Route
-              path="/super-admin"
-              element={
-                <LazyRoute>
-                  <SuperAdminPortal />
-                </LazyRoute>
-              }
-            />
 
-            <Route
-              path="/operational-audit-logs"
-              element={
-                <LazyRoute>
-                  <OperationalAuditLogs />
-                </LazyRoute>
-              }
-            />
+              <Route
+                path="/operational-audit-logs"
+                element={
+                  <LazyRoute>
+                    <OperationalAuditLogs />
+                  </LazyRoute>
+                }
+              />
+            </Route>
           </Route>
         </Route>
-      </Route>
 
-      {/* Fallback */}
-      <Route
-        path="*"
-        element={
-          <Navigate
-            to="/login"
-            replace
-          />
-        }
-      />
-    </Routes>
+        {/* Fallback */}
+        <Route
+          path="*"
+          element={
+            <Navigate
+              to="/login"
+              replace
+            />
+          }
+        />
+      </Routes>
+    </ChatProvider>
   );
 }
 

@@ -1,3 +1,4 @@
+
 const path = require("path");
 
 // LOAD ENVIRONMENT VARIABLES FIRST
@@ -20,6 +21,7 @@ require("dotenv").config({
  * environments whose database account has no
  * password configured.
  */
+
 const REQUIRED_ENVIRONMENT = [
   {
     name: "DB_HOST",
@@ -49,6 +51,12 @@ const REQUIRED_ENVIRONMENT = [
 ];
 
 const JSON_BODY_LIMIT = "1mb";
+
+/*
+ * ==================================================
+ * ENVIRONMENT VALIDATION
+ * ==================================================
+ */
 
 function validateEnvironment() {
   const missingVariables = [];
@@ -125,17 +133,35 @@ function validateEnvironment() {
 
 validateEnvironment();
 
+/*
+ * ==================================================
+ * CORE DEPENDENCIES
+ * ==================================================
+ */
+
 const express = require("express");
+
 const cors = require("cors");
+
 const compression = require("compression");
 
-// MAINTENANCE MIDDLEWARE
+/*
+ * ==================================================
+ * MAINTENANCE MIDDLEWARE
+ * ==================================================
+ */
+
 const checkMaintenanceMode =
   require(
     "./middleware/maintenanceMiddleware"
   );
 
-// ROUTES
+/*
+ * ==================================================
+ * EXISTING WELLJOB ROUTES
+ * ==================================================
+ */
+
 const authRoutes =
   require("./routes/authRoutes");
 
@@ -192,7 +218,39 @@ const dashboardRoutes =
     "./routes/dashboardRoutes"
   );
 
-// INIT APP
+/*
+ * ==================================================
+ * NEW: WELLJOB MESSENGER MODULE
+ * ==================================================
+ *
+ * chatRoutes:
+ * Handles authenticated Messenger API requests.
+ *
+ * chatSocket:
+ * Provides real-time messaging and chat
+ * notification delivery using Socket.IO.
+ *
+ * The Messenger uses existing WELLJOB accounts
+ * and the existing authentication system.
+ */
+
+const chatRoutes =
+  require(
+    "./routes/chatRoutes"
+  );
+
+const {
+  initChatSocket,
+} = require(
+  "./services/chatSocket"
+);
+
+/*
+ * ==================================================
+ * INITIALIZE EXPRESS APPLICATION
+ * ==================================================
+ */
+
 const app = express();
 
 /*
@@ -208,6 +266,7 @@ const app = express();
  * Postman-style clients, and health checks continue
  * to work normally.
  */
+
 const FRONTEND_ORIGIN = String(
   process.env.FRONTEND_ORIGIN
 ).trim();
@@ -221,6 +280,7 @@ const corsOptions = {
      * Non-browser/server-side requests commonly
      * have no Origin header.
      */
+
     if (!requestOrigin) {
       return callback(
         null,
@@ -231,6 +291,7 @@ const corsOptions = {
     /*
      * Allow only the configured browser frontend.
      */
+
     if (
       requestOrigin ===
       FRONTEND_ORIGIN
@@ -245,6 +306,7 @@ const corsOptions = {
      * Do not grant CORS permission to any other
      * browser origin.
      */
+
     return callback(
       null,
       false
@@ -252,7 +314,12 @@ const corsOptions = {
   },
 };
 
-// CORE MIDDLEWARE
+/*
+ * ==================================================
+ * CORE MIDDLEWARE
+ * ==================================================
+ */
+
 app.use(
   cors(corsOptions)
 );
@@ -276,6 +343,7 @@ app.use(
  * This remains intentionally bounded at 1 MB instead
  * of accepting unlimited JSON payloads.
  */
+
 app.use(
   express.json({
     limit: JSON_BODY_LIMIT,
@@ -298,13 +366,27 @@ app.use(
  * enforced.
  */
 
-// SYSTEM MAINTENANCE GATE
+/*
+ * ==================================================
+ * SYSTEM MAINTENANCE GATE
+ * ==================================================
+ *
+ * Existing /api maintenance middleware remains
+ * active for all registered API routes, including
+ * the new Messenger API.
+ */
+
 app.use(
   "/api",
   checkMaintenanceMode
 );
 
-// API ROUTES
+/*
+ * ==================================================
+ * EXISTING WELLJOB API ROUTES
+ * ==================================================
+ */
+
 app.use(
   "/api",
   authRoutes
@@ -365,7 +447,38 @@ app.use(
   dashboardRoutes
 );
 
-// DEFAULT TEST ROUTE
+/*
+ * ==================================================
+ * NEW: MESSENGER API ROUTES
+ * ==================================================
+ *
+ * Registers:
+ *
+ * GET  /api/chat/users
+ * GET  /api/chat/unread-count
+ * GET  /api/chat/conversations
+ *
+ * POST /api/chat/conversations
+ *
+ * GET  /api/chat/conversations/:id/messages
+ * POST /api/chat/conversations/:id/messages
+ * POST /api/chat/conversations/:id/read
+ *
+ * Authentication and authorization are handled
+ * by the chatAuth middleware inside chatRoutes.js.
+ */
+
+app.use(
+  "/api/chat",
+  chatRoutes
+);
+
+/*
+ * ==================================================
+ * DEFAULT TEST ROUTE
+ * ==================================================
+ */
+
 app.get(
   "/",
   (req, res) => {
@@ -386,6 +499,7 @@ app.get(
  * Always return JSON instead of exposing Express
  * implementation details or a default HTML page.
  */
+
 app.use(
   (req, res) => {
     return res
@@ -408,9 +522,10 @@ app.use(
  * Known request parsing failures receive an
  * appropriate client-facing HTTP status.
  *
- * Unexpected technical details remain only in the
- * backend logs.
+ * Unexpected technical details remain only in
+ * the backend logs.
  */
+
 app.use(
   (
     err,
@@ -434,6 +549,7 @@ app.use(
      * is a client request-size problem, not an
      * internal server failure.
      */
+
     if (
       err?.type ===
         "entity.too.large" ||
@@ -457,6 +573,7 @@ app.use(
      * Malformed JSON should return HTTP 400 rather
      * than being exposed as a generic server error.
      */
+
     if (
       err instanceof
         SyntaxError &&
@@ -490,19 +607,66 @@ app.use(
   }
 );
 
-// PORT
+/*
+ * ==================================================
+ * SERVER PORT
+ * ==================================================
+ */
+
 const PORT =
   Number.parseInt(
     process.env.PORT,
     10
   );
 
-// START SERVER
-app.listen(
+/*
+ * ==================================================
+ * START EXISTING WELLJOB HTTP SERVER
+ * ==================================================
+ *
+ * IMPORTANT:
+ *
+ * Only one HTTP server is started.
+ *
+ * The existing Express application continues
+ * to handle all WELLJOB REST API requests.
+ *
+ * Socket.IO is attached to the SAME HTTP server
+ * to provide real-time Messenger functionality.
+ */
+
+const server = app.listen(
   PORT,
   () => {
     console.log(
       `Server running on port ${PORT}`
     );
+
+    console.log(
+      "WELLJOB Messenger API registered at /api/chat"
+    );
+
+    console.log(
+      "WELLJOB Messenger Socket.IO initialized"
+    );
   }
+);
+
+/*
+ * ==================================================
+ * INITIALIZE MESSENGER SOCKET.IO
+ * ==================================================
+ *
+ * The existing frontend origin is reused
+ * for Socket.IO CORS configuration.
+ *
+ * No second HTTP server is created.
+ *
+ * The Messenger uses the existing JWT
+ * authentication system through chatAuth.js.
+ */
+
+initChatSocket(
+  server,
+  FRONTEND_ORIGIN
 );
