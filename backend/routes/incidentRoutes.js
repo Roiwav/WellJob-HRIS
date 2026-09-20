@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -13,6 +14,10 @@ const {
 const {
   getIncidentEvidenceFile,
 } = require("../controllers/incidentEvidenceController");
+
+const {
+  getEmployeeIncidentSummary,
+} = require("../controllers/employeeIncidentSummaryController");
 
 const {
   verifyToken,
@@ -119,15 +124,14 @@ router.get(
 );
 
 /*
- * Lightweight deployed-employee search for the
- * Add Incident form.
+ * ==================================================
+ * INCIDENT FORM EMPLOYEE SEARCH
+ * ==================================================
  *
- * HR Coordinator is allowed because they may create
- * incident reports, but the controller must return
- * employees only from the assigned company.
+ * HR Coordinator may search deployed employees
+ * under their assigned company for incident creation.
  *
- * Must remain above /incidents/:id so Express does
- * not interpret "form-meta" as an incident ID.
+ * Must remain above /incidents/:id.
  */
 router.get(
   "/incidents/form-meta",
@@ -141,11 +145,50 @@ router.get(
 );
 
 /*
- * Must remain above /incidents/:id so Express
- * does not interpret "employee" as an incident ID.
+ * ==================================================
+ * HISTORICAL EMPLOYEE INCIDENT SUMMARY
+ * ==================================================
  *
- * HR Coordinator access is company-scoped by the
- * controller.
+ * HR_COORDINATOR ONLY.
+ *
+ * Provides aggregate incident statistics for an
+ * employee CURRENTLY deployed at the coordinator's
+ * assigned company.
+ *
+ * The summary may include historical incidents from
+ * previous companies, but never returns:
+ *
+ * - incident IDs
+ * - violation descriptions
+ * - disciplinary actions
+ * - evidence files
+ * - previous-company incident details
+ *
+ * The controller independently verifies current
+ * employee-company assignment.
+ *
+ * Keep this route above the general incident-by-ID
+ * route and the existing employee-history route.
+ */
+router.get(
+  "/incidents/employee/:employeeId/summary",
+  verifyToken,
+  authorizeRoles(
+    "HR_COORDINATOR"
+  ),
+  getEmployeeIncidentSummary
+);
+
+/*
+ * ==================================================
+ * EMPLOYEE INCIDENT HISTORY
+ * ==================================================
+ *
+ * HR Coordinator receives detailed incidents only
+ * within their authorized company scope.
+ *
+ * Historical summary access does not grant access
+ * to confidential cross-company incident details.
  */
 router.get(
   "/incidents/employee/:employeeId",
@@ -167,13 +210,10 @@ router.get(
  * Evidence is retrieved exclusively through this
  * authenticated endpoint.
  *
- * Access matches incident read permissions:
- * - SUPER_ADMIN
- * - HR_MANAGER
- * - HR_STAFF
- * - HR_COORDINATOR (assigned company only)
+ * HR Coordinator evidence access remains restricted
+ * to authorized incident records.
  *
- * IT_SUPPORT remains excluded.
+ * IT Support is excluded.
  */
 router.get(
   "/incidents/:incidentId/evidence/:evidenceId/file",
@@ -192,9 +232,8 @@ router.get(
  * VIEW ONE INCIDENT
  * ==================================================
  *
- * HR Coordinator may view an incident only when it
- * belongs to the coordinator's assigned company.
- * Controller-level authorization remains required.
+ * The controller performs record-level authorization
+ * before returning incident details.
  */
 router.get(
   "/incidents/:id",
@@ -213,24 +252,13 @@ router.get(
  * CREATE INCIDENT
  * ==================================================
  *
- * HR_MANAGER / HR_STAFF / HR_COORDINATOR.
+ * HR Coordinator may create an incident only for
+ * employees under their assigned company.
  *
- * HR_COORDINATOR may create a report only for an
- * employee under the coordinator's assigned company.
- * The controller validates that relationship before
- * the incident is inserted.
+ * The controller validates the active deployment
+ * before inserting the incident.
  *
- * Authentication and RBAC execute before Multer,
- * preventing unauthorized requests from writing
- * files to disk.
- *
- * Incident evidence is validated by the hardened
- * upload.incidentEvidence middleware.
- *
- * Saved incident core details are intentionally
- * immutable after creation. Investigation and review
- * changes are handled exclusively by the dedicated
- * workflow endpoint below.
+ * Authentication and RBAC execute before Multer.
  */
 router.post(
   "/incidents",
@@ -249,22 +277,15 @@ router.post(
  * INCIDENT WORKFLOW
  * ==================================================
  *
- * Route-level access:
- * - SUPER_ADMIN
- * - HR_MANAGER
- * - HR_STAFF
+ * HR Coordinator is intentionally excluded from:
  *
- * HR_COORDINATOR is intentionally excluded from:
  * - START_INVESTIGATION
  * - SUBMIT_RESOLUTION
  * - SUBMIT_INVESTIGATION
  * - CLOSE_INCIDENT
  * - RETURN_INCIDENT
  *
- * Controller remains authoritative for workflow
- * authorization and state transitions.
- *
- * Existing rules:
+ * Existing workflow rules:
  *
  * HR_MANAGER / HR_STAFF:
  * - START_INVESTIGATION
@@ -274,13 +295,6 @@ router.post(
  * HR_MANAGER / SUPER_ADMIN:
  * - CLOSE_INCIDENT
  * - RETURN_INCIDENT
- *
- * Evidence files are accepted only for proof
- * submission/resubmission actions.
- *
- * This route handles workflow state only. It does not
- * expose general post-save editing of incident core
- * details.
  */
 router.patch(
   "/incidents/:id/status",
@@ -300,8 +314,7 @@ router.patch(
  * PERMANENT INCIDENT DELETE
  * ==================================================
  *
- * Destructive administrative operation.
- * Restricted to HR_MANAGER.
+ * Restricted to HR Manager.
  *
  * HR Coordinator cannot delete incidents.
  */

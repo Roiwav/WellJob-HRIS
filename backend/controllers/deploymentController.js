@@ -158,6 +158,58 @@ function buildCoordinatorCompanyCondition(
   `;
 }
 
+/*
+ * HR Coordinator access:
+ *
+ * An employee must currently be deployed at the
+ * coordinator's assigned company.
+ *
+ * Historical deployment records from another company
+ * are never included in the coordinator's view.
+ *
+ * Multiple active assignments fail closed.
+ */
+function buildCoordinatorCurrentEmployeeCondition(
+  employeeAlias = "e"
+) {
+  return `
+    LOWER(
+      TRIM(
+        COALESCE(
+          ${employeeAlias}.status,
+          ''
+        )
+      )
+    ) = 'deployed'
+
+    AND EXISTS (
+      SELECT 1
+      FROM deployment_assignments AS da_current
+
+      WHERE
+        da_current.employee_id = ${employeeAlias}.id
+
+        AND da_current.status = 'Active'
+
+        AND ${buildCoordinatorCompanyCondition(
+          "da_current"
+        )}
+
+        AND NOT EXISTS (
+          SELECT 1
+          FROM deployment_assignments AS da_conflict
+
+          WHERE
+            da_conflict.employee_id = ${employeeAlias}.id
+
+            AND da_conflict.status = 'Active'
+
+            AND da_conflict.id <> da_current.id
+        )
+    )
+  `;
+}
+
 function isCurrentlyDeployedEmployee(
   employee
 ) {
@@ -362,10 +414,14 @@ function buildDeploymentSummaryFilters({
     where.push(
       buildCoordinatorCompanyCondition(
         "da"
+      ),
+      buildCoordinatorCurrentEmployeeCondition(
+        "e"
       )
     );
 
     params.push(
+      coordinatorCompany,
       coordinatorCompany
     );
   }
@@ -1155,12 +1211,17 @@ exports.getDeployments = async (
             ${buildCoordinatorCompanyCondition(
               "da"
             )}
+            AND
+            ${buildCoordinatorCurrentEmployeeCondition(
+              "e"
+            )}
           `
           : "";
 
       const companyScopeParams =
         isHrCoordinator
           ? [
+              coordinatorCompany,
               coordinatorCompany,
             ]
           : [];
@@ -1366,12 +1427,17 @@ exports.getDeployments = async (
           ${buildCoordinatorCompanyCondition(
             "da"
           )}
+          AND
+          ${buildCoordinatorCurrentEmployeeCondition(
+            "e"
+          )}
         `
         : "";
 
     const companyScopeParams =
       isHrCoordinator
         ? [
+            coordinatorCompany,
             coordinatorCompany,
           ]
         : [];

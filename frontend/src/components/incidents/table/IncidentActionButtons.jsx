@@ -1,3 +1,4 @@
+
 import { useMemo } from "react";
 import {
   FiAlertCircle,
@@ -50,10 +51,7 @@ function normalizeRole(value) {
     String(value ?? "")
       .trim()
       .toUpperCase()
-      .replace(
-        /[\s-]+/g,
-        "_"
-      );
+      .replace(/[\s-]+/g, "_");
 
   if (
     role === "SUPERADMIN" ||
@@ -95,17 +93,9 @@ function normalizeRole(value) {
 }
 
 function normalizeStatus(value) {
-  return normalizeIdentity(
-    value
-  )
-    .replace(
-      /[_-]+/g,
-      " "
-    )
-    .replace(
-      /\s+/g,
-      " "
-    );
+  return normalizeIdentity(value)
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
 }
 
 function buildUserAliases(user) {
@@ -125,12 +115,8 @@ function buildUserAliases(user) {
       user?.displayName,
       user?.display_name,
     ]
-      .map(
-        normalizeIdentity
-      )
-      .filter(
-        Boolean
-      )
+      .map(normalizeIdentity)
+      .filter(Boolean)
   );
 }
 
@@ -145,136 +131,72 @@ function hasAliasMatch(
     return false;
   }
 
-  return values.some(
-    (value) => {
-      const normalizedValue =
-        normalizeIdentity(
-          value
-        );
+  return values.some((value) => {
+    const normalizedValue =
+      normalizeIdentity(value);
 
-      return (
-        normalizedValue &&
-        aliases.has(
-          normalizedValue
-        )
-      );
-    }
-  );
+    return (
+      Boolean(normalizedValue) &&
+      aliases.has(normalizedValue)
+    );
+  });
 }
 
-function getLastActionType(
-  incident
-) {
+function getLastActionType(incident) {
   return normalizeIdentity(
     incident?.lastActionType ||
       incident?.last_action_type
   ).toUpperCase();
 }
 
-function getInvestigatorValues(
-  incident
-) {
+function getInvestigatorValues(incident) {
   const lastActionType =
-    getLastActionType(
-      incident
-    );
+    getLastActionType(incident);
 
   const lastActionValues =
-    lastActionType ===
-    "START_INVESTIGATION"
+    lastActionType === "START_INVESTIGATION"
       ? [
-          incident
-            ?.lastActionById,
-          incident
-            ?.last_action_by_id,
-          incident
-            ?.lastActionByUsername,
-          incident
-            ?.last_action_by_username,
-          incident
-            ?.lastActionByName,
-          incident
-            ?.last_action_by_name,
+          incident?.lastActionById,
+          incident?.last_action_by_id,
+          incident?.lastActionByUsername,
+          incident?.last_action_by_username,
+          incident?.lastActionByName,
+          incident?.last_action_by_name,
         ]
       : [];
 
   return [
-    incident
-      ?.investigation
-      ?.startedById,
+    incident?.investigation?.startedById,
+    incident?.investigation?.started_by_id,
+    incident?.investigation?.startedByUsername,
+    incident?.investigation?.started_by_username,
+    incident?.investigation?.startedByName,
+    incident?.investigation?.started_by_name,
 
-    incident
-      ?.investigation
-      ?.started_by_id,
-
-    incident
-      ?.investigation
-      ?.startedByUsername,
-
-    incident
-      ?.investigation
-      ?.started_by_username,
-
-    incident
-      ?.investigation
-      ?.startedByName,
-
-    incident
-      ?.investigation
-      ?.started_by_name,
-
-    incident
-      ?.investigationStartedById,
-
-    incident
-      ?.investigation_started_by_id,
-
-    incident
-      ?.investigationStartedByUsername,
-
-    incident
-      ?.investigation_started_by_username,
-
-    incident
-      ?.investigationStartedByName,
-
-    incident
-      ?.investigation_started_by_name,
+    incident?.investigationStartedById,
+    incident?.investigation_started_by_id,
+    incident?.investigationStartedByUsername,
+    incident?.investigation_started_by_username,
+    incident?.investigationStartedByName,
+    incident?.investigation_started_by_name,
 
     ...lastActionValues,
-  ].filter(
-    Boolean
-  );
+  ].filter(Boolean);
 }
 
-function getInvestigatorName(
-  incident
-) {
+function getInvestigatorName(incident) {
   const lastActionType =
-    getLastActionType(
-      incident
-    );
+    getLastActionType(incident);
 
   return (
-    incident
-      ?.investigation
-      ?.startedByName ||
-    incident
-      ?.investigation
-      ?.started_by_name ||
-    incident
-      ?.investigationStartedByName ||
-    incident
-      ?.investigation_started_by_name ||
-    (
-      lastActionType ===
-      "START_INVESTIGATION"
-        ? incident
-            ?.lastActionByName ||
-          incident
-            ?.last_action_by_name
-        : ""
-    ) ||
+    incident?.investigation?.startedByName ||
+    incident?.investigation?.started_by_name ||
+    incident?.investigationStartedByName ||
+    incident?.investigation_started_by_name ||
+    (lastActionType === "START_INVESTIGATION"
+      ? incident?.lastActionByName ||
+        incident?.last_action_by_name
+      : "") ||
     "Assigned HR"
   );
 }
@@ -287,9 +209,7 @@ function ActionButton({
   disabled = false,
 }) {
   const variantStyle =
-    ACTION_BUTTON_STYLES[
-      variant
-    ] ||
+    ACTION_BUTTON_STYLES[variant] ||
     ACTION_BUTTON_STYLES.view;
 
   return (
@@ -314,10 +234,7 @@ function DisabledActionPill({
   return (
     <span
       role="status"
-      title={
-        title ||
-        label
-      }
+      title={title || label}
       className="inline-flex max-w-[190px] items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-300"
     >
       <span
@@ -344,96 +261,89 @@ export default function ActionButtons({
   onReview,
 }) {
   const status =
-    normalizeStatus(
-      incident?.status
-    );
+    normalizeStatus(incident?.status);
 
   const currentRole =
-    normalizeRole(
-      currentUser?.role
-    );
+    normalizeRole(currentUser?.role);
 
-  /*
-   * ==================================================
-   * INCIDENT ROLE CAPABILITIES
-   * ==================================================
-   *
-   * HR_MANAGER:
-   * - investigate
-   * - submit proof
-   * - review
-   *
-   * HR_STAFF:
-   * - investigate
-   * - submit proof
-   *
-   * SUPER_ADMIN:
-   * - review only
-   *
-   * HR_COORDINATOR:
-   * - view only from this action component
-   * - incident creation is handled by the page
-   * - no investigation
-   * - no proof submission
-   * - no case review
-   */
   const isInvestigator =
-    INVESTIGATOR_ROLES.has(
-      currentRole
-    );
+    INVESTIGATOR_ROLES.has(currentRole);
 
   const isReviewer =
     isSuperAdmin ||
-    REVIEWER_ROLES.has(
-      currentRole
-    );
+    REVIEWER_ROLES.has(currentRole);
 
   const isHrCoordinator =
-    currentRole ===
-    "HR_COORDINATOR";
+    currentRole === "HR_COORDINATOR";
 
   const investigatorName =
-    getInvestigatorName(
-      incident
-    );
+    getInvestigatorName(incident);
 
-  const currentUserAliases =
-    useMemo(
-      () =>
-        buildUserAliases(
-          currentUser
-        ),
-      [
-        currentUser,
-      ]
-    );
+  const currentUserAliases = useMemo(
+    () => buildUserAliases(currentUser),
+    [currentUser]
+  );
 
-  const investigatorValues =
-    useMemo(
-      () =>
-        getInvestigatorValues(
-          incident
-        ),
-      [
-        incident,
-      ]
-    );
+  const investigatorValues = useMemo(
+    () => getInvestigatorValues(incident),
+    [incident]
+  );
 
-  const currentUserIsInvestigator =
-    useMemo(
-      () =>
-        hasAliasMatch(
-          currentUserAliases,
-          investigatorValues
-        ),
-      [
+  const currentUserIsInvestigator = useMemo(
+    () =>
+      hasAliasMatch(
         currentUserAliases,
-        investigatorValues,
-      ]
-    );
+        investigatorValues
+      ),
+    [
+      currentUserAliases,
+      investigatorValues,
+    ]
+  );
 
   if (!incident) {
     return null;
+  }
+
+  /*
+   * ==================================================
+   * OPTION A — HISTORICAL LIST ONLY
+   * ==================================================
+   *
+   * The backend may return an incident as a minimal
+   * historical list entry when the employee is no
+   * longer currently deployed at the HR Coordinator's
+   * assigned company.
+   *
+   * Historical entries must remain visible in the
+   * Incidents table, but must not offer View Details.
+   *
+   * The backend remains responsible for enforcing
+   * access on direct detail and evidence requests.
+   *
+   * This UI condition only improves user experience;
+   * it is not a substitute for backend authorization.
+   */
+  const isRestrictedHistoricalIncident =
+    isHrCoordinator &&
+    (
+      incident.isHistorical === true ||
+      incident.canViewDetails === false
+    );
+
+  if (isRestrictedHistoricalIncident) {
+    return (
+      <DisabledActionPill
+        icon={
+          <FiLock
+            size={14}
+            aria-hidden="true"
+          />
+        }
+        label="Historical · List only"
+        title="This incident remains in your company's historical list. Full details and evidence are unavailable because the employee is no longer currently deployed at your company."
+      />
+    );
   }
 
   /*
@@ -442,8 +352,7 @@ export default function ActionButtons({
    */
   if (
     isReviewer &&
-    status ===
-      STATUS.FOR_REVIEW
+    status === STATUS.FOR_REVIEW
   ) {
     return (
       <ActionButton
@@ -456,9 +365,7 @@ export default function ActionButtons({
         title="Review submitted case"
         variant="review"
         onClick={() =>
-          onReview?.(
-            incident
-          )
+          onReview?.(incident)
         }
       />
     );
@@ -467,15 +374,10 @@ export default function ActionButtons({
   /*
    * Only HR Manager / HR Staff may start an
    * investigation.
-   *
-   * This intentionally prevents HR Coordinator from
-   * receiving the action merely because the user is
-   * not a Super Admin.
    */
   if (
     isInvestigator &&
-    status ===
-      STATUS.OPEN
+    status === STATUS.OPEN
   ) {
     return (
       <ActionButton
@@ -488,9 +390,7 @@ export default function ActionButtons({
         title="Start investigation"
         variant="start"
         onClick={() =>
-          onStartReview?.(
-            incident
-          )
+          onStartReview?.(incident)
         }
       />
     );
@@ -502,12 +402,9 @@ export default function ActionButtons({
    */
   if (
     isInvestigator &&
-    status ===
-      STATUS.INVESTIGATING
+    status === STATUS.INVESTIGATING
   ) {
-    if (
-      currentUserIsInvestigator
-    ) {
+    if (currentUserIsInvestigator) {
       return (
         <ActionButton
           icon={
@@ -519,9 +416,7 @@ export default function ActionButtons({
           title="Submit or resubmit resolution proof"
           variant="resolve"
           onClick={() =>
-            onResolve?.(
-              incident
-            )
+            onResolve?.(incident)
           }
         />
       );
@@ -542,18 +437,16 @@ export default function ActionButtons({
   }
 
   /*
-   * Existing HR Staff behavior is preserved while a
-   * submitted case is waiting for an authorized
-   * reviewer.
+   * HR Staff waits for an authorized reviewer when
+   * an incident is already submitted for review.
    *
-   * HR Coordinator remains able to open the record
-   * because their role is explicitly view-only.
+   * HR Coordinator retains View Details for currently
+   * authorized, non-historical incidents.
    */
   if (
     !isReviewer &&
     !isHrCoordinator &&
-    status ===
-      STATUS.FOR_REVIEW
+    status === STATUS.FOR_REVIEW
   ) {
     return (
       <DisabledActionPill
@@ -570,14 +463,8 @@ export default function ActionButtons({
   }
 
   /*
-   * HR Coordinator always falls through to View for:
-   *
-   * - Open
-   * - Investigating
-   * - For Review
-   * - Closed
-   *
-   * No mutation callback is exposed.
+   * Default view action for currently authorized
+   * incidents and other eligible roles.
    */
   return (
     <ActionButton
@@ -588,16 +475,13 @@ export default function ActionButtons({
         />
       }
       title={
-        status ===
-        STATUS.CLOSED
+        status === STATUS.CLOSED
           ? "View closed incident details"
           : "View incident details"
       }
       variant="view"
       onClick={() =>
-        onView?.(
-          incident
-        )
+        onView?.(incident)
       }
     />
   );
