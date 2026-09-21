@@ -1,3 +1,4 @@
+
 import { useMemo } from "react";
 import {
   FiAlertCircle,
@@ -14,6 +15,11 @@ const STATUS = {
   FOR_REVIEW: "for review",
   CLOSED: "closed",
 };
+
+const INVESTIGATOR_ROLES = new Set([
+  "HR_MANAGER",
+  "HR_STAFF",
+]);
 
 const REVIEWER_ROLES = new Set([
   "HR_MANAGER",
@@ -41,10 +47,11 @@ function normalizeIdentity(value) {
 }
 
 function normalizeRole(value) {
-  const role = String(value ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, "_");
+  const role =
+    String(value ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, "_");
 
   if (
     role === "SUPERADMIN" ||
@@ -66,6 +73,20 @@ function normalizeRole(value) {
     role === "HR_STAFF"
   ) {
     return "HR_STAFF";
+  }
+
+  if (
+    role === "HRCOORDINATOR" ||
+    role === "HR_COORDINATOR"
+  ) {
+    return "HR_COORDINATOR";
+  }
+
+  if (
+    role === "ITSUPPORT" ||
+    role === "IT_SUPPORT"
+  ) {
+    return "IT_SUPPORT";
   }
 
   return role;
@@ -99,7 +120,10 @@ function buildUserAliases(user) {
   );
 }
 
-function hasAliasMatch(aliases, values = []) {
+function hasAliasMatch(
+  aliases,
+  values = []
+) {
   if (
     !(aliases instanceof Set) ||
     aliases.size === 0
@@ -112,7 +136,7 @@ function hasAliasMatch(aliases, values = []) {
       normalizeIdentity(value);
 
     return (
-      normalizedValue &&
+      Boolean(normalizedValue) &&
       aliases.has(normalizedValue)
     );
   });
@@ -130,8 +154,7 @@ function getInvestigatorValues(incident) {
     getLastActionType(incident);
 
   const lastActionValues =
-    lastActionType ===
-    "START_INVESTIGATION"
+    lastActionType === "START_INVESTIGATION"
       ? [
           incident?.lastActionById,
           incident?.last_action_by_id,
@@ -149,12 +172,14 @@ function getInvestigatorValues(incident) {
     incident?.investigation?.started_by_username,
     incident?.investigation?.startedByName,
     incident?.investigation?.started_by_name,
+
     incident?.investigationStartedById,
     incident?.investigation_started_by_id,
     incident?.investigationStartedByUsername,
     incident?.investigation_started_by_username,
     incident?.investigationStartedByName,
     incident?.investigation_started_by_name,
+
     ...lastActionValues,
   ].filter(Boolean);
 }
@@ -235,17 +260,21 @@ export default function ActionButtons({
   onResolve,
   onReview,
 }) {
-  const status = normalizeStatus(
-    incident?.status
-  );
+  const status =
+    normalizeStatus(incident?.status);
 
-  const currentRole = normalizeRole(
-    currentUser?.role
-  );
+  const currentRole =
+    normalizeRole(currentUser?.role);
+
+  const isInvestigator =
+    INVESTIGATOR_ROLES.has(currentRole);
 
   const isReviewer =
     isSuperAdmin ||
     REVIEWER_ROLES.has(currentRole);
+
+  const isHrCoordinator =
+    currentRole === "HR_COORDINATOR";
 
   const investigatorName =
     getInvestigatorName(incident);
@@ -260,23 +289,67 @@ export default function ActionButtons({
     [incident]
   );
 
-  const currentUserIsInvestigator =
-    useMemo(
-      () =>
-        hasAliasMatch(
-          currentUserAliases,
-          investigatorValues
-        ),
-      [
+  const currentUserIsInvestigator = useMemo(
+    () =>
+      hasAliasMatch(
         currentUserAliases,
-        investigatorValues,
-      ]
-    );
+        investigatorValues
+      ),
+    [
+      currentUserAliases,
+      investigatorValues,
+    ]
+  );
 
   if (!incident) {
     return null;
   }
 
+  /*
+   * ==================================================
+   * OPTION A — HISTORICAL LIST ONLY
+   * ==================================================
+   *
+   * The backend may return an incident as a minimal
+   * historical list entry when the employee is no
+   * longer currently deployed at the HR Coordinator's
+   * assigned company.
+   *
+   * Historical entries must remain visible in the
+   * Incidents table, but must not offer View Details.
+   *
+   * The backend remains responsible for enforcing
+   * access on direct detail and evidence requests.
+   *
+   * This UI condition only improves user experience;
+   * it is not a substitute for backend authorization.
+   */
+  const isRestrictedHistoricalIncident =
+    isHrCoordinator &&
+    (
+      incident.isHistorical === true ||
+      incident.canViewDetails === false
+    );
+
+  if (isRestrictedHistoricalIncident) {
+    return (
+      <DisabledActionPill
+        icon={
+          <FiLock
+            size={14}
+            aria-hidden="true"
+          />
+        }
+        label="Historical · List only"
+        title="This incident remains in your company's historical list. Full details and evidence are unavailable because the employee is no longer currently deployed at your company."
+      />
+    );
+  }
+
+  /*
+   * Authorized reviewers receive the review action
+   * only while the incident is waiting for review.
+   */
   if (
     isReviewer &&
     status === STATUS.FOR_REVIEW
@@ -298,8 +371,12 @@ export default function ActionButtons({
     );
   }
 
+  /*
+   * Only HR Manager / HR Staff may start an
+   * investigation.
+   */
   if (
-    !isSuperAdmin &&
+    isInvestigator &&
     status === STATUS.OPEN
   ) {
     return (
@@ -319,8 +396,12 @@ export default function ActionButtons({
     );
   }
 
+  /*
+   * Investigation proof submission remains available
+   * only to HR Manager / HR Staff.
+   */
   if (
-    !isSuperAdmin &&
+    isInvestigator &&
     status === STATUS.INVESTIGATING
   ) {
     if (currentUserIsInvestigator) {
@@ -355,8 +436,16 @@ export default function ActionButtons({
     );
   }
 
+  /*
+   * HR Staff waits for an authorized reviewer when
+   * an incident is already submitted for review.
+   *
+   * HR Coordinator retains View Details for currently
+   * authorized, non-historical incidents.
+   */
   if (
     !isReviewer &&
+    !isHrCoordinator &&
     status === STATUS.FOR_REVIEW
   ) {
     return (
@@ -373,6 +462,10 @@ export default function ActionButtons({
     );
   }
 
+  /*
+   * Default view action for currently authorized
+   * incidents and other eligible roles.
+   */
   return (
     <ActionButton
       icon={

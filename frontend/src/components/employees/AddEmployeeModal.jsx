@@ -40,8 +40,13 @@ export default function AddEmployeeModal({
     showDocuments,
     duplicateConfirmed,
     duplicateEmployee,
-    filteredCompanies,
-    showSuggestions,
+
+    companyOptions,
+    positionOptions,
+    isLoadingCompanies,
+    isLoadingPositions,
+    deploymentOptionsError,
+
     dragTargetDocument,
     completedDocuments,
     completion,
@@ -56,9 +61,6 @@ export default function AddEmployeeModal({
 
     handleChange,
     handleNameBlur,
-    handleCompanyFocus,
-    handleCompanyBlur,
-    handleCompanySelect,
     handleDuplicateConfirmChange,
     handleDocumentCheck,
     handleExpirationChange,
@@ -76,76 +78,103 @@ export default function AddEmployeeModal({
   });
 
   const handleClose = () => {
-    if (isSaving || showReview) {
+    if (
+      isSaving ||
+      showReview
+    ) {
       return;
     }
 
     onClose?.();
   };
 
-  const handleConfirmSave = async () => {
-    if (isSaving) {
-      return;
-    }
-
-    try {
-      setIsSaving(true);
-      setSaveError("");
-
-      const requestData =
-        buildEmployeeFormData(formData);
-
-      const employeeName =
-        toProperName(formData.name);
-
-      await axios.post(
-        EMPLOYEE_API_URL,
-        requestData
-      );
-
-      setShowReview(false);
-
-      if (
-        typeof onSaveSuccess ===
-        "function"
-      ) {
-        await onSaveSuccess(
-          employeeName
-        );
-      } else {
-        onClose?.();
+  const handleConfirmSave =
+    async () => {
+      if (isSaving) {
+        return;
       }
-    } catch (error) {
-      console.error(
-        "SAVE EMPLOYEE ERROR:",
-        error
-      );
 
-      setSaveError(
-        getEmployeeApiError(
-          error,
-          "Unable to save the employee record."
-        )
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  };
+      try {
+        setIsSaving(
+          true
+        );
+
+        setSaveError(
+          ""
+        );
+
+        const requestData =
+          buildEmployeeFormData(
+            formData
+          );
+
+        const employeeName =
+          toProperName(
+            formData.name
+          );
+
+        await axios.post(
+          EMPLOYEE_API_URL,
+          requestData
+        );
+
+        setShowReview(
+          false
+        );
+
+        if (
+          typeof onSaveSuccess ===
+          "function"
+        ) {
+          await onSaveSuccess(
+            employeeName
+          );
+        } else {
+          onClose?.();
+        }
+      } catch (error) {
+        console.error(
+          "SAVE EMPLOYEE ERROR:",
+          error
+        );
+
+        setSaveError(
+          getEmployeeApiError(
+            error,
+            "Unable to save the employee record."
+          )
+        );
+      } finally {
+        setIsSaving(
+          false
+        );
+      }
+    };
 
   return (
     <>
       <Dialog
-        open={!showReview}
-        onClose={handleClose}
+        open={
+          !showReview
+        }
+        onClose={
+          handleClose
+        }
         title="Add Employee Record"
         description="Complete the employee information and review it before saving."
         size="2xl"
         height="xl"
         showHeader={false}
         showCloseButton={false}
-        closeOnOverlay={!isSaving}
-        closeOnEscape={!isSaving}
-        preventClose={isSaving}
+        closeOnOverlay={
+          !isSaving
+        }
+        closeOnEscape={
+          !isSaving
+        }
+        preventClose={
+          isSaving
+        }
         scrollBody={false}
         bodyClassName="min-h-0 flex-1 p-0"
         className="border-white/10"
@@ -189,7 +218,8 @@ export default function AddEmployeeModal({
                   <div
                     className="h-full rounded-full bg-white transition-all duration-300"
                     style={{
-                      width: `${completion}%`,
+                      width:
+                        `${completion}%`,
                     }}
                   />
                 </div>
@@ -246,7 +276,9 @@ export default function AddEmployeeModal({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill tone="indigo">
-                    <FiUser aria-hidden="true" />
+                    <FiUser
+                      aria-hidden="true"
+                    />
                     Create Mode
                   </StatusPill>
 
@@ -258,7 +290,9 @@ export default function AddEmployeeModal({
                           : "red"
                       }
                     >
-                      <FiAlertTriangle aria-hidden="true" />
+                      <FiAlertTriangle
+                        aria-hidden="true"
+                      />
 
                       {duplicateConfirmed
                         ? "Duplicate Verified"
@@ -280,15 +314,21 @@ export default function AddEmployeeModal({
 
               <Button
                 variant="secondary"
-                disabled={isSaving}
-                onClick={handleClose}
+                disabled={
+                  isSaving
+                }
+                onClick={
+                  handleClose
+                }
               >
                 Close
               </Button>
             </header>
 
             <form
-              onSubmit={handleSubmit}
+              onSubmit={
+                handleSubmit
+              }
               className="flex min-h-0 flex-1 flex-col"
             >
               <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-6 sm:px-6">
@@ -303,18 +343,29 @@ export default function AddEmployeeModal({
                         formData={
                           formData
                         }
-                        errors={errors}
+                        errors={
+                          errors
+                        }
                         duplicateEmployee={
                           duplicateEmployee
                         }
                         duplicateConfirmed={
                           duplicateConfirmed
                         }
-                        filteredCompanies={
-                          filteredCompanies
+                        companyOptions={
+                          companyOptions
                         }
-                        showSuggestions={
-                          showSuggestions
+                        positionOptions={
+                          positionOptions
+                        }
+                        isLoadingCompanies={
+                          isLoadingCompanies
+                        }
+                        isLoadingPositions={
+                          isLoadingPositions
+                        }
+                        deploymentOptionsError={
+                          deploymentOptionsError
                         }
                         disabled={
                           isSaving
@@ -328,15 +379,6 @@ export default function AddEmployeeModal({
                         onDuplicateConfirmChange={
                           handleDuplicateConfirmChange
                         }
-                        onCompanyFocus={
-                          handleCompanyFocus
-                        }
-                        onCompanyBlur={
-                          handleCompanyBlur
-                        }
-                        onCompanySelect={
-                          handleCompanySelect
-                        }
                       />
                     </main>
 
@@ -344,7 +386,9 @@ export default function AddEmployeeModal({
                       <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
                         <div className="mb-4 flex items-center gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-                            <FiInfo aria-hidden="true" />
+                            <FiInfo
+                              aria-hidden="true"
+                            />
                           </div>
 
                           <div>
@@ -373,7 +417,8 @@ export default function AddEmployeeModal({
                             value={
                               toProperName(
                                 formData.name
-                              ) || "-"
+                              ) ||
+                              "-"
                             }
                           />
 
@@ -390,6 +435,17 @@ export default function AddEmployeeModal({
                               formData.status ===
                               "Deployed"
                                 ? formData.company ||
+                                  "-"
+                                : "Not Assigned"
+                            }
+                          />
+
+                          <SummaryRow
+                            label="Position"
+                            value={
+                              formData.status ===
+                              "Deployed"
+                                ? formData.position ||
                                   "-"
                                 : "Not Assigned"
                             }
@@ -415,7 +471,9 @@ export default function AddEmployeeModal({
 
                       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                         <div className="mb-1 flex items-center gap-2 font-extrabold">
-                          <FiAlertTriangle aria-hidden="true" />
+                          <FiAlertTriangle
+                            aria-hidden="true"
+                          />
                           HRIS Reminder
                         </div>
 
@@ -477,15 +535,21 @@ export default function AddEmployeeModal({
               <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:justify-end sm:px-6 dark:border-white/10 dark:bg-slate-900">
                 <Button
                   variant="secondary"
-                  disabled={isSaving}
-                  onClick={handleClose}
+                  disabled={
+                    isSaving
+                  }
+                  onClick={
+                    handleClose
+                  }
                 >
                   Cancel
                 </Button>
 
                 <Button
                   type="submit"
-                  disabled={isSaving}
+                  disabled={
+                    isSaving
+                  }
                 >
                   Review Employee
                 </Button>
@@ -496,15 +560,25 @@ export default function AddEmployeeModal({
       </Dialog>
 
       <EmployeeReviewDialog
-        open={showReview}
+        open={
+          showReview
+        }
         mode="add"
-        employeeId={generatedId}
-        formData={formData}
+        employeeId={
+          generatedId
+        }
+        formData={
+          formData
+        }
         complianceWarning={
           complianceWarning
         }
-        saveError={saveError}
-        isSaving={isSaving}
+        saveError={
+          saveError
+        }
+        isSaving={
+          isSaving
+        }
         onClose={
           handleCloseReview
         }

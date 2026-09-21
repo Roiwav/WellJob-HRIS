@@ -1,4 +1,3 @@
-// userRoutes.js
 
 const express = require("express");
 
@@ -6,11 +5,23 @@ const router = express.Router();
 
 const {
   getUsers,
+  getCompanyOptions,
   createUser,
+  resendAccountCredentials,
+  updateAssignedCompany,
+  updateRecoveryEmail,
   resetPassword,
   toggleStatus,
   changePassword,
 } = require("../controllers/userController");
+
+const {
+  uploadMyAvatar,
+  getAvatar,
+  removeMyAvatar,
+} = require("../controllers/avatarController");
+
+const avatarUpload = require("../middleware/avatarUpload");
 
 const {
   verifyToken,
@@ -21,13 +32,9 @@ const {
 } = require("../middleware/roleMiddleware");
 
 /*
+ * ==================================================
  * USER ACCOUNT LIST
- *
- * SUPER_ADMIN:
- * - needs the list for account administration
- *
- * IT_SUPPORT:
- * - needs the list for technical account maintenance
+ * ==================================================
  */
 router.get(
   "/users",
@@ -40,24 +47,61 @@ router.get(
 );
 
 /*
+ * ==================================================
+ * HR COORDINATOR COMPANY OPTIONS
+ * ==================================================
+ */
+router.get(
+  "/users/company-options",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN"
+  ),
+  getCompanyOptions
+);
+
+/*
+ * ==================================================
  * CREATE SYSTEM USER
- *
- * Only SUPER_ADMIN may create internal system accounts.
+ * ==================================================
  */
 router.post(
   "/users",
   verifyToken,
-  authorizeRoles("SUPER_ADMIN"),
+  authorizeRoles(
+    "SUPER_ADMIN"
+  ),
   createUser
 );
 
 /*
+ * ==================================================
+ * RESEND FAILED INITIAL ACCOUNT CREDENTIALS
+ * ==================================================
+ *
+ * SUPER_ADMIN ONLY.
+ *
+ * Controller allows resend only when:
+ * - Account is Inactive
+ * - Initial credentials delivery status is FAILED
+ * - Initial password change is still required
+ *
+ * A new temporary password is generated exclusively
+ * on the backend and sent to the registered email.
+ */
+router.post(
+  "/users/:id/resend-credentials",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN"
+  ),
+  resendAccountCredentials
+);
+
+/*
+ * ==================================================
  * CHANGE OWN PASSWORD
- *
- * Any authenticated canonical user may change
- * their own password.
- *
- * changePassword uses req.user as the trusted identity.
+ * ==================================================
  */
 router.put(
   "/users/change-password",
@@ -66,17 +110,37 @@ router.put(
 );
 
 /*
+ * ==================================================
+ * REGISTER / UPDATE RECOVERY EMAIL
+ * ==================================================
+ */
+router.put(
+  "/users/:id/recovery-email",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN"
+  ),
+  updateRecoveryEmail
+);
+
+/*
+ * ==================================================
+ * ASSIGN HR COORDINATOR COMPANY
+ * ==================================================
+ */
+router.put(
+  "/users/:id/assigned-company",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN"
+  ),
+  updateAssignedCompany
+);
+
+/*
+ * ==================================================
  * RESET USER PASSWORD
- *
- * Route-level access is available to SUPER_ADMIN and
- * IT_SUPPORT, but the controller enforces the target-role
- * hierarchy using canonical database state:
- *
- * SUPER_ADMIN -> HR_MANAGER / HR_STAFF / IT_SUPPORT
- * IT_SUPPORT  -> HR_STAFF only
- *
- * SUPER_ADMIN targets and self-targeting are rejected by
- * the controller.
+ * ==================================================
  */
 router.put(
   "/users/reset/:id",
@@ -89,11 +153,9 @@ router.put(
 );
 
 /*
+ * ==================================================
  * ACTIVATE / DEACTIVATE USER ACCOUNT
- *
- * Uses the same target-role hierarchy as resetPassword.
- * SUPER_ADMIN accounts cannot be toggled through this
- * administrative endpoint.
+ * ==================================================
  */
 router.put(
   "/users/toggle/:id",
@@ -103,6 +165,64 @@ router.put(
     "IT_SUPPORT"
   ),
   toggleStatus
+);
+
+/*
+ * ==================================================
+ * PROFILE PICTURE — UPLOAD OR REPLACE OWN AVATAR
+ * ==================================================
+ *
+ * Available to all authenticated WELLJOB user roles.
+ *
+ * PUT /api/users/me/avatar
+ *
+ * Request:
+ * Content-Type: multipart/form-data
+ * Image field name: avatar
+ *
+ * Users can update only their own profile picture.
+ * The target user ID is taken from the verified JWT.
+ */
+router.put(
+  "/users/me/avatar",
+  verifyToken,
+  avatarUpload,
+  uploadMyAvatar
+);
+
+/*
+ * ==================================================
+ * PROFILE PICTURE — REMOVE OWN AVATAR
+ * ==================================================
+ *
+ * DELETE /api/users/me/avatar
+ *
+ * Users can remove only their own profile picture.
+ */
+router.delete(
+  "/users/me/avatar",
+  verifyToken,
+  removeMyAvatar
+);
+
+/*
+ * ==================================================
+ * PROFILE PICTURE — GET AVATAR
+ * ==================================================
+ *
+ * GET /api/users/:id/avatar
+ *
+ * Profile pictures are retrieved through an
+ * authenticated endpoint, not express.static().
+ *
+ * Access to this endpoint requires a valid session.
+ * The avatarController validates the requested user
+ * ID and retrieves the corresponding stored image.
+ */
+router.get(
+  "/users/:id/avatar",
+  verifyToken,
+  getAvatar
 );
 
 module.exports = router;

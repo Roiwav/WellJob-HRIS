@@ -5,6 +5,7 @@ const CANONICAL_ROLES = new Set([
   "SUPER_ADMIN",
   "HR_MANAGER",
   "HR_STAFF",
+  "HR_COORDINATOR",
   "IT_SUPPORT",
 ]);
 
@@ -32,6 +33,9 @@ function normalizeRole(value) {
     HRSTAFF: "HR_STAFF",
     HR_STAFF: "HR_STAFF",
 
+    HRCOORDINATOR: "HR_COORDINATOR",
+    HR_COORDINATOR: "HR_COORDINATOR",
+
     ITSUPPORT: "IT_SUPPORT",
     IT_SUPPORT: "IT_SUPPORT",
   };
@@ -40,6 +44,14 @@ function normalizeRole(value) {
     aliases[normalized] ||
     normalized
   );
+}
+
+function normalizeAssignedCompany(value) {
+  const normalized = String(
+    value ?? ""
+  ).trim();
+
+  return normalized || null;
 }
 
 function normalizeStatus(value) {
@@ -406,6 +418,7 @@ async function verifyToken(
             user_id,
             username,
             role,
+            assigned_company,
             status,
             token_version
           FROM users
@@ -508,6 +521,47 @@ async function verifyToken(
 
     /*
      * ==================================================
+     * HR COORDINATOR COMPANY SCOPE
+     * ==================================================
+     *
+     * The assigned company is reloaded from the database
+     * on every protected request.
+     *
+     * The browser/client cannot choose or override the
+     * coordinator company through:
+     *
+     * - JWT claims
+     * - query parameters
+     * - request body
+     *
+     * A coordinator account without a company assignment
+     * fails closed.
+     */
+    const assignedCompany =
+      normalizeAssignedCompany(
+        user.assigned_company
+      );
+
+    if (
+      currentRole ===
+        "HR_COORDINATOR" &&
+      !assignedCompany
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+
+          error:
+            "Company assignment required",
+
+          message:
+            "Your HR Coordinator account does not have an assigned company. Please contact a Super Admin.",
+        });
+    }
+
+    /*
+     * ==================================================
      * TOKEN VERSION
      * ==================================================
      */
@@ -545,7 +599,7 @@ async function verifyToken(
      * Example:
      *
      * JWT tokenVersion = 1
-     * DB  token_version = 1
+     * DB token_version = 1
      *
      * -> valid
      *
@@ -588,8 +642,9 @@ async function verifyToken(
      *
      * both remain users.id.
      *
-     * username and role come from the CURRENT database
-     * record rather than from stale JWT claims.
+     * username, role, and assignedCompany come from
+     * the CURRENT database record rather than stale
+     * JWT claims or browser input.
      */
     req.user = {
       id:
@@ -605,6 +660,18 @@ async function verifyToken(
 
       role:
         currentRole,
+
+      assignedCompany:
+        currentRole ===
+          "HR_COORDINATOR"
+          ? assignedCompany
+          : null,
+
+      assigned_company:
+        currentRole ===
+          "HR_COORDINATOR"
+          ? assignedCompany
+          : null,
 
       businessUserId:
         user.user_id,

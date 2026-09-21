@@ -17,10 +17,6 @@ const {
   computeIncidentClassification,
 } = require("../utils/violationPolicyService");
 
-const API_BASE =
-  process.env.API_BASE_URL ||
-  "http://localhost:5000";
-
 const WORKFLOW_ACTION = {
   START: "START_INVESTIGATION",
   SUBMIT_RESOLUTION:
@@ -240,6 +236,15 @@ function normalizeRole(value) {
 
   if (
     [
+      "HRCOORDINATOR",
+      "HR_COORDINATOR",
+    ].includes(role)
+  ) {
+    return "HR_COORDINATOR";
+  }
+
+  if (
+    [
       "ITSUPPORT",
       "IT_SUPPORT",
     ].includes(role)
@@ -248,6 +253,115 @@ function normalizeRole(value) {
   }
 
   return role || "USER";
+}
+
+function normalizeAssignedCompany(
+  value
+) {
+  const normalized =
+    String(value ?? "")
+      .trim()
+      .replace(/\s+/g, " ");
+
+  return normalized || null;
+}
+
+function isHrCoordinatorRequest(
+  req
+) {
+  return (
+    normalizeRole(
+      req?.user?.role
+    ) ===
+    "HR_COORDINATOR"
+  );
+}
+
+function getHrCoordinatorAssignedCompany(
+  req
+) {
+  return normalizeAssignedCompany(
+    req?.user?.assignedCompany ??
+      req?.user?.assigned_company
+  );
+}
+
+function companyNamesMatch(
+  left,
+  right
+) {
+  const normalizedLeft =
+    normalizeAssignedCompany(
+      left
+    );
+
+  const normalizedRight =
+    normalizeAssignedCompany(
+      right
+    );
+
+  if (
+    !normalizedLeft ||
+    !normalizedRight
+  ) {
+    return false;
+  }
+
+  return (
+    normalizedLeft.toLowerCase() ===
+    normalizedRight.toLowerCase()
+  );
+}
+
+function buildIncidentCompanyScopeCondition(
+  incidentAlias = "i"
+) {
+  return `
+    LOWER(
+      TRIM(
+        COALESCE(
+          ${incidentAlias}.company,
+          ''
+        )
+      )
+    ) =
+    LOWER(
+      TRIM(?)
+    )
+  `;
+}
+
+/*
+ * The coordinator's incident list may retain past-company
+ * incident headers, but detailed history is available only
+ * while the employee has one current Active deployment at
+ * the coordinator's assigned company.
+ *
+ * This is used only in the HR Coordinator branch; other roles
+ * retain their established historical access.
+ */
+function buildCurrentCoordinatorEmployeeScopeCondition(
+  employeeAlias = "e"
+) {
+  return `
+    ${employeeAlias}.id IS NOT NULL
+    AND COALESCE(${employeeAlias}.archived, 0) = 0
+    AND LOWER(TRIM(COALESCE(${employeeAlias}.status, ''))) = 'deployed'
+    AND EXISTS (
+      SELECT 1
+      FROM deployment_assignments AS da_current
+      WHERE da_current.employee_id = ${employeeAlias}.id
+        AND da_current.status = 'Active'
+        AND LOWER(TRIM(COALESCE(da_current.company, ''))) = LOWER(TRIM(?))
+        AND NOT EXISTS (
+          SELECT 1
+          FROM deployment_assignments AS da_conflict
+          WHERE da_conflict.employee_id = ${employeeAlias}.id
+            AND da_conflict.status = 'Active'
+            AND da_conflict.id <> da_current.id
+        )
+    )
+  `;
 }
 
 function isInvestigatorRole(
@@ -502,6 +616,30 @@ exports.getIncidentFormMeta =
     res
   ) => {
     try {
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
       const employeeSearch =
         String(
           req.query
@@ -531,6 +669,31 @@ exports.getIncidentFormMeta =
 
       const idSearch =
         `%${normalizedEmployeeId}%`;
+
+      const coordinatorScopeSql =
+        isHrCoordinator
+          ? `
+              AND LOWER(
+                TRIM(
+                  COALESCE(
+                    da.company,
+                    ''
+                  )
+                )
+              ) = LOWER(TRIM(?))
+            `
+          : "";
+
+      const queryParams = [
+        textSearch,
+        idSearch,
+        textSearch,
+        ...(isHrCoordinator
+          ? [
+              coordinatorCompany,
+            ]
+          : []),
+      ];
 
       const [rows] =
         await db
@@ -570,6 +733,7 @@ exports.getIncidentFormMeta =
                   )
                 ) LIKE ?
               )
+              ${coordinatorScopeSql}
               AND NOT EXISTS (
                 SELECT 1
                 FROM deployment_assignments conflicting
@@ -583,11 +747,7 @@ exports.getIncidentFormMeta =
               e.id ASC
             LIMIT 8
             `,
-            [
-              textSearch,
-              idSearch,
-              textSearch,
-            ]
+            queryParams
           );
 
       return res.json({
@@ -990,13 +1150,6 @@ function serializeEvidenceItem(
       item.file_path
     );
 
-  const normalizedApiBase =
-    String(API_BASE || "")
-      .replace(
-        /\/+$/,
-        ""
-      );
-
   const isExternalUrl =
     /^https?:\/\//i.test(
       filePath
@@ -1012,11 +1165,9 @@ function serializeEvidenceItem(
     filePath,
 
     url:
-      !filePath
-        ? null
-        : isExternalUrl
-          ? filePath
-          : `${normalizedApiBase}${filePath}`,
+      isExternalUrl
+        ? filePath
+        : null,
   };
 }
 
@@ -1812,29 +1963,135 @@ function serializeIncidentSummary(
   return summary;
 }
 
+/*
+ * OPTION A — HISTORICAL LIST ONLY.
+ *
+ * Only the originating company's coordinator can receive
+ * this small list entry after the employee transfers away.
+ * Never serialize/spread the original incident object here:
+ * it contains confidential descriptions, sanctions, notes,
+ * investigator identity, review data and other details.
+ */
+function serializeHistoricalIncidentListItem(incident) {
+  const employeeName =
+    incident.employee_name ||
+    `Employee #${incident.employee_id}`;
+
+  return {
+    id: incident.id,
+    employeeId: incident.employee_id,
+    employee_id: incident.employee_id,
+    employee: employeeName,
+    employeeName,
+    company: incident.company || "",
+    violation: incident.violation_type || "",
+    violationType: incident.violation_type || "",
+    violation_type: incident.violation_type || "",
+    severity: incident.severity || "Minor",
+    status: incident.status || "Open",
+    date: incident.incident_date,
+    incidentDate: incident.incident_date,
+    incident_date: incident.incident_date,
+    reportedAt: incident.created_at || incident.incident_date,
+    isHistorical: true,
+    canViewDetails: false,
+  };
+}
+
 async function getIncidentWithEvidence(
-  id
+  id,
+  {
+    coordinatorCompany = null,
+  } = {}
 ) {
-  const [rows] =
-    await db
-      .promise()
-      .query(
-        `
-        SELECT
-          i.*,
-          e.name AS employeeNameFromEmployee,
-          e.company AS employeeCompany,
-          e.status AS employeeStatus
-        FROM incidents i
-        LEFT JOIN employees e
-          ON e.id = i.employee_id
-        WHERE i.id = ?
-        LIMIT 1
-        `,
-        [
-          id,
+  /*
+   * HR Coordinator must satisfy BOTH conditions:
+   *
+   * 1. The incident belongs to their assigned company.
+   * 2. The employee is CURRENTLY deployed exclusively
+   *    to their assigned company.
+   *
+   * Other authorized roles retain their existing
+   * incident-history access.
+   */
+  const companyScopeSql = coordinatorCompany
+    ? `
+      AND
+      ${buildIncidentCompanyScopeCondition("i")}
+
+      AND e.id IS NOT NULL
+
+      AND COALESCE(e.archived, 0) = 0
+
+      AND LOWER(
+        TRIM(
+          COALESCE(e.status, '')
+        )
+      ) = 'deployed'
+
+      AND EXISTS (
+        SELECT 1
+        FROM deployment_assignments AS da_current
+        WHERE
+          da_current.employee_id = e.id
+
+          AND da_current.status = 'Active'
+
+          AND LOWER(
+            TRIM(
+              COALESCE(da_current.company, '')
+            )
+          ) = LOWER(TRIM(?))
+
+          AND NOT EXISTS (
+            SELECT 1
+            FROM deployment_assignments AS da_conflict
+            WHERE
+              da_conflict.employee_id = e.id
+
+              AND da_conflict.status = 'Active'
+
+              AND da_conflict.id <> da_current.id
+          )
+      )
+    `
+    : "";
+
+  /*
+   * Parameter order matches the SQL:
+   *
+   * 1. Incident ID
+   * 2. Incident company
+   * 3. Current deployment company
+   */
+  const queryParams = [
+    id,
+    ...(coordinatorCompany
+      ? [
+          coordinatorCompany,
+          coordinatorCompany,
         ]
-      );
+      : []),
+  ];
+
+  const [rows] = await db
+    .promise()
+    .query(
+      `
+      SELECT
+        i.*,
+        e.name AS employeeNameFromEmployee,
+        e.company AS employeeCompany,
+        e.status AS employeeStatus
+      FROM incidents AS i
+      LEFT JOIN employees AS e
+        ON e.id = i.employee_id
+      WHERE i.id = ?
+        ${companyScopeSql}
+      LIMIT 1
+      `,
+      queryParams
+    );
 
   if (!rows.length) {
     return null;
@@ -1843,28 +2100,23 @@ async function getIncidentWithEvidence(
   const [
     [evidence],
     timelineEvents,
-  ] =
-    await Promise.all([
-      db
-        .promise()
-        .query(
-          `
-          SELECT *
-          FROM incident_evidence
-          WHERE incident_id = ?
-          ORDER BY
-            created_at DESC,
-            id DESC
-          `,
-          [
-            id,
-          ]
-        ),
-
-      getTimelineByIncidentId(
-        id
+  ] = await Promise.all([
+    db
+      .promise()
+      .query(
+        `
+        SELECT *
+        FROM incident_evidence
+        WHERE incident_id = ?
+        ORDER BY
+          created_at DESC,
+          id DESC
+        `,
+        [id]
       ),
-    ]);
+
+    getTimelineByIncidentId(id),
+  ]);
 
   return serializeIncident(
     rows[0],
@@ -2115,13 +2367,28 @@ function normalizeIncidentSummarySearch(
 }
 
 function buildIncidentSummaryFilters(
-  query = {}
+  query = {},
+  {
+    coordinatorCompany = null,
+  } = {}
 ) {
   const conditions =
     [];
 
   const params =
     [];
+
+  if (coordinatorCompany) {
+    conditions.push(
+      buildIncidentCompanyScopeCondition(
+        "i"
+      )
+    );
+
+    params.push(
+      coordinatorCompany
+    );
+  }
 
   const caseTab =
     normalizeIncidentSummaryCaseTab(
@@ -2189,41 +2456,50 @@ function buildIncidentSummaryFilters(
         )
       : [];
 
-  for (
-    const term of
-    searchTerms
-  ) {
-    const likeTerm =
-      `%${term}%`;
+  for (const term of searchTerms) {
+    const likeTerm = `%${term}%`;
 
-    conditions.push(
-      `
-      (
-        LOWER(CAST(i.id AS CHAR)) LIKE ?
-        OR LOWER(CONCAT('inc', LPAD(CAST(i.id AS CHAR), 4, '0'))) LIKE ?
-        OR LOWER(CAST(i.employee_id AS CHAR)) LIKE ?
-        OR LOWER(COALESCE(i.employee_name, '')) LIKE ?
-        OR LOWER(COALESCE(e.name, '')) LIKE ?
-        OR LOWER(COALESCE(i.violation_type, '')) LIKE ?
-        OR LOWER(COALESCE(i.company, '')) LIKE ?
-        OR LOWER(COALESCE(e.company, '')) LIKE ?
-        OR LOWER(COALESCE(i.location, '')) LIKE ?
-        OR LOWER(COALESCE(i.severity, '')) LIKE ?
-        OR LOWER(COALESCE(i.status, '')) LIKE ?
-        OR LOWER(COALESCE(i.policy_sanction, '')) LIKE ?
-        OR LOWER(COALESCE(i.action_taken, '')) LIKE ?
-        OR LOWER(COALESCE(i.recommendation, '')) LIKE ?
-        OR LOWER(COALESCE(i.description, '')) LIKE ?
-        OR LOWER(COALESCE(i.reported_by, '')) LIKE ?
-      )
-      `
-    );
+    /*
+     * Coordinator historical entries expose only the
+     * fields below. Never permit searching hidden sanction,
+     * description, location, review or investigation fields:
+     * a search result itself could reveal their contents.
+     */
+    const searchableColumns = coordinatorCompany
+      ? [
+          "LOWER(CAST(i.id AS CHAR))",
+          "LOWER(CONCAT('inc', LPAD(CAST(i.id AS CHAR), 4, '0')))",
+          "LOWER(CAST(i.employee_id AS CHAR))",
+          "LOWER(COALESCE(i.employee_name, ''))",
+          "LOWER(COALESCE(i.violation_type, ''))",
+          "LOWER(COALESCE(i.company, ''))",
+          "LOWER(COALESCE(i.severity, ''))",
+          "LOWER(COALESCE(i.status, ''))",
+        ]
+      : [
+          "LOWER(CAST(i.id AS CHAR))",
+          "LOWER(CONCAT('inc', LPAD(CAST(i.id AS CHAR), 4, '0')))",
+          "LOWER(CAST(i.employee_id AS CHAR))",
+          "LOWER(COALESCE(i.employee_name, ''))",
+          "LOWER(COALESCE(e.name, ''))",
+          "LOWER(COALESCE(i.violation_type, ''))",
+          "LOWER(COALESCE(i.company, ''))",
+          "LOWER(COALESCE(e.company, ''))",
+          "LOWER(COALESCE(i.location, ''))",
+          "LOWER(COALESCE(i.severity, ''))",
+          "LOWER(COALESCE(i.status, ''))",
+          "LOWER(COALESCE(i.policy_sanction, ''))",
+          "LOWER(COALESCE(i.action_taken, ''))",
+          "LOWER(COALESCE(i.recommendation, ''))",
+          "LOWER(COALESCE(i.description, ''))",
+          "LOWER(COALESCE(i.reported_by, ''))",
+        ];
 
-    params.push(
-      ...Array(16).fill(
-        likeTerm
-      )
-    );
+    conditions.push(`(
+      ${searchableColumns.map((column) => `${column} LIKE ?`).join(" OR\n      ")}
+    )`);
+
+    params.push(...searchableColumns.map(() => likeTerm));
   }
 
   return {
@@ -2244,6 +2520,30 @@ exports.getIncidents =
     res
   ) => {
     try {
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
       const view =
         String(
           req.query?.view ||
@@ -2292,7 +2592,10 @@ exports.getIncidents =
           params,
         } =
           buildIncidentSummaryFilters(
-            req.query || {}
+            req.query || {},
+            {
+              coordinatorCompany,
+            }
           );
 
         const [
@@ -2322,7 +2625,8 @@ exports.getIncidents =
              */
             db
               .promise()
-              .query(`
+              .query(
+                `
                 SELECT
                   COUNT(*) AS all_count,
 
@@ -2331,7 +2635,7 @@ exports.getIncidents =
                       WHEN LOWER(
                         TRIM(
                           COALESCE(
-                            status,
+                            i.status,
                             ''
                           )
                         )
@@ -2349,7 +2653,7 @@ exports.getIncidents =
                       WHEN LOWER(
                         TRIM(
                           COALESCE(
-                            status,
+                            i.status,
                             ''
                           )
                         )
@@ -2367,7 +2671,7 @@ exports.getIncidents =
                       WHEN LOWER(
                         TRIM(
                           COALESCE(
-                            status,
+                            i.status,
                             ''
                           )
                         )
@@ -2380,8 +2684,21 @@ exports.getIncidents =
                     END
                   ) AS closed_count
 
-                FROM incidents
-              `),
+                FROM incidents i
+                ${
+                  coordinatorCompany
+                    ? `WHERE ${buildIncidentCompanyScopeCondition(
+                        "i"
+                      )}`
+                    : ""
+                }
+                `,
+                coordinatorCompany
+                  ? [
+                      coordinatorCompany,
+                    ]
+                  : []
+              ),
           ]);
 
         const total =
@@ -2457,7 +2774,14 @@ exports.getIncidents =
                 i.last_action_at,
                 e.name AS employeeNameFromEmployee,
                 e.company AS employeeCompany,
-                e.status AS employeeStatus
+                e.status AS employeeStatus,
+                ${
+                  isHrCoordinator
+                    ? `CASE WHEN
+                        ${buildCurrentCoordinatorEmployeeScopeCondition("e")}
+                       THEN 1 ELSE 0 END`
+                    : "1"
+                } AS coordinatorCanViewDetails
               FROM incidents i
               LEFT JOIN employees e
                 ON e.id = i.employee_id
@@ -2469,6 +2793,7 @@ exports.getIncidents =
               OFFSET ?
               `,
               [
+                ...(isHrCoordinator ? [coordinatorCompany] : []),
                 ...params,
                 requestedPageSize,
                 offset,
@@ -2480,10 +2805,16 @@ exports.getIncidents =
           {};
 
         return res.json({
-          incidents:
-            incidents.map(
-              serializeIncidentSummary
-            ),
+          incidents: incidents.map((incident) => {
+            if (
+              isHrCoordinator &&
+              Number(incident.coordinatorCanViewDetails) !== 1
+            ) {
+              return serializeHistoricalIncidentListItem(incident);
+            }
+
+            return serializeIncidentSummary(incident);
+          }),
 
           pagination: {
             page,
@@ -2589,7 +2920,7 @@ exports.getIncidentsByEmployee =
     res
   ) => {
     try {
-          const {
+      const {
         employeeId,
       } =
         req.params;
@@ -2598,6 +2929,30 @@ exports.getIncidentsByEmployee =
         name,
       } =
         req.query;
+
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
 
       const lookupEmployeeId =
         normalizeEmployeeLookupId(
@@ -2649,6 +3004,27 @@ exports.getIncidentsByEmployee =
         );
       }
 
+      const coordinatorScopeSql =
+        coordinatorCompany
+          ? `
+            AND
+            ${buildIncidentCompanyScopeCondition(
+              "i"
+            )}
+            AND ${buildCurrentCoordinatorEmployeeScopeCondition("e")}
+          `
+          : "";
+
+      const queryParams = [
+        ...params,
+        ...(coordinatorCompany
+          ? [
+              coordinatorCompany,
+              coordinatorCompany,
+            ]
+          : []),
+      ];
+
       const [incidents] =
         await db
           .promise()
@@ -2662,15 +3038,18 @@ exports.getIncidentsByEmployee =
             FROM incidents i
             LEFT JOIN employees e
               ON e.id = i.employee_id
-            WHERE ${conditions.join(
-              " OR "
-            )}
+            WHERE (
+              ${conditions.join(
+                " OR "
+              )}
+            )
+            ${coordinatorScopeSql}
             ORDER BY
               i.incident_date ASC,
               i.created_at ASC,
               i.id ASC
             `,
-            params
+            queryParams
           );
 
       if (
@@ -2785,9 +3164,36 @@ exports.getIncidentById =
     res
   ) => {
     try {
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
       const incident =
         await getIncidentWithEvidence(
-          req.params.id
+          req.params.id,
+          {
+            coordinatorCompany,
+          }
         );
 
       if (!incident) {
@@ -3069,6 +3475,49 @@ exports.createIncident =
           409,
           "The selected employee no longer has an active deployment assignment. Refresh the form and try again."
         );
+      }
+
+      /*
+       * HR Coordinator may create an incident only
+       * for an employee whose current active
+       * deployment belongs to the coordinator's
+       * assigned company.
+       *
+       * Company values supplied by the browser are
+       * never authoritative.
+       */
+      if (
+        actor.role ===
+        "HR_COORDINATOR"
+      ) {
+        const coordinatorCompany =
+          getHrCoordinatorAssignedCompany(
+            req
+          );
+
+        if (!coordinatorCompany) {
+          rejectIncidentCreation(
+            403,
+            "HR Coordinator company assignment is required."
+          );
+        }
+
+        if (
+          !companyNamesMatch(
+            activeDeployment.company,
+            coordinatorCompany
+          )
+        ) {
+          /*
+           * Use the same public response as an unknown
+           * employee so cross-company employee IDs
+           * cannot be enumerated.
+           */
+          rejectIncidentCreation(
+            404,
+            "Selected employee not found."
+          );
+        }
       }
 
       const finalEmployeeName =

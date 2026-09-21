@@ -29,7 +29,14 @@ const {
 } = require("../middleware/roleMiddleware");
 
 /*
+ * ==================================================
  * EMPLOYEE RECORD LIST
+ * ==================================================
+ *
+ * HR_COORDINATOR:
+ * - may view employee records
+ * - backend controller will restrict results to the
+ *   coordinator's assigned company
  */
 router.get(
   "/employees",
@@ -37,13 +44,22 @@ router.get(
   authorizeRoles(
     "SUPER_ADMIN",
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
   getEmployees
 );
 
 /*
+ * ==================================================
  * EMPLOYEE FORM META
+ * ==================================================
+ *
+ * HR Coordinator is intentionally excluded.
+ *
+ * The coordinator cannot create or edit employees,
+ * so employee-management form metadata is not part
+ * of their access scope.
  */
 router.get(
   "/employees/form-meta",
@@ -57,7 +73,14 @@ router.get(
 );
 
 /*
+ * ==================================================
  * SINGLE EMPLOYEE DETAIL
+ * ==================================================
+ *
+ * HR Coordinator may open employee profiles, but
+ * controller-level company scoping will verify that
+ * the employee belongs to the coordinator's assigned
+ * client/company.
  */
 router.get(
   "/employees/:id",
@@ -65,13 +88,22 @@ router.get(
   authorizeRoles(
     "SUPER_ADMIN",
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
   getEmployeeById
 );
 
 /*
+ * ==================================================
  * PROTECTED EMPLOYEE DOCUMENT FILE
+ * ==================================================
+ *
+ * HR Coordinator may view/download documents only
+ * for employees under their assigned company.
+ *
+ * employeeDocumentController will enforce the
+ * company relationship before serving the file.
  */
 router.get(
   "/employee-documents/:documentId/file",
@@ -79,13 +111,18 @@ router.get(
   authorizeRoles(
     "SUPER_ADMIN",
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
   getEmployeeDocumentFile
 );
 
 /*
+ * ==================================================
  * CREATE EMPLOYEE
+ * ==================================================
+ *
+ * HR Coordinator intentionally excluded.
  */
 router.post(
   "/employees",
@@ -99,7 +136,11 @@ router.post(
 );
 
 /*
+ * ==================================================
  * UPDATE EMPLOYEE
+ * ==================================================
+ *
+ * HR Coordinator intentionally excluded.
  */
 router.put(
   "/employees/:id",
@@ -113,7 +154,11 @@ router.put(
 );
 
 /*
+ * ==================================================
  * ARCHIVE EMPLOYEE
+ * ==================================================
+ *
+ * HR Manager only.
  */
 router.put(
   "/employees/archive/:id",
@@ -125,7 +170,11 @@ router.put(
 );
 
 /*
+ * ==================================================
  * RESTORE ARCHIVED EMPLOYEE
+ * ==================================================
+ *
+ * HR Manager only.
  */
 router.put(
   "/employees/restore/:id",
@@ -137,7 +186,11 @@ router.put(
 );
 
 /*
+ * ==================================================
  * PERMANENTLY DELETE EMPLOYEE
+ * ==================================================
+ *
+ * HR Manager only.
  */
 router.delete(
   "/employees/:id",
@@ -149,7 +202,12 @@ router.delete(
 );
 
 /*
+ * ==================================================
  * END EMPLOYEE DEPLOYMENT CONTRACT
+ * ==================================================
+ *
+ * This mutates employee/deployment state.
+ * HR Coordinator is intentionally excluded.
  */
 router.put(
   "/employees/:id/contract-end",

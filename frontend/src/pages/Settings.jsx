@@ -1,3 +1,4 @@
+
 import {
   useCallback,
   useEffect,
@@ -5,9 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
+
 import {
-  FiCheckCircle,
-  FiCopy,
   FiLock,
   FiRefreshCw,
   FiShield,
@@ -29,57 +29,25 @@ import LoadingSkeleton from "../components/ui/LoadingSkeleton";
 import EmptyState from "../components/ui/EmptyState";
 import ErrorState from "../components/ui/ErrorState";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
-import Dialog from "../components/ui/Dialog";
 import SuccessToast from "../components/ui/SuccessToast";
 
 import authenticatedFetch from "../utils/authenticatedFetch";
 
 const REQUEST_TIMEOUT_MS = 15000;
 
-const TEMP_PASSWORD_BYTES = 8;
-
 const ROLE_LABELS = {
   SUPER_ADMIN: "Super Admin",
   HR_MANAGER: "HR Manager",
   HR_STAFF: "HR Staff",
+  HR_COORDINATOR: "HR Coordinator",
   IT_SUPPORT: "IT Support",
 };
 
-const SUPER_ADMIN_MANAGEABLE_ROLES =
-  new Set([
-    "HR_MANAGER",
-    "HR_STAFF",
-    "IT_SUPPORT",
-  ]);
-
-function generateTemporaryPassword() {
-  if (
-    !window.crypto ||
-    typeof window.crypto
-      .getRandomValues !== "function"
-  ) {
-    throw new Error(
-      "Secure temporary password generation is unavailable in this browser."
-    );
-  }
-
-  const randomBytes =
-    new Uint8Array(
-      TEMP_PASSWORD_BYTES
-    );
-
-  window.crypto.getRandomValues(
-    randomBytes
-  );
-
-  return Array.from(
-    randomBytes,
-    (value) =>
-      value
-        .toString(16)
-        .padStart(2, "0")
-  ).join("");
-}
+const SUPER_ADMIN_MANAGEABLE_ROLES = new Set([
+  "HR_MANAGER",
+  "HR_STAFF",
+  "IT_SUPPORT",
+]);
 
 function normalizeRole(value) {
   return String(value || "")
@@ -88,10 +56,7 @@ function normalizeRole(value) {
 }
 
 function normalizeIdentity(value) {
-  if (
-    value === undefined ||
-    value === null
-  ) {
+  if (value === undefined || value === null) {
     return "";
   }
 
@@ -106,9 +71,7 @@ function getInitials(value) {
       .split(" ")
       .filter(Boolean)
       .slice(0, 2)
-      .map((part) =>
-        part[0]?.toUpperCase()
-      )
+      .map((part) => part[0]?.toUpperCase())
       .join("") || "U"
   );
 }
@@ -135,10 +98,7 @@ function getAccountStatus(account) {
     : "Inactive";
 }
 
-function getAccountKey(
-  account,
-  index
-) {
+function getAccountKey(account, index) {
   return (
     account?.id ||
     account?.user_id ||
@@ -153,103 +113,72 @@ function getAccountKey(
  * CURRENT USER / TARGET ACCOUNT MATCHING
  * ==================================================
  *
- * The backend remains the security authority.
- *
- * This helper is only for frontend UX so the UI
- * does not offer an action that the backend will
- * reject.
- *
- * It supports both:
- * - numeric database IDs
- * - business-facing user IDs
- * - usernames
+ * Frontend checks are for UI visibility only.
+ * Backend authorization remains authoritative.
  */
-function isSameAccount(
-  currentUser,
-  account
-) {
-  if (
-    !currentUser ||
-    !account
-  ) {
+
+function isSameAccount(currentUser, account) {
+  if (!currentUser || !account) {
     return false;
   }
 
-  const currentUsername =
-    normalizeIdentity(
-      currentUser?.username
-    );
+  const currentUsername = normalizeIdentity(
+    currentUser?.username
+  );
 
-  const accountUsername =
-    normalizeIdentity(
-      account?.username
-    );
+  const accountUsername = normalizeIdentity(
+    account?.username
+  );
 
   if (
     currentUsername &&
     accountUsername &&
-    currentUsername ===
-      accountUsername
+    currentUsername === accountUsername
   ) {
     return true;
   }
 
-  const currentInternalId =
-    normalizeIdentity(
-      currentUser?.id
-    );
+  const currentInternalId = normalizeIdentity(
+    currentUser?.id
+  );
 
-  const accountInternalId =
-    normalizeIdentity(
-      account?.id
-    );
+  const accountInternalId = normalizeIdentity(
+    account?.id
+  );
 
   if (
     currentInternalId &&
     accountInternalId &&
-    currentInternalId ===
-      accountInternalId
+    currentInternalId === accountInternalId
   ) {
     return true;
   }
 
-  const currentBusinessId =
-    normalizeIdentity(
-      currentUser?.user_id
-    );
+  const currentBusinessId = normalizeIdentity(
+    currentUser?.user_id
+  );
 
-  const accountBusinessId =
-    normalizeIdentity(
-      account?.user_id ??
-        account?.userId
-    );
+  const accountBusinessId = normalizeIdentity(
+    account?.user_id ?? account?.userId
+  );
 
   if (
     currentBusinessId &&
     accountBusinessId &&
-    currentBusinessId ===
-      accountBusinessId
+    currentBusinessId === accountBusinessId
   ) {
     return true;
   }
 
-  /*
-   * Some authentication payloads use userId
-   * for either the internal numeric ID or the
-   * business-facing ID.
-   */
-  const currentFallbackUserId =
-    normalizeIdentity(
-      currentUser?.userId
-    );
+  const currentFallbackUserId = normalizeIdentity(
+    currentUser?.userId
+  );
 
   if (
     currentFallbackUserId &&
     (
-      currentFallbackUserId ===
-        accountInternalId ||
-      currentFallbackUserId ===
-        accountBusinessId
+      currentFallbackUserId === accountInternalId ||
+      currentFallbackUserId === accountBusinessId
     )
   ) {
     return true;
@@ -260,78 +189,55 @@ function isSameAccount(
 
 /*
  * ==================================================
- * FRONTEND ACCOUNT-MANAGEMENT POLICY
+ * ACCOUNT STATUS MANAGEMENT POLICY
  * ==================================================
  *
- * Mirrors the backend policy for UX only.
+ * These checks mirror the existing frontend policy.
+ * They do not grant access to backend endpoints.
  *
- * Backend remains the final authority.
+ * Super Admin:
+ * - May manage HR Manager, HR Staff, IT Support
  *
- * SUPER_ADMIN:
- *   HR_MANAGER ✅
- *   HR_STAFF   ✅
- *   IT_SUPPORT ✅
- *   SUPER_ADMIN ❌
+ * IT Support:
+ * - May manage HR Staff
  *
- * IT_SUPPORT:
- *   HR_STAFF ✅
- *   all other roles ❌
- *
- * Self-targeting is always blocked.
+ * No self-targeting.
+ * Super Admin target accounts remain protected.
  */
+
 function canManageAccountTarget(
   currentUser,
   account
 ) {
-  if (
-    !currentUser ||
-    !account
-  ) {
+  if (!currentUser || !account) {
     return false;
   }
 
-  if (
-    isSameAccount(
-      currentUser,
-      account
-    )
-  ) {
+  if (isSameAccount(currentUser, account)) {
     return false;
   }
 
-  const requesterRole =
-    normalizeRole(
-      currentUser?.role
-    );
+  const requesterRole = normalizeRole(
+    currentUser?.role
+  );
 
-  const targetRole =
-    normalizeRole(
-      account?.role
-    );
+  const targetRole = normalizeRole(
+    account?.role
+  );
 
-  if (
-    targetRole ===
-    "SUPER_ADMIN"
-  ) {
+  if (targetRole === "SUPER_ADMIN") {
     return false;
   }
 
-  if (
-    requesterRole ===
-    "SUPER_ADMIN"
-  ) {
-    return (
-      SUPER_ADMIN_MANAGEABLE_ROLES.has(
-        targetRole
-      )
+  if (requesterRole === "SUPER_ADMIN") {
+    return SUPER_ADMIN_MANAGEABLE_ROLES.has(
+      targetRole
     );
   }
 
   if (
-    requesterRole ===
-      "IT_SUPPORT" &&
-    targetRole ===
-      "HR_STAFF"
+    requesterRole === "IT_SUPPORT" &&
+    targetRole === "HR_STAFF"
   ) {
     return true;
   }
@@ -343,48 +249,35 @@ function getAccountRestriction(
   currentUser,
   account
 ) {
-  if (
-    isSameAccount(
-      currentUser,
-      account
-    )
-  ) {
+  if (isSameAccount(currentUser, account)) {
     return {
       label: "Own Account",
       title:
-        "Use Change Password for your own account.",
+        "You cannot deactivate your own account.",
     };
   }
 
-  const requesterRole =
-    normalizeRole(
-      currentUser?.role
-    );
+  const requesterRole = normalizeRole(
+    currentUser?.role
+  );
 
-  const targetRole =
-    normalizeRole(
-      account?.role
-    );
+  const targetRole = normalizeRole(
+    account?.role
+  );
 
-  if (
-    targetRole ===
-    "SUPER_ADMIN"
-  ) {
+  if (targetRole === "SUPER_ADMIN") {
     return {
       label: "Protected",
       title:
-        "Super Admin accounts are protected from administrative reset and status actions.",
+        "Super Admin accounts are protected from account-status actions.",
     };
   }
 
-  if (
-    requesterRole ===
-      "IT_SUPPORT"
-  ) {
+  if (requesterRole === "IT_SUPPORT") {
     return {
       label: "Restricted",
       title:
-        "IT Support may manage HR Staff accounts only.",
+        "IT Support may manage HR Staff account status only.",
     };
   }
 
@@ -399,10 +292,7 @@ function getApiError(
   error,
   fallbackMessage
 ) {
-  if (
-    error?.name ===
-    "AbortError"
-  ) {
+  if (error?.name === "AbortError") {
     return "The server took too long to respond. Check that the backend and database are running, then try again.";
   }
 
@@ -414,46 +304,31 @@ function getApiError(
   );
 }
 
-async function requestJson(
-  url,
-  options = {}
-) {
-  const controller =
-    new AbortController();
+async function requestJson(url, options = {}) {
+  const controller = new AbortController();
 
-  const timeoutId =
-    window.setTimeout(() => {
-      controller.abort();
-    }, REQUEST_TIMEOUT_MS);
+  const timeoutId = window.setTimeout(() => {
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
 
   try {
-    const response =
-      await authenticatedFetch(
-        url,
-        {
-          ...options,
+    const response = await authenticatedFetch(
+      url,
+      {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          ...(options.headers || {}),
+        },
+      }
+    );
 
-          signal:
-            controller.signal,
+    const data = await response
+      .json()
+      .catch(() => null);
 
-          headers: {
-            Accept:
-              "application/json",
-
-            ...(options.headers ||
-              {}),
-          },
-        }
-      );
-
-    const data =
-      await response
-        .json()
-        .catch(() => null);
-
-    if (
-      !response.ok
-    ) {
+    if (!response.ok) {
       throw new Error(
         data?.message ||
           data?.error ||
@@ -463,22 +338,15 @@ async function requestJson(
 
     return data;
   } finally {
-    window.clearTimeout(
-      timeoutId
-    );
+    window.clearTimeout(timeoutId);
   }
 }
 
-function normalizeSearchText(
-  value
-) {
+function normalizeSearchText(value) {
   return String(value || "")
     .trim()
     .toLowerCase()
-    .replace(
-      /[^a-z0-9\s]/g,
-      " "
-    )
+    .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ");
 }
 
@@ -525,64 +393,47 @@ function RestrictedAction({
   );
 }
 
+/*
+ * ==================================================
+ * USER MANAGEMENT PAGE
+ * ==================================================
+ *
+ * Password reset is intentionally NOT available here.
+ *
+ * Account recovery uses:
+ * Forgot Password -> authorized review -> reset email.
+ *
+ * This page retains account status administration only.
+ */
+
 export default function Settings() {
   const { user } = useAuth();
 
-  const currentRole =
-    normalizeRole(
-      user?.role
-    );
-
-  const isSuperAdmin =
-    currentRole ===
-    "SUPER_ADMIN";
-
-  const isItSupport =
-    currentRole ===
-    "IT_SUPPORT";
-
-  const [accounts, setAccounts] =
-    useState([]);
-
-  const [search, setSearch] =
-    useState("");
-
-  const [
-    resetTarget,
-    setResetTarget,
-  ] = useState(null);
-
-  const [
-    toggleTarget,
-    setToggleTarget,
-  ] = useState(null);
-
-  const [
-    temporaryPassword,
-    setTemporaryPassword,
-  ] = useState("");
-
-  const [
-    pageError,
-    setPageError,
-  ] = useState("");
-
-  const [
-    successMessage,
-    setSuccessMessage,
-  ] = useState("");
-
-  const [
-    copyText,
-    setCopyText,
-  ] = useState(
-    "Copy Password"
+  const currentRole = normalizeRole(
+    user?.role
   );
 
-  const [
-    isLoadingUsers,
-    setIsLoadingUsers,
-  ] = useState(true);
+  const isSuperAdmin =
+    currentRole === "SUPER_ADMIN";
+
+  const isItSupport =
+    currentRole === "IT_SUPPORT";
+
+  const [accounts, setAccounts] = useState([]);
+
+  const [search, setSearch] = useState("");
+
+  const [toggleTarget, setToggleTarget] =
+    useState(null);
+
+  const [pageError, setPageError] =
+    useState("");
+
+  const [successMessage, setSuccessMessage] =
+    useState("");
+
+  const [isLoadingUsers, setIsLoadingUsers] =
+    useState(true);
 
   const [
     isRefreshingUsers,
@@ -594,236 +445,165 @@ export default function Settings() {
     setProcessingAction,
   ] = useState("");
 
-  const isMountedRef =
-    useRef(true);
+  const isMountedRef = useRef(true);
 
-  const copyResetTimerRef =
-    useRef(null);
-
-  const isProcessing =
-    Boolean(
-      processingAction
-    );
+  const isProcessing = Boolean(
+    processingAction
+  );
 
   useEffect(() => {
-    isMountedRef.current =
-      true;
+    isMountedRef.current = true;
 
     return () => {
-      isMountedRef.current =
-        false;
-
-      if (
-        copyResetTimerRef.current
-      ) {
-        window.clearTimeout(
-          copyResetTimerRef.current
-        );
-      }
+      isMountedRef.current = false;
     };
   }, []);
 
-  const canManageAccount =
-    useCallback(
-      (account) =>
-        canManageAccountTarget(
-          user,
-          account
-        ),
-      [user]
-    );
+  const canManageAccount = useCallback(
+    (account) =>
+      canManageAccountTarget(
+        user,
+        account
+      ),
+    [user]
+  );
 
-  const fetchUsers =
-    useCallback(
-      async ({
-        showInitialLoading = false,
-        showRefreshing = false,
-        showError = true,
-      } = {}) => {
-        if (
-          showInitialLoading
-        ) {
-          setIsLoadingUsers(
-            true
-          );
+  const fetchUsers = useCallback(
+    async ({
+      showInitialLoading = false,
+      showRefreshing = false,
+      showError = true,
+    } = {}) => {
+      if (showInitialLoading) {
+        setIsLoadingUsers(true);
+      }
+
+      if (showRefreshing) {
+        setIsRefreshingUsers(true);
+      }
+
+      try {
+        if (showError) {
+          setPageError("");
         }
 
-        if (
-          showRefreshing
-        ) {
-          setIsRefreshingUsers(
-            true
-          );
-        }
+        const data = await requestJson(
+          `${API_BASE}/users`
+        );
 
-        try {
-          if (
-            showError
-          ) {
-            setPageError("");
-          }
-
-          const data =
-            await requestJson(
-              `${API_BASE}/users`
-            );
-
-          if (
-            !isMountedRef.current
-          ) {
-            return false;
-          }
-
-          setAccounts(
-            Array.isArray(data)
-              ? data
-              : []
-          );
-
-          return true;
-        } catch (error) {
-          console.error(
-            "Fetch users error:",
-            error
-          );
-
-          if (
-            showError &&
-            isMountedRef.current
-          ) {
-            setPageError(
-              getApiError(
-                error,
-                "Unable to load user accounts."
-              )
-            );
-          }
-
+        if (!isMountedRef.current) {
           return false;
-        } finally {
-          if (
-            isMountedRef.current
-          ) {
-            if (
-              showInitialLoading
-            ) {
-              setIsLoadingUsers(
-                false
-              );
-            }
+        }
 
-            if (
-              showRefreshing
-            ) {
-              setIsRefreshingUsers(
-                false
-              );
-            }
+        setAccounts(
+          Array.isArray(data) ? data : []
+        );
+
+        return true;
+      } catch (error) {
+        console.error(
+          "Fetch users error:",
+          error
+        );
+
+        if (
+          showError &&
+          isMountedRef.current
+        ) {
+          setPageError(
+            getApiError(
+              error,
+              "Unable to load user accounts."
+            )
+          );
+        }
+
+        return false;
+      } finally {
+        if (isMountedRef.current) {
+          if (showInitialLoading) {
+            setIsLoadingUsers(false);
+          }
+
+          if (showRefreshing) {
+            setIsRefreshingUsers(false);
           }
         }
-      },
-      []
-    );
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     void fetchUsers({
-      showInitialLoading:
-        true,
+      showInitialLoading: true,
     });
   }, [fetchUsers]);
 
-  const filteredAccounts =
-    useMemo(() => {
-      const normalizedSearch =
+  const filteredAccounts = useMemo(() => {
+    const normalizedSearch =
+      normalizeSearchText(search);
+
+    const searchTerms = normalizedSearch
+      ? normalizedSearch.split(/\s+/)
+      : [];
+
+    if (searchTerms.length === 0) {
+      return accounts;
+    }
+
+    return accounts.filter((account) => {
+      const accountStatus =
+        getAccountStatus(account);
+
+      const roleLabel =
+        ROLE_LABELS[account?.role] ||
+        account?.role ||
+        "";
+
+      const searchableText =
         normalizeSearchText(
-          search
+          [
+            account?.id,
+            account?.user_id,
+            account?.userId,
+            account?.full_name,
+            account?.fullName,
+            account?.name,
+            account?.username,
+            account?.role,
+            roleLabel,
+            accountStatus,
+            account?.status,
+          ]
+            .filter(Boolean)
+            .join(" ")
         );
 
-      const searchTerms =
-        normalizedSearch
-          ? normalizedSearch.split(
-              /\s+/
-            )
-          : [];
-
-      if (
-        searchTerms.length ===
-        0
-      ) {
-        return accounts;
-      }
-
-      return accounts.filter(
-        (account) => {
-          const accountStatus =
-            getAccountStatus(
-              account
-            );
-
-          const roleLabel =
-            ROLE_LABELS[
-              account?.role
-            ] ||
-            account?.role ||
-            "";
-
-          const searchableText =
-            normalizeSearchText(
-              [
-                account?.id,
-                account?.user_id,
-                account?.userId,
-                account?.full_name,
-                account?.fullName,
-                account?.name,
-                account?.username,
-                account?.role,
-                roleLabel,
-                accountStatus,
-                account?.status,
-              ]
-                .filter(Boolean)
-                .join(" ")
-            );
-
-          return searchTerms.every(
-            (term) =>
-              searchableText.includes(
-                term
-              )
-          );
-        }
+      return searchTerms.every(
+        (term) =>
+          searchableText.includes(term)
       );
-    }, [
-      accounts,
-      search,
-    ]);
+    });
+  }, [accounts, search]);
 
-  const accountSummary =
-    useMemo(() => {
-      const activeUsers =
-        accounts.filter(
-          (account) =>
-            getAccountStatus(
-              account
-            ) === "Active"
-        ).length;
+  const accountSummary = useMemo(() => {
+    const activeUsers = accounts.filter(
+      (account) =>
+        getAccountStatus(account) ===
+        "Active"
+    ).length;
 
-      return {
-        total:
-          accounts.length,
+    return {
+      total: accounts.length,
+      active: activeUsers,
+      inactive:
+        accounts.length - activeUsers,
+    };
+  }, [accounts]);
 
-        active:
-          activeUsers,
-
-        inactive:
-          accounts.length -
-          activeUsers,
-      };
-    }, [accounts]);
-
-  const handleRefresh =
-    useCallback(async () => {
+  const handleRefresh = useCallback(
+    async () => {
       if (
         isRefreshingUsers ||
         isLoadingUsers ||
@@ -833,279 +613,70 @@ export default function Settings() {
       }
 
       await fetchUsers({
-        showRefreshing:
-          true,
+        showRefreshing: true,
       });
-    }, [
+    },
+    [
       fetchUsers,
       isLoadingUsers,
       isProcessing,
       isRefreshingUsers,
-    ]);
+    ]
+  );
 
-  const handleOpenReset =
-    useCallback(
-      (account) => {
-        if (
-          !account?.id ||
-          isProcessing ||
-          !canManageAccount(
-            account
-          )
-        ) {
-          return;
-        }
-
-        setPageError("");
-        setTemporaryPassword(
-          ""
-        );
-        setCopyText(
-          "Copy Password"
-        );
-        setResetTarget(
-          account
-        );
-      },
-      [
-        canManageAccount,
-        isProcessing,
-      ]
-    );
-
-  const handleCloseResetDialog =
-    useCallback(() => {
+  const handleOpenToggle = useCallback(
+    (account) => {
       if (
-        isProcessing
-      ) {
-        return;
-      }
-
-      setResetTarget(
-        null
-      );
-    }, [isProcessing]);
-
-  const handleResetPassword =
-    useCallback(async () => {
-      if (
-        !resetTarget?.id ||
+        !account?.id ||
         isProcessing ||
-        !canManageAccount(
-          resetTarget
-        )
+        !canManageAccount(account)
       ) {
         return;
       }
 
-      try {
-        setProcessingAction(
-          "reset"
-        );
-
-        setPageError("");
-
-        const generatedPassword =
-          generateTemporaryPassword();
-
-        await requestJson(
-          `${API_BASE}/users/reset/${encodeURIComponent(
-            resetTarget.id
-          )}`,
-          {
-            method: "PUT",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body:
-              JSON.stringify({
-                temporaryPassword:
-                  generatedPassword,
-              }),
-          }
-        );
-
-        if (
-          !isMountedRef.current
-        ) {
-          return;
-        }
-
-        setTemporaryPassword(
-          generatedPassword
-        );
-
-        await fetchUsers({
-          showError: false,
-        });
-      } catch (error) {
-        console.error(
-          "Reset password error:",
-          error
-        );
-
-        if (
-          isMountedRef.current
-        ) {
-          setPageError(
-            getApiError(
-              error,
-              "Unable to reset the account password."
-            )
-          );
-
-          setResetTarget(
-            null
-          );
-        }
-      } finally {
-        if (
-          isMountedRef.current
-        ) {
-          setProcessingAction(
-            ""
-          );
-        }
-      }
-    }, [
+      setPageError("");
+      setToggleTarget(account);
+    },
+    [
       canManageAccount,
-      fetchUsers,
       isProcessing,
-      resetTarget,
-    ]);
+    ]
+  );
 
-  const handleCloseResetSuccess =
-    useCallback(() => {
-      setResetTarget(null);
-
-      setTemporaryPassword(
-        ""
-      );
-
-      setCopyText(
-        "Copy Password"
-      );
-    }, []);
-
-  const handleCopyPassword =
-    useCallback(async () => {
-      if (
-        !temporaryPassword
-      ) {
+  const handleCloseToggleDialog = useCallback(
+    () => {
+      if (isProcessing) {
         return;
       }
 
-      try {
-        await navigator.clipboard.writeText(
-          temporaryPassword
-        );
+      setToggleTarget(null);
+    },
+    [isProcessing]
+  );
 
-        setCopyText(
-          "Copied"
-        );
-
-        if (
-          copyResetTimerRef.current
-        ) {
-          window.clearTimeout(
-            copyResetTimerRef.current
-          );
-        }
-
-        copyResetTimerRef.current =
-          window.setTimeout(
-            () => {
-              setCopyText(
-                "Copy Password"
-              );
-            },
-            1500
-          );
-      } catch (error) {
-        console.error(
-          "Copy password error:",
-          error
-        );
-
-        setCopyText(
-          "Copy Failed"
-        );
-      }
-    }, [temporaryPassword]);
-
-  const handleOpenToggle =
-    useCallback(
-      (account) => {
-        if (
-          !account?.id ||
-          isProcessing ||
-          !canManageAccount(
-            account
-          )
-        ) {
-          return;
-        }
-
-        setPageError("");
-        setToggleTarget(
-          account
-        );
-      },
-      [
-        canManageAccount,
-        isProcessing,
-      ]
-    );
-
-  const handleCloseToggleDialog =
-    useCallback(() => {
-      if (
-        isProcessing
-      ) {
-        return;
-      }
-
-      setToggleTarget(
-        null
-      );
-    }, [isProcessing]);
-
-  const handleConfirmToggle =
-    useCallback(async () => {
+  const handleConfirmToggle = useCallback(
+    async () => {
       if (
         !toggleTarget?.id ||
         isProcessing ||
-        !canManageAccount(
-          toggleTarget
-        )
+        !canManageAccount(toggleTarget)
       ) {
         return;
       }
 
       const currentStatus =
-        getAccountStatus(
-          toggleTarget
-        );
+        getAccountStatus(toggleTarget);
 
       const nextStatus =
-        currentStatus ===
-        "Active"
+        currentStatus === "Active"
           ? "Inactive"
           : "Active";
 
       const accountName =
-        getAccountName(
-          toggleTarget
-        );
+        getAccountName(toggleTarget);
 
       try {
-        setProcessingAction(
-          "toggle"
-        );
-
+        setProcessingAction("toggle");
         setPageError("");
 
         await requestJson(
@@ -1117,9 +688,7 @@ export default function Settings() {
           }
         );
 
-        if (
-          !isMountedRef.current
-        ) {
+        if (!isMountedRef.current) {
           return;
         }
 
@@ -1127,30 +696,21 @@ export default function Settings() {
           (currentAccounts) =>
             currentAccounts.map(
               (account) =>
-                String(
-                  account?.id
-                ) ===
-                String(
-                  toggleTarget.id
-                )
+                String(account?.id) ===
+                String(toggleTarget.id)
                   ? {
                       ...account,
-
-                      status:
-                        nextStatus,
+                      status: nextStatus,
                     }
                   : account
             )
         );
 
-        setToggleTarget(
-          null
-        );
+        setToggleTarget(null);
 
         setSuccessMessage(
           `${accountName} was ${
-            nextStatus ===
-            "Active"
+            nextStatus === "Active"
               ? "activated"
               : "deactivated"
           } successfully.`
@@ -1165,9 +725,7 @@ export default function Settings() {
           error
         );
 
-        if (
-          isMountedRef.current
-        ) {
+        if (isMountedRef.current) {
           setPageError(
             getApiError(
               error,
@@ -1176,52 +734,39 @@ export default function Settings() {
           );
         }
       } finally {
-        if (
-          isMountedRef.current
-        ) {
-          setProcessingAction(
-            ""
-          );
+        if (isMountedRef.current) {
+          setProcessingAction("");
         }
       }
-    }, [
+    },
+    [
       canManageAccount,
       fetchUsers,
       isProcessing,
       toggleTarget,
-    ]);
-
-  const resetAccountName =
-    getAccountName(
-      resetTarget
-    );
+    ]
+  );
 
   const toggleAccountName =
-    getAccountName(
-      toggleTarget
-    );
+    getAccountName(toggleTarget);
 
   const toggleCurrentStatus =
-    getAccountStatus(
-      toggleTarget
-    );
+    getAccountStatus(toggleTarget);
 
   const willActivate =
-    toggleCurrentStatus !==
-    "Active";
+    toggleCurrentStatus !== "Active";
 
-  const pageDescription =
-    isSuperAdmin
-      ? "Manage HR Manager, HR Staff, and IT Support accounts. Super Admin accounts remain protected."
-      : isItSupport
-        ? "Reset temporary passwords and activate or deactivate HR Staff accounts. Privileged accounts are protected."
-        : "Review user-account maintenance information.";
+  const pageDescription = isSuperAdmin
+    ? "Manage authorized account status changes. Super Admin accounts remain protected."
+    : isItSupport
+      ? "Review system accounts and manage authorized HR Staff account status changes."
+      : "Review user-account maintenance information.";
 
   const maintenanceDescription =
     isSuperAdmin
-      ? "Review accounts and perform authorized account-administration actions."
+      ? "Review user accounts and activate or deactivate authorized accounts."
       : isItSupport
-        ? "Review system accounts and perform authorized HR Staff technical-support actions."
+        ? "Review system accounts and activate or deactivate authorized HR Staff accounts."
         : "Review system accounts.";
 
   return (
@@ -1229,14 +774,8 @@ export default function Settings() {
       <PageHeader
         eyebrow="Technical Administration"
         title="IT Support Maintenance"
-        description={
-          pageDescription
-        }
-        icon={
-          <FiShield
-            size={22}
-          />
-        }
+        description={pageDescription}
+        icon={<FiShield size={22} />}
         actions={
           <Button
             variant="secondary"
@@ -1250,17 +789,13 @@ export default function Settings() {
                 aria-hidden="true"
               />
             }
-            loading={
-              isRefreshingUsers
-            }
+            loading={isRefreshingUsers}
             disabled={
               isLoadingUsers ||
               isRefreshingUsers ||
               isProcessing
             }
-            onClick={
-              handleRefresh
-            }
+            onClick={handleRefresh}
           >
             Refresh Accounts
           </Button>
@@ -1273,34 +808,26 @@ export default function Settings() {
           title="Account maintenance error"
           message={pageError}
           retryLabel="Reload accounts"
-          onRetry={
-            handleRefresh
-          }
+          onRetry={handleRefresh}
         />
       )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <AccountSummaryCard
           label="Total Accounts"
-          value={
-            accountSummary.total
-          }
+          value={accountSummary.total}
           helper="All system users"
         />
 
         <AccountSummaryCard
           label="Active Users"
-          value={
-            accountSummary.active
-          }
+          value={accountSummary.active}
           helper="Accounts with access"
         />
 
         <AccountSummaryCard
           label="Inactive Users"
-          value={
-            accountSummary.inactive
-          }
+          value={accountSummary.inactive}
           helper="Access currently disabled"
         />
       </div>
@@ -1323,9 +850,7 @@ export default function Settings() {
 
         <div className="border-b border-gray-200 p-5 sm:p-6 dark:border-white/10">
           <FilterBar
-            resultCount={
-              filteredAccounts.length
-            }
+            resultCount={filteredAccounts.length}
             resultLabel="account"
             actions={
               <Button
@@ -1337,9 +862,7 @@ export default function Settings() {
                   isRefreshingUsers ||
                   isProcessing
                 }
-                onClick={() =>
-                  setSearch("")
-                }
+                onClick={() => setSearch("")}
               >
                 Clear Search
               </Button>
@@ -1356,17 +879,12 @@ export default function Settings() {
                   isRefreshingUsers ||
                   isProcessing
                 }
-                onChange={(
-                  event
-                ) =>
+                onChange={(event) =>
                   setSearch(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
-                onClear={() =>
-                  setSearch("")
-                }
+                onClear={() => setSearch("")}
               />
             </div>
           </FilterBar>
@@ -1380,8 +898,7 @@ export default function Settings() {
               showHeader
             />
           </div>
-        ) : filteredAccounts.length >
-          0 ? (
+        ) : filteredAccounts.length > 0 ? (
           <div className="max-h-[650px] overflow-auto">
             <table className="w-full min-w-[1050px] border-separate border-spacing-0 text-left text-sm">
               <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
@@ -1432,36 +949,25 @@ export default function Settings() {
 
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                 {filteredAccounts.map(
-                  (
-                    account,
-                    index
-                  ) => {
+                  (account, index) => {
                     const accountName =
-                      getAccountName(
-                        account
-                      );
+                      getAccountName(account);
 
                     const accountStatus =
-                      getAccountStatus(
-                        account
-                      );
+                      getAccountStatus(account);
 
                     const isActive =
-                      accountStatus ===
-                      "Active";
+                      accountStatus === "Active";
 
                     const mayManage =
-                      canManageAccount(
-                        account
-                      );
+                      canManageAccount(account);
 
-                    const restriction =
-                      mayManage
-                        ? null
-                        : getAccountRestriction(
-                            user,
-                            account
-                          );
+                    const restriction = mayManage
+                      ? null
+                      : getAccountRestriction(
+                          user,
+                          account
+                        );
 
                     return (
                       <tr
@@ -1487,23 +993,19 @@ export default function Settings() {
                             </div>
 
                             <p className="max-w-[240px] truncate font-semibold text-gray-900 dark:text-white">
-                              {
-                                accountName
-                              }
+                              {accountName}
                             </p>
                           </div>
                         </td>
 
                         <td className="whitespace-nowrap px-6 py-4 font-medium text-gray-700 dark:text-gray-300">
-                          {account.username ||
-                            "-"}
+                          {account.username || "-"}
                         </td>
 
                         <td className="whitespace-nowrap px-6 py-4">
                           <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             {ROLE_LABELS[
-                              account
-                                .role
+                              account.role
                             ] ||
                               account.role ||
                               "-"}
@@ -1512,9 +1014,7 @@ export default function Settings() {
 
                         <td className="whitespace-nowrap px-6 py-4">
                           <StatusBadge
-                            status={
-                              accountStatus
-                            }
+                            status={accountStatus}
                             size="md"
                           />
                         </td>
@@ -1522,63 +1022,40 @@ export default function Settings() {
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
                             {mayManage ? (
-                              <>
-                                <IconButton
-                                  label={`Reset password for ${accountName}`}
-                                  title="Reset Password"
-                                  variant="primary"
-                                  size="md"
-                                  disabled={
-                                    isProcessing
-                                  }
-                                  onClick={() =>
-                                    handleOpenReset(
-                                      account
-                                    )
-                                  }
-                                >
-                                  <FiShield
+                              <IconButton
+                                label={`${
+                                  isActive
+                                    ? "Deactivate"
+                                    : "Activate"
+                                } ${accountName}`}
+                                title={
+                                  isActive
+                                    ? "Deactivate Account"
+                                    : "Activate Account"
+                                }
+                                variant={
+                                  isActive
+                                    ? "danger"
+                                    : "success"
+                                }
+                                size="md"
+                                disabled={isProcessing}
+                                onClick={() =>
+                                  handleOpenToggle(
+                                    account
+                                  )
+                                }
+                              >
+                                {isActive ? (
+                                  <FiUserX
                                     aria-hidden="true"
                                   />
-                                </IconButton>
-
-                                <IconButton
-                                  label={`${
-                                    isActive
-                                      ? "Deactivate"
-                                      : "Activate"
-                                  } ${accountName}`}
-                                  title={
-                                    isActive
-                                      ? "Deactivate Account"
-                                      : "Activate Account"
-                                  }
-                                  variant={
-                                    isActive
-                                      ? "danger"
-                                      : "success"
-                                  }
-                                  size="md"
-                                  disabled={
-                                    isProcessing
-                                  }
-                                  onClick={() =>
-                                    handleOpenToggle(
-                                      account
-                                    )
-                                  }
-                                >
-                                  {isActive ? (
-                                    <FiUserX
-                                      aria-hidden="true"
-                                    />
-                                  ) : (
-                                    <FiUserCheck
-                                      aria-hidden="true"
-                                    />
-                                  )}
-                                </IconButton>
-                              </>
+                                ) : (
+                                  <FiUserCheck
+                                    aria-hidden="true"
+                                  />
+                                )}
+                              </IconButton>
                             ) : (
                               <RestrictedAction
                                 label={
@@ -1625,10 +1102,7 @@ export default function Settings() {
               }
               onSecondaryAction={
                 search.trim()
-                  ? () =>
-                      setSearch(
-                        ""
-                      )
+                  ? () => setSearch("")
                   : undefined
               }
             />
@@ -1637,151 +1111,7 @@ export default function Settings() {
       </section>
 
       <ConfirmDialog
-        open={
-          Boolean(
-            resetTarget
-          ) &&
-          !temporaryPassword
-        }
-        title="Reset Account Password"
-        tone="warning"
-        confirmLabel="Generate Password"
-        cancelLabel="Cancel"
-        loading={
-          processingAction ===
-          "reset"
-        }
-        disabled={
-          !resetTarget?.id ||
-          !canManageAccount(
-            resetTarget
-          )
-        }
-        closeOnBackdrop={
-          !isProcessing
-        }
-        onClose={
-          handleCloseResetDialog
-        }
-        onConfirm={
-          handleResetPassword
-        }
-      >
-        <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
-          Generate a new
-          temporary password for{" "}
-          <strong className="font-extrabold text-gray-900 dark:text-white">
-            {
-              resetAccountName
-            }
-          </strong>
-          ?
-        </p>
-
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-          The user will be
-          required to change the
-          temporary password
-          during the next login.
-        </div>
-      </ConfirmDialog>
-
-      <Dialog
-        open={
-          Boolean(
-            resetTarget
-          ) &&
-          Boolean(
-            temporaryPassword
-          )
-        }
-        onClose={
-          handleCloseResetSuccess
-        }
-        title="Password Reset Successful"
-        description={`A temporary password was generated for ${resetAccountName}.`}
-        tone="success"
-        size="md"
-        closeOnOverlay
-        closeOnEscape
-        showCloseButton
-        bodyClassName="space-y-5 p-6"
-        footer={
-          <div className="flex w-full flex-col-reverse justify-end gap-3 sm:flex-row">
-            <Button
-              type="button"
-              variant="secondary"
-              leftIcon={
-                <FiCopy
-                  aria-hidden="true"
-                />
-              }
-              onClick={
-                handleCopyPassword
-              }
-            >
-              {copyText}
-            </Button>
-
-            <Button
-              type="button"
-              variant="success"
-              onClick={
-                handleCloseResetSuccess
-              }
-            >
-              Done
-            </Button>
-          </div>
-        }
-      >
-        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-          <FiCheckCircle
-            className="mt-0.5 shrink-0"
-            size={20}
-            aria-hidden="true"
-          />
-
-          <p className="text-sm leading-6">
-            The password reset
-            was completed
-            successfully.
-          </p>
-        </div>
-
-        <div>
-          <label
-            htmlFor="temporary-reset-password"
-            className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-          >
-            Temporary Password
-          </label>
-
-          <input
-            id="temporary-reset-password"
-            type="text"
-            readOnly
-            value={
-              temporaryPassword
-            }
-            className="ui-control font-mono font-bold"
-          />
-        </div>
-
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
-          Provide this password
-          securely to the account
-          owner. Do not send it
-          through public channels.
-        </div>
-      </Dialog>
-
-      <ConfirmDialog
-        open={
-          Boolean(
-            toggleTarget
-          )
-        }
+        open={Boolean(toggleTarget)}
         title={
           willActivate
             ? "Activate Account"
@@ -1799,28 +1129,18 @@ export default function Settings() {
         }
         cancelLabel="Cancel"
         loading={
-          processingAction ===
-          "toggle"
+          processingAction === "toggle"
         }
         disabled={
           !toggleTarget?.id ||
-          !canManageAccount(
-            toggleTarget
-          )
+          !canManageAccount(toggleTarget)
         }
-        closeOnBackdrop={
-          !isProcessing
-        }
-        onClose={
-          handleCloseToggleDialog
-        }
-        onConfirm={
-          handleConfirmToggle
-        }
+        closeOnBackdrop={!isProcessing}
+        onClose={handleCloseToggleDialog}
+        onConfirm={handleConfirmToggle}
       >
         <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
-          Are you sure you want
-          to{" "}
+          Are you sure you want to{" "}
           <strong>
             {willActivate
               ? "activate"
@@ -1828,9 +1148,7 @@ export default function Settings() {
           </strong>{" "}
           the account of{" "}
           <strong className="font-extrabold text-gray-900 dark:text-white">
-            {
-              toggleAccountName
-            }
+            {toggleAccountName}
           </strong>
           ?
         </p>
@@ -1844,15 +1162,9 @@ export default function Settings() {
 
       <SuccessToast
         title="Account Status Updated"
-        message={
-          successMessage
-        }
+        message={successMessage}
         duration={3500}
-        onClose={() =>
-          setSuccessMessage(
-            ""
-          )
-        }
+        onClose={() => setSuccessMessage("")}
       />
     </main>
   );

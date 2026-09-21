@@ -7,9 +7,9 @@ import {
 } from "react";
 
 import {
-  FiCheckCircle,
-  FiCopy,
+  FiBriefcase,
   FiLock,
+  FiMail,
   FiRefreshCw,
   FiShield,
   FiUserCheck,
@@ -42,7 +42,7 @@ import authenticatedFetch from "../utils/authenticatedFetch";
 const USERS_API_URL = `${API_BASE}/users`;
 
 const REQUEST_TIMEOUT_MS = 15000;
-const TEMP_PASSWORD_BYTES = 8;
+const CREATE_ACCOUNT_TIMEOUT_MS = 90000;
 
 const TAB_CREATE = "CREATE";
 const TAB_ACCOUNTS = "ACCOUNTS";
@@ -50,20 +50,18 @@ const TAB_ACCOUNTS = "ACCOUNTS";
 const ROLE_CONFIG = {
   [ROLES.HR_STAFF]: {
     label: "HR Staff",
-    prefix: "HR",
-    usernamePrefix: "hr",
   },
 
   [ROLES.HR_MANAGER]: {
     label: "HR Manager",
-    prefix: "HM",
-    usernamePrefix: "hm",
+  },
+
+  [ROLES.HR_COORDINATOR]: {
+    label: "HR Coordinator",
   },
 
   [ROLES.IT_SUPPORT]: {
     label: "IT Support",
-    prefix: "IT",
-    usernamePrefix: "it",
   },
 };
 
@@ -71,6 +69,8 @@ const ROLE_LABELS = {
   SUPER_ADMIN: "Super Admin",
   HR_MANAGER: "HR Manager",
   HR_STAFF: "HR Staff",
+  HR_COORDINATOR:
+    "HR Coordinator",
   IT_SUPPORT: "IT Support",
 };
 
@@ -84,78 +84,18 @@ const CONTROL_CLASS_NAME = [
   "dark:disabled:bg-slate-800 dark:disabled:text-gray-500",
 ].join(" ");
 
-const READ_ONLY_CONTROL_CLASS_NAME = [
-  CONTROL_CLASS_NAME,
-  "cursor-not-allowed bg-gray-100 font-semibold text-gray-600",
-  "dark:bg-slate-800 dark:text-gray-300",
-].join(" ");
-
 function normalizeRole(value) {
   return String(value || "")
     .trim()
     .toUpperCase();
 }
 
-function generateTemporaryPassword() {
-  if (
-    !window.crypto ||
-    typeof window.crypto.getRandomValues !== "function"
-  ) {
-    throw new Error(
-      "Secure temporary password generation is unavailable in this browser."
-    );
-  }
-
-  const randomBytes = new Uint8Array(
-    TEMP_PASSWORD_BYTES
-  );
-
-  window.crypto.getRandomValues(
-    randomBytes
-  );
-
-  return Array.from(
-    randomBytes,
-    (value) =>
-      value
-        .toString(16)
-        .padStart(2, "0")
-  ).join("");
-}
-
-function extractNumberFromUserId(
-  userId,
-  prefix
-) {
-  const normalizedUserId = String(
-    userId || ""
-  ).trim();
-
-  if (
-    !normalizedUserId.startsWith(
-      prefix
-    )
-  ) {
-    return 0;
-  }
-
-  const numericPart =
-    normalizedUserId.replace(
-      prefix,
-      ""
-    );
-
-  const parsedNumber =
-    Number.parseInt(
-      numericPart,
-      10
-    );
-
-  return Number.isNaN(
-    parsedNumber
-  )
-    ? 0
-    : parsedNumber;
+function validRecoveryEmail(value) {
+  if (!value.trim()) return true;
+  const normalized = value.trim().toLowerCase();
+  return normalized.length <= 254 &&
+    /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(normalized) &&
+    !normalized.split("@")[1].split(".").some(part => part.startsWith("-") || part.endsWith("-"));
 }
 
 function getApiError(
@@ -178,7 +118,8 @@ function getApiError(
 
 async function requestJson(
   url,
-  options = {}
+  options = {},
+  timeoutMs = REQUEST_TIMEOUT_MS
 ) {
   const controller =
     new AbortController();
@@ -186,7 +127,7 @@ async function requestJson(
   const timeoutId =
     window.setTimeout(() => {
       controller.abort();
-    }, REQUEST_TIMEOUT_MS);
+    }, timeoutMs);
 
   try {
     const response =
@@ -214,11 +155,16 @@ async function requestJson(
         .catch(() => null);
 
     if (!response.ok) {
-      throw new Error(
+      const requestError = new Error(
         data?.message ||
           data?.error ||
           `Request failed with status ${response.status}`
       );
+
+      // Preserve HTTP status for field-specific form errors.
+      requestError.status = response.status;
+
+      throw requestError;
     }
 
     return data;
@@ -267,7 +213,6 @@ function getAccountName(account) {
     account?.full_name ||
     account?.fullName ||
     account?.name ||
-    account?.username ||
     "Unknown User"
   );
 }
@@ -287,6 +232,57 @@ function getAccountStatus(
     "active"
     ? "Active"
     : "Inactive";
+}
+
+/*
+ * The backend exposes this state to Super Admin only.
+ * Do not infer resend eligibility from Inactive alone.
+ */
+function getCredentialsDeliveryStatus(account) {
+  const status = String(
+    account?.account_credentials_delivery_status || ""
+  ).trim().toUpperCase();
+
+  return ["PENDING", "SENDING", "FAILED", "SMTP_ACCEPTED"]
+    .includes(status)
+    ? status
+    : null;
+}
+
+function isInitialDeliveryBlocked(account) {
+  return ["PENDING", "SENDING", "FAILED"].includes(
+    getCredentialsDeliveryStatus(account)
+  );
+}
+
+function canResendInitialCredentials(account) {
+  return (
+    !isProtectedAccount(account) &&
+    getAccountStatus(account) === "Inactive" &&
+    getCredentialsDeliveryStatus(account) === "FAILED" &&
+    account?.can_resend_initial_credentials === true
+  );
+}
+
+function getAssignedCompany(
+  account
+) {
+  return String(
+    account?.assignedCompany ??
+      account?.assigned_company ??
+      ""
+  ).trim();
+}
+
+function isHrCoordinatorAccount(
+  account
+) {
+  return (
+    normalizeRole(
+      account?.role
+    ) ===
+    ROLES.HR_COORDINATOR
+  );
 }
 
 function isProtectedAccount(
@@ -385,7 +381,7 @@ function PortalTab({
 function ProtectedAction() {
   return (
     <span
-      title="Super Admin accounts are protected from administrative password reset and account-status actions."
+      title="Super Admin accounts are protected from administrative account-status actions."
       className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-500 dark:border-white/10 dark:bg-slate-800 dark:text-gray-400"
     >
       <FiLock
@@ -409,8 +405,31 @@ export default function SuperAdminPortal() {
   const [accounts, setAccounts] =
     useState([]);
 
+  const [
+    companyOptions,
+    setCompanyOptions,
+  ] = useState([]);
+
+  const [
+    selectedCompany,
+    setSelectedCompany,
+  ] = useState("");
+
   const [name, setName] =
     useState("");
+
+  const [email, setEmail] = useState("");
+
+  // Create-account form error. Separate from the
+  // recovery-email editor's emailError state.
+  const [
+    createEmailError,
+    setCreateEmailError,
+  ] = useState("");
+
+  const [emailTarget, setEmailTarget] = useState(null);
+  const [emailDraft, setEmailDraft] = useState("");
+  const [emailError, setEmailError] = useState("");
 
   const [role, setRole] =
     useState(
@@ -425,12 +444,6 @@ export default function SuperAdminPortal() {
   const [search, setSearch] =
     useState("");
 
-  const [userId, setUserId] =
-    useState("");
-
-  const [username, setUsername] =
-    useState("");
-
   const [
     validationError,
     setValidationError,
@@ -439,11 +452,6 @@ export default function SuperAdminPortal() {
   const [
     pageError,
     setPageError,
-  ] = useState("");
-
-  const [
-    copyMessage,
-    setCopyMessage,
   ] = useState("");
 
   const [
@@ -462,6 +470,11 @@ export default function SuperAdminPortal() {
   ] = useState(false);
 
   const [
+    isLoadingCompanyOptions,
+    setIsLoadingCompanyOptions,
+  ] = useState(true);
+
+  const [
     isSubmitting,
     setIsSubmitting,
   ] = useState(false);
@@ -477,40 +490,24 @@ export default function SuperAdminPortal() {
   ] = useState(false);
 
   const [
-    isSuccessDialogOpen,
-    setIsSuccessDialogOpen,
-  ] = useState(false);
-
-  const [
-    createdAccount,
-    setCreatedAccount,
-  ] = useState({
-    userId: "",
-    username: "",
-    temporaryPassword: "",
-    name: "",
-    roleLabel: "",
-  });
-
-  const [
-    resetTarget,
-    setResetTarget,
-  ] = useState(null);
-
-  const [
-    resetTemporaryPassword,
-    setResetTemporaryPassword,
-  ] = useState("");
-
-  const [
-    resetCopyMessage,
-    setResetCopyMessage,
-  ] = useState("");
-
-  const [
     toggleTarget,
     setToggleTarget,
   ] = useState(null);
+
+  const [
+    resendTarget,
+    setResendTarget,
+  ] = useState(null);
+
+  const [
+    assignmentTarget,
+    setAssignmentTarget,
+  ] = useState(null);
+
+  const [
+    assignmentCompany,
+    setAssignmentCompany,
+  ] = useState("");
 
   const isMountedRef =
     useRef(true);
@@ -520,6 +517,10 @@ export default function SuperAdminPortal() {
     ROLE_CONFIG[
       ROLES.HR_STAFF
     ];
+
+  const isCreatingHrCoordinator =
+    role ===
+    ROLES.HR_COORDINATOR;
 
   const isProcessing =
     Boolean(
@@ -630,90 +631,147 @@ export default function SuperAdminPortal() {
       []
     );
 
-  useEffect(() => {
-    void fetchUsers({
-      showInitialLoading:
-        true,
-    });
-  }, [fetchUsers]);
+  const fetchCompanyOptions =
+    useCallback(
+      async ({
+        showLoading = false,
+        showError = true,
+      } = {}) => {
+        if (
+          showLoading
+        ) {
+          setIsLoadingCompanyOptions(
+            true
+          );
+        }
 
-  const nextGeneratedAccount =
-    useMemo(() => {
-      const prefix =
-        selectedRoleConfig.prefix;
+        try {
+          if (showError) {
+            setPageError("");
+          }
 
-      const usernamePrefix =
-        selectedRoleConfig.usernamePrefix;
+          const data =
+            await requestJson(
+              `${USERS_API_URL}/company-options`
+            );
 
-      const sameRoleAccounts =
-        accounts.filter(
-          (account) =>
-            normalizeRole(
-              account?.role
-            ) ===
-            normalizeRole(
-              role
+          if (
+            !isMountedRef.current
+          ) {
+            return false;
+          }
+
+          const companies =
+            Array.isArray(
+              data?.companies
             )
-        );
+              ? data.companies
+                  .map(
+                    (company) =>
+                      String(
+                        company ||
+                          ""
+                      ).trim()
+                  )
+                  .filter(Boolean)
+              : [];
 
-      const maxNumber =
-        sameRoleAccounts.reduce(
-          (
-            currentMaximum,
-            account
-          ) => {
-            const sourceId =
-              account?.user_id ||
-              account?.userId ||
-              "";
+          setCompanyOptions(
+            Array.from(
+              new Set(
+                companies
+              )
+            ).sort(
+              (
+                first,
+                second
+              ) =>
+                first.localeCompare(
+                  second
+                )
+            )
+          );
 
-            const currentNumber =
-              extractNumberFromUserId(
-                sourceId,
-                prefix
-              );
+          return true;
+        } catch (error) {
+          console.error(
+            "Fetch company options error:",
+            error
+          );
 
-            return currentNumber >
-              currentMaximum
-              ? currentNumber
-              : currentMaximum;
-          },
-          0
-        );
+          if (
+            showError &&
+            isMountedRef.current
+          ) {
+            setPageError(
+              getApiError(
+                error,
+                "Unable to load client company options."
+              )
+            );
+          }
 
-      const nextNumber =
-        maxNumber + 1;
-
-      const paddedNumber =
-        String(
-          nextNumber
-        ).padStart(
-          2,
-          "0"
-        );
-
-      return {
-        userId: `${prefix}${paddedNumber}`,
-
-        username: `${usernamePrefix}${paddedNumber}`,
-      };
-    }, [
-      accounts,
-      role,
-      selectedRoleConfig.prefix,
-      selectedRoleConfig.usernamePrefix,
-    ]);
+          return false;
+        } finally {
+          if (
+            showLoading &&
+            isMountedRef.current
+          ) {
+            setIsLoadingCompanyOptions(
+              false
+            );
+          }
+        }
+      },
+      []
+    );
 
   useEffect(() => {
-    setUserId(
-      nextGeneratedAccount.userId
-    );
+    void Promise.all([
+      fetchUsers({
+        showInitialLoading:
+          true,
+      }),
 
-    setUsername(
-      nextGeneratedAccount.username
-    );
+      fetchCompanyOptions({
+        showLoading:
+          true,
+      }),
+    ]);
   }, [
-    nextGeneratedAccount,
+    fetchCompanyOptions,
+    fetchUsers,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isCreatingHrCoordinator
+    ) {
+      if (selectedCompany) {
+        setSelectedCompany(
+          ""
+        );
+      }
+
+      return;
+    }
+
+    if (
+      selectedCompany &&
+      !companyOptions.some(
+        (company) =>
+          company ===
+          selectedCompany
+      )
+    ) {
+      setSelectedCompany(
+        ""
+      );
+    }
+  }, [
+    companyOptions,
+    isCreatingHrCoordinator,
+    selectedCompany,
   ]);
 
   const visibleAccounts =
@@ -769,16 +827,16 @@ export default function SuperAdminPortal() {
           const searchableText =
             normalizeSearchText(
               [
-                account?.id,
-                account?.user_id,
-                account?.userId,
                 account?.full_name,
                 account?.fullName,
                 account?.name,
-                account?.username,
+                account?.email,
                 account?.role,
                 getRoleLabel(
                   account?.role
+                ),
+                getAssignedCompany(
+                  account
                 ),
                 getAccountStatus(
                   account
@@ -827,10 +885,19 @@ export default function SuperAdminPortal() {
         return;
       }
 
-      await fetchUsers({
-        showRefreshing: true,
-      });
+      await Promise.all([
+        fetchUsers({
+          showRefreshing:
+            true,
+        }),
+
+        fetchCompanyOptions({
+          showError:
+            true,
+        }),
+      ]);
     }, [
+      fetchCompanyOptions,
       fetchUsers,
       isBusy,
       isLoadingAccounts,
@@ -866,6 +933,10 @@ export default function SuperAdminPortal() {
         return "Full name must not exceed 150 characters.";
       }
 
+      if (!email.trim() || !validRecoveryEmail(email)) {
+        return "Enter a valid account email address to receive the new user credentials.";
+      }
+
       if (
         !role ||
         !ROLE_CONFIG[role]
@@ -874,18 +945,31 @@ export default function SuperAdminPortal() {
       }
 
       if (
-        !userId ||
-        !username
+        isCreatingHrCoordinator
       ) {
-        return "Generated account details are incomplete.";
+        if (
+          !selectedCompany
+        ) {
+          return "Please assign a client company to the HR Coordinator account.";
+        }
+
+        if (
+          !companyOptions.includes(
+            selectedCompany
+          )
+        ) {
+          return "Please select a valid client company assignment.";
+        }
       }
 
       return "";
     }, [
+      companyOptions,
+      isCreatingHrCoordinator,
+      email,
       name,
       role,
-      userId,
-      username,
+      selectedCompany,
     ]);
 
   const handleCreateAccount =
@@ -909,6 +993,7 @@ export default function SuperAdminPortal() {
         }
 
         setValidationError("");
+        setCreateEmailError("");
         setPageError("");
 
         setIsConfirmDialogOpen(
@@ -959,96 +1044,77 @@ export default function SuperAdminPortal() {
       try {
         setIsSubmitting(true);
         setPageError("");
+        setValidationError("");
+        setCreateEmailError("");
 
-        const generatedPassword =
-          generateTemporaryPassword();
+        await requestJson(
+          USERS_API_URL,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name: trimmedName,
+              email: email.trim(),
+              role,
+              assignedCompany: isCreatingHrCoordinator
+                ? selectedCompany
+                : undefined,
+            }),
+          },
+          CREATE_ACCOUNT_TIMEOUT_MS
+        );
 
-        const data =
-          await requestJson(
-            USERS_API_URL,
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-
-              body:
-                JSON.stringify({
-                  name:
-                    trimmedName,
-
-                  role,
-
-                  temporaryPassword:
-                    generatedPassword,
-                }),
-            }
-          );
-
-        if (
-          !isMountedRef.current
-        ) {
+        if (!isMountedRef.current) {
           return;
         }
 
-        setCreatedAccount({
-          userId:
-            data?.account?.userId ||
-            data?.account?.user_id ||
-            "",
-
-          username:
-            data?.account?.username ||
-            "",
-
-          temporaryPassword:
-            generatedPassword,
-
-          name:
-            trimmedName,
-
-          roleLabel:
-            getRoleLabel(
-              role
-            ),
-        });
-
-        setIsConfirmDialogOpen(
-          false
-        );
-
-        setIsSuccessDialogOpen(
-          true
-        );
-
+        setIsConfirmDialogOpen(false);
         setName("");
-
-        setRole(
-          ROLES.HR_STAFF
-        );
-
+        setEmail("");
+        setRole(ROLES.HR_STAFF);
+        setSelectedCompany("");
         setValidationError("");
-
-        await fetchUsers({
-          showError: false,
-        });
-      } catch (error) {
-        console.error(
-          "Create account error:",
-          error
+        setCreateEmailError("");
+        setSuccessMessage(
+          "Account created. Credentials email accepted for delivery to the registered email address."
         );
 
-        if (
-          isMountedRef.current
-        ) {
-          setPageError(
-            getApiError(
-              error,
-              "Unable to create the user account."
-            )
+        await fetchUsers({ showError: false });
+      } catch (error) {
+        if (isMountedRef.current) {
+          const message = getApiError(
+            error,
+            "Unable to create the user account."
           );
+
+          const isDuplicateRecoveryEmail =
+            error?.status === 409 &&
+            /recovery email\s+is\s+already registered/i.test(
+              message
+            );
+
+          // The confirmation dialog must close so the
+          // error is visible beside the editable field.
+          // Keep all entered form values unchanged.
+          setIsConfirmDialogOpen(false);
+
+          if (isDuplicateRecoveryEmail) {
+            setCreateEmailError(
+              "This recovery email is already registered. Please use a different recovery email."
+            );
+            setValidationError("");
+            setPageError("");
+          } else {
+            setCreateEmailError("");
+            setValidationError(
+              error?.name === "AbortError"
+                ? "The account request timed out. Check Created Accounts before trying again; the account may already exist."
+                : message
+            );
+            setPageError("");
+          }
         }
       } finally {
         if (
@@ -1062,316 +1128,12 @@ export default function SuperAdminPortal() {
     }, [
       fetchUsers,
       isBusy,
+      isCreatingHrCoordinator,
+      email,
       name,
       role,
+      selectedCompany,
       validateForm,
-    ]);
-
-  const handleCloseSuccessDialog =
-    useCallback(() => {
-      setIsSuccessDialogOpen(
-        false
-      );
-
-      setCopyMessage("");
-
-      setCreatedAccount(
-        (currentAccount) => ({
-          ...currentAccount,
-
-          temporaryPassword:
-            "",
-        })
-      );
-    }, []);
-
-  const handleCopyCredentials =
-  useCallback(async () => {
-    const credentials = [
-      `Full Name: ${createdAccount.name}`,
-      `Role: ${createdAccount.roleLabel}`,
-      `User ID: ${createdAccount.userId}`,
-      `Username: ${createdAccount.username}`,
-      `Temporary Password: ${createdAccount.temporaryPassword}`,
-    ].join("\n");
-
-    try {
-      const clipboard =
-        globalThis.navigator?.clipboard;
-
-      if (
-        clipboard &&
-        typeof clipboard.writeText ===
-          "function"
-      ) {
-        await clipboard.writeText(
-          credentials
-        );
-
-        setCopyMessage(
-          "Credentials copied to clipboard."
-        );
-
-        return;
-      }
-
-      /*
-       * LAN HTTP fallback:
-       * navigator.clipboard may be unavailable
-       * outside a secure browser context.
-       */
-      const textarea =
-        document.createElement(
-          "textarea"
-        );
-
-      const previouslyFocusedElement =
-        document.activeElement;
-
-      textarea.value =
-        credentials;
-
-      textarea.setAttribute(
-        "readonly",
-        ""
-      );
-
-      textarea.style.position =
-        "fixed";
-
-      textarea.style.top = "0";
-      textarea.style.left =
-        "-9999px";
-
-      textarea.style.opacity =
-        "0";
-
-      textarea.style.pointerEvents =
-        "none";
-
-      document.body.appendChild(
-        textarea
-      );
-
-      try {
-        textarea.focus();
-        textarea.select();
-
-        textarea.setSelectionRange(
-          0,
-          textarea.value.length
-        );
-
-        const copied =
-          document.execCommand(
-            "copy"
-          );
-
-        if (!copied) {
-          throw new Error(
-            "Browser rejected the clipboard copy operation."
-          );
-        }
-      } finally {
-        textarea.remove();
-
-        if (
-          previouslyFocusedElement &&
-          typeof previouslyFocusedElement.focus ===
-            "function"
-        ) {
-          previouslyFocusedElement.focus();
-        }
-      }
-
-      setCopyMessage(
-        "Credentials copied to clipboard."
-      );
-    } catch (error) {
-      console.error(
-        "Copy credentials error:",
-        error
-      );
-
-      setCopyMessage(
-        "Unable to copy automatically. Please copy the credentials manually."
-      );
-    }
-  }, [createdAccount]);
-
-  const handleOpenReset =
-    useCallback(
-      (account) => {
-        if (
-          !account?.id ||
-          isBusy ||
-          isProtectedAccount(
-            account
-          )
-        ) {
-          return;
-        }
-
-        setPageError("");
-
-        setResetTemporaryPassword(
-          ""
-        );
-
-        setResetCopyMessage(
-          ""
-        );
-
-        setResetTarget(
-          account
-        );
-      },
-      [
-        isBusy,
-      ]
-    );
-
-  const handleCloseReset =
-    useCallback(() => {
-      if (isProcessing) {
-        return;
-      }
-
-      setResetTarget(null);
-
-      setResetTemporaryPassword(
-        ""
-      );
-
-      setResetCopyMessage(
-        ""
-      );
-    }, [
-      isProcessing,
-    ]);
-
-  const handleConfirmReset =
-    useCallback(async () => {
-      if (
-        !resetTarget?.id ||
-        isBusy ||
-        isProtectedAccount(
-          resetTarget
-        )
-      ) {
-        return;
-      }
-
-      try {
-        setProcessingAction(
-          "reset"
-        );
-
-        setPageError("");
-
-        const generatedPassword =
-          generateTemporaryPassword();
-
-        await requestJson(
-          `${USERS_API_URL}/reset/${encodeURIComponent(
-            resetTarget.id
-          )}`,
-          {
-            method: "PUT",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body:
-              JSON.stringify({
-                temporaryPassword:
-                  generatedPassword,
-              }),
-          }
-        );
-
-        if (
-          !isMountedRef.current
-        ) {
-          return;
-        }
-
-        setResetTemporaryPassword(
-          generatedPassword
-        );
-
-        await fetchUsers({
-          showError: false,
-        });
-      } catch (error) {
-        console.error(
-          "Reset account password error:",
-          error
-        );
-
-        if (
-          isMountedRef.current
-        ) {
-          setPageError(
-            getApiError(
-              error,
-              "Unable to reset the account password."
-            )
-          );
-
-          setResetTarget(
-            null
-          );
-
-          setResetTemporaryPassword(
-            ""
-          );
-        }
-      } finally {
-        if (
-          isMountedRef.current
-        ) {
-          setProcessingAction(
-            ""
-          );
-        }
-      }
-    }, [
-      fetchUsers,
-      isBusy,
-      resetTarget,
-    ]);
-
-  const handleCopyResetPassword =
-    useCallback(async () => {
-      if (
-        !resetTemporaryPassword
-      ) {
-        return;
-      }
-
-      try {
-        await navigator.clipboard.writeText(
-          resetTemporaryPassword
-        );
-
-        setResetCopyMessage(
-          "Temporary password copied."
-        );
-      } catch (error) {
-        console.error(
-          "Copy reset password error:",
-          error
-        );
-
-        setResetCopyMessage(
-          "Unable to copy automatically."
-        );
-      }
-    }, [
-      resetTemporaryPassword,
     ]);
 
   const handleOpenToggle =
@@ -1380,10 +1142,18 @@ export default function SuperAdminPortal() {
         if (
           !account?.id ||
           isBusy ||
-          isProtectedAccount(
-            account
-          )
+          isProtectedAccount(account)
         ) {
+          return;
+        }
+
+        if (
+          getAccountStatus(account) === "Inactive" &&
+          isInitialDeliveryBlocked(account)
+        ) {
+          setPageError(
+            "This account cannot be activated while initial credentials delivery is pending or failed. Use Resend Credentials when available."
+          );
           return;
         }
 
@@ -1427,6 +1197,17 @@ export default function SuperAdminPortal() {
         getAccountStatus(
           toggleTarget
         );
+
+      if (
+        currentStatus === "Inactive" &&
+        isInitialDeliveryBlocked(toggleTarget)
+      ) {
+        setToggleTarget(null);
+        setPageError(
+          "Initial credentials delivery is incomplete. Refresh the accounts before attempting activation."
+        );
+        return;
+      }
 
       const nextStatus =
         currentStatus === "Active"
@@ -1527,10 +1308,325 @@ export default function SuperAdminPortal() {
       toggleTarget,
     ]);
 
-  const resetAccountName =
-    getAccountName(
-      resetTarget
+  const handleOpenResend = useCallback(
+    (account) => {
+      if (
+        isBusy ||
+        !account?.id ||
+        !canResendInitialCredentials(account)
+      ) {
+        return;
+      }
+
+      setPageError("");
+      setResendTarget(account);
+    },
+    [isBusy]
+  );
+
+  const handleCloseResend = useCallback(() => {
+    if (isProcessing) return;
+    setResendTarget(null);
+  }, [isProcessing]);
+
+  const handleConfirmResend = useCallback(async () => {
+    if (
+      isBusy ||
+      !resendTarget?.id ||
+      !canResendInitialCredentials(resendTarget)
+    ) {
+      return;
+    }
+
+    try {
+      setProcessingAction("resend");
+      setPageError("");
+
+      const data = await requestJson(
+        `${USERS_API_URL}/${encodeURIComponent(
+          resendTarget.id
+        )}/resend-credentials`,
+        { method: "POST" },
+        CREATE_ACCOUNT_TIMEOUT_MS
+      );
+
+      if (!isMountedRef.current) return;
+
+      setResendTarget(null);
+      setSuccessMessage(
+        data?.message ||
+          "New account credentials email accepted for delivery. The account is now active."
+      );
+
+      await fetchUsers({ showError: true });
+    } catch (error) {
+      if (!isMountedRef.current) return;
+
+      setResendTarget(null);
+      setPageError(
+        error?.name === "AbortError"
+          ? "The resend request timed out. Refresh Created Accounts before trying again; the email may already have been accepted for delivery."
+          : getApiError(
+              error,
+              "Unable to resend initial account credentials."
+            )
+      );
+
+      // The server may have changed the account state even
+      // when this request timed out. Reload before another try.
+      await fetchUsers({ showError: false });
+    } finally {
+      if (isMountedRef.current) {
+        setProcessingAction("");
+      }
+    }
+  }, [fetchUsers, isBusy, resendTarget]);
+
+  const handleOpenRecoveryEmail = useCallback((account) => {
+    if (!account?.id || isBusy || isProtectedAccount(account)) return;
+    setPageError("");
+    setEmailTarget(account);
+    setEmailDraft(account.email || "");
+    setEmailError("");
+  }, [isBusy]);
+
+  const handleCloseRecoveryEmail = useCallback(() => {
+    if (isProcessing) return;
+    setEmailTarget(null);
+    setEmailDraft("");
+    setEmailError("");
+  }, [isProcessing]);
+
+  const handleSaveRecoveryEmail = useCallback(async () => {
+    if (!emailTarget?.id || isBusy) return;
+    if (!validRecoveryEmail(emailDraft)) {
+      setEmailError("Enter a valid recovery email address (maximum 254 characters).");
+      return;
+    }
+    try {
+      setProcessingAction("email");
+      setEmailError("");
+      const data = await requestJson(
+        `${USERS_API_URL}/${encodeURIComponent(emailTarget.id)}/recovery-email`,
+        { method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: emailDraft.trim() }) }
+      );
+      if (!isMountedRef.current) return;
+      setAccounts(current => current.map(account =>
+        String(account.id) === String(emailTarget.id)
+          ? { ...account, email: data.email, email_verified: data.unchanged ? account.email_verified : false }
+          : account
+      ));
+      setEmailTarget(null);
+      setEmailDraft("");
+      setEmailError("");
+      setSuccessMessage(data.message || "Recovery email updated.");
+      void fetchUsers({ showError: false });
+    } catch (error) {
+      if (isMountedRef.current) setEmailError(getApiError(error, "Unable to save recovery email."));
+    } finally {
+      if (isMountedRef.current) setProcessingAction("");
+    }
+  }, [emailTarget, emailDraft, isBusy, fetchUsers]);
+
+  const handleOpenAssignment =
+    useCallback(
+      (account) => {
+        if (
+          !account?.id ||
+          isBusy ||
+          !isHrCoordinatorAccount(
+            account
+          )
+        ) {
+          return;
+        }
+
+        setPageError("");
+
+        setAssignmentTarget(
+          account
+        );
+
+        setAssignmentCompany(
+          getAssignedCompany(
+            account
+          )
+        );
+      },
+      [
+        isBusy,
+      ]
     );
+
+  const handleCloseAssignment =
+    useCallback(() => {
+      if (
+        processingAction ===
+        "assignment"
+      ) {
+        return;
+      }
+
+      setAssignmentTarget(
+        null
+      );
+
+      setAssignmentCompany(
+        ""
+      );
+    }, [
+      processingAction,
+    ]);
+
+  const handleConfirmAssignment =
+    useCallback(async () => {
+      if (
+        !assignmentTarget?.id ||
+        isBusy ||
+        !isHrCoordinatorAccount(
+          assignmentTarget
+        )
+      ) {
+        return;
+      }
+
+      const normalizedCompany =
+        String(
+          assignmentCompany ||
+            ""
+        ).trim();
+
+      if (
+        !normalizedCompany ||
+        !companyOptions.includes(
+          normalizedCompany
+        )
+      ) {
+        setPageError(
+          "Please select a valid client company assignment."
+        );
+
+        return;
+      }
+
+      const accountName =
+        getAccountName(
+          assignmentTarget
+        );
+
+      try {
+        setProcessingAction(
+          "assignment"
+        );
+
+        setPageError("");
+
+        const data =
+          await requestJson(
+            `${USERS_API_URL}/${encodeURIComponent(
+              assignmentTarget.id
+            )}/assigned-company`,
+            {
+              method: "PUT",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify({
+                  assignedCompany:
+                    normalizedCompany,
+                }),
+            }
+          );
+
+        if (
+          !isMountedRef.current
+        ) {
+          return;
+        }
+
+        const updatedCompany =
+          String(
+            data?.assignedCompany ||
+              data?.assigned_company ||
+              normalizedCompany
+          ).trim();
+
+        setAccounts(
+          (currentAccounts) =>
+            currentAccounts.map(
+              (account) =>
+                String(
+                  account?.id
+                ) ===
+                String(
+                  assignmentTarget.id
+                )
+                  ? {
+                      ...account,
+
+                      assigned_company:
+                        updatedCompany,
+
+                      assignedCompany:
+                        updatedCompany,
+                    }
+                  : account
+            )
+        );
+
+        setAssignmentTarget(
+          null
+        );
+
+        setAssignmentCompany(
+          ""
+        );
+
+        setSuccessMessage(
+          `${accountName} is now assigned to ${updatedCompany}. The coordinator must sign in again if an existing session was active.`
+        );
+
+        void fetchUsers({
+          showError:
+            false,
+        });
+      } catch (error) {
+        console.error(
+          "Update HR Coordinator company assignment error:",
+          error
+        );
+
+        if (
+          isMountedRef.current
+        ) {
+          setPageError(
+            getApiError(
+              error,
+              "Unable to update the HR Coordinator company assignment."
+            )
+          );
+        }
+      } finally {
+        if (
+          isMountedRef.current
+        ) {
+          setProcessingAction(
+            ""
+          );
+        }
+      }
+    }, [
+      assignmentCompany,
+      assignmentTarget,
+      companyOptions,
+      fetchUsers,
+      isBusy,
+    ]);
 
   const toggleAccountName =
     getAccountName(
@@ -1542,6 +1638,16 @@ export default function SuperAdminPortal() {
       toggleTarget
     );
 
+  const assignmentAccountName =
+    getAccountName(
+      assignmentTarget
+    );
+
+  const assignmentCurrentCompany =
+    getAssignedCompany(
+      assignmentTarget
+    );
+
   const willActivate =
     toggleCurrentStatus !==
     "Active";
@@ -1551,7 +1657,7 @@ export default function SuperAdminPortal() {
       <PageHeader
         eyebrow="System Administration"
         title="Super Admin Portal"
-        description="Create, review, and securely manage internal system accounts."
+        description="Create, review, and securely manage internal system accounts, including company-scoped HR Coordinator access."
         icon={
           <FiShield
             size={22}
@@ -1671,7 +1777,7 @@ export default function SuperAdminPortal() {
                 </h2>
 
                 <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-                  Create an internal account and assign an authorized system role.
+                  Create an internal account, assign an authorized system role, and bind HR Coordinator access to a specific client company.
                 </p>
               </div>
             </div>
@@ -1736,10 +1842,22 @@ export default function SuperAdminPortal() {
                     onChange={(
                       event
                     ) => {
-                      setRole(
+                      const nextRole =
                         event.target
-                          .value
+                          .value;
+
+                      setRole(
+                        nextRole
                       );
+
+                      if (
+                        nextRole !==
+                        ROLES.HR_COORDINATOR
+                      ) {
+                        setSelectedCompany(
+                          ""
+                        );
+                      }
 
                       setValidationError(
                         ""
@@ -1764,6 +1882,14 @@ export default function SuperAdminPortal() {
 
                     <option
                       value={
+                        ROLES.HR_COORDINATOR
+                      }
+                    >
+                      HR Coordinator
+                    </option>
+
+                    <option
+                      value={
                         ROLES.IT_SUPPORT
                       }
                     >
@@ -1773,70 +1899,130 @@ export default function SuperAdminPortal() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div>
+                <label htmlFor="super-admin-recovery-email"
+                  className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Account Email (required)
+                </label>
+                <input
+                  id="super-admin-recovery-email"
+                  type="email"
+                  value={email}
+                  disabled={isBusy}
+                  maxLength={254}
+                  autoComplete="off"
+                  placeholder="name@example.com"
+                  required
+                  aria-invalid={Boolean(createEmailError)}
+                  aria-describedby={
+                    createEmailError
+                      ? "super-admin-recovery-email-error"
+                      : undefined
+                  }
+                  className={[
+                    CONTROL_CLASS_NAME,
+                    createEmailError
+                      ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                      : "",
+                  ].join(" ")}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setCreateEmailError("");
+                    setValidationError("");
+                  }}
+                />
+                {createEmailError && (
+                  <p
+                    id="super-admin-recovery-email-error"
+                    role="alert"
+                    className="mt-2 text-sm font-semibold text-red-700 dark:text-red-400"
+                  >
+                    {createEmailError}
+                  </p>
+                )}
+                <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                  The new user receives their account credentials at this address. They must verify the address before using Forgot Password.
+                </p>
+              </div>
+
+              {isCreatingHrCoordinator && (
                 <div>
                   <label
-                    htmlFor="super-admin-user-id"
+                    htmlFor="super-admin-assigned-company"
                     className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300"
                   >
-                    System User ID
+                    Assigned Client Company
                   </label>
 
-                  <input
-                    id="super-admin-user-id"
-                    type="text"
-                    value={userId}
-                    readOnly
-                    aria-readonly="true"
-                    tabIndex={-1}
-                    className={
-                      READ_ONLY_CONTROL_CLASS_NAME
+                  <select
+                    id="super-admin-assigned-company"
+                    value={
+                      selectedCompany
                     }
-                  />
-                </div>
+                    disabled={
+                      isBusy ||
+                      isLoadingCompanyOptions
+                    }
+                    className={
+                      CONTROL_CLASS_NAME
+                    }
+                    onChange={(
+                      event
+                    ) => {
+                      setSelectedCompany(
+                        event.target
+                          .value
+                      );
 
-                <div>
-                  <label
-                    htmlFor="super-admin-username"
-                    className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300"
+                      setValidationError(
+                        ""
+                      );
+                    }}
                   >
-                    Username
-                  </label>
+                    <option value="">
+                      {isLoadingCompanyOptions
+                        ? "Loading client companies..."
+                        : companyOptions.length
+                          ? "Select client company"
+                          : "No client companies available"}
+                    </option>
 
-                  <input
-                    id="super-admin-username"
-                    type="text"
-                    value={username}
-                    readOnly
-                    aria-readonly="true"
-                    tabIndex={-1}
-                    className={
-                      READ_ONLY_CONTROL_CLASS_NAME
-                    }
-                  />
+                    {companyOptions.map(
+                      (
+                        company
+                      ) => (
+                        <option
+                          key={
+                            company
+                          }
+                          value={
+                            company
+                          }
+                        >
+                          {
+                            company
+                          }
+                        </option>
+                      )
+                    )}
+                  </select>
+
+                  <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                    HR Coordinator access will be limited to employee, deployment, and incident data for this assigned client company.
+                  </p>
                 </div>
+              )}
+
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+                The system generates the User ID, username, and temporary password on the server. All login credentials are emailed directly to the account owner, not displayed here.
               </div>
 
               <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm leading-6 text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
-                <strong>
-                  Account preview:
-                </strong>{" "}
-                This account will be
-                created as{" "}
-                <strong>
-                  {
-                    selectedRoleConfig.label
-                  }
-                </strong>{" "}
-                with User ID{" "}
-                <strong>
-                  {userId}
-                </strong>{" "}
-                and username{" "}
-                <strong>
-                  {username}
-                </strong>
-                .
+                The account will be created as <strong>{selectedRoleConfig.label}</strong>
+                {isCreatingHrCoordinator && selectedCompany
+                  ? <> and assigned to <strong>{selectedCompany}</strong>.</>
+                  : "."}
+                {" "}Login credentials will be sent only to the account email address.
               </div>
 
               {validationError && (
@@ -1863,7 +2049,11 @@ export default function SuperAdminPortal() {
                   }
                   disabled={
                     isBusy ||
-                    isLoadingAccounts
+                    isLoadingAccounts ||
+                    (
+                      isCreatingHrCoordinator &&
+                      isLoadingCompanyOptions
+                    )
                   }
                 >
                   Create Account
@@ -1891,7 +2081,7 @@ export default function SuperAdminPortal() {
             </h2>
 
             <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              Review and manage internal accounts created for HR and IT support roles.
+              Review and manage internal accounts created for HR, HR Coordinator, and IT support roles.
             </p>
           </header>
 
@@ -1923,7 +2113,7 @@ export default function SuperAdminPortal() {
                 <SearchInput
                   label="Search created accounts"
                   hideLabel
-                  placeholder="Search ID, name, username, role, or status..."
+                  placeholder="Search name, email, role, company, or status..."
                   value={search}
                   disabled={
                     isLoadingAccounts ||
@@ -1996,6 +2186,14 @@ export default function SuperAdminPortal() {
 
                   <option
                     value={
+                      ROLES.HR_COORDINATOR
+                    }
+                  >
+                    HR Coordinator
+                  </option>
+
+                  <option
+                    value={
                       ROLES.IT_SUPPORT
                     }
                   >
@@ -2010,30 +2208,28 @@ export default function SuperAdminPortal() {
             <div className="p-5 sm:p-6">
               <LoadingSkeleton
                 rows={6}
-                columns={6}
+                columns={8}
                 showHeader
               />
             </div>
           ) : filteredAccounts.length >
             0 ? (
             <div className="max-h-[650px] overflow-auto">
-              <table className="w-full min-w-[1020px] border-separate border-spacing-0 text-left text-sm">
+              <table className="w-full min-w-[1080px] border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
                   <tr className="text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    <th className="px-5 py-4 sm:px-6">
-                      User ID
-                    </th>
-
                     <th className="px-5 py-4 sm:px-6">
                       Full Name
                     </th>
 
-                    <th className="px-5 py-4 sm:px-6">
-                      Username
-                    </th>
+                    <th className="px-5 py-4 sm:px-6">Recovery Email</th>
 
                     <th className="px-5 py-4 sm:px-6">
                       Role
+                    </th>
+
+                    <th className="px-5 py-4 sm:px-6">
+                      Assigned Company
                     </th>
 
                     <th className="px-5 py-4 sm:px-6">
@@ -2071,6 +2267,25 @@ export default function SuperAdminPortal() {
                           account
                         );
 
+                      const isHrCoordinator =
+                        isHrCoordinatorAccount(
+                          account
+                        );
+
+                      const assignedCompany =
+                        getAssignedCompany(
+                          account
+                        );
+
+                      const deliveryStatus =
+                        getCredentialsDeliveryStatus(account);
+
+                      const isActivationBlocked =
+                        !isActive && isInitialDeliveryBlocked(account);
+
+                      const canResend =
+                        canResendInitialCredentials(account);
+
                       return (
                         <tr
                           key={getAccountKey(
@@ -2079,13 +2294,6 @@ export default function SuperAdminPortal() {
                           )}
                           className="transition-colors hover:bg-indigo-50/50 dark:hover:bg-white/5"
                         >
-                          <td className="whitespace-nowrap px-5 py-4 font-semibold text-gray-500 sm:px-6 dark:text-gray-400">
-                            {account.user_id ||
-                              account.userId ||
-                              account.id ||
-                              "-"}
-                          </td>
-
                           <td className="px-5 py-4 sm:px-6">
                             <p className="max-w-[260px] truncate font-semibold text-gray-900 dark:text-white">
                               {
@@ -2094,9 +2302,15 @@ export default function SuperAdminPortal() {
                             </p>
                           </td>
 
-                          <td className="whitespace-nowrap px-5 py-4 font-medium text-gray-700 sm:px-6 dark:text-gray-300">
-                            {account.username ||
-                              "-"}
+                          <td className="px-5 py-4 sm:px-6">
+                            <span className="block max-w-[240px] truncate text-gray-700 dark:text-gray-300" title={account.email || "Not registered"}>
+                              {account.email || "Not registered"}
+                            </span>
+                            {account.email && (
+                              <span className={account.email_verified ? "text-xs font-semibold text-emerald-700 dark:text-emerald-400" : "text-xs font-semibold text-amber-700 dark:text-amber-400"}>
+                                {account.email_verified ? "Verified" : "Unverified"}
+                              </span>
+                            )}
                           </td>
 
                           <td className="whitespace-nowrap px-5 py-4 sm:px-6">
@@ -2107,13 +2321,67 @@ export default function SuperAdminPortal() {
                             </span>
                           </td>
 
+                          <td className="px-5 py-4 sm:px-6">
+                            {isHrCoordinator ? (
+                              <span
+                                title={
+                                  assignedCompany ||
+                                  "No company assigned"
+                                }
+                                className="inline-flex max-w-[260px] items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+                              >
+                                <FiBriefcase
+                                  size={12}
+                                  aria-hidden="true"
+                                  className="shrink-0"
+                                />
+
+                                <span className="truncate">
+                                  {assignedCompany ||
+                                    "Not Assigned"}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 dark:text-gray-500">
+                                —
+                              </span>
+                            )}
+                          </td>
+
                           <td className="whitespace-nowrap px-5 py-4 sm:px-6">
-                            <StatusBadge
-                              status={
-                                accountStatus
-                              }
-                              size="md"
-                            />
+                            <div className="flex flex-col items-start gap-1.5">
+                              <StatusBadge
+                                status={accountStatus}
+                                size="md"
+                              />
+
+                              {deliveryStatus === "FAILED" && (
+                                <span className="text-xs font-semibold text-red-700 dark:text-red-400">
+                                  Credentials email failed
+                                </span>
+                              )}
+
+                              {deliveryStatus === "PENDING" && (
+                                <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                                  Credentials email pending
+                                </span>
+                              )}
+
+                              {deliveryStatus === "SENDING" && (
+                                <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                                  Sending credentials email
+                                </span>
+                              )}
+
+                              {deliveryStatus === "SMTP_ACCEPTED" && (
+                                <span
+                                  className="text-xs text-gray-500 dark:text-gray-400"
+                                  title="SMTP acceptance does not guarantee inbox delivery."
+                                >
+                                  Credentials email accepted
+                                </span>
+                              )}
+                            </div>
                           </td>
 
                           <td className="px-5 py-4 sm:px-6">
@@ -2122,25 +2390,59 @@ export default function SuperAdminPortal() {
                                 <ProtectedAction />
                               ) : (
                                 <>
-                                  <IconButton
-                                    label={`Reset password for ${accountName}`}
-                                    title="Reset Password"
-                                    variant="primary"
-                                    size="md"
-                                    disabled={
-                                      isBusy
-                                    }
-                                    onClick={() =>
-                                      handleOpenReset(
-                                        account
-                                      )
-                                    }
-                                  >
-                                    <FiShield
-                                      aria-hidden="true"
-                                    />
-                                  </IconButton>
+                                  {isHrCoordinator && (
+                                    <IconButton
+                                      label={`Assign client company for ${accountName}`}
+                                      title="Assign Client Company"
+                                      variant="secondary"
+                                      size="md"
+                                      disabled={
+                                        isBusy ||
+                                        isLoadingCompanyOptions
+                                      }
+                                      onClick={() =>
+                                        handleOpenAssignment(
+                                          account
+                                        )
+                                      }
+                                    >
+                                      <FiBriefcase
+                                        aria-hidden="true"
+                                      />
+                                    </IconButton>
+                                  )}
 
+                                  <IconButton
+                                    label={`Register or edit recovery email for ${accountName}`}
+                                    title="Recovery Email" variant="secondary" size="md"
+                                    disabled={isBusy} onClick={() => handleOpenRecoveryEmail(account)}
+                                  ><FiMail aria-hidden="true" /></IconButton>
+
+                                  {canResend && (
+                                    <IconButton
+                                      label={`Resend initial account credentials to ${accountName}`}
+                                      title="Resend Credentials"
+                                      variant="secondary"
+                                      size="md"
+                                      disabled={isBusy}
+                                      onClick={() => handleOpenResend(account)}
+                                    >
+                                      <FiRefreshCw aria-hidden="true" />
+                                    </IconButton>
+                                  )}
+
+                                  {isActivationBlocked ? (
+                                    <span
+                                      title={
+                                        canResend
+                                          ? "Resend initial credentials before activating this account."
+                                          : "Initial credentials delivery must be resolved before activation."
+                                      }
+                                      className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+                                    >
+                                      Activation blocked
+                                    </span>
+                                  ) : (
                                   <IconButton
                                     label={`${
                                       isActive
@@ -2177,6 +2479,7 @@ export default function SuperAdminPortal() {
                                       />
                                     )}
                                   </IconButton>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -2245,8 +2548,12 @@ export default function SuperAdminPortal() {
         disabled={
           isSubmitting ||
           !name.trim() ||
-          !userId ||
-          !username
+          !email.trim() ||
+          !validRecoveryEmail(email) ||
+          (
+            isCreatingHrCoordinator &&
+            !selectedCompany
+          )
         }
         closeOnBackdrop={
           !isSubmitting
@@ -2275,33 +2582,63 @@ export default function SuperAdminPortal() {
             }
           />
 
-          <AccountDetailRow
-            label="User ID"
-            value={userId}
-            monospace
-          />
+          {isCreatingHrCoordinator && (
+            <AccountDetailRow
+              label="Assigned Company"
+              value={
+                selectedCompany
+              }
+            />
+          )}
 
-          <AccountDetailRow
-            label="Username"
-            value={username}
-            monospace
-          />
+          <AccountDetailRow label="Account Email" value={email.trim()} />
         </div>
       </ConfirmDialog>
 
+      <Dialog open={Boolean(emailTarget)} onClose={handleCloseRecoveryEmail}
+        title="Register Recovery Email"
+        description={`Register or update the recovery email for ${getAccountName(emailTarget)}. Email ownership must be verified before Forgot Password can use it.`}
+        tone="info" size="md" closeOnOverlay={!isProcessing}
+        closeOnEscape={!isProcessing} showCloseButton bodyClassName="space-y-5 p-6"
+        footer={<div className="flex w-full justify-end gap-3">
+          <Button type="button" variant="secondary" disabled={isProcessing} onClick={handleCloseRecoveryEmail}>Cancel</Button>
+          <Button type="button" loading={processingAction === "email"}
+            disabled={isBusy || !emailTarget?.id || !validRecoveryEmail(emailDraft)}
+            onClick={handleSaveRecoveryEmail}>Save Recovery Email</Button>
+        </div>}
+      >
+        <label htmlFor="edit-recovery-email" className="block text-sm font-semibold text-gray-700 dark:text-gray-300">Recovery Email</label>
+        <input id="edit-recovery-email" type="email" value={emailDraft}
+          disabled={isProcessing} maxLength={254} autoComplete="off"
+          placeholder="name@example.com" className={CONTROL_CLASS_NAME}
+          onChange={event => { setEmailDraft(event.target.value); setEmailError(""); }} />
+        {emailError && <p role="alert" className="text-sm font-semibold text-red-700 dark:text-red-400">{emailError}</p>}
+        <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+          Leave blank to remove the address. Changing or removing it revokes existing login sessions and pending recovery links. The account owner must verify the updated email before it can be used for Forgot Password.
+        </p>
+      </Dialog>
+
       <Dialog
         open={
-          isSuccessDialogOpen
+          Boolean(
+            assignmentTarget
+          )
         }
         onClose={
-          handleCloseSuccessDialog
+          handleCloseAssignment
         }
-        title="Account Created Successfully"
-        description="Save these temporary credentials and provide them securely to the authorized user."
-        tone="success"
+        title="Assign HR Coordinator Company"
+        description={`Set the client company scope for ${assignmentAccountName}. Changing the assignment invalidates the coordinator's existing login session.`}
+        tone="info"
         size="md"
-        closeOnOverlay
-        closeOnEscape
+        closeOnOverlay={
+          processingAction !==
+          "assignment"
+        }
+        closeOnEscape={
+          processingAction !==
+          "assignment"
+        }
         showCloseButton
         bodyClassName="space-y-5 p-6"
         footer={
@@ -2309,233 +2646,155 @@ export default function SuperAdminPortal() {
             <Button
               type="button"
               variant="secondary"
-              leftIcon={
-                <FiCopy
-                  aria-hidden="true"
-                />
+              disabled={
+                processingAction ===
+                "assignment"
               }
               onClick={
-                handleCopyCredentials
+                handleCloseAssignment
               }
             >
-              Copy Credentials
+              Cancel
             </Button>
 
             <Button
               type="button"
-              variant="success"
+              leftIcon={
+                <FiBriefcase
+                  aria-hidden="true"
+                />
+              }
+              loading={
+                processingAction ===
+                "assignment"
+              }
+              disabled={
+                isBusy ||
+                !assignmentTarget?.id ||
+                !assignmentCompany ||
+                !companyOptions.includes(
+                  assignmentCompany
+                )
+              }
               onClick={
-                handleCloseSuccessDialog
+                handleConfirmAssignment
               }
             >
-              Done
+              Save Assignment
             </Button>
           </div>
         }
       >
-        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-          <FiCheckCircle
-            className="mt-0.5 shrink-0"
-            size={20}
-            aria-hidden="true"
-          />
+        <div>
+          <label
+            htmlFor="hr-coordinator-company-assignment"
+            className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300"
+          >
+            Assigned Client Company
+          </label>
 
-          <p className="text-sm leading-6">
-            The internal user account was created successfully.
+          <select
+            id="hr-coordinator-company-assignment"
+            value={
+              assignmentCompany
+            }
+            disabled={
+              processingAction ===
+                "assignment" ||
+              isLoadingCompanyOptions
+            }
+            className={
+              CONTROL_CLASS_NAME
+            }
+            onChange={(
+              event
+            ) =>
+              setAssignmentCompany(
+                event.target
+                  .value
+              )
+            }
+          >
+            <option value="">
+              {isLoadingCompanyOptions
+                ? "Loading client companies..."
+                : companyOptions.length
+                  ? "Select client company"
+                  : "No client companies available"}
+            </option>
+
+            {companyOptions.map(
+              (
+                company
+              ) => (
+                <option
+                  key={
+                    company
+                  }
+                  value={
+                    company
+                  }
+                >
+                  {
+                    company
+                  }
+                </option>
+              )
+            )}
+          </select>
+
+          <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+            Current assignment:{" "}
+            <strong className="font-bold text-gray-700 dark:text-gray-200">
+              {assignmentCurrentCompany ||
+                "Not Assigned"}
+            </strong>
           </p>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 dark:border-white/10 dark:bg-slate-800/60">
-          <AccountDetailRow
-            label="Full Name"
-            value={
-              createdAccount.name
-            }
-          />
-
-          <AccountDetailRow
-            label="Role"
-            value={
-              createdAccount.roleLabel
-            }
-          />
-
-          <AccountDetailRow
-            label="User ID"
-            value={
-              createdAccount.userId
-            }
-            monospace
-          />
-
-          <AccountDetailRow
-            label="Username"
-            value={
-              createdAccount.username
-            }
-            monospace
-          />
-
-          <AccountDetailRow
-            label="Temporary Password"
-            value={
-              createdAccount.temporaryPassword
-            }
-            monospace
-          />
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+          The coordinator will only access Employees, Deployment Tracking, and Incident Report data allowed for the selected company. Any existing coordinator session is revoked when the company changes.
         </div>
-
-        {copyMessage && (
-          <div
-            role="status"
-            className="rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-sm font-semibold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
-          >
-            {copyMessage}
-          </div>
-        )}
-
-        <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">
-          Do not send temporary credentials through public or unsecured channels.
-        </p>
       </Dialog>
 
       <ConfirmDialog
-        open={
-          Boolean(
-            resetTarget
-          ) &&
-          !resetTemporaryPassword
-        }
-        title="Reset Account Password"
-        tone="warning"
-        confirmLabel="Generate Password"
+        open={Boolean(resendTarget)}
+        title="Resend Initial Account Credentials"
+        tone="info"
+        confirmLabel="Resend Credentials"
         cancelLabel="Cancel"
-        loading={
-          processingAction ===
-          "reset"
-        }
+        loading={processingAction === "resend"}
         disabled={
-          !resetTarget?.id ||
           isBusy ||
-          isProtectedAccount(
-            resetTarget
-          )
+          !resendTarget?.id ||
+          !canResendInitialCredentials(resendTarget)
         }
-        closeOnBackdrop={
-          !isProcessing
-        }
-        onClose={
-          handleCloseReset
-        }
-        onConfirm={
-          handleConfirmReset
-        }
+        closeOnBackdrop={!isProcessing}
+        onClose={handleCloseResend}
+        onConfirm={handleConfirmResend}
       >
         <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
-          Generate a new temporary password for{" "}
+          Send a new temporary password to the registered email for{" "}
           <strong className="font-extrabold text-gray-900 dark:text-white">
-            {resetAccountName}
+            {getAccountName(resendTarget)}
           </strong>
           ?
         </p>
 
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-          The user will be required to change this temporary password during the next login.
+        <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 dark:border-white/10 dark:bg-slate-800/60">
+          <AccountDetailRow
+            label="Account Email"
+            value={resendTarget?.email || "Not registered"}
+          />
         </div>
+
+        <p className="mt-3 text-sm leading-6 text-gray-500 dark:text-gray-400">
+          The backend will replace the previous temporary password before
+          sending a new one. The account stays inactive if delivery fails.
+          No password will be displayed here. Do not submit the resend
+          request again if it times out; refresh the account list first.
+        </p>
       </ConfirmDialog>
-
-      <Dialog
-        open={
-          Boolean(
-            resetTarget
-          ) &&
-          Boolean(
-            resetTemporaryPassword
-          )
-        }
-        onClose={
-          handleCloseReset
-        }
-        title="Password Reset Successful"
-        description={`A temporary password was generated for ${resetAccountName}.`}
-        tone="success"
-        size="md"
-        closeOnOverlay
-        closeOnEscape
-        showCloseButton
-        bodyClassName="space-y-5 p-6"
-        footer={
-          <div className="flex w-full flex-col-reverse justify-end gap-3 sm:flex-row">
-            <Button
-              type="button"
-              variant="secondary"
-              leftIcon={
-                <FiCopy
-                  aria-hidden="true"
-                />
-              }
-              onClick={
-                handleCopyResetPassword
-              }
-            >
-              Copy Password
-            </Button>
-
-            <Button
-              type="button"
-              variant="success"
-              onClick={
-                handleCloseReset
-              }
-            >
-              Done
-            </Button>
-          </div>
-        }
-      >
-        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-          <FiCheckCircle
-            className="mt-0.5 shrink-0"
-            size={20}
-            aria-hidden="true"
-          />
-
-          <p className="text-sm leading-6">
-            The account password was reset successfully.
-          </p>
-        </div>
-
-        <div>
-          <label
-            htmlFor="super-admin-reset-password"
-            className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-          >
-            Temporary Password
-          </label>
-
-          <input
-            id="super-admin-reset-password"
-            type="text"
-            readOnly
-            value={
-              resetTemporaryPassword
-            }
-            className="ui-control font-mono font-bold"
-          />
-        </div>
-
-        {resetCopyMessage && (
-          <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-            {
-              resetCopyMessage
-            }
-          </p>
-        )}
-
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
-          Provide this password securely to the account owner. Do not send it through public channels.
-        </div>
-      </Dialog>
 
       <ConfirmDialog
         open={
@@ -2568,7 +2827,8 @@ export default function SuperAdminPortal() {
           isBusy ||
           isProtectedAccount(
             toggleTarget
-          )
+          ) ||
+          (willActivate && isInitialDeliveryBlocked(toggleTarget))
         }
         closeOnBackdrop={
           !isProcessing
@@ -2602,7 +2862,7 @@ export default function SuperAdminPortal() {
       </ConfirmDialog>
 
       <SuccessToast
-        title="Account Status Updated"
+        title="Account Notification"
         message={
           successMessage
         }

@@ -64,9 +64,9 @@ if (
 }
 
 const runtimeApiOrigin =
-  normalizeOrigin(
-    getRuntimeApiOrigin()
-  );
+  typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:5000`
+    : "";
 
 const API_ORIGIN =
   configuredApiOrigin ||

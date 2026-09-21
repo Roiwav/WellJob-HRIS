@@ -18,6 +18,7 @@ export const sidebarItems = [
       ROLES.SUPER_ADMIN,
       ROLES.HR_MANAGER,
       ROLES.HR_STAFF,
+      ROLES.HR_COORDINATOR,
     ],
   },
 
@@ -28,6 +29,7 @@ export const sidebarItems = [
       ROLES.SUPER_ADMIN,
       ROLES.HR_MANAGER,
       ROLES.HR_STAFF,
+      ROLES.HR_COORDINATOR,
     ],
   },
 
@@ -38,6 +40,7 @@ export const sidebarItems = [
       ROLES.SUPER_ADMIN,
       ROLES.HR_MANAGER,
       ROLES.HR_STAFF,
+      ROLES.HR_COORDINATOR,
     ],
   },
 
@@ -58,6 +61,7 @@ export const sidebarItems = [
       ROLES.SUPER_ADMIN,
       ROLES.HR_MANAGER,
       ROLES.HR_STAFF,
+      ROLES.IT_SUPPORT,
     ],
   },
 

@@ -138,6 +138,139 @@ function resolveEditableEmployeeStatus(
   return normalized;
 }
 
+function normalizeComparableText(
+  value
+) {
+  return String(
+    value ?? ""
+  )
+    .trim()
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .toLowerCase();
+}
+
+function isSameText(
+  left,
+  right
+) {
+  return (
+    normalizeComparableText(
+      left
+    ) ===
+    normalizeComparableText(
+      right
+    )
+  );
+}
+
+/*
+ * DEPLOYMENT MASTER-DATA VALIDATION
+ *
+ * New deployment assignments must reference an
+ * ACTIVE client company and an ACTIVE position that
+ * belongs to that company.
+ *
+ * Existing active assignments are allowed to retain
+ * historical/deactivated company-position snapshots
+ * when unrelated employee fields are edited.
+ *
+ * FOR UPDATE keeps the selected master rows stable
+ * until the employee/deployment transaction commits.
+ */
+async function resolveActiveDeploymentMasterPair(
+  connection,
+  companyValue,
+  positionValue
+) {
+  const requestedCompany =
+    toNullable(
+      companyValue
+    );
+
+  const requestedPosition =
+    toNullable(
+      positionValue
+    );
+
+  if (
+    !requestedCompany ||
+    !requestedPosition
+  ) {
+    return null;
+  }
+
+  const [
+    rows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        c.id AS company_id,
+        c.company_name,
+        p.id AS position_id,
+        p.position_name
+      FROM client_companies AS c
+      INNER JOIN company_positions AS p
+        ON p.company_id = c.id
+      WHERE c.is_active = 1
+        AND p.is_active = 1
+        AND LOWER(
+          TRIM(
+            c.company_name
+          )
+        ) =
+        LOWER(
+          TRIM(?)
+        )
+        AND LOWER(
+          TRIM(
+            p.position_name
+          )
+        ) =
+        LOWER(
+          TRIM(?)
+        )
+      LIMIT 1
+      FOR UPDATE
+      `,
+      [
+        requestedCompany,
+        requestedPosition,
+      ]
+    );
+
+  if (
+    rows.length === 0
+  ) {
+    return null;
+  }
+
+  return {
+    companyId:
+      Number(
+        rows[0].company_id
+      ),
+
+    companyName:
+      toNullable(
+        rows[0].company_name
+      ),
+
+    positionId:
+      Number(
+        rows[0].position_id
+      ),
+
+    positionName:
+      toNullable(
+        rows[0].position_name
+      ),
+  };
+}
+
 /*
  * TRUSTED AUDIT ACTOR
  *
@@ -174,6 +307,57 @@ function getActor(req) {
         authenticatedUser.role
       ),
   };
+}
+
+/*
+ * HR COORDINATOR COMPANY SCOPE
+ *
+ * authMiddleware supplies the canonical current role
+ * and assigned company from the database on every
+ * protected request.
+ *
+ * These helpers are defensive only. Controllers never
+ * trust company values supplied through req.body,
+ * req.query, or route parameters for coordinator scope.
+ */
+function isHrCoordinatorRequest(
+  req
+) {
+  return (
+    String(
+      req.user?.role || ""
+    )
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, "_") ===
+    "HR_COORDINATOR"
+  );
+}
+
+function getHrCoordinatorAssignedCompany(
+  req
+) {
+  return toNullable(
+    req.user?.assignedCompany ??
+      req.user?.assigned_company
+  );
+}
+
+function buildHrCoordinatorEmployeeScopeSql(
+  employeeAlias = "e",
+  deploymentAlias = "da_scope"
+) {
+  return `
+    ${employeeAlias}.archived = 0
+    AND ${employeeAlias}.status <> 'Inactive'
+    AND EXISTS (
+      SELECT 1
+      FROM deployment_assignments AS ${deploymentAlias}
+      WHERE ${deploymentAlias}.employee_id = ${employeeAlias}.id
+        AND ${deploymentAlias}.status = 'Active'
+        AND ${deploymentAlias}.company = ?
+    )
+  `;
 }
 
 /*
@@ -451,6 +635,7 @@ exports.createEmployee = async (
     const {
       name,
       company,
+      position,
       status,
       contractStart,
     } = req.body;
@@ -479,11 +664,19 @@ exports.createEmployee = async (
       );
     }
 
-    const finalCompany =
+    let finalCompany =
       finalStatus ===
       EMPLOYEE_STATUS.DEPLOYED
         ? toNullable(
             company
+          )
+        : null;
+
+    let finalPosition =
+      finalStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+        ? toNullable(
+            position
           )
         : null;
 
@@ -521,6 +714,18 @@ exports.createEmployee = async (
     if (
       finalStatus ===
         EMPLOYEE_STATUS.DEPLOYED &&
+      !finalPosition
+    ) {
+      return await rejectEmployeeRequest(
+        req,
+        res,
+        "Position is required for deployed employees."
+      );
+    }
+
+    if (
+      finalStatus ===
+        EMPLOYEE_STATUS.DEPLOYED &&
       !finalContractStart
     ) {
       return await rejectEmployeeRequest(
@@ -545,6 +750,53 @@ exports.createEmployee = async (
 
     transactionStarted =
       true;
+
+    const rejectAfterRollback =
+      async (
+        statusCode,
+        message
+      ) => {
+        await connection.rollback();
+
+        transactionStarted =
+          false;
+
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(statusCode)
+          .json({
+            error:
+              message,
+          });
+      };
+
+    if (
+      finalStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+    ) {
+      const masterPair =
+        await resolveActiveDeploymentMasterPair(
+          connection,
+          finalCompany,
+          finalPosition
+        );
+
+      if (!masterPair) {
+        return await rejectAfterRollback(
+          400,
+          "Company and position must be an active configured deployment combination."
+        );
+      }
+
+      finalCompany =
+        masterPair.companyName;
+
+      finalPosition =
+        masterPair.positionName;
+    }
 
     const [result] =
       await connection.query(
@@ -635,11 +887,12 @@ exports.createEmployee = async (
           status,
           created_by_user_id
         )
-        VALUES (?, ?, NULL, ?, 'Active', ?)
+        VALUES (?, ?, ?, ?, 'Active', ?)
         `,
         [
           employeeId,
           finalCompany,
+          finalPosition,
           finalContractStart,
           actor.userId,
         ]
@@ -1107,9 +1360,34 @@ function buildEmployeeSummaryFilters({
   status,
   compliance,
   complianceStatusSql = "",
+  coordinatorCompany = null,
 }) {
   const where = [];
   const params = [];
+
+  /*
+   * HR Coordinator company scope is enforced by the
+   * employee's CURRENT active deployment assignment.
+   *
+   * This intentionally excludes:
+   * - employees assigned to another company
+   * - archived employees
+   * - inactive employees
+   * - Floating / Standby employees with no active
+   *   company assignment
+   */
+  if (coordinatorCompany) {
+    where.push(
+      buildHrCoordinatorEmployeeScopeSql(
+        "e",
+        "da_scope"
+      )
+    );
+
+    params.push(
+      coordinatorCompany
+    );
+  }
 
   if (scope === "active") {
     where.push(
@@ -1259,6 +1537,7 @@ function createEmployeeComplianceSql(
         CASE
           WHEN
             LOWER(TRIM(d.name)) IN (${expirableNames})
+
             AND TRIM(COALESCE(d.file_path, '')) <> ''
             AND d.expiration_date BETWEEN
               CURDATE()
@@ -1302,6 +1581,37 @@ exports.getEmployees = async (
   res
 ) => {
   try {
+    const isHrCoordinator =
+      isHrCoordinatorRequest(
+        req
+      );
+
+    const coordinatorCompany =
+      isHrCoordinator
+        ? getHrCoordinatorAssignedCompany(
+            req
+          )
+        : null;
+
+    /*
+     * Defense in depth.
+     *
+     * authMiddleware already fails closed when an
+     * HR Coordinator has no assigned company. Keep
+     * the same rule here so this controller can never
+     * accidentally fall back to an unrestricted query.
+     */
+    if (
+      isHrCoordinator &&
+      !coordinatorCompany
+    ) {
+      return res
+        .status(403)
+        .json({
+          error:
+            "HR Coordinator company assignment is required.",
+        });
+    }
     const view =
       String(
         req.query?.view ||
@@ -1346,12 +1656,22 @@ exports.getEmployees = async (
           .trim()
           .toLowerCase();
 
+            /*
+       * HR Coordinator may never use archived/all
+       * employee scopes, even through a manual API
+       * request. Their employee view is always the
+       * current active company assignment scope.
+       */
       const scope =
-        EMPLOYEE_SUMMARY_SCOPES.has(
-          scopeInput
-        )
-          ? scopeInput
-          : "active";
+        isHrCoordinator
+          ? "active"
+          : (
+              EMPLOYEE_SUMMARY_SCOPES.has(
+                scopeInput
+              )
+                ? scopeInput
+                : "active"
+            );
 
       const sortInput =
         String(
@@ -1416,12 +1736,35 @@ exports.getEmployees = async (
         compliance !== "All" ||
         complianceSensitiveSort;
 
+            const activeTotalParams =
+        [];
+
+      const activeTotalCoordinatorSql =
+        isHrCoordinator
+          ? `
+            AND EXISTS (
+              SELECT 1
+              FROM deployment_assignments AS da_active_total
+              WHERE da_active_total.employee_id = e.id
+                AND da_active_total.status = 'Active'
+                AND da_active_total.company = ?
+            )
+          `
+          : "";
+
+      if (isHrCoordinator) {
+        activeTotalParams.push(
+          coordinatorCompany
+        );
+      }
+
       const activeTotalSql = `
         SELECT
           COUNT(*) AS total
-        FROM employees
-        WHERE archived = 0
-          AND status <> 'Inactive'
+        FROM employees AS e
+        WHERE e.archived = 0
+          AND e.status <> 'Inactive'
+          ${activeTotalCoordinatorSql}
       `;
 
       if (!needsGlobalCompliance) {
@@ -1436,6 +1779,7 @@ exports.getEmployees = async (
             status,
             compliance:
               "All",
+              coordinatorCompany,
           });
 
         const orderBySql =
@@ -1496,7 +1840,8 @@ exports.getEmployees = async (
           ),
 
           db.promise().query(
-            activeTotalSql
+            activeTotalSql,
+            activeTotalParams
           ),
         ]);
 
@@ -1648,6 +1993,7 @@ exports.getEmployees = async (
           status,
           compliance,
           complianceStatusSql,
+          coordinatorCompany,
         });
 
       const orderBySql =
@@ -1725,7 +2071,8 @@ exports.getEmployees = async (
         ),
 
         db.promise().query(
-          activeTotalSql
+          activeTotalSql,
+          activeTotalParams
         ),
       ]);
 
@@ -1778,26 +2125,91 @@ exports.getEmployees = async (
       });
     }
 
+        /*
+     * Existing full-response mode remains available
+     * for current internal HR workflows.
+     *
+     * HR Coordinator receives only currently active
+     * employees whose authoritative active deployment
+     * belongs to the assigned company. Documents are
+     * scoped by the same rule before they ever leave
+     * MySQL.
+     */
+    const employeeSql =
+      isHrCoordinator
+        ? `
+          SELECT e.*
+          FROM employees AS e
+          WHERE
+            ${buildHrCoordinatorEmployeeScopeSql(
+              "e",
+              "da_full_scope"
+            )}
+          ORDER BY e.created_at DESC
+        `
+        : `
+          SELECT *
+          FROM employees
+          ORDER BY created_at DESC
+        `;
+
+    const employeeParams =
+      isHrCoordinator
+        ? [
+            coordinatorCompany,
+          ]
+        : [];
+
+    const documentSql =
+      isHrCoordinator
+        ? `
+          SELECT
+            d.id,
+            d.employee_id,
+            d.name,
+            d.expiration_date,
+            d.file_path
+          FROM employee_documents AS d
+          INNER JOIN employees AS e
+            ON e.id = d.employee_id
+          WHERE
+            ${buildHrCoordinatorEmployeeScopeSql(
+              "e",
+              "da_document_scope"
+            )}
+          ORDER BY d.id ASC
+        `
+        : `
+          SELECT
+            id,
+            employee_id,
+            name,
+            expiration_date,
+            file_path
+          FROM employee_documents
+          ORDER BY id ASC
+        `;
+
+    const documentParams =
+      isHrCoordinator
+        ? [
+            coordinatorCompany,
+          ]
+        : [];
+
     const [
       employeeResult,
       documentResult,
     ] = await Promise.all([
-      db.promise().query(`
-        SELECT *
-        FROM employees
-        ORDER BY created_at DESC
-      `),
+      db.promise().query(
+        employeeSql,
+        employeeParams
+      ),
 
-      db.promise().query(`
-        SELECT
-          id,
-          employee_id,
-          name,
-          expiration_date,
-          file_path
-        FROM employee_documents
-        ORDER BY id ASC
-      `),
+      db.promise().query(
+        documentSql,
+        documentParams
+      ),
     ]);
 
     const [employees] =
@@ -1897,6 +2309,55 @@ exports.getEmployeeById = async (
     const { id } =
       req.params;
 
+    const isHrCoordinator =
+      isHrCoordinatorRequest(
+        req
+      );
+
+    const coordinatorCompany =
+      isHrCoordinator
+        ? getHrCoordinatorAssignedCompany(
+            req
+          )
+        : null;
+
+    if (
+      isHrCoordinator &&
+      !coordinatorCompany
+    ) {
+      return res
+        .status(403)
+        .json({
+          error:
+            "HR Coordinator company assignment is required.",
+        });
+    }
+
+    const coordinatorScopeSql =
+      isHrCoordinator
+        ? `
+          AND e.archived = 0
+          AND e.status <> 'Inactive'
+          AND EXISTS (
+            SELECT 1
+            FROM deployment_assignments AS da_employee_scope
+            WHERE da_employee_scope.employee_id = e.id
+              AND da_employee_scope.status = 'Active'
+              AND da_employee_scope.company = ?
+          )
+        `
+        : "";
+
+    const queryParams =
+      isHrCoordinator
+        ? [
+            id,
+            coordinatorCompany,
+          ]
+        : [
+            id,
+          ];
+
     const [rows] =
       await db
         .promise()
@@ -1904,6 +2365,18 @@ exports.getEmployeeById = async (
           `
           SELECT
             e.*,
+            (
+              SELECT
+                da_current_position.position
+              FROM deployment_assignments AS da_current_position
+              WHERE
+                da_current_position.employee_id = e.id
+                AND da_current_position.status = 'Active'
+              ORDER BY
+                da_current_position.start_date DESC,
+                da_current_position.id DESC
+              LIMIT 1
+            ) AS position,
             d.id AS document_id,
             d.name AS document_name,
             d.expiration_date AS document_expiration_date,
@@ -1912,11 +2385,20 @@ exports.getEmployeeById = async (
           LEFT JOIN employee_documents AS d
             ON d.employee_id = e.id
           WHERE e.id = ?
+            ${coordinatorScopeSql}
           ORDER BY d.id ASC
           `,
-          [id]
+          queryParams
         );
 
+    /*
+     * Return 404 for both:
+     * - nonexistent employee
+     * - employee outside coordinator scope
+     *
+     * This avoids confirming the existence of records
+     * belonging to another client/company.
+     */
     if (rows.length === 0) {
       return res
         .status(404)
@@ -2040,6 +2522,7 @@ exports.updateEmployee = async (
     const {
       name,
       company,
+      position,
       status,
       contractStart,
     } = req.body;
@@ -2081,6 +2564,9 @@ exports.updateEmployee = async (
 
     const submittedCompany =
       toNullable(company);
+
+    const submittedPosition =
+      toNullable(position);
 
     const submittedContractStart =
       toNullableDate(
@@ -2231,6 +2717,7 @@ exports.updateEmployee = async (
         SELECT
           id,
           company,
+          position,
           start_date
         FROM deployment_assignments
         WHERE employee_id = ?
@@ -2296,7 +2783,23 @@ exports.updateEmployee = async (
         currentEmployee.contractStart
       );
 
-    const finalCompany =
+    const currentAssignment =
+      currentStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+        ? activeAssignments[0]
+        : null;
+
+    const currentAssignmentCompany =
+      toNullable(
+        currentAssignment?.company
+      );
+
+    const currentAssignmentPosition =
+      toNullable(
+        currentAssignment?.position
+      );
+
+    let finalCompany =
       finalStatus ===
       EMPLOYEE_STATUS.DEPLOYED
         ? (
@@ -2304,7 +2807,24 @@ exports.updateEmployee = async (
             (
               currentStatus ===
               EMPLOYEE_STATUS.DEPLOYED
-                ? currentCompany
+                ? (
+                    currentAssignmentCompany ||
+                    currentCompany
+                  )
+                : null
+            )
+          )
+        : null;
+
+    let finalPosition =
+      finalStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+        ? (
+            submittedPosition ||
+            (
+              currentStatus ===
+              EMPLOYEE_STATUS.DEPLOYED
+                ? currentAssignmentPosition
                 : null
             )
           )
@@ -2336,6 +2856,16 @@ exports.updateEmployee = async (
     }
 
     if (
+      isRedeployment &&
+      !finalPosition
+    ) {
+      return await rejectAfterRollback(
+        400,
+        "Position is required when redeploying an employee."
+      );
+    }
+
+    if (
       finalStatus ===
         EMPLOYEE_STATUS.DEPLOYED &&
       !finalContractStart
@@ -2344,6 +2874,72 @@ exports.updateEmployee = async (
         400,
         "Deployment start date is required for deployed employees."
       );
+    }
+
+    const deploymentMasterFieldsChanged =
+      currentStatus ===
+        EMPLOYEE_STATUS.DEPLOYED &&
+      finalStatus ===
+        EMPLOYEE_STATUS.DEPLOYED &&
+      (
+        !isSameText(
+          finalCompany,
+          currentAssignmentCompany
+        ) ||
+        !isSameText(
+          finalPosition,
+          currentAssignmentPosition
+        )
+      );
+
+    if (
+      isRedeployment ||
+      deploymentMasterFieldsChanged
+    ) {
+      if (!finalPosition) {
+        return await rejectAfterRollback(
+          400,
+          "Position is required when changing a deployment company or position."
+        );
+      }
+
+      const masterPair =
+        await resolveActiveDeploymentMasterPair(
+          connection,
+          finalCompany,
+          finalPosition
+        );
+
+      if (!masterPair) {
+        return await rejectAfterRollback(
+          400,
+          "Company and position must be an active configured deployment combination."
+        );
+      }
+
+      finalCompany =
+        masterPair.companyName;
+
+      finalPosition =
+        masterPair.positionName;
+    } else if (
+      currentStatus ===
+      EMPLOYEE_STATUS.DEPLOYED
+    ) {
+      /*
+       * Preserve the existing assignment snapshot
+       * during unrelated employee edits.
+       *
+       * This allows historical/current deployment
+       * data to remain valid even when its company
+       * or position is later deactivated.
+       */
+      finalCompany =
+        currentAssignmentCompany ||
+        finalCompany;
+
+      finalPosition =
+        currentAssignmentPosition;
     }
 
     if (isRedeployment) {
@@ -2367,11 +2963,12 @@ exports.updateEmployee = async (
             status,
             created_by_user_id
           )
-          VALUES (?, ?, NULL, ?, 'Active', ?)
+          VALUES (?, ?, ?, ?, 'Active', ?)
           `,
           [
             id,
             finalCompany,
+            finalPosition,
             finalContractStart,
             actor.userId,
           ]
@@ -2455,12 +3052,14 @@ exports.updateEmployee = async (
         UPDATE deployment_assignments
         SET
           company = ?,
+          position = ?,
           start_date = ?
         WHERE id = ?
           AND status = 'Active'
         `,
         [
           finalCompany,
+          finalPosition,
           finalContractStart,
           activeAssignment.id,
         ]

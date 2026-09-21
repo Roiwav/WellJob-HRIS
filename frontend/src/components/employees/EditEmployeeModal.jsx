@@ -27,7 +27,9 @@ import {
   toProperName,
 } from "./employeeConstants";
 
-function getEmployeeId(employee) {
+function getEmployeeId(
+  employee
+) {
   return String(
     employee?.id ||
       employee?.employeeId ||
@@ -42,7 +44,10 @@ export default function EditEmployeeModal({
   employees = [],
   onSaveSuccess,
 }) {
-  const employeeId = getEmployeeId(employeeToEdit);
+  const employeeId =
+    getEmployeeId(
+      employeeToEdit
+    );
 
   const {
     formData,
@@ -51,8 +56,13 @@ export default function EditEmployeeModal({
     showDocuments,
     duplicateConfirmed,
     duplicateEmployee,
-    filteredCompanies,
-    showSuggestions,
+
+    companyOptions,
+    positionOptions,
+    isLoadingCompanies,
+    isLoadingPositions,
+    deploymentOptionsError,
+
     dragTargetDocument,
     completedDocuments,
     completion,
@@ -60,14 +70,13 @@ export default function EditEmployeeModal({
     remainingDocuments,
     isSaving,
     saveError,
+
     setIsSaving,
     setSaveError,
     setShowReview,
+
     handleChange,
     handleNameBlur,
-    handleCompanyFocus,
-    handleCompanyBlur,
-    handleCompanySelect,
     handleDuplicateConfirmChange,
     handleDocumentCheck,
     handleExpirationChange,
@@ -80,66 +89,117 @@ export default function EditEmployeeModal({
     handleSubmit,
     handleCloseReview,
   } = useEmployeeForm({
-    initialEmployee: employeeToEdit,
+    initialEmployee:
+      employeeToEdit,
+
     employeeId,
+
     employees,
   });
 
   const handleClose = () => {
-    if (isSaving || showReview) return;
+    if (
+      isSaving ||
+      showReview
+    ) {
+      return;
+    }
+
     onClose?.();
   };
 
-  const handleConfirmUpdate = async () => {
-    if (isSaving || !employeeId) return;
-
-    try {
-      setIsSaving(true);
-      setSaveError("");
-
-      const requestData = buildEmployeeFormData(formData);
-      const employeeName = toProperName(formData.name);
-
-      await axios.put(
-        `${EMPLOYEE_API_URL}/${encodeURIComponent(employeeId)}`,
-        requestData
-      );
-
-      setShowReview(false);
-
-      if (typeof onSaveSuccess === "function") {
-        await onSaveSuccess(employeeName);
-      } else {
-        onClose?.();
+  const handleConfirmUpdate =
+    async () => {
+      if (
+        isSaving ||
+        !employeeId
+      ) {
+        return;
       }
-    } catch (error) {
-      console.error("UPDATE EMPLOYEE ERROR:", error);
 
-      setSaveError(
-        getEmployeeApiError(
-          error,
-          "Unable to update the employee record."
-        )
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  };
+      try {
+        setIsSaving(
+          true
+        );
+
+        setSaveError(
+          ""
+        );
+
+        const requestData =
+          buildEmployeeFormData(
+            formData
+          );
+
+        const employeeName =
+          toProperName(
+            formData.name
+          );
+
+        await axios.put(
+          `${EMPLOYEE_API_URL}/${encodeURIComponent(
+            employeeId
+          )}`,
+          requestData
+        );
+
+        setShowReview(
+          false
+        );
+
+        if (
+          typeof onSaveSuccess ===
+          "function"
+        ) {
+          await onSaveSuccess(
+            employeeName
+          );
+        } else {
+          onClose?.();
+        }
+      } catch (error) {
+        console.error(
+          "UPDATE EMPLOYEE ERROR:",
+          error
+        );
+
+        setSaveError(
+          getEmployeeApiError(
+            error,
+            "Unable to update the employee record."
+          )
+        );
+      } finally {
+        setIsSaving(
+          false
+        );
+      }
+    };
 
   return (
     <>
       <Dialog
-        open={!showReview}
-        onClose={handleClose}
+        open={
+          !showReview
+        }
+        onClose={
+          handleClose
+        }
         title="Edit Employee Record"
         description="Review all changes before updating the employee record."
         size="2xl"
         height="xl"
         showHeader={false}
         showCloseButton={false}
-        closeOnOverlay={!isSaving}
-        closeOnEscape={!isSaving}
-        preventClose={isSaving}
+        closeOnOverlay={
+          !isSaving
+        }
+        closeOnEscape={
+          !isSaving
+        }
+        preventClose={
+          isSaving
+        }
         scrollBody={false}
         bodyClassName="min-h-0 flex-1 p-0"
         className="border-white/10"
@@ -149,7 +209,10 @@ export default function EditEmployeeModal({
             <div className="flex min-h-full flex-col">
               <div>
                 <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
-                  <FiUser size={26} aria-hidden="true" />
+                  <FiUser
+                    size={26}
+                    aria-hidden="true"
+                  />
                 </div>
 
                 <h2 className="text-2xl font-extrabold">
@@ -157,28 +220,47 @@ export default function EditEmployeeModal({
                 </h2>
 
                 <p className="mt-3 text-sm leading-6 text-white/75">
-                  Update employee information, deployment details, and
-                  compliance documents.
+                  Update employee
+                  information,
+                  deployment details,
+                  and compliance
+                  documents.
                 </p>
               </div>
 
               <div className="mt-8 rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
                 <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-white/75">
-                  <span>Completion</span>
-                  <span>{completion}%</span>
+                  <span>
+                    Completion
+                  </span>
+
+                  <span>
+                    {completion}%
+                  </span>
                 </div>
 
                 <div className="h-2 overflow-hidden rounded-full bg-white/15">
                   <div
                     className="h-full rounded-full bg-white transition-all duration-300"
-                    style={{ width: `${completion}%` }}
+                    style={{
+                      width:
+                        `${completion}%`,
+                    }}
                   />
                 </div>
 
-                {remainingDocuments > 0 && (
+                {remainingDocuments >
+                  0 && (
                   <p className="mt-3 text-xs text-white/70">
-                    {remainingDocuments} compliance document
-                    {remainingDocuments === 1 ? "" : "s"} remaining.
+                    {
+                      remainingDocuments
+                    }{" "}
+                    compliance document
+                    {remainingDocuments ===
+                    1
+                      ? ""
+                      : "s"}{" "}
+                    remaining.
                   </p>
                 )}
               </div>
@@ -190,7 +272,8 @@ export default function EditEmployeeModal({
                   </p>
 
                   <p className="mt-1 break-all text-white/75">
-                    {employeeId || "-"}
+                    {employeeId ||
+                      "-"}
                   </p>
                 </div>
 
@@ -200,7 +283,13 @@ export default function EditEmployeeModal({
                   </p>
 
                   <p className="mt-1 text-white/75">
-                    {completedDocuments.length}/{DOCUMENT_OPTIONS.length}
+                    {
+                      completedDocuments.length
+                    }
+                    /
+                    {
+                      DOCUMENT_OPTIONS.length
+                    }
                   </p>
                 </div>
               </div>
@@ -212,15 +301,23 @@ export default function EditEmployeeModal({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill tone="indigo">
-                    <FiUser aria-hidden="true" />
+                    <FiUser
+                      aria-hidden="true"
+                    />
                     Edit Mode
                   </StatusPill>
 
                   {duplicateEmployee && (
                     <StatusPill
-                      tone={duplicateConfirmed ? "amber" : "red"}
+                      tone={
+                        duplicateConfirmed
+                          ? "amber"
+                          : "red"
+                      }
                     >
-                      <FiAlertTriangle aria-hidden="true" />
+                      <FiAlertTriangle
+                        aria-hidden="true"
+                      />
 
                       {duplicateConfirmed
                         ? "Duplicate Verified"
@@ -234,21 +331,29 @@ export default function EditEmployeeModal({
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Review all changes before updating the employee record.
+                  Review all changes
+                  before updating the
+                  employee record.
                 </p>
               </div>
 
               <Button
                 variant="secondary"
-                disabled={isSaving}
-                onClick={handleClose}
+                disabled={
+                  isSaving
+                }
+                onClick={
+                  handleClose
+                }
               >
                 Close
               </Button>
             </header>
 
             <form
-              onSubmit={handleSubmit}
+              onSubmit={
+                handleSubmit
+              }
               className="flex min-h-0 flex-1 flex-col"
             >
               <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-6 sm:px-6">
@@ -257,22 +362,48 @@ export default function EditEmployeeModal({
                     <main className="min-w-0">
                       <EmployeeFormFields
                         mode="edit"
-                        employeeId={employeeId}
-                        formData={formData}
-                        errors={errors}
-                        duplicateEmployee={duplicateEmployee}
-                        duplicateConfirmed={duplicateConfirmed}
-                        filteredCompanies={filteredCompanies}
-                        showSuggestions={showSuggestions}
-                        disabled={isSaving}
-                        onChange={handleChange}
-                        onNameBlur={handleNameBlur}
+                        employeeId={
+                          employeeId
+                        }
+                        formData={
+                          formData
+                        }
+                        errors={
+                          errors
+                        }
+                        duplicateEmployee={
+                          duplicateEmployee
+                        }
+                        duplicateConfirmed={
+                          duplicateConfirmed
+                        }
+                        companyOptions={
+                          companyOptions
+                        }
+                        positionOptions={
+                          positionOptions
+                        }
+                        isLoadingCompanies={
+                          isLoadingCompanies
+                        }
+                        isLoadingPositions={
+                          isLoadingPositions
+                        }
+                        deploymentOptionsError={
+                          deploymentOptionsError
+                        }
+                        disabled={
+                          isSaving
+                        }
+                        onChange={
+                          handleChange
+                        }
+                        onNameBlur={
+                          handleNameBlur
+                        }
                         onDuplicateConfirmChange={
                           handleDuplicateConfirmChange
                         }
-                        onCompanyFocus={handleCompanyFocus}
-                        onCompanyBlur={handleCompanyBlur}
-                        onCompanySelect={handleCompanySelect}
                       />
                     </main>
 
@@ -280,7 +411,9 @@ export default function EditEmployeeModal({
                       <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
                         <div className="mb-4 flex items-center gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-                            <FiInfo aria-hidden="true" />
+                            <FiInfo
+                              aria-hidden="true"
+                            />
                           </div>
 
                           <div>
@@ -289,7 +422,9 @@ export default function EditEmployeeModal({
                             </h3>
 
                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                              Live preview before confirmation.
+                              Live preview
+                              before
+                              confirmation.
                             </p>
                           </div>
                         </div>
@@ -297,24 +432,47 @@ export default function EditEmployeeModal({
                         <div className="space-y-3 text-sm">
                           <SummaryRow
                             label="Employee ID"
-                            value={employeeId || "-"}
+                            value={
+                              employeeId ||
+                              "-"
+                            }
                           />
 
                           <SummaryRow
                             label="Full Name"
-                            value={toProperName(formData.name) || "-"}
+                            value={
+                              toProperName(
+                                formData.name
+                              ) ||
+                              "-"
+                            }
                           />
 
                           <SummaryRow
                             label="Status"
-                            value={formData.status}
+                            value={
+                              formData.status
+                            }
                           />
 
                           <SummaryRow
                             label="Company"
                             value={
-                              formData.status === "Deployed"
-                                ? formData.company || "-"
+                              formData.status ===
+                              "Deployed"
+                                ? formData.company ||
+                                  "-"
+                                : "Not Assigned"
+                            }
+                          />
+
+                          <SummaryRow
+                            label="Position"
+                            value={
+                              formData.status ===
+                              "Deployed"
+                                ? formData.position ||
+                                  "-"
                                 : "Not Assigned"
                             }
                           />
@@ -322,8 +480,10 @@ export default function EditEmployeeModal({
                           <SummaryRow
                             label="Start Date"
                             value={
-                              formData.status === "Deployed"
-                                ? formData.contractStart || "-"
+                              formData.status ===
+                              "Deployed"
+                                ? formData.contractStart ||
+                                  "-"
                                 : "Not Applicable"
                             }
                           />
@@ -337,32 +497,66 @@ export default function EditEmployeeModal({
 
                       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                         <div className="mb-1 flex items-center gap-2 font-extrabold">
-                          <FiAlertTriangle aria-hidden="true" />
+                          <FiAlertTriangle
+                            aria-hidden="true"
+                          />
+
                           HRIS Reminder
                         </div>
 
                         <p className="leading-5">
-                          Existing files remain attached unless their
-                          document requirement is unchecked or replaced.
+                          Existing files
+                          remain attached
+                          unless their
+                          document
+                          requirement is
+                          unchecked or
+                          replaced.
                         </p>
                       </div>
                     </aside>
                   </div>
 
                   <EmployeeDocumentsSection
-                    documents={formData.documents}
-                    errors={errors.documents}
-                    expanded={showDocuments}
-                    disabled={isSaving}
-                    dragTargetDocument={dragTargetDocument}
-                    onToggle={handleToggleDocuments}
-                    onDocumentCheck={handleDocumentCheck}
-                    onExpirationChange={handleExpirationChange}
-                    onFileSelect={handleFileSelect}
-                    onDragEnter={handleDragEnter}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onFileDrop={handleFileDrop}
+                    documents={
+                      formData.documents
+                    }
+                    errors={
+                      errors.documents
+                    }
+                    expanded={
+                      showDocuments
+                    }
+                    disabled={
+                      isSaving
+                    }
+                    dragTargetDocument={
+                      dragTargetDocument
+                    }
+                    onToggle={
+                      handleToggleDocuments
+                    }
+                    onDocumentCheck={
+                      handleDocumentCheck
+                    }
+                    onExpirationChange={
+                      handleExpirationChange
+                    }
+                    onFileSelect={
+                      handleFileSelect
+                    }
+                    onDragEnter={
+                      handleDragEnter
+                    }
+                    onDragOver={
+                      handleDragOver
+                    }
+                    onDragLeave={
+                      handleDragLeave
+                    }
+                    onFileDrop={
+                      handleFileDrop
+                    }
                   />
                 </div>
               </div>
@@ -370,15 +564,22 @@ export default function EditEmployeeModal({
               <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:justify-end sm:px-6 dark:border-white/10 dark:bg-slate-900">
                 <Button
                   variant="secondary"
-                  disabled={isSaving}
-                  onClick={handleClose}
+                  disabled={
+                    isSaving
+                  }
+                  onClick={
+                    handleClose
+                  }
                 >
                   Cancel
                 </Button>
 
                 <Button
                   type="submit"
-                  disabled={isSaving || !employeeId}
+                  disabled={
+                    isSaving ||
+                    !employeeId
+                  }
                 >
                   Review Update
                 </Button>
@@ -389,15 +590,31 @@ export default function EditEmployeeModal({
       </Dialog>
 
       <EmployeeReviewDialog
-        open={showReview}
+        open={
+          showReview
+        }
         mode="edit"
-        employeeId={employeeId}
-        formData={formData}
-        complianceWarning={complianceWarning}
-        saveError={saveError}
-        isSaving={isSaving}
-        onClose={handleCloseReview}
-        onConfirm={handleConfirmUpdate}
+        employeeId={
+          employeeId
+        }
+        formData={
+          formData
+        }
+        complianceWarning={
+          complianceWarning
+        }
+        saveError={
+          saveError
+        }
+        isSaving={
+          isSaving
+        }
+        onClose={
+          handleCloseReview
+        }
+        onConfirm={
+          handleConfirmUpdate
+        }
       />
     </>
   );

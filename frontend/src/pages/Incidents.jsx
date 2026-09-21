@@ -254,6 +254,17 @@ function normalizeRole(
     return "HR_STAFF";
   }
 
+  if (
+    [
+      "HRCOORDINATOR",
+      "HR_COORDINATOR",
+    ].includes(
+      role
+    )
+  ) {
+    return "HR_COORDINATOR";
+  }
+
   return role;
 }
 
@@ -1012,6 +1023,18 @@ export default function Incidents() {
     currentRole ===
     "HR_MANAGER";
 
+  const isHrStaff =
+    currentRole ===
+    "HR_STAFF";
+
+  const isHrCoordinator =
+    currentRole ===
+    "HR_COORDINATOR";
+
+  const canInvestigate =
+    isHrManager ||
+    isHrStaff;
+
   const isAuthorizedReviewer =
     isSuperAdmin ||
     isHrManager;
@@ -1594,7 +1617,7 @@ export default function Incidents() {
               "submit-resolution" &&
             currentStatus ===
               "Investigating" &&
-            !isSuperAdmin
+            canInvestigate
           ) {
             setCaseTab(
               "ACTIVE"
@@ -1612,7 +1635,7 @@ export default function Incidents() {
               "start-investigation" &&
             currentStatus ===
               "Open" &&
-            !isSuperAdmin
+            canInvestigate
           ) {
             setCaseTab(
               "ACTIVE"
@@ -1649,8 +1672,8 @@ export default function Incidents() {
         }
       },
       [
+        canInvestigate,
         isAuthorizedReviewer,
-        isSuperAdmin,
         loadIncidentDetails,
         showNotice,
       ]
@@ -2042,6 +2065,57 @@ export default function Incidents() {
         successMessage,
         formData,
       }) => {
+        const workflowAction =
+          String(
+            payload?.workflowAction ||
+              ""
+          )
+            .trim()
+            .toUpperCase();
+
+        const investigatorActions =
+          new Set([
+            "START_INVESTIGATION",
+            "SUBMIT_RESOLUTION",
+            "SUBMIT_INVESTIGATION",
+          ]);
+
+        const reviewerActions =
+          new Set([
+            "CLOSE_INCIDENT",
+            "RETURN_INCIDENT",
+          ]);
+
+        if (
+          investigatorActions.has(
+            workflowAction
+          ) &&
+          !canInvestigate
+        ) {
+          showNotice(
+            "error",
+            "Investigation Access Required",
+            "Only HR Manager or HR Staff accounts can investigate incidents or submit investigation proof."
+          );
+
+          return false;
+        }
+
+        if (
+          reviewerActions.has(
+            workflowAction
+          ) &&
+          !isAuthorizedReviewer
+        ) {
+          showNotice(
+            "error",
+            "Review Access Required",
+            "Only HR Manager or Super Admin accounts can review submitted incident cases."
+          );
+
+          return false;
+        }
+
         if (
           normalizeStatus(
             incident.status
@@ -2153,8 +2227,10 @@ export default function Incidents() {
       },
       [
         actorFullName,
+        canInvestigate,
         fetchPageData,
         incidents,
+        isAuthorizedReviewer,
         showNotice,
         updateIncidentState,
         user?.id,
@@ -2356,7 +2432,7 @@ export default function Incidents() {
       incident
     ) => {
       if (
-        isSuperAdmin ||
+        !canInvestigate ||
         !incident
       ) {
         return false;
@@ -2441,7 +2517,7 @@ export default function Incidents() {
       resolutionData
     ) => {
       if (
-        isSuperAdmin
+        !canInvestigate
       ) {
         return false;
       }
@@ -3064,9 +3140,11 @@ export default function Incidents() {
           </h1>
 
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {isAuthorizedReviewer
-              ? "Manage incident investigations and review submitted proof when authorized."
-              : "Review reported cases, start investigations, and submit proof for review."}
+            {isHrCoordinator
+              ? "View and report incidents for your assigned client company. Investigation and case review are handled by authorized HR users."
+              : isAuthorizedReviewer
+                ? "Manage incident investigations and review submitted proof when authorized."
+                : "Review reported cases, start investigations, and submit proof for review."}
           </p>
         </div>
 
@@ -3187,6 +3265,9 @@ export default function Incidents() {
           isSuperAdmin={
             isSuperAdmin
           }
+          isHRCoordinator={
+            isHrCoordinator
+          }
           currentUser={
             currentUser
           }
@@ -3197,13 +3278,19 @@ export default function Incidents() {
             handleViewIncident
           }
           onStartReview={
-            handleStartReviewIncident
+            canInvestigate
+              ? handleStartReviewIncident
+              : undefined
           }
           onResolve={
-            handleResolveIncident
+            canInvestigate
+              ? handleResolveIncident
+              : undefined
           }
           onReview={
-            handleReviewIncident
+            isAuthorizedReviewer
+              ? handleReviewIncident
+              : undefined
           }
         />
 
@@ -3296,7 +3383,7 @@ export default function Incidents() {
         />
       )}
 
-      {startReviewIncident && (
+      {canInvestigate && startReviewIncident && (
         <ViewIncidentModal
           incident={
             startReviewIncident
@@ -3313,7 +3400,7 @@ export default function Incidents() {
         />
       )}
 
-      {confirmStartIncident && (
+      {canInvestigate && confirmStartIncident && (
         <ConfirmStartInvestigationModal
           incident={
             confirmStartIncident
@@ -3332,7 +3419,7 @@ export default function Incidents() {
         />
       )}
 
-      {resolutionIncident && (
+      {canInvestigate && resolutionIncident && (
         <ResolutionModal
           incident={
             resolutionIncident
@@ -3351,7 +3438,7 @@ export default function Incidents() {
         />
       )}
 
-      {reviewIncident && (
+      {isAuthorizedReviewer && reviewIncident && (
         <ReviewCaseModal
           incident={
             reviewIncident

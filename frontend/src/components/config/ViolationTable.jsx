@@ -97,6 +97,46 @@ function normalizeSeverity(value) {
   return value ? [value] : [];
 }
 
+function getSafeDescriptionText(value) {
+  const rawValue =
+    String(value || "").trim();
+
+  if (!rawValue) {
+    return "";
+  }
+
+  const withReadableBreaks =
+    rawValue
+      .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+      .replace(
+        /<\s*\/\s*(p|div|li|ul|ol)\s*>/gi,
+        "\n"
+      )
+      .replace(
+        /<\s*li(?:\s[^>]*)?>/gi,
+        "• "
+      );
+
+  if (typeof DOMParser !== "undefined") {
+    const parser = new DOMParser();
+    const document = parser.parseFromString(
+      withReadableBreaks,
+      "text/html"
+    );
+
+    return String(
+      document.body.textContent || ""
+    )
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  return withReadableBreaks
+    .replace(/<[^>]*>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export default function ViolationTable({
   rules = [],
   canEdit = false,
@@ -203,9 +243,11 @@ export default function ViolationTable({
                         {item.violation || "Unnamed violation"}
                       </p>
 
-                      <div className="mt-2 whitespace-pre-line break-words text-xs leading-5 text-gray-500 dark:text-gray-400">
-                        {formatPolicyDescriptionAsPlainText(item.description)}
-                      </div>
+                      <p className="mt-2 whitespace-pre-line text-xs leading-5 text-gray-500 dark:text-gray-400">
+                        {getSafeDescriptionText(
+                          item.description
+                        )}
+                      </p>
                     </td>
 
                     <td className="border-b border-r border-gray-200 px-4 py-4 dark:border-white/10">

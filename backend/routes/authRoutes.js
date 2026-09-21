@@ -1,259 +1,171 @@
+"use strict";
+
 const express = require("express");
 
-const router = express.Router();
+const {
+  rateLimit,
+} = require("express-rate-limit");
+
+const {
+  verifyToken,
+} = require("../middleware/authMiddleware");
 
 const {
   login,
 } = require("../controllers/authController");
 
-/*
- * ==================================================
- * LOGIN RATE LIMITING
- * ==================================================
- *
- * Protect the login endpoint from repeated brute-force
- * attempts without introducing another runtime
- * dependency.
- *
- * Strategy:
- * - Track failed login attempts per client IP.
- * - Allow up to 5 failed attempts within 15 minutes.
- * - Successful authentication clears the client's
- *   failure counter.
- * - Backend/server failures (5xx) do NOT count as
- *   failed login attempts, preventing an infrastructure
- *   outage from locking legitimate users out.
- * - Expired entries are periodically removed.
- *
- * This in-memory limiter is appropriate for the
- * current single-backend intranet deployment.
- * If the backend is later scaled to multiple Node.js
- * instances, move the counters to a shared store
- * such as Redis.
- */
-const LOGIN_RATE_LIMIT_WINDOW_MS =
-  15 * 60 * 1000;
+const {
+  requestEmailVerification,
+  verifyEmail,
+  resetPasswordWithToken,
+} = require("../controllers/recoveryController");
 
-const LOGIN_RATE_LIMIT_MAX_FAILURES =
-  5;
+const {
+  submitPasswordResetRequest,
+} = require("../controllers/passwordResetSubmissionController");
 
-const loginFailureStore =
-  new Map();
+const {
+  getRecoveryEmailStatus,
+} = require("../controllers/recoveryEmailStatusController");
 
-function getClientKey(req) {
-  return (
-    req.ip ||
-    req.socket?.remoteAddress ||
-    "unknown-client"
-  );
-}
+const {
+  listPendingPasswordResetRequests,
+  approvePasswordResetRequest,
+  rejectPasswordResetRequest,
+} = require("../controllers/passwordResetReviewController");
 
-function getActiveBucket(
-  clientKey,
-  now
-) {
-  const existingBucket =
-    loginFailureStore.get(
-      clientKey
-    );
-
-  if (
-    !existingBucket ||
-    now >=
-      existingBucket.resetAt
-  ) {
-    const newBucket = {
-      failedAttempts: 0,
-      resetAt:
-        now +
-        LOGIN_RATE_LIMIT_WINDOW_MS,
-    };
-
-    loginFailureStore.set(
-      clientKey,
-      newBucket
-    );
-
-    return newBucket;
-  }
-
-  return existingBucket;
-}
-
-function setRateLimitHeaders(
-  res,
-  bucket
-) {
-  const remaining = Math.max(
-    0,
-    LOGIN_RATE_LIMIT_MAX_FAILURES -
-      bucket.failedAttempts
-  );
-
-  const retryAfterSeconds =
-    Math.max(
-      0,
-      Math.ceil(
-        (
-          bucket.resetAt -
-          Date.now()
-        ) / 1000
-      )
-    );
-
-  res.setHeader(
-    "X-RateLimit-Limit",
-    LOGIN_RATE_LIMIT_MAX_FAILURES
-  );
-
-  res.setHeader(
-    "X-RateLimit-Remaining",
-    remaining
-  );
-
-  res.setHeader(
-    "X-RateLimit-Reset",
-    Math.ceil(
-      bucket.resetAt / 1000
-    )
-  );
-
-  return retryAfterSeconds;
-}
-
-function loginRateLimiter(
-  req,
-  res,
-  next
-) {
-  const now = Date.now();
-
-  const clientKey =
-    getClientKey(req);
-
-  const bucket =
-    getActiveBucket(
-      clientKey,
-      now
-    );
-
-  const retryAfterSeconds =
-    setRateLimitHeaders(
-      res,
-      bucket
-    );
-
-  if (
-    bucket.failedAttempts >=
-    LOGIN_RATE_LIMIT_MAX_FAILURES
-  ) {
-    res.setHeader(
-      "Retry-After",
-      retryAfterSeconds
-    );
-
-    return res
-      .status(429)
-      .json({
-        success: false,
-
-        error:
-          "Too many login attempts.",
-
-        message:
-          "Too many failed login attempts. Please wait before trying again.",
-
-        retryAfterSeconds,
-      });
-  }
-
-  /*
-   * Update the failure counter only after the login
-   * controller finishes its response.
-   *
-   * 2xx:
-   *   Valid login -> clear previous failures.
-   *
-   * 4xx:
-   *   Invalid/rejected login -> count one failure.
-   *
-   * 5xx:
-   *   Infrastructure/server problem -> do not punish
-   *   the user by increasing the login failure count.
-   */
-  res.once(
-    "finish",
-    () => {
-      const currentBucket =
-        loginFailureStore.get(
-          clientKey
-        );
-
-      if (!currentBucket) {
-        return;
-      }
-
-      if (
-        res.statusCode >= 200 &&
-        res.statusCode < 300
-      ) {
-        loginFailureStore.delete(
-          clientKey
-        );
-
-        return;
-      }
-
-      if (
-        res.statusCode >= 400 &&
-        res.statusCode < 500 &&
-        res.statusCode !== 429
-      ) {
-        currentBucket.failedAttempts +=
-          1;
-      }
-    }
-  );
-
-  return next();
-}
+const router = express.Router();
 
 /*
- * Periodically discard expired client entries so the
- * in-memory store cannot grow indefinitely.
+ * In-memory limiters are suitable for the current
+ * local development setup.
  *
- * unref() prevents this cleanup timer from keeping
- * the Node.js process alive during shutdown.
+ * A shared limiter store is required when deploying
+ * across multiple backend instances.
  */
-const loginRateLimitCleanupTimer =
-  setInterval(
-    () => {
-      const now = Date.now();
 
-      for (
-        const [
-          clientKey,
-          bucket,
-        ] of loginFailureStore.entries()
-      ) {
-        if (
-          now >= bucket.resetAt
-        ) {
-          loginFailureStore.delete(
-            clientKey
-          );
-        }
-      }
-    },
-    LOGIN_RATE_LIMIT_WINDOW_MS
-  );
+const recoveryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    message:
+      "Too many recovery requests. Please try again later.",
+  },
+});
 
-loginRateLimitCleanupTimer.unref?.();
+const tokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 15,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    message:
+      "Too many attempts. Please try again later.",
+  },
+});
+
+/*
+ * Login
+ */
 
 router.post(
   "/login",
-  loginRateLimiter,
   login
+);
+
+/*
+ * Recovery email status
+ */
+
+router.get(
+  "/auth/recovery-email-status",
+  verifyToken,
+  getRecoveryEmailStatus
+);
+
+/*
+ * Email verification
+ *
+ * Preserve the existing verification process.
+ */
+
+router.post(
+  "/auth/request-email-verification",
+  verifyToken,
+  recoveryLimiter,
+  requestEmailVerification
+);
+
+router.post(
+  "/auth/verify-email",
+  tokenLimiter,
+  verifyEmail
+);
+
+/*
+ * Forgot Password
+ *
+ * IMPORTANT:
+ *
+ * This endpoint now creates a pending review request.
+ * It does NOT generate a reset token or send a reset email.
+ *
+ * The submission controller requires:
+ * - email
+ * - username
+ * - fullName
+ *
+ * The approval controller handles reset-email delivery
+ * after an authorized reviewer verifies the requester.
+ */
+
+router.post(
+  "/auth/forgot-password",
+  recoveryLimiter,
+  submitPasswordResetRequest
+);
+
+/*
+ * Existing one-time reset-link endpoint
+ *
+ * Keep this route unchanged. It will process reset
+ * links generated after an authorized approval.
+ */
+
+router.post(
+  "/auth/reset-password",
+  tokenLimiter,
+  resetPasswordWithToken
+);
+
+/*
+ * Authorized reviewer queue
+ *
+ * verifyToken loads the reviewer's CURRENT role,
+ * account status, and token version from the database.
+ *
+ * The review controller performs additional authorization
+ * and transaction-level checks before processing a request.
+ */
+
+router.get(
+  "/auth/password-reset-requests",
+  verifyToken,
+  listPendingPasswordResetRequests
+);
+
+router.post(
+  "/auth/password-reset-requests/:id/approve",
+  verifyToken,
+  approvePasswordResetRequest
+);
+
+router.post(
+  "/auth/password-reset-requests/:id/reject",
+  verifyToken,
+  rejectPasswordResetRequest
 );
 
 module.exports = router;

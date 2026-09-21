@@ -30,3 +30,8 @@ backend/.env
 # Database records may reference these files, so this rule
 # only prevents Git tracking. It does NOT delete the files.
 backend/documents/
+# WELLJOB private profile picture uploads
+/backend/private_uploads/
+
+# Local profile picture retrieval test
+/downloaded-avatar.webp
