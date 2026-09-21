@@ -145,12 +145,11 @@ const cors = require("cors");
 
 const compression = require("compression");
 
-/*
- * ==================================================
- * MAINTENANCE MIDDLEWARE
- * ==================================================
- */
+// DATABASE
+const db =
+  require("./config/db");
 
+// MAINTENANCE MIDDLEWARE
 const checkMaintenanceMode =
   require(
     "./middleware/maintenanceMiddleware"
@@ -639,7 +638,16 @@ const server = app.listen(
   PORT,
   () => {
     console.log(
-      `Server running on port ${PORT}`
+      "Database connection verified."
+    );
+
+    app.listen(
+      PORT,
+      () => {
+        console.log(
+          `Server running on port ${PORT}`
+        );
+      }
     );
 
     console.log(

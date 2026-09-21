@@ -3,6 +3,8 @@ import {
   FiTrash2,
 } from "react-icons/fi";
 
+import { formatPolicyDescriptionAsPlainText } from "../../utils/policyDescription";
+
 const severityStyle = {
   Minor:
     "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/20 dark:text-emerald-300",

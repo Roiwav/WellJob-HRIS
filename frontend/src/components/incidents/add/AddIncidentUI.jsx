@@ -13,6 +13,7 @@ import {
 
 import Button from "../../ui/Button";
 import Dialog from "../../ui/Dialog";
+import { formatPolicyDescriptionAsPlainText } from "../../../utils/policyDescription";
 
 function getSafePolicyDescriptionText(value) {
   const rawValue =
