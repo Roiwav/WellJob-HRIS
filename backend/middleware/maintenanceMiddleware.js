@@ -190,6 +190,37 @@ async function getMaintenanceEnabled() {
 
         return enabled;
       })
+      .catch((error) => {
+        /*
+         * Fail-safe behavior:
+         *
+         * If maintenance was previously confirmed ON,
+         * never let a temporary settings lookup failure
+         * turn maintenance OFF.
+         *
+         * Returning true here keeps normal users blocked
+         * while still allowing the existing live
+         * IT_SUPPORT bypass verification to run.
+         *
+         * If the last-known value is OFF or no trusted
+         * value exists yet, the error is re-thrown so
+         * the middleware returns a controlled 503 rather
+         * than failing open.
+         */
+        if (
+          maintenanceCache.value ===
+          true
+        ) {
+          console.error(
+            "Maintenance setting lookup failed; preserving last-known ON state:",
+            error
+          );
+
+          return true;
+        }
+
+        throw error;
+      })
       .finally(() => {
         maintenanceLookupPromise =
           null;
@@ -351,6 +382,38 @@ async function hasCurrentItSupportAccess(
   }
 }
 
+function sendMaintenanceResponse(
+  res
+) {
+  return res
+    .status(503)
+    .json({
+      success: false,
+
+      error:
+        "System under maintenance",
+
+      message:
+        "System is currently under maintenance. Please try again later.",
+    });
+}
+
+function sendMaintenanceStateUnavailableResponse(
+  res
+) {
+  return res
+    .status(503)
+    .json({
+      success: false,
+
+      error:
+        "Service temporarily unavailable",
+
+      message:
+        "System availability could not be verified. Please try again shortly.",
+    });
+}
+
 async function checkMaintenanceMode(
   req,
   res,
@@ -423,17 +486,9 @@ async function checkMaintenanceMode(
       }
     }
 
-    return res
-      .status(503)
-      .json({
-        success: false,
-
-        error:
-          "System under maintenance",
-
-        message:
-          "System is currently under maintenance. Please try again later.",
-      });
+    return sendMaintenanceResponse(
+      res
+    );
   } catch (error) {
     console.error(
       "Maintenance middleware error:",
@@ -441,17 +496,23 @@ async function checkMaintenanceMode(
     );
 
     /*
-     * Preserve the existing fail-open behavior for
-     * the maintenance-setting lookup itself.
+     * Do not fail open when the maintenance setting
+     * cannot be determined.
      *
-     * Failed maintenance-setting reads are not cached,
-     * so the next request retries the database lookup.
+     * A previously confirmed ON state is already
+     * preserved by getMaintenanceEnabled(), so this
+     * catch represents either:
      *
-     * IT Support bypass verification still fails
-     * closed once maintenance mode has been
-     * successfully confirmed as active.
+     * - no trustworthy maintenance state yet, or
+     * - a stale/previously OFF state that could no
+     *   longer be verified.
+     *
+     * In either case, return 503 rather than allowing
+     * protected application traffic through.
      */
-    return next();
+    return sendMaintenanceStateUnavailableResponse(
+      res
+    );
   }
 }
 

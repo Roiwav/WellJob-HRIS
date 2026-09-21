@@ -3,6 +3,8 @@ import {
   FiTrash2,
 } from "react-icons/fi";
 
+import { formatPolicyDescriptionAsPlainText } from "../../utils/policyDescription";
+
 const severityStyle = {
   Minor:
     "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/20 dark:text-emerald-300",
@@ -201,12 +203,9 @@ export default function ViolationTable({
                         {item.violation || "Unnamed violation"}
                       </p>
 
-                      <div
-                        className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400"
-                        dangerouslySetInnerHTML={{
-                          __html: item.description || "",
-                        }}
-                      />
+                      <div className="mt-2 whitespace-pre-line break-words text-xs leading-5 text-gray-500 dark:text-gray-400">
+                        {formatPolicyDescriptionAsPlainText(item.description)}
+                      </div>
                     </td>
 
                     <td className="border-b border-r border-gray-200 px-4 py-4 dark:border-white/10">

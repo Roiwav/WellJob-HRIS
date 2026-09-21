@@ -144,46 +144,22 @@ function buildAuditFilters({
   };
 }
 
-exports.getAllLogs =
-  async (
-    req,
-    res
-  ) => {
-    try {
-      const [logs] =
-        await db
-          .promise()
-          .query(
-            `
-            SELECT *
-            FROM audit_logs
-            ORDER BY
-              created_at DESC,
-              id DESC
-            `
-          );
-
-      return res
-        .status(200)
-        .json(logs);
-    } catch (error) {
-      console.error(
-        "Fetch All Audit Logs Error:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-          error:
-            "Failed to fetch audit logs.",
-          message:
-            "The audit log records could not be retrieved.",
-        });
-    }
-  };
-
+/*
+ * ==================================================
+ * CATEGORY-SPECIFIC AUDIT LOGS
+ * ==================================================
+ *
+ * This endpoint intentionally uses bounded,
+ * server-side pagination for every request.
+ *
+ * Legacy behavior that returned an entire category
+ * as one unbounded array has been retired.
+ *
+ * `view=summary` remains accepted for compatibility
+ * with the current frontend. Omitting `view` now uses
+ * the same paginated response shape rather than
+ * falling back to a full-history query.
+ */
 exports.getLogsByCategory =
   async (
     req,
@@ -227,93 +203,61 @@ exports.getLogsByCategory =
         });
     }
 
-    try {
-      if (!view) {
-        const [logs] =
-          await db
-            .promise()
-            .query(
-              `
-              SELECT
-                id,
-                user_id,
-                username,
-                role,
-                category,
-                action,
-                description,
-                created_at,
-                full_name
-              FROM audit_logs
-              WHERE category = ?
-              ORDER BY
-                created_at DESC,
-                id DESC
-              `,
-              [
-                category,
-              ]
-            );
+    const page =
+      parsePositiveInteger(
+        req.query.page,
+        1
+      );
 
-        return res
-          .status(200)
-          .json(logs);
-      }
+    const requestedPageSize =
+      parsePositiveInteger(
+        req.query.pageSize,
+        AUDIT_PAGE_SIZE_DEFAULT
+      );
 
-      const page =
-        parsePositiveInteger(
-          req.query.page,
-          1
-        );
+    const pageSize =
+      Math.min(
+        requestedPageSize,
+        AUDIT_PAGE_SIZE_MAX
+      );
 
-      const requestedPageSize =
-        parsePositiveInteger(
-          req.query.pageSize,
-          AUDIT_PAGE_SIZE_DEFAULT
-        );
+    const role =
+      cleanAuditRole(
+        req.query.role
+      );
 
-      const pageSize =
-        Math.min(
-          requestedPageSize,
-          AUDIT_PAGE_SIZE_MAX
-        );
-
-      const role =
-        cleanAuditRole(
-          req.query.role
-        );
-
-      if (!role) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error:
-              "Invalid audit log role filter.",
-            message:
-              "Role must be ALL, SUPER_ADMIN, HR_MANAGER, HR_STAFF, or IT_SUPPORT.",
-          });
-      }
-
-      const search =
-        cleanSearch(
-          req.query.search
-        );
-
-      const {
-        whereSql,
-        params,
-      } =
-        buildAuditFilters({
-          category,
-          role,
-          search,
+    if (!role) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error:
+            "Invalid audit log role filter.",
+          message:
+            "Role must be ALL, SUPER_ADMIN, HR_MANAGER, HR_STAFF, or IT_SUPPORT.",
         });
+    }
 
-      const offset =
-        (page - 1) *
-        pageSize;
+    const search =
+      cleanSearch(
+        req.query.search
+      );
 
+    const {
+      whereSql,
+      params,
+    } =
+      buildAuditFilters({
+        category,
+        role,
+        search,
+      });
+
+    const offset =
+      (page - 1) *
+      pageSize;
+
+    try {
       const [
         recordsResult,
         countResult,
@@ -339,10 +283,14 @@ exports.getLogsByCategory =
               ORDER BY
                 created_at DESC,
                 id DESC
-              LIMIT ${pageSize}
-              OFFSET ${offset}
+              LIMIT ?
+              OFFSET ?
               `,
-              params
+              [
+                ...params,
+                pageSize,
+                offset,
+              ]
             ),
 
           db
@@ -380,9 +328,12 @@ exports.getLogsByCategory =
         recordsResult[0];
 
       const total =
-        Number(
-          countResult[0]?.[0]
-            ?.total || 0
+        Math.max(
+          Number(
+            countResult[0]?.[0]
+              ?.total || 0
+          ),
+          0
         );
 
       const summaryRow =
@@ -411,33 +362,48 @@ exports.getLogsByCategory =
 
           summary: {
             total:
-              Number(
-                summaryRow.total ||
-                  0
+              Math.max(
+                Number(
+                  summaryRow.total ||
+                    0
+                ),
+                0
               ),
 
             superAdmin:
-              Number(
-                summaryRow.super_admin ||
-                  0
+              Math.max(
+                Number(
+                  summaryRow.super_admin ||
+                    0
+                ),
+                0
               ),
 
             hrManager:
-              Number(
-                summaryRow.hr_manager ||
-                  0
+              Math.max(
+                Number(
+                  summaryRow.hr_manager ||
+                    0
+                ),
+                0
               ),
 
             hrStaff:
-              Number(
-                summaryRow.hr_staff ||
-                  0
+              Math.max(
+                Number(
+                  summaryRow.hr_staff ||
+                    0
+                ),
+                0
               ),
 
             itSupport:
-              Number(
-                summaryRow.it_support ||
-                  0
+              Math.max(
+                Number(
+                  summaryRow.it_support ||
+                    0
+                ),
+                0
               ),
           },
 
