@@ -35,3 +35,8 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Vercel local configuration
+.vercel/
+.vercel
+.env*
