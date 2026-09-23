@@ -282,11 +282,9 @@ exports.getDashboardOverview = async (
           e.archived = 0
           AND da.start_date IS NOT NULL
         GROUP BY
-          YEAR(da.start_date),
-          MONTH(da.start_date)
+          DATE_FORMAT(da.start_date, '%Y-%m-01')
         ORDER BY
-          YEAR(da.start_date) ASC,
-          MONTH(da.start_date) ASC
+          date ASC
       `);
 
     const employees = mapEmployees(
