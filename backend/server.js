@@ -1,4 +1,3 @@
-
 const path = require("path");
 
 // LOAD ENVIRONMENT VARIABLES FIRST
@@ -641,14 +640,7 @@ const server = app.listen(
       "Database connection verified."
     );
 
-    app.listen(
-      PORT,
-      () => {
-        console.log(
-          `Server running on port ${PORT}`
-        );
-      }
-    );
+    console.log(`Server running on port ${PORT}`);
 
     console.log(
       "WELLJOB Messenger API registered at /api/chat"
