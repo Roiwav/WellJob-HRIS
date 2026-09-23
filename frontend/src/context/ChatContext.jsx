@@ -1,4 +1,3 @@
-
 /**
  * ==================================================
  * WELLJOB SOLUTIONS
@@ -324,6 +323,7 @@ export function ChatProvider({ children }) {
 
     const handleNewMessage = ({
       sender,
+      message,
     } = {}) => {
       if (!active) {
         return;
@@ -348,6 +348,11 @@ export function ChatProvider({ children }) {
       if (
         senderId === currentUserId
       ) {
+        return;
+      }
+
+      if (message?.isSystem) {
+        setToast({ title: 'A group membership or admin setting changed.', isSystem: true, receivedAt: Date.now() });
         return;
       }
 
@@ -423,6 +428,11 @@ export function ChatProvider({ children }) {
 
     client.on(
       "chat:read",
+      handleReadReceipt
+    );
+
+    client.on(
+      "chat:changed",
       handleReadReceipt
     );
 
@@ -582,7 +592,7 @@ export function ChatProvider({ children }) {
               font-semibold
             "
           >
-            New chat message
+            {toast.isSystem ? "Group activity" : "New chat message"}
           </span>
 
           <span
@@ -593,7 +603,7 @@ export function ChatProvider({ children }) {
               dark:text-slate-300
             "
           >
-            From {toast.title}
+            {toast.isSystem ? toast.title : `From ${toast.title}`}
           </span>
         </Link>
       )}

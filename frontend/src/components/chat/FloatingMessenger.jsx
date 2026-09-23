@@ -1,4 +1,3 @@
-
 import {
   Suspense,
   lazy,
@@ -188,7 +187,7 @@ export default function FloatingMessenger() {
                 </h2>
 
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Private messages
+                  Private and group messages
                 </p>
               </div>
             </div>

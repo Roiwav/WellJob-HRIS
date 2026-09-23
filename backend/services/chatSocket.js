@@ -1,4 +1,3 @@
-
 /**
  * ==================================================
  * WELLJOB SOLUTIONS
@@ -24,6 +23,7 @@
  */
 
 const { Server } = require("socket.io");
+const db = require("../config/db");
 
 const {
   resolveUser,
@@ -581,6 +581,33 @@ async function publishToUsers(
         !socket.rooms.has(room)
       ) {
         continue;
+      }
+
+      /*
+       * A removed group member must not receive delayed group messages.
+       * Membership AND message visibility are rechecked immediately before
+       * sending a group message, even if an old recipient list was captured.
+       */
+      const groupMatch =
+        eventName === "chat:message" &&
+        typeof payload?.message?.conversationId === "string" &&
+        /^g:[1-9]\d*$/.test(payload.message.conversationId);
+
+      if (groupMatch) {
+        const groupId = Number(payload.message.conversationId.slice(2));
+        const messageId = Number(payload.message.id);
+        try {
+          const [membershipRows] = await db.promise().query(
+            `SELECT 1 FROM chat_group_members
+             WHERE group_id = ? AND user_id = ?
+               AND joined_after_message_id < ? LIMIT 1`,
+            [groupId, userId, messageId]
+          );
+          if (!membershipRows.length) continue;
+        } catch (error) {
+          console.error("CHAT GROUP DELIVERY VALIDATION ERROR:", error);
+          continue;
+        }
       }
 
       /*
