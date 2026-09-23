@@ -5,33 +5,79 @@
 # ============================================================
 # DEPENDENCIES
 # ============================================================
-# Dependencies must be restored using package-lock.json.
-# Never commit node_modules.
 node_modules/
+**/node_modules/
 
 # ============================================================
-# BACKEND ENVIRONMENT SECRETS
+# ENVIRONMENT VARIABLES AND SECRETS
 # ============================================================
-backend/.env
+.env
+.env.*
+!.env.example
+
+**/.env
+**/.env.*
+!**/.env.example
 
 # ============================================================
 # PRIVATE RUNTIME DOCUMENT STORAGE
 # ============================================================
-# Employee documents and incident evidence uploaded through
-# WellJob are stored under backend/documents/.
-#
-# These files are runtime/on-premises data and must NEVER be
-# committed or pushed to Git.
-#
-# This applies to both:
-# - mock deployment documents
-# - actual Welljob production documents
-#
-# Database records may reference these files, so this rule
-# only prevents Git tracking. It does NOT delete the files.
+
+# Employee documents and incident evidence
 backend/documents/
-# WELLJOB private profile picture uploads
+
+# Private profile picture uploads
 /backend/private_uploads/
 
-# Local profile picture retrieval test
+# Private messenger attachments
+/backend/private_chat_uploads/
+
+# Other backend upload directories
+/backend/uploads/
+/backend/temp/
+
+# ============================================================
+# DATABASE BACKUPS
+# ============================================================
+*.sql
+*.sql.gz
+*.dump
+
+# ============================================================
+# SSL CERTIFICATES AND PRIVATE KEYS
+# ============================================================
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ============================================================
+# VERCEL DEPLOYMENT
+# ============================================================
+.vercel/
+**/.vercel/
+
+# ============================================================
+# FRONTEND BUILD FILES
+# ============================================================
+dist/
+build/
+
+# ============================================================
+# LOG FILES
+# ============================================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================================================
+# LOCAL TEST FILES
+# ============================================================
 /downloaded-avatar.webp
+
+# ============================================================
+# SYSTEM FILES
+# ============================================================
+.DS_Store
+Thumbs.db
