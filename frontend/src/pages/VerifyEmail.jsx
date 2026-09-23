@@ -8,7 +8,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-import logo from "../assets/logo.png";
+import logo from "../assets/Logo.png";
 import { API_BASE } from "../config/api";
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/i;

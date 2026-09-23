@@ -1,4 +1,4 @@
-import logo from "../assets/logo.png";
+import logo from "../assets/Logo.png";
 import { NavLink } from "react-router-dom";
 import { useMemo } from "react";
 import {

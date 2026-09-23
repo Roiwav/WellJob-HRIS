@@ -8,7 +8,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 
-import logo from "../assets/logo.png";
+import logo from "../assets/Logo.png";
 import { API_BASE } from "../config/api";
 
 const PASSWORD_MIN_LENGTH = 8;
