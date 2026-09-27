@@ -5,6 +5,11 @@ const router = express.Router();
 const upload = require("../middleware/upload");
 
 const {
+  finalizeEmployeeCreateDirectUploads,
+  finalizeEmployeeUpdateDirectUploads,
+} = require("../middleware/directUploadFinalizeMiddleware");
+
+const {
   createEmployee,
   getEmployees,
   getEmployeeFormMeta,
@@ -159,6 +164,7 @@ router.post(
     "HR_STAFF"
   ),
   upload.employeeDocuments,
+  finalizeEmployeeCreateDirectUploads,
   createEmployee
 );
 
@@ -177,6 +183,7 @@ router.put(
     "HR_STAFF"
   ),
   upload.employeeDocuments,
+  finalizeEmployeeUpdateDirectUploads,
   updateEmployee
 );
 

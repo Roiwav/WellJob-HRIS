@@ -35,6 +35,11 @@ const {
 
 const upload = require("../middleware/upload");
 
+const {
+  finalizeIncidentCreateDirectUploads,
+  finalizeIncidentWorkflowDirectUploads,
+} = require("../middleware/directUploadFinalizeMiddleware");
+
 const router = express.Router();
 
 const EVIDENCE_WORKFLOW_ACTIONS = new Set([
@@ -312,6 +317,7 @@ router.post(
     "HR_COORDINATOR"
   ),
   upload.incidentEvidence,
+  finalizeIncidentCreateDirectUploads,
   createIncident
 );
 
@@ -348,6 +354,7 @@ router.patch(
     "HR_STAFF"
   ),
   upload.incidentEvidence,
+  finalizeIncidentWorkflowDirectUploads,
   allowWorkflowEvidenceOnlyForSubmission,
   updateIncidentStatus
 );

@@ -1,32 +1,54 @@
-﻿const crypto = require("crypto");
-const path = require("path");
-
-const {
+﻿const {
   createSignedUploadUrl,
 } = require("../services/storageService");
+
+const {
+  DESCRIPTOR_TTL_SECONDS,
+
+  DIRECT_UPLOAD_TYPES,
+  DIRECT_UPLOAD_PURPOSES,
+
+  DirectUploadError,
+
+  normalizeWorkflowAction,
+
+  validateClientUploadMetadata,
+  createStoredUploadIdentity,
+
+  createDirectUploadDescriptor,
+} = require("../services/directUploadSecurityService");
+
 
 /*
  * ==================================================
  * WELLJOB PROTECTED DIRECT-UPLOAD AUTHORIZATION
  * ==================================================
  *
- * Purpose:
- * Generate temporary, server-authorized upload URLs
- * for protected employee documents and incident
- * evidence.
+ * Browser:
  *
- * Security model:
+ *   authenticated WELLJOB request
+ *              ↓
+ *   server validates metadata/context
+ *              ↓
+ *   server creates random Storage object path
+ *              ↓
+ *   Supabase signed upload URL
+ *              +
+ *   WELLJOB signed upload descriptor
  *
- * Browser
- *   -> authenticated WELLJOB API
- *   -> temporary signed upload authorization
- *   -> direct upload to private Supabase Storage
+ * The descriptor cryptographically binds:
  *
- * SUPABASE_SECRET_KEY never reaches the browser.
+ * - current authenticated user
+ * - current token_version
+ * - upload type
+ * - operation/purpose
+ * - file metadata
+ * - server-generated object path
+ * - employee / incident context
+ *
+ * SUPABASE_SECRET_KEY and JWT_SECRET never leave
+ * the backend.
  */
-
-const MAX_FILE_SIZE =
-  5 * 1024 * 1024;
 
 const MAX_EMPLOYEE_DOCUMENTS =
   20;
@@ -34,60 +56,22 @@ const MAX_EMPLOYEE_DOCUMENTS =
 const MAX_INCIDENT_EVIDENCE_FILES =
   10;
 
-/*
- * Keep the existing WELLJOB storage identity.
- *
- * Existing database references and lifecycle logic
- * already use:
- *
- * documents/employees/<generated-file>
- *
- * Employee documents and incident evidence currently
- * share this protected storage family.
- */
-const STORAGE_PREFIX =
-  "documents/employees";
 
-const FILE_TYPE_CONFIG = {
-  "image/png": {
-    extension: ".png",
-    allowedExtensions: [
-      ".png",
-    ],
-  },
-
-  "image/jpeg": {
-    extension: ".jpg",
-    allowedExtensions: [
-      ".jpg",
-      ".jpeg",
-    ],
-  },
-
-  "application/pdf": {
-    extension: ".pdf",
-    allowedExtensions: [
-      ".pdf",
-    ],
-  },
-};
-
-const EVIDENCE_WORKFLOW_ACTIONS =
-  new Set([
-    "SUBMIT_RESOLUTION",
-    "SUBMIT_INVESTIGATION",
-  ]);
-
-class UploadAuthorizationError extends Error {
+class UploadAuthorizationError
+  extends Error {
   constructor(
     message,
     {
-      statusCode = 400,
+      statusCode =
+        400,
+
       code =
         "UPLOAD_AUTHORIZATION_ERROR",
     } = {}
   ) {
-    super(message);
+    super(
+      message
+    );
 
     this.name =
       "UploadAuthorizationError";
@@ -100,174 +84,109 @@ class UploadAuthorizationError extends Error {
   }
 }
 
-function normalizeMimeType(
+
+/*
+ * ==================================================
+ * BASIC VALIDATION
+ * ==================================================
+ */
+
+function normalizePositiveInteger(
   value
 ) {
-  return String(
-    value || ""
-  )
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeOriginalName(
-  value
-) {
-  return path
-    .basename(
-      String(
-        value || ""
-      ).trim()
-    )
-    .trim();
-}
-
-function getUploadMetadata(
-  file,
-  index
-) {
-  if (
-    !file ||
-    typeof file !== "object" ||
-    Array.isArray(file)
-  ) {
-    throw new UploadAuthorizationError(
-      `Upload metadata at index ${index} is invalid.`,
-      {
-        code:
-          "INVALID_UPLOAD_METADATA",
-      }
-    );
-  }
-
-  const originalName =
-    normalizeOriginalName(
-      file.name ||
-        file.fileName ||
-        file.originalName
-    );
-
-  if (!originalName) {
-    throw new UploadAuthorizationError(
-      `A file name is required for upload item ${index + 1}.`,
-      {
-        code:
-          "MISSING_FILE_NAME",
-      }
-    );
-  }
-
-  const mimeType =
-    normalizeMimeType(
-      file.type ||
-        file.mimeType ||
-        file.mimetype
-    );
-
-  const typeConfig =
-    FILE_TYPE_CONFIG[
-      mimeType
-    ];
-
-  if (!typeConfig) {
-    throw new UploadAuthorizationError(
-      "Only PNG, JPEG, and PDF files are allowed.",
-      {
-        statusCode: 415,
-
-        code:
-          "UNSUPPORTED_FILE_TYPE",
-      }
-    );
-  }
-
-  const originalExtension =
-    path
-      .extname(
-        originalName
-      )
-      .trim()
-      .toLowerCase();
+  const rawValue =
+    String(
+      value ?? ""
+    ).trim();
 
   if (
-    !typeConfig.allowedExtensions.includes(
-      originalExtension
+    !/^\d+$/.test(
+      rawValue
     )
   ) {
-    throw new UploadAuthorizationError(
-      "The file extension does not match the declared file type.",
-      {
-        statusCode: 415,
-
-        code:
-          "FILE_TYPE_MISMATCH",
-      }
-    );
+    return null;
   }
 
-  const size =
+  const numericValue =
     Number(
-      file.size
+      rawValue
     );
 
   if (
     !Number.isSafeInteger(
-      size
+      numericValue
     ) ||
-    size <= 0
+    numericValue <= 0
   ) {
-    throw new UploadAuthorizationError(
-      `A valid file size is required for ${originalName}.`,
-      {
-        code:
-          "INVALID_FILE_SIZE",
-      }
-    );
+    return null;
+  }
+
+  return numericValue;
+}
+
+
+function normalizeEmployeePurpose(
+  value
+) {
+  const normalized =
+    String(
+      value || ""
+    )
+      .trim()
+      .toLowerCase()
+      .replace(
+        /[\s-]+/g,
+        "_"
+      );
+
+  if (
+    normalized ===
+      "create" ||
+    normalized ===
+      "employee_create"
+  ) {
+    return DIRECT_UPLOAD_PURPOSES
+      .EMPLOYEE_CREATE;
   }
 
   if (
-    size >
-    MAX_FILE_SIZE
+    normalized ===
+      "update" ||
+    normalized ===
+      "employee_update"
   ) {
-    throw new UploadAuthorizationError(
-      `Each protected upload must be no larger than 5 MB.`,
-      {
-        statusCode: 413,
-
-        code:
-          "FILE_TOO_LARGE",
-      }
-    );
+    return DIRECT_UPLOAD_PURPOSES
+      .EMPLOYEE_UPDATE;
   }
 
-  return {
-    originalName,
-    mimeType,
-    size,
-
-    storedExtension:
-      typeConfig.extension,
-  };
+  return null;
 }
 
-function createStoredFilename(
-  extension
-) {
-  return (
-    `${Date.now()}-` +
-    `${crypto.randomUUID()}` +
-    `${extension}`
-  );
-}
+
+/*
+ * ==================================================
+ * AUTHORIZATION BATCH
+ * ==================================================
+ */
 
 async function createAuthorizationBatch(
   files,
   {
     maxFiles,
+
+    actor,
+
+    uploadType,
+
+    purpose,
+
+    context = {},
   }
 ) {
   if (
-    !Array.isArray(files)
+    !Array.isArray(
+      files
+    )
   ) {
     throw new UploadAuthorizationError(
       "The files field must be an array.",
@@ -279,7 +198,8 @@ async function createAuthorizationBatch(
   }
 
   if (
-    files.length === 0
+    files.length ===
+    0
   ) {
     throw new UploadAuthorizationError(
       "At least one file is required.",
@@ -303,13 +223,17 @@ async function createAuthorizationBatch(
     );
   }
 
+  /*
+   * Validate every item before issuing even the first
+   * signed Storage URL.
+   */
   const validatedFiles =
     files.map(
       (
         file,
         index
       ) =>
-        getUploadMetadata(
+        validateClientUploadMetadata(
           file,
           index
         )
@@ -328,21 +252,57 @@ async function createAuthorizationBatch(
         index
       ];
 
-    const storedFilename =
-      createStoredFilename(
-        file.storedExtension
+    /*
+     * Storage identity always comes from the backend.
+     * Browser never chooses the final object path.
+     */
+    const {
+      storedFilename,
+      objectPath,
+    } =
+      createStoredUploadIdentity(
+        file
       );
-
-    const objectPath =
-      `${STORAGE_PREFIX}/${storedFilename}`;
 
     const authorization =
       await createSignedUploadUrl(
         objectPath,
         {
-          upsert: false,
+          upsert:
+            false,
         }
       );
+
+    /*
+     * Bind the signed Storage authorization to the
+     * authenticated WELLJOB operation.
+     */
+    const descriptor =
+      createDirectUploadDescriptor({
+        actor,
+
+        uploadType,
+
+        purpose,
+
+        metadata: {
+          name:
+            file.originalName,
+
+          type:
+            file.mimeType,
+
+          size:
+            file.size,
+        },
+
+        storedFilename,
+
+        objectPath:
+          authorization.path,
+
+        context,
+      });
 
     uploads.push({
       clientIndex:
@@ -362,16 +322,33 @@ async function createAuthorizationBatch(
       objectPath:
         authorization.path,
 
+      /*
+       * Browser uses this only to send the binary
+       * directly to private Supabase Storage.
+       */
       signedUrl:
         authorization.signedUrl,
 
       token:
         authorization.token,
+
+      /*
+       * Browser must return this descriptor to
+       * WELLJOB during final employee/incident save.
+       */
+      descriptor,
     });
   }
 
   return uploads;
 }
+
+
+/*
+ * ==================================================
+ * PUBLIC ERROR RESPONSE
+ * ==================================================
+ */
 
 function sendControllerError(
   res,
@@ -380,18 +357,24 @@ function sendControllerError(
 ) {
   if (
     error instanceof
-    UploadAuthorizationError
+      UploadAuthorizationError ||
+    error instanceof
+      DirectUploadError
   ) {
     return res
       .status(
-        error.statusCode
+        Number(
+          error.statusCode
+        ) ||
+        400
       )
       .json({
         error:
           error.message,
 
         code:
-          error.code,
+          error.code ||
+          "UPLOAD_AUTHORIZATION_ERROR",
       });
   }
 
@@ -420,13 +403,36 @@ function sendControllerError(
     });
 }
 
+
 /*
  * ==================================================
  * EMPLOYEE DOCUMENT AUTHORIZATION
  * ==================================================
  *
- * Route authorization:
- * HR_MANAGER / HR_STAFF
+ * Existing route:
+ *
+ * POST
+ * /api/employee-documents/upload-authorizations
+ *
+ * Body for CREATE:
+ *
+ * {
+ *   "purpose": "create",
+ *   "files": [...]
+ * }
+ *
+ * Body for UPDATE:
+ *
+ * {
+ *   "purpose": "update",
+ *   "employeeId": 1500,
+ *   "files": [...]
+ * }
+ *
+ * Route roles remain:
+ *
+ * HR_MANAGER
+ * HR_STAFF
  */
 exports.createEmployeeDocumentUploadAuthorizations =
   async (
@@ -434,20 +440,84 @@ exports.createEmployeeDocumentUploadAuthorizations =
     res
   ) => {
     try {
+      const purpose =
+        normalizeEmployeePurpose(
+          req.body?.purpose ??
+          req.body?.operation
+        );
+
+      if (!purpose) {
+        throw new UploadAuthorizationError(
+          "Employee document upload purpose must be create or update.",
+          {
+            code:
+              "INVALID_EMPLOYEE_UPLOAD_PURPOSE",
+          }
+        );
+      }
+
+      let context = {};
+
+      if (
+        purpose ===
+        DIRECT_UPLOAD_PURPOSES
+          .EMPLOYEE_UPDATE
+      ) {
+        const employeeId =
+          normalizePositiveInteger(
+            req.body?.employeeId ??
+            req.body?.employee_id
+          );
+
+        if (!employeeId) {
+          throw new UploadAuthorizationError(
+            "A valid employee ID is required when authorizing document uploads for an employee update.",
+            {
+              code:
+                "EMPLOYEE_ID_REQUIRED",
+            }
+          );
+        }
+
+        context = {
+          employeeId,
+        };
+      }
+
       const uploads =
         await createAuthorizationBatch(
           req.body?.files,
           {
             maxFiles:
               MAX_EMPLOYEE_DOCUMENTS,
+
+            actor:
+              req.user,
+
+            uploadType:
+              DIRECT_UPLOAD_TYPES
+                .EMPLOYEE_DOCUMENT,
+
+            purpose,
+
+            context,
           }
         );
 
       return res.json({
-        success: true,
+        success:
+          true,
 
         uploadType:
-          "employee_document",
+          DIRECT_UPLOAD_TYPES
+            .EMPLOYEE_DOCUMENT,
+
+        purpose,
+
+        context,
+
+        descriptorExpiresIn:
+          DESCRIPTOR_TTL_SECONDS,
 
         uploads,
       });
@@ -460,13 +530,32 @@ exports.createEmployeeDocumentUploadAuthorizations =
     }
   };
 
+
 /*
  * ==================================================
  * INCIDENT CREATE-EVIDENCE AUTHORIZATION
  * ==================================================
  *
- * Route authorization:
- * HR_MANAGER / HR_STAFF / HR_COORDINATOR
+ * Existing route:
+ *
+ * POST
+ * /api/incident-evidence/upload-authorizations/create
+ *
+ * Required body:
+ *
+ * {
+ *   "employeeId": 1500,
+ *   "files": [...]
+ * }
+ *
+ * The target employee ID becomes part of every
+ * signed descriptor.
+ *
+ * Route roles remain:
+ *
+ * HR_MANAGER
+ * HR_STAFF
+ * HR_COORDINATOR
  */
 exports.createIncidentEvidenceUploadAuthorizations =
   async (
@@ -474,23 +563,64 @@ exports.createIncidentEvidenceUploadAuthorizations =
     res
   ) => {
     try {
+      const employeeId =
+        normalizePositiveInteger(
+          req.body?.employeeId ??
+          req.body?.employee_id
+        );
+
+      if (!employeeId) {
+        throw new UploadAuthorizationError(
+          "A valid employee ID is required for incident evidence upload authorization.",
+          {
+            code:
+              "EMPLOYEE_ID_REQUIRED",
+          }
+        );
+      }
+
+      const purpose =
+        DIRECT_UPLOAD_PURPOSES
+          .INCIDENT_CREATE;
+
+      const context = {
+        employeeId,
+      };
+
       const uploads =
         await createAuthorizationBatch(
           req.body?.files,
           {
             maxFiles:
               MAX_INCIDENT_EVIDENCE_FILES,
+
+            actor:
+              req.user,
+
+            uploadType:
+              DIRECT_UPLOAD_TYPES
+                .INCIDENT_EVIDENCE,
+
+            purpose,
+
+            context,
           }
         );
 
       return res.json({
-        success: true,
+        success:
+          true,
 
         uploadType:
-          "incident_evidence",
+          DIRECT_UPLOAD_TYPES
+            .INCIDENT_EVIDENCE,
 
-        purpose:
-          "create",
+        purpose,
+
+        context,
+
+        descriptorExpiresIn:
+          DESCRIPTOR_TTL_SECONDS,
 
         uploads,
       });
@@ -503,16 +633,34 @@ exports.createIncidentEvidenceUploadAuthorizations =
     }
   };
 
+
 /*
  * ==================================================
  * INCIDENT WORKFLOW-EVIDENCE AUTHORIZATION
  * ==================================================
  *
- * Route authorization:
- * HR_MANAGER / HR_STAFF
+ * Existing route:
  *
- * Only investigation/resolution proof submissions
- * may obtain workflow evidence upload authorization.
+ * POST
+ * /api/incident-evidence/upload-authorizations/workflow
+ *
+ * Required body:
+ *
+ * {
+ *   "incidentId": 123,
+ *   "workflowAction": "SUBMIT_RESOLUTION",
+ *   "files": [...]
+ * }
+ *
+ * Allowed workflow actions:
+ *
+ * SUBMIT_RESOLUTION
+ * SUBMIT_INVESTIGATION
+ *
+ * Route roles remain:
+ *
+ * HR_MANAGER
+ * HR_STAFF
  */
 exports.createIncidentWorkflowEvidenceUploadAuthorizations =
   async (
@@ -520,22 +668,31 @@ exports.createIncidentWorkflowEvidenceUploadAuthorizations =
     res
   ) => {
     try {
-      const workflowAction =
-        String(
-          req.body
-            ?.workflowAction ||
-            ""
-        )
-          .trim()
-          .toUpperCase();
+      const incidentId =
+        normalizePositiveInteger(
+          req.body?.incidentId ??
+          req.body?.incident_id
+        );
 
-      if (
-        !EVIDENCE_WORKFLOW_ACTIONS.has(
-          workflowAction
-        )
-      ) {
+      if (!incidentId) {
         throw new UploadAuthorizationError(
-          "Evidence files may only be uploaded when submitting investigation proof for review.",
+          "A valid incident ID is required for workflow evidence upload authorization.",
+          {
+            code:
+              "INCIDENT_ID_REQUIRED",
+          }
+        );
+      }
+
+      const workflowAction =
+        normalizeWorkflowAction(
+          req.body
+            ?.workflowAction
+        );
+
+      if (!workflowAction) {
+        throw new UploadAuthorizationError(
+          "Evidence files may only be authorized when submitting investigation proof for review.",
           {
             code:
               "INVALID_EVIDENCE_WORKFLOW_ACTION",
@@ -543,25 +700,51 @@ exports.createIncidentWorkflowEvidenceUploadAuthorizations =
         );
       }
 
+      const purpose =
+        DIRECT_UPLOAD_PURPOSES
+          .INCIDENT_WORKFLOW;
+
+      const context = {
+        incidentId,
+        workflowAction,
+      };
+
       const uploads =
         await createAuthorizationBatch(
           req.body?.files,
           {
             maxFiles:
               MAX_INCIDENT_EVIDENCE_FILES,
+
+            actor:
+              req.user,
+
+            uploadType:
+              DIRECT_UPLOAD_TYPES
+                .INCIDENT_EVIDENCE,
+
+            purpose,
+
+            context,
           }
         );
 
       return res.json({
-        success: true,
+        success:
+          true,
 
         uploadType:
-          "incident_evidence",
+          DIRECT_UPLOAD_TYPES
+            .INCIDENT_EVIDENCE,
 
-        purpose:
-          "workflow",
+        purpose,
 
         workflowAction,
+
+        context,
+
+        descriptorExpiresIn:
+          DESCRIPTOR_TTL_SECONDS,
 
         uploads,
       });
