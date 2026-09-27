@@ -1,48 +1,44 @@
-const fs = require("fs");
-const path = require("path");
+﻿const path = require("path");
 
 const db = require("../config/db");
 
+const {
+  normalizeObjectPath,
+  createSignedDownloadUrl,
+} = require("../services/storageService");
+
 /*
- * Approved employee-document storage namespaces.
+ * ==================================================
+ * APPROVED PRIVATE STORAGE NAMESPACES
+ * ==================================================
  *
- * - documents/employees:
- *   Current employee upload workflow.
+ * Existing database references are preserved.
  *
- * - documents/seed-defense:
- *   Historical/synthetic defense dataset references
- *   already stored in employee_documents.file_path.
+ * Current employee documents:
+ * documents/employees/<file>
  *
- * Each stored reference is converted back into a path
- * underneath one of these explicitly approved roots.
+ * Historical defense seed documents:
+ * documents/seed-defense/<file>
  */
-const DOCUMENT_STORAGE_ROOTS = [
-  {
-    marker: "documents/employees/",
-    directory: path.resolve(
-      __dirname,
-      "..",
-      "documents",
-      "employees"
-    ),
-  },
-  {
-    marker: "documents/seed-defense/",
-    directory: path.resolve(
-      __dirname,
-      "..",
-      "documents",
-      "seed-defense"
-    ),
-  },
+const DOCUMENT_STORAGE_MARKERS = [
+  "documents/employees/",
+  "documents/seed-defense/",
 ];
 
-const EMPLOYEE_DOCUMENT_CONTENT_TYPES = {
-  ".pdf": "application/pdf",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-};
+const EMPLOYEE_DOCUMENT_CONTENT_TYPES =
+  Object.freeze({
+    ".pdf":
+      "application/pdf",
+
+    ".png":
+      "image/png",
+
+    ".jpg":
+      "image/jpeg",
+
+    ".jpeg":
+      "image/jpeg",
+  });
 
 /*
  * ==================================================
@@ -50,24 +46,42 @@ const EMPLOYEE_DOCUMENT_CONTENT_TYPES = {
  * ==================================================
  */
 
-function normalizeRole(value) {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, "_");
-}
-
-function normalizeAssignedCompany(value) {
-  const normalized = String(
-    value ?? ""
+function normalizeRole(
+  value
+) {
+  return String(
+    value || ""
   )
     .trim()
-    .replace(/\s+/g, " ");
-
-  return normalized || null;
+    .toUpperCase()
+    .replace(
+      /[\s-]+/g,
+      "_"
+    );
 }
 
-function isHrCoordinatorRequest(req) {
+function normalizeAssignedCompany(
+  value
+) {
+  const normalized =
+    String(
+      value ?? ""
+    )
+      .trim()
+      .replace(
+        /\s+/g,
+        " "
+      );
+
+  return (
+    normalized ||
+    null
+  );
+}
+
+function isHrCoordinatorRequest(
+  req
+) {
   return (
     normalizeRole(
       req.user?.role
@@ -81,22 +95,30 @@ function getHrCoordinatorAssignedCompany(
 ) {
   return normalizeAssignedCompany(
     req.user?.assignedCompany ??
-      req.user?.assigned_company
+    req.user?.assigned_company
   );
 }
 
-function normalizeDocumentId(value) {
-  const rawValue = String(
-    value || ""
-  ).trim();
+function normalizeDocumentId(
+  value
+) {
+  const rawValue =
+    String(
+      value || ""
+    ).trim();
 
-  if (!/^\d+$/.test(rawValue)) {
+  if (
+    !/^\d+$/.test(
+      rawValue
+    )
+  ) {
     return null;
   }
 
-  const documentId = Number(
-    rawValue
-  );
+  const documentId =
+    Number(
+      rawValue
+    );
 
   if (
     !Number.isSafeInteger(
@@ -110,39 +132,47 @@ function normalizeDocumentId(value) {
   return documentId;
 }
 
-function normalizeSlashes(value) {
-  return String(value || "")
+function normalizeSlashes(
+  value
+) {
+  return String(
+    value || ""
+  )
     .trim()
-    .replace(/\\/g, "/");
+    .replace(
+      /\\/g,
+      "/"
+    );
 }
 
-function stripQueryAndFragment(value) {
-  return String(value || "")
-    .split(/[?#]/, 1)[0];
+function stripQueryAndFragment(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .split(
+      /[?#]/,
+      1
+    )[0];
 }
 
 /*
- * Convert supported current/historical references
- * into a safe absolute path beneath an approved
- * document root.
+ * Convert current/historical DB path shapes into
+ * one canonical private Supabase object path.
  *
- * Supported shapes include:
+ * Supported examples:
  *
  * documents/employees/file.pdf
  * /documents/employees/file.pdf
  * backend/documents/employees/file.pdf
  * C:/.../backend/documents/employees/file.pdf
+ * https://host/documents/employees/file.pdf
  *
  * documents/seed-defense/file.pdf
  * /documents/seed-defense/file.pdf
- * backend/documents/seed-defense/file.pdf
- * C:/.../backend/documents/seed-defense/file.pdf
- *
- * URL-shaped historical references containing one
- * of the approved markers are also normalized to the
- * local approved storage root.
  */
-function resolveStoredDocumentPath(
+function resolveStoredDocumentObjectPath(
   storedFilePath
 ) {
   const cleanedPath =
@@ -160,15 +190,17 @@ function resolveStoredDocumentPath(
     cleanedPath.toLowerCase();
 
   for (
-    const storageRoot of
-      DOCUMENT_STORAGE_ROOTS
+    const marker of
+    DOCUMENT_STORAGE_MARKERS
   ) {
     const markerIndex =
       lowerPath.lastIndexOf(
-        storageRoot.marker
+        marker
       );
 
-    if (markerIndex < 0) {
+    if (
+      markerIndex < 0
+    ) {
       continue;
     }
 
@@ -176,142 +208,66 @@ function resolveStoredDocumentPath(
       cleanedPath
         .slice(
           markerIndex +
-            storageRoot.marker.length
+          marker.length
         )
-        .replace(/^\/+/, "");
+        .replace(
+          /^\/+/,
+          ""
+        )
+        .trim();
 
     if (!relativePath) {
       return null;
     }
 
-    const absolutePath =
-      path.resolve(
-        storageRoot.directory,
-        relativePath
-      );
+    try {
+      const objectPath =
+        normalizeObjectPath(
+          `${marker}${relativePath}`
+        );
 
-    const relativeFromRoot =
-      path.relative(
-        storageRoot.directory,
-        absolutePath
-      );
+      if (
+        !objectPath.startsWith(
+          marker
+        )
+      ) {
+        return null;
+      }
 
-    /*
-     * Reject:
-     * - the storage root itself
-     * - ../ traversal
-     * - absolute escape paths
-     */
-    if (
-      !relativeFromRoot ||
-      relativeFromRoot.startsWith(
-        ".."
-      ) ||
-      path.isAbsolute(
-        relativeFromRoot
-      )
-    ) {
+      return objectPath;
+    } catch {
       return null;
     }
-
-    return {
-      absolutePath,
-
-      storageRoot:
-        storageRoot.directory,
-    };
   }
 
   return null;
 }
 
-async function resolveRealDocumentPath(
-  pathCandidate
-) {
-  if (
-    !pathCandidate?.absolutePath ||
-    !pathCandidate?.storageRoot
-  ) {
-    return null;
-  }
-
-  try {
-    const [
-      realDocumentDirectory,
-      realFilePath,
-    ] = await Promise.all([
-      fs.promises.realpath(
-        pathCandidate.storageRoot
-      ),
-
-      fs.promises.realpath(
-        pathCandidate.absolutePath
-      ),
-    ]);
-
-    const relativePath =
-      path.relative(
-        realDocumentDirectory,
-        realFilePath
-      );
-
-    /*
-     * Perform containment verification again
-     * using real filesystem paths.
-     *
-     * This prevents a symlink inside an approved
-     * document directory from resolving outside
-     * that directory.
-     */
-    if (
-      !relativePath ||
-      relativePath.startsWith(
-        ".."
-      ) ||
-      path.isAbsolute(
-        relativePath
-      )
-    ) {
-      return null;
-    }
-
-    return realFilePath;
-  } catch (error) {
-    if (
-      error?.code === "ENOENT" ||
-      error?.code === "ENOTDIR"
-    ) {
-      return null;
-    }
-
-    throw error;
-  }
-}
-
 function getDocumentContentType(
-  filePath
+  objectPath
 ) {
   const extension =
     path
       .extname(
-        filePath || ""
+        objectPath || ""
       )
       .toLowerCase();
 
   return (
     EMPLOYEE_DOCUMENT_CONTENT_TYPES[
       extension
-    ] || null
+    ] ||
+    null
   );
 }
 
 function getSafeResponseFileName(
-  filePath
+  objectPath
 ) {
   return path
     .basename(
-      filePath ||
-        "document"
+      objectPath ||
+      "document"
     )
     .replace(
       /["\r\n]/g,
@@ -322,55 +278,14 @@ function getSafeResponseFileName(
 /*
  * ==================================================
  * GET EMPLOYEE DOCUMENT FILE
- * PROTECTED DB-BACKED BINARY ACCESS
  * ==================================================
  *
- * Expected route security:
+ * Authorization remains database-first.
  *
- * verifyToken
- * ->
- * authorizeRoles(
- *   "SUPER_ADMIN",
- *   "HR_MANAGER",
- *   "HR_STAFF",
- *   "HR_COORDINATOR"
- * )
- * ->
- * getEmployeeDocumentFile
+ * The browser supplies only the document ID.
  *
- * Security rules:
- *
- * 1. The client provides only the database document ID.
- *
- * 2. file_path comes exclusively from
- *    employee_documents.
- *
- * 3. The DB row must still belong to an existing
- *    employee.
- *
- * 4. HR Coordinator may access a document only when
- *    the employee currently has an ACTIVE deployment
- *    assignment matching req.user.assignedCompany.
- *
- * 5. HR Coordinator cannot access archived/inactive
- *    employee documents.
- *
- * 6. Cross-company document IDs return the same 404
- *    response as nonexistent document IDs to prevent
- *    record enumeration.
- *
- * 7. Company scope comes only from authenticated
- *    server-side req.user information. Query/body
- *    company values are never trusted.
- *
- * 8. The resolved filesystem path must remain inside
- *    an explicitly approved backend document root.
- *
- * 9. Historical seed-defense references continue to
- *    work without rewriting stored DB paths.
- *
- * 10. Existing files and DB paths are never modified
- *     by this endpoint.
+ * The object path comes exclusively from the
+ * authorized employee_documents database row.
  */
 async function getEmployeeDocumentFile(
   req,
@@ -403,16 +318,6 @@ async function getEmployeeDocumentFile(
           )
         : null;
 
-    /*
-     * Defense in depth.
-     *
-     * authMiddleware should already reject an
-     * HR Coordinator account without a company.
-     *
-     * Never allow this controller to fall back to
-     * unrestricted document access if that upstream
-     * protection is accidentally changed later.
-     */
     if (
       isHrCoordinator &&
       !coordinatorCompany
@@ -428,16 +333,12 @@ async function getEmployeeDocumentFile(
     let documentSql;
     let documentParams;
 
-    if (isHrCoordinator) {
+    if (
+      isHrCoordinator
+    ) {
       /*
-       * IMPORTANT:
-       *
-       * The authoritative coordinator scope is based
-       * on CURRENT active deployment assignment.
-       *
-       * We intentionally do not rely only on
-       * employees.company because deployment history
-       * may contain previous company assignments.
+       * Coordinator scope is based on the current
+       * active deployment assignment.
        */
       documentSql = `
         SELECT
@@ -476,13 +377,6 @@ async function getEmployeeDocumentFile(
         coordinatorCompany,
       ];
     } else {
-      /*
-       * Preserve existing access behavior for:
-       *
-       * - SUPER_ADMIN
-       * - HR_MANAGER
-       * - HR_STAFF
-       */
       documentSql = `
         SELECT
           ed.id,
@@ -503,7 +397,9 @@ async function getEmployeeDocumentFile(
       ];
     }
 
-    const [documentRows] =
+    const [
+      documentRows,
+    ] =
       await db
         .promise()
         .query(
@@ -512,18 +408,14 @@ async function getEmployeeDocumentFile(
         );
 
     /*
-     * SECURITY:
+     * Same 404 covers:
      *
-     * For HR Coordinator this response intentionally
-     * covers both:
-     *
-     * - nonexistent document
-     * - existing document outside assigned company
-     *
-     * Do not reveal which one occurred.
+     * - missing document
+     * - coordinator outside company scope
      */
     if (
-      documentRows.length === 0
+      documentRows.length ===
+      0
     ) {
       return res
         .status(404)
@@ -536,12 +428,12 @@ async function getEmployeeDocumentFile(
     const documentRecord =
       documentRows[0];
 
-    const pathCandidate =
-      resolveStoredDocumentPath(
+    const objectPath =
+      resolveStoredDocumentObjectPath(
         documentRecord.file_path
       );
 
-    if (!pathCandidate) {
+    if (!objectPath) {
       return res
         .status(404)
         .json({
@@ -550,63 +442,11 @@ async function getEmployeeDocumentFile(
         });
     }
 
-    const realFilePath =
-      await resolveRealDocumentPath(
-        pathCandidate
-      );
-
-    if (!realFilePath) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Employee document file not found.",
-        });
-    }
-
-    let fileStats;
-
-    try {
-      fileStats =
-        await fs.promises.stat(
-          realFilePath
-        );
-    } catch (error) {
-      if (
-        error?.code ===
-          "ENOENT" ||
-        error?.code ===
-          "ENOTDIR"
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Employee document file not found.",
-          });
-      }
-
-      throw error;
-    }
-
-    if (!fileStats.isFile()) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Employee document file not found.",
-        });
-    }
-
     const contentType =
       getDocumentContentType(
-        realFilePath
+        objectPath
       );
 
-    /*
-     * Do not serve unexpected executable or
-     * unsupported extensions through this endpoint.
-     */
     if (!contentType) {
       return res
         .status(415)
@@ -616,30 +456,34 @@ async function getEmployeeDocumentFile(
         });
     }
 
-    const responseFileName =
-      getSafeResponseFileName(
-        realFilePath
+    /*
+     * Vercel Functions have a normal response-body
+     * limit below WELLJOB's 5 MB protected-file
+     * allowance.
+     *
+     * Keep authorization here, but let Supabase
+     * deliver the actual binary directly.
+     *
+     * The signed URL expires after 60 seconds.
+     */
+    const {
+      signedUrl,
+    } =
+      await createSignedDownloadUrl(
+        objectPath,
+        {
+          expiresIn:
+            60,
+        }
       );
 
     /*
-     * Sensitive employee documents should not be
-     * stored by shared browser/proxy caches.
+     * The redirect itself must not be cached.
+     *
+     * fetch() follows this redirect automatically,
+     * so existing frontend Blob-preview behavior is
+     * preserved without exposing the service key.
      */
-    res.setHeader(
-      "Content-Type",
-      contentType
-    );
-
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${responseFileName}"`
-    );
-
-    res.setHeader(
-      "X-Content-Type-Options",
-      "nosniff"
-    );
-
     res.setHeader(
       "Cache-Control",
       "private, no-store, max-age=0"
@@ -655,81 +499,16 @@ async function getEmployeeDocumentFile(
       "0"
     );
 
-    /*
-     * sendFile streams the binary rather than
-     * loading the entire document into Node memory.
-     *
-     * Explicit callback handling prevents physical
-     * filesystem details from being exposed to the
-     * client if a race-condition file error occurs.
-     */
-    return res.sendFile(
-      realFilePath,
-      {
-        dotfiles:
-          "deny",
-
-        cacheControl:
-          false,
-      },
-      (error) => {
-        if (!error) {
-          return;
-        }
-
-        console.error(
-          "EMPLOYEE DOCUMENT SEND ERROR:",
-          {
-            documentId,
-
-            code:
-              error?.code ||
-              null,
-
-            message:
-              error?.message ||
-              "Unknown document send error",
-          }
-        );
-
-        if (
-          res.headersSent
-        ) {
-          res.destroy(
-            error
-          );
-
-          return;
-        }
-
-        const statusCode =
-          error?.code ===
-            "ENOENT" ||
-          error?.statusCode ===
-            404
-            ? 404
-            : 500;
-
-        res
-          .status(
-            statusCode
-          )
-          .json({
-            error:
-              statusCode ===
-              404
-                ? "Employee document file not found."
-                : "Unable to load employee document.",
-          });
-      }
+    return res.redirect(
+      302,
+      signedUrl
     );
   } catch (error) {
     console.error(
       "GET EMPLOYEE DOCUMENT ERROR:",
       {
         documentId:
-          req.params
-            ?.documentId ||
+          req.params?.documentId ||
           null,
 
         message:
@@ -737,6 +516,12 @@ async function getEmployeeDocumentFile(
           error,
       }
     );
+
+    if (
+      res.headersSent
+    ) {
+      return undefined;
+    }
 
     return res
       .status(500)

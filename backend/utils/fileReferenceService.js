@@ -1,51 +1,51 @@
-const fs = require("fs");
-const path = require("path");
+﻿const db = require("../config/db");
 
-const db = require("../config/db");
+const {
+  normalizeObjectPath,
+  removeObject,
+} = require("../services/storageService");
 
+/*
+ * Only normal employee/evidence uploads participate
+ * in destructive lifecycle cleanup.
+ *
+ * Shared seed-defense objects are intentionally
+ * excluded.
+ */
 const STORAGE_MARKER =
   "documents/employees/";
 
-const STORAGE_ROOT = path.resolve(
-  __dirname,
-  "..",
-  "documents",
-  "employees"
-);
+const STORAGE_ROOT =
+  "documents/employees";
 
-function normalizeSlashes(value) {
-  return String(value || "")
-    .trim()
-    .replace(/\\/g, "/");
-}
-
-function stripQueryAndFragment(value) {
-  return String(value || "")
-    .split(/[?#]/, 1)[0];
-}
-
-function normalizeComparisonKey(
-  relativePath
+function normalizeSlashes(
+  value
 ) {
-  const normalized =
-    normalizeSlashes(relativePath)
-      .replace(/^\/+/, "")
-      .replace(/\/+/g, "/");
+  return String(
+    value || ""
+  )
+    .trim()
+    .replace(
+      /\\/g,
+      "/"
+    );
+}
 
-  /*
-   * Windows filesystems are normally
-   * case-insensitive, while Linux filesystems
-   * may be case-sensitive.
-   */
-  return process.platform === "win32"
-    ? normalized.toLowerCase()
-    : normalized;
+function stripQueryAndFragment(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .split(
+      /[?#]/,
+      1
+    )[0];
 }
 
 /*
- * Convert supported historical/current stored
- * references into one safe storage-root-relative
- * identity.
+ * Convert supported legacy/current references into
+ * the exact private Supabase object identity.
  *
  * Supported examples:
  *
@@ -53,32 +53,32 @@ function normalizeComparisonKey(
  * /documents/employees/file.pdf
  * backend/documents/employees/file.pdf
  * C:/.../backend/documents/employees/file.pdf
- * http://host/documents/employees/file.pdf
- *
- * Anything that cannot be proven to belong under
- * the approved storage root is rejected.
+ * https://host/documents/employees/file.pdf
  */
 function normalizeStoredFileReference(
   value
 ) {
   const cleaned =
     stripQueryAndFragment(
-      normalizeSlashes(value)
+      normalizeSlashes(
+        value
+      )
     );
 
   if (!cleaned) {
     return null;
   }
 
-  const lower =
-    cleaned.toLowerCase();
-
   const markerIndex =
-    lower.lastIndexOf(
-      STORAGE_MARKER
-    );
+    cleaned
+      .toLowerCase()
+      .lastIndexOf(
+        STORAGE_MARKER
+      );
 
-  if (markerIndex < 0) {
+  if (
+    markerIndex < 0
+  ) {
     return null;
   }
 
@@ -86,95 +86,101 @@ function normalizeStoredFileReference(
     cleaned
       .slice(
         markerIndex +
-          STORAGE_MARKER.length
+        STORAGE_MARKER.length
       )
-      .replace(/^\/+/, "");
+      .replace(
+        /^\/+/,
+        ""
+      )
+      .trim();
 
   if (!relativePath) {
     return null;
   }
 
-  const resolvedPath =
-    path.resolve(
-      STORAGE_ROOT,
-      relativePath
-    );
+  let objectPath;
 
-  const relativeFromRoot =
-    path.relative(
-      STORAGE_ROOT,
-      resolvedPath
-    );
+  try {
+    objectPath =
+      normalizeObjectPath(
+        `${STORAGE_MARKER}${relativePath}`
+      );
+  } catch {
+    return null;
+  }
 
-  /*
-   * Reject:
-   * - the root itself
-   * - ../ traversal
-   * - absolute escape paths
-   */
   if (
-    !relativeFromRoot ||
-    relativeFromRoot.startsWith(
-      ".."
-    ) ||
-    path.isAbsolute(
-      relativeFromRoot
+    !objectPath.startsWith(
+      STORAGE_MARKER
     )
   ) {
     return null;
   }
 
   const normalizedRelativePath =
-    normalizeSlashes(
-      relativeFromRoot
+    objectPath.slice(
+      STORAGE_MARKER.length
     );
 
+  if (
+    !normalizedRelativePath
+  ) {
+    return null;
+  }
+
+  /*
+   * Supabase object paths are case-sensitive.
+   *
+   * Use the exact canonical cloud object path as the
+   * reference-count identity.
+   */
   return {
     key:
-      normalizeComparisonKey(
-        normalizedRelativePath
-      ),
+      objectPath,
 
     relativePath:
       normalizedRelativePath,
 
-    absolutePath:
-      resolvedPath,
+    objectPath,
   };
 }
 
 /*
- * Build a normalized reference-count map across
- * every currently proven physical-file reference
- * source.
- *
- * Do not count employee_documents.file because
- * the current audit confirmed that it is unused
- * and empty.
+ * Build reference counts across every known logical
+ * source that may point at documents/employees.
  */
 async function loadReferenceCounts() {
   const [
-    [employeeDocumentRows],
-    [incidentEvidenceRows],
-  ] = await Promise.all([
-    db.promise().query(
-      `
-      SELECT file_path
-      FROM employee_documents
-      WHERE file_path IS NOT NULL
-        AND TRIM(file_path) <> ''
-      `
-    ),
+    [
+      employeeDocumentRows,
+    ],
+    [
+      incidentEvidenceRows,
+    ],
+  ] =
+    await Promise.all([
+      db
+        .promise()
+        .query(
+          `
+          SELECT file_path
+          FROM employee_documents
+          WHERE file_path IS NOT NULL
+            AND TRIM(file_path) <> ''
+          `
+        ),
 
-    db.promise().query(
-      `
-      SELECT file_path
-      FROM incident_evidence
-      WHERE file_path IS NOT NULL
-        AND TRIM(file_path) <> ''
-      `
-    ),
-  ]);
+      db
+        .promise()
+        .query(
+          `
+          SELECT file_path
+          FROM incident_evidence
+          WHERE file_path IS NOT NULL
+            AND TRIM(file_path) <> ''
+          `
+        ),
+    ]);
 
   const counts =
     new Map();
@@ -191,8 +197,8 @@ async function loadReferenceCounts() {
       );
 
     /*
-     * Unknown/unsafe legacy values are not
-     * converted into deletion candidates.
+     * Unknown/unsafe values do not become
+     * destructive cleanup identities.
      */
     if (!normalized) {
       continue;
@@ -203,8 +209,10 @@ async function loadReferenceCounts() {
       (
         counts.get(
           normalized.key
-        ) || 0
-      ) + 1
+        ) ||
+        0
+      ) +
+      1
     );
   }
 
@@ -212,121 +220,40 @@ async function loadReferenceCounts() {
 }
 
 /*
- * Final filesystem safety check before unlink.
+ * ==================================================
+ * REFERENCE-AWARE POST-COMMIT CLOUD CLEANUP
+ * ==================================================
  *
- * lstat() rejects symbolic links so cleanup cannot
- * follow a link into another location.
+ * Intended sequence:
  *
- * realpath() is then used as a second containment
- * check for the actual filesystem entry.
- */
-async function inspectSafeStoredFile(
-  absolutePath
-) {
-  let stats;
-
-  try {
-    stats =
-      await fs.promises.lstat(
-        absolutePath
-      );
-  } catch (error) {
-    if (
-      error?.code ===
-      "ENOENT"
-    ) {
-      return {
-        exists: false,
-      };
-    }
-
-    throw error;
-  }
-
-  if (stats.isSymbolicLink()) {
-    throw new Error(
-      "Refusing to delete a symbolic link from employee document storage."
-    );
-  }
-
-  if (!stats.isFile()) {
-    throw new Error(
-      "Refusing to delete a non-file storage entry."
-    );
-  }
-
-  const realPath =
-    await fs.promises.realpath(
-      absolutePath
-    );
-
-  const relativeFromRoot =
-    path.relative(
-      STORAGE_ROOT,
-      realPath
-    );
-
-  if (
-    !relativeFromRoot ||
-    relativeFromRoot.startsWith(
-      ".."
-    ) ||
-    path.isAbsolute(
-      relativeFromRoot
-    )
-  ) {
-    throw new Error(
-      "Resolved file is outside the approved employee document storage root."
-    );
-  }
-
-  return {
-    exists: true,
-  };
-}
-
-/*
- * REFERENCE-AWARE POST-COMMIT CLEANUP
- *
- * Intended use:
- *
- * 1. Controller captures old DB file paths before
- *    replacing/deleting their rows.
- *
+ * 1. Controller captures old paths.
  * 2. DB transaction commits.
+ * 3. Service recounts every surviving DB reference.
+ * 4. Cloud object is removed only when count = 0.
  *
- * 3. Controller passes those old paths here.
- *
- * 4. This service recounts ALL currently surviving
- *    references across employee documents and
- *    incident evidence.
- *
- * 5. Physical deletion occurs only when the total
- *    reference count is zero.
- *
- * This function intentionally does NOT scan for or
- * automatically delete historical orphan files.
+ * If DB reference counting fails, cleanup fails
+ * closed and preserves all candidate objects.
  */
 async function cleanupUnreferencedFileCandidates(
   candidates,
   {
-    source = "unknown",
+    source =
+      "unknown",
   } = {}
 ) {
   const rawCandidates =
-    Array.isArray(candidates)
+    Array.isArray(
+      candidates
+    )
       ? candidates
       : [];
 
   const normalizedCandidates =
     new Map();
 
-  /*
-   * Normalize and deduplicate candidates first.
-   */
   for (
     const candidate of
-      rawCandidates
+    rawCandidates
   ) {
     const normalized =
       normalizeStoredFileReference(
@@ -336,7 +263,8 @@ async function cleanupUnreferencedFileCandidates(
     if (!normalized) {
       if (
         String(
-          candidate || ""
+          candidate ||
+          ""
         ).trim()
       ) {
         console.error(
@@ -345,7 +273,9 @@ async function cleanupUnreferencedFileCandidates(
             source,
 
             storedReference:
-              String(candidate),
+              String(
+                candidate
+              ),
           }
         );
       }
@@ -384,11 +314,10 @@ async function cleanupUnreferencedFileCandidates(
       await loadReferenceCounts();
   } catch (error) {
     /*
-     * Fail closed:
+     * Fail closed.
      *
-     * If reference counting fails, preserve every
-     * candidate instead of risking deletion of a
-     * still-referenced HR document/evidence file.
+     * If reference counting cannot be proven, do not
+     * delete anything from private storage.
      */
     console.error(
       "FILE LIFECYCLE REFERENCE COUNT ERROR:",
@@ -407,7 +336,9 @@ async function cleanupUnreferencedFileCandidates(
       retained:
         Array.from(
           normalizedCandidates.values(),
-          (item) =>
+          (
+            item
+          ) =>
             item.relativePath
         ),
 
@@ -425,16 +356,17 @@ async function cleanupUnreferencedFileCandidates(
 
   for (
     const normalized of
-      normalizedCandidates.values()
+    normalizedCandidates.values()
   ) {
     const totalReferences =
       referenceCounts.get(
         normalized.key
-      ) || 0;
+      ) ||
+      0;
 
     /*
-     * Any surviving logical reference means the
-     * physical file must remain untouched.
+     * Any surviving DB reference protects the
+     * physical cloud object.
      */
     if (
       totalReferences > 0
@@ -447,62 +379,52 @@ async function cleanupUnreferencedFileCandidates(
     }
 
     try {
-      const pathState =
-        await inspectSafeStoredFile(
-          normalized.absolutePath
+      const deletionResult =
+        await removeObject(
+          normalized.objectPath
         );
 
       /*
-       * Already missing is an idempotent no-op.
-       * We do not recreate, rewrite, or modify DB
-       * references from this cleanup service.
+       * Supabase remove normally returns deleted
+       * object metadata.
+       *
+       * An empty result is treated as an already
+       * missing/idempotent object.
        */
-      if (!pathState.exists) {
-        result.missing.push(
-          normalized.relativePath
-        );
-
-        continue;
-      }
-
-      await fs.promises.unlink(
-        normalized.absolutePath
-      );
-
-      result.deleted.push(
-        normalized.relativePath
-      );
-    } catch (error) {
       if (
-        error?.code ===
-        "ENOENT"
+        Array.isArray(
+          deletionResult
+        ) &&
+        deletionResult.length ===
+          0
       ) {
         result.missing.push(
           normalized.relativePath
         );
-
-        continue;
+      } else {
+        result.deleted.push(
+          normalized.relativePath
+        );
       }
-
+    } catch (error) {
       /*
-       * Post-commit cleanup failure must never
-       * corrupt or reverse the already committed
-       * database operation.
+       * Post-commit cleanup failure cannot reverse
+       * an already committed database operation.
        *
-       * Preserve the physical file and report the
-       * failure internally for later reconciliation.
+       * Preserve/report rather than affecting the
+       * successful employee/incident mutation.
        */
       result.skipped.push(
         normalized.relativePath
       );
 
       console.error(
-        "FILE LIFECYCLE CLEANUP ERROR:",
+        "FILE LIFECYCLE CLOUD CLEANUP ERROR:",
         {
           source,
 
-          relativePath:
-            normalized.relativePath,
+          objectPath:
+            normalized.objectPath,
 
           message:
             error?.message ||

@@ -1,72 +1,67 @@
-
-const fs = require("fs");
-const path = require("path");
+﻿const path = require("path");
 
 const db = require("../config/db");
+
+const {
+  normalizeObjectPath,
+  createSignedDownloadUrl,
+} = require("../services/storageService");
 
 /*
  * ==================================================
  * PROTECTED INCIDENT EVIDENCE
  * ==================================================
  *
- * Incident evidence shares the existing:
+ * Evidence remains private.
  *
- * backend/documents/employees
- *
- * storage directory with employee documents.
- *
- * The client supplies only:
+ * Browser provides:
  *
  * - incidentId
  * - evidenceId
  *
- * File paths are retrieved from the database, not
- * accepted from the client.
- *
- * HR COORDINATOR — OPTION A:
- *
- * A coordinator may open evidence only when BOTH:
- *
- * 1. The incident belongs to their assigned company.
- * 2. The employee is currently deployed exclusively
- *    to that same company.
- *
- * Historical incidents may remain visible in the
- * coordinator's incident list, but their full details
- * and evidence become inaccessible after transfer.
- *
- * Other authorized HR roles retain their existing
- * historical evidence access.
+ * Storage object path is loaded only from MySQL
+ * after authorization succeeds.
  */
 
-const INCIDENT_EVIDENCE_ROOT =
-  path.resolve(
-    __dirname,
-    "..",
-    "documents",
-    "employees"
-  );
+const INCIDENT_EVIDENCE_MARKER =
+  "documents/employees/";
 
 const SUPPORTED_EVIDENCE_TYPES =
   Object.freeze({
-    ".pdf": "application/pdf",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
+    ".pdf":
+      "application/pdf",
+
+    ".png":
+      "image/png",
+
+    ".jpg":
+      "image/jpeg",
+
+    ".jpeg":
+      "image/jpeg",
   });
 
-function normalizeRole(value) {
+function normalizeRole(
+  value
+) {
   const role =
-    String(value || "")
+    String(
+      value || ""
+    )
       .trim()
       .toUpperCase()
-      .replace(/[\s-]+/g, "_");
+      .replace(
+        /[\s-]+/g,
+        "_"
+      );
 
   if (
     [
       "SUPERADMIN",
       "SUPER_ADMIN",
-    ].includes(role)
+    ].includes(
+      role
+    )
   ) {
     return "SUPER_ADMIN";
   }
@@ -75,7 +70,9 @@ function normalizeRole(value) {
     [
       "HRMANAGER",
       "HR_MANAGER",
-    ].includes(role)
+    ].includes(
+      role
+    )
   ) {
     return "HR_MANAGER";
   }
@@ -84,7 +81,9 @@ function normalizeRole(value) {
     [
       "HRSTAFF",
       "HR_STAFF",
-    ].includes(role)
+    ].includes(
+      role
+    )
   ) {
     return "HR_STAFF";
   }
@@ -93,7 +92,9 @@ function normalizeRole(value) {
     [
       "HRCOORDINATOR",
       "HR_COORDINATOR",
-    ].includes(role)
+    ].includes(
+      role
+    )
   ) {
     return "HR_COORDINATOR";
   }
@@ -102,50 +103,83 @@ function normalizeRole(value) {
     [
       "ITSUPPORT",
       "IT_SUPPORT",
-    ].includes(role)
+    ].includes(
+      role
+    )
   ) {
     return "IT_SUPPORT";
   }
 
-  return role || "USER";
-}
-
-function normalizeAssignedCompany(value) {
-  const normalized =
-    String(value ?? "")
-      .trim()
-      .replace(/\s+/g, " ");
-
-  return normalized || null;
-}
-
-function isHrCoordinatorRequest(req) {
   return (
-    normalizeRole(req?.user?.role) ===
+    role ||
+    "USER"
+  );
+}
+
+function normalizeAssignedCompany(
+  value
+) {
+  const normalized =
+    String(
+      value ?? ""
+    )
+      .trim()
+      .replace(
+        /\s+/g,
+        " "
+      );
+
+  return (
+    normalized ||
+    null
+  );
+}
+
+function isHrCoordinatorRequest(
+  req
+) {
+  return (
+    normalizeRole(
+      req?.user?.role
+    ) ===
     "HR_COORDINATOR"
   );
 }
 
-function getHrCoordinatorAssignedCompany(req) {
+function getHrCoordinatorAssignedCompany(
+  req
+) {
   return normalizeAssignedCompany(
     req?.user?.assignedCompany ??
-      req?.user?.assigned_company
+    req?.user?.assigned_company
   );
 }
 
-function normalizePositiveInteger(value) {
+function normalizePositiveInteger(
+  value
+) {
   const rawValue =
-    String(value ?? "").trim();
+    String(
+      value ?? ""
+    ).trim();
 
-  if (!/^\d+$/.test(rawValue)) {
+  if (
+    !/^\d+$/.test(
+      rawValue
+    )
+  ) {
     return null;
   }
 
   const numericValue =
-    Number(rawValue);
+    Number(
+      rawValue
+    );
 
   if (
-    !Number.isSafeInteger(numericValue) ||
+    !Number.isSafeInteger(
+      numericValue
+    ) ||
     numericValue <= 0
   ) {
     return null;
@@ -155,98 +189,110 @@ function normalizePositiveInteger(value) {
 }
 
 /*
- * Existing evidence paths may have been produced
- * by older application versions:
- *
- * /documents/employees/file.pdf
- * documents/employees/file.pdf
- * backend/documents/employees/file.pdf
- * C:/.../backend/documents/employees/file.pdf
- *
- * Preserve stored database paths. Extract only
- * the portion underneath documents/employees.
+ * Convert current/historical evidence references
+ * into the canonical Supabase object path.
  */
-
-function getEvidenceRelativePath(storedPath) {
+function resolveEvidenceObjectPath(
+  storedPath
+) {
   const normalized =
-    String(storedPath || "")
+    String(
+      storedPath || ""
+    )
       .trim()
-      .replace(/\\/g, "/");
+      .replace(
+        /\\/g,
+        "/"
+      );
 
   if (!normalized) {
     return null;
   }
 
-  const marker =
-    "documents/employees/";
+  const cleaned =
+    normalized
+      .split(
+        /[?#]/,
+        1
+      )[0];
 
   const markerIndex =
-    normalized
+    cleaned
       .toLowerCase()
-      .indexOf(marker);
+      .lastIndexOf(
+        INCIDENT_EVIDENCE_MARKER
+      );
 
-  if (markerIndex < 0) {
+  if (
+    markerIndex < 0
+  ) {
     return null;
   }
 
   const relativePath =
-    normalized
+    cleaned
       .slice(
         markerIndex +
-          marker.length
+        INCIDENT_EVIDENCE_MARKER.length
       )
-      .split(/[?#]/, 1)[0]
-      .replace(/^\/+/, "")
+      .replace(
+        /^\/+/,
+        ""
+      )
       .trim();
 
   if (!relativePath) {
     return null;
   }
 
-  return relativePath;
+  try {
+    const objectPath =
+      normalizeObjectPath(
+        `${INCIDENT_EVIDENCE_MARKER}${relativePath}`
+      );
+
+    if (
+      !objectPath.startsWith(
+        INCIDENT_EVIDENCE_MARKER
+      )
+    ) {
+      return null;
+    }
+
+    return objectPath;
+  } catch {
+    return null;
+  }
 }
 
-function isPathContained(
-  rootPath,
-  targetPath
+function getEvidenceContentType(
+  objectPath
 ) {
-  const relativePath =
-    path.relative(
-      rootPath,
-      targetPath
-    );
-
-  return (
-    relativePath === "" ||
-    (
-      !relativePath.startsWith(
-        `..${path.sep}`
-      ) &&
-      relativePath !== ".." &&
-      !path.isAbsolute(relativePath)
-    )
-  );
-}
-
-function getEvidenceContentType(filePath) {
   const extension =
     path
-      .extname(filePath)
+      .extname(
+        objectPath ||
+        ""
+      )
       .toLowerCase();
 
   return (
     SUPPORTED_EVIDENCE_TYPES[
       extension
-    ] || null
+    ] ||
+    null
   );
 }
 
 function sanitizeDownloadFileName(
   value,
-  filePath
+  objectPath
 ) {
   const extension =
-    path.extname(filePath);
+    path.extname(
+      objectPath ||
+      ""
+    );
 
   const fallbackName =
     `incident-evidence${extension}`;
@@ -255,15 +301,24 @@ function sanitizeDownloadFileName(
     path.basename(
       String(
         value ||
-          fallbackName
+        fallbackName
       )
     );
 
   const sanitizedName =
     sourceName
-      .replace(/[\r\n"]/g, "")
-      .replace(/[\\/]/g, "_")
-      .replace(/[^\x20-\x7E]/g, "_")
+      .replace(
+        /[\r\n"]/g,
+        ""
+      )
+      .replace(
+        /[\\/]/g,
+        "_"
+      )
+      .replace(
+        /[^\x20-\x7E]/g,
+        "_"
+      )
       .trim();
 
   return (
@@ -272,110 +327,11 @@ function sanitizeDownloadFileName(
   );
 }
 
-async function resolveEvidenceFile(storedPath) {
-  const relativePath =
-    getEvidenceRelativePath(
-      storedPath
-    );
-
-  if (!relativePath) {
-    return null;
-  }
-
-  /*
-   * First containment check:
-   * lexical filesystem path.
-   */
-
-  const candidatePath =
-    path.resolve(
-      INCIDENT_EVIDENCE_ROOT,
-      relativePath
-    );
-
-  if (
-    !isPathContained(
-      INCIDENT_EVIDENCE_ROOT,
-      candidatePath
-    )
-  ) {
-    return null;
-  }
-
-  let realRootPath;
-  let realFilePath;
-
-  try {
-    /*
-     * Second containment check:
-     * resolve symlinks and actual filesystem paths.
-     */
-
-    [
-      realRootPath,
-      realFilePath,
-    ] = await Promise.all([
-      fs.promises.realpath(
-        INCIDENT_EVIDENCE_ROOT
-      ),
-
-      fs.promises.realpath(
-        candidatePath
-      ),
-    ]);
-  } catch (error) {
-    if (
-      error?.code === "ENOENT" ||
-      error?.code === "ENOTDIR"
-    ) {
-      return null;
-    }
-
-    throw error;
-  }
-
-  if (
-    !isPathContained(
-      realRootPath,
-      realFilePath
-    )
-  ) {
-    return null;
-  }
-
-  const fileStats =
-    await fs.promises.stat(
-      realFilePath
-    );
-
-  if (!fileStats.isFile()) {
-    return null;
-  }
-
-  return realFilePath;
-}
-
 /*
  * ==================================================
- * OPTION A — COORDINATOR EVIDENCE ACCESS
+ * HR COORDINATOR EVIDENCE SCOPE
  * ==================================================
- *
- * Use the same employee/deployment conditions as
- * the protected incident-details endpoint.
- *
- * IMPORTANT:
- *
- * - Incident company must match coordinator company.
- * - Employee must exist and must not be archived.
- * - Employee status must be Deployed.
- * - Employee must have exactly one active deployment.
- * - That active deployment must be at the
- *   coordinator's assigned company.
- *
- * The current employee company is derived from the
- * active deployment, not a browser-supplied value.
  */
-
 function buildCoordinatorEvidenceScopeSql() {
   return `
     AND LOWER(
@@ -435,22 +391,12 @@ function buildCoordinatorEvidenceScopeSql() {
 /*
  * GET
  * /api/incidents/:incidentId/evidence/:evidenceId/file
- *
- * Route-level middleware must allow only:
- *
- * SUPER_ADMIN
- * HR_MANAGER
- * HR_STAFF
- * HR_COORDINATOR
- *
- * IT_SUPPORT must remain excluded.
- *
- * This controller provides additional
- * HR Coordinator company/deployment authorization.
  */
-
 exports.getIncidentEvidenceFile =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const incidentId =
         normalizePositiveInteger(
@@ -475,17 +421,16 @@ exports.getIncidentEvidenceFile =
       }
 
       const isHrCoordinator =
-        isHrCoordinatorRequest(req);
+        isHrCoordinatorRequest(
+          req
+        );
 
       const coordinatorCompany =
         isHrCoordinator
-          ? getHrCoordinatorAssignedCompany(req)
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
           : null;
-
-      /*
-       * Fail closed if the coordinator has
-       * no assigned company.
-       */
 
       if (
         isHrCoordinator &&
@@ -504,39 +449,27 @@ exports.getIncidentEvidenceFile =
           ? buildCoordinatorEvidenceScopeSql()
           : "";
 
-      /*
-       * Parameter order:
-       *
-       * 1. Evidence ID
-       * 2. Incident ID
-       * 3. Incident company (coordinator only)
-       * 4. Current deployment company
-       *    (coordinator only)
-       */
-
       const queryParams = [
         evidenceId,
         incidentId,
 
-        ...(isHrCoordinator
-          ? [
-              coordinatorCompany,
-              coordinatorCompany,
-            ]
-          : []),
+        ...(
+          isHrCoordinator
+            ? [
+                coordinatorCompany,
+                coordinatorCompany,
+              ]
+            : []
+        ),
       ];
 
       /*
-       * Join evidence to its exact parent incident.
-       *
-       * The employee join is needed for
-       * coordinator deployment authorization.
-       *
-       * Other authorized HR roles do not receive
-       * coordinator-specific scope restrictions.
+       * Database authorization happens before
+       * any Supabase object access.
        */
-
-      const [rows] =
+      const [
+        rows,
+      ] =
         await db
           .promise()
           .query(
@@ -568,17 +501,12 @@ exports.getIncidentEvidenceFile =
           );
 
       /*
-       * The same 404 is used for:
-       *
-       * - Missing evidence
-       * - Evidence belonging to another incident
-       * - Incident belonging to another company
-       * - Historical incident whose employee
-       *   is no longer deployed at the
-       *   coordinator's company
+       * Same 404 protects against enumeration.
        */
-
-      if (rows.length === 0) {
+      if (
+        rows.length ===
+        0
+      ) {
         return res
           .status(404)
           .json({
@@ -590,17 +518,12 @@ exports.getIncidentEvidenceFile =
       const evidence =
         rows[0];
 
-      /*
-       * Filesystem access happens only after
-       * database authorization succeeds.
-       */
-
-      const resolvedFilePath =
-        await resolveEvidenceFile(
+      const objectPath =
+        resolveEvidenceObjectPath(
           evidence.file_path
         );
 
-      if (!resolvedFilePath) {
+      if (!objectPath) {
         return res
           .status(404)
           .json({
@@ -611,7 +534,7 @@ exports.getIncidentEvidenceFile =
 
       const contentType =
         getEvidenceContentType(
-          resolvedFilePath
+          objectPath
         );
 
       if (!contentType) {
@@ -623,26 +546,28 @@ exports.getIncidentEvidenceFile =
           });
       }
 
-      const safeFileName =
-        sanitizeDownloadFileName(
-          evidence.file_name,
-          resolvedFilePath
+      /*
+       * Authorization is completed above before a
+       * signed Storage URL is issued.
+       *
+       * Supabase serves the actual binary directly
+       * so Vercel never proxies a potentially 5 MB
+       * evidence response.
+       */
+      const {
+        signedUrl,
+      } =
+        await createSignedDownloadUrl(
+          objectPath,
+          {
+            expiresIn:
+              60,
+          }
         );
 
       /*
-       * Sensitive binary response policy.
+       * Do not cache the authorization redirect.
        */
-
-      res.setHeader(
-        "Content-Type",
-        contentType
-      );
-
-      res.setHeader(
-        "X-Content-Type-Options",
-        "nosniff"
-      );
-
       res.setHeader(
         "Cache-Control",
         "private, no-store, max-age=0"
@@ -658,60 +583,9 @@ exports.getIncidentEvidenceFile =
         "0"
       );
 
-      res.setHeader(
-        "Content-Disposition",
-        `inline; filename="${safeFileName}"`
-      );
-
-      /*
-       * Stream the authorized evidence file.
-       */
-
-      return res.sendFile(
-        resolvedFilePath,
-        (error) => {
-          if (!error) {
-            return;
-          }
-
-          console.error(
-            "INCIDENT EVIDENCE FILE SEND ERROR:",
-            {
-              code:
-                error?.code ||
-                null,
-
-              status:
-                error?.status ||
-                null,
-
-              message:
-                error?.message ||
-                "Unknown file streaming error",
-            }
-          );
-
-          if (!res.headersSent) {
-            const statusCode =
-              error?.code ===
-                "ENOENT" ||
-              error?.status ===
-                404 ||
-              error?.statusCode ===
-                404
-                ? 404
-                : 500;
-
-            res
-              .status(statusCode)
-              .json({
-                error:
-                  statusCode === 404
-                    ? "Incident evidence file not found."
-                    : "Unable to retrieve incident evidence file.",
-              });
-          }
-        }
+      return res.redirect(
+        302,
+        signedUrl
       );
     } catch (error) {
       console.error(
@@ -727,7 +601,9 @@ exports.getIncidentEvidenceFile =
         }
       );
 
-      if (res.headersSent) {
+      if (
+        res.headersSent
+      ) {
         return undefined;
       }
 

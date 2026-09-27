@@ -218,6 +218,78 @@ async function createSignedUploadUrl(
   };
 }
 
+async function createSignedDownloadUrl(
+  objectPath,
+  {
+    expiresIn = 60,
+  } = {}
+) {
+  const normalizedPath =
+    normalizeObjectPath(
+      objectPath
+    );
+
+  const normalizedExpiresIn =
+    Number(
+      expiresIn
+    );
+
+  if (
+    !Number.isSafeInteger(
+      normalizedExpiresIn
+    ) ||
+    normalizedExpiresIn < 1 ||
+    normalizedExpiresIn > 3600
+  ) {
+    throw new Error(
+      "Signed download expiry must be between 1 and 3600 seconds."
+    );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.storage
+    .from(
+      SUPABASE_STORAGE_BUCKET
+    )
+    .createSignedUrl(
+      normalizedPath,
+      normalizedExpiresIn
+    );
+
+  if (error) {
+    throw createStorageError(
+      error,
+      "Unable to create a signed storage download URL.",
+      "STORAGE_SIGNED_DOWNLOAD_ERROR"
+    );
+  }
+
+  const signedUrl =
+    String(
+      data?.signedUrl ||
+      ""
+    ).trim();
+
+  if (!signedUrl) {
+    throw new Error(
+      "Supabase did not return a valid signed download URL."
+    );
+  }
+
+  return {
+    path:
+      data?.path ||
+      normalizedPath,
+
+    signedUrl,
+
+    expiresIn:
+      normalizedExpiresIn,
+  };
+}
+
 async function downloadBuffer(
   objectPath
 ) {
@@ -313,6 +385,7 @@ module.exports = {
   normalizeObjectPath,
   uploadBuffer,
   createSignedUploadUrl,
+  createSignedDownloadUrl,
   downloadBuffer,
   removeObject,
   isStorageNotFoundError,
