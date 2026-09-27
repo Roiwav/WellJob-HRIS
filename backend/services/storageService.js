@@ -53,6 +53,30 @@ function normalizeObjectPath(value) {
   return objectPath;
 }
 
+function createStorageError(
+  error,
+  fallbackMessage,
+  fallbackCode
+) {
+  const storageError =
+    new Error(
+      error?.message ||
+        fallbackMessage
+    );
+
+  storageError.status =
+    error?.status ||
+    error?.statusCode ||
+    null;
+
+  storageError.code =
+    error?.name ||
+    error?.code ||
+    fallbackCode;
+
+  return storageError;
+}
+
 async function uploadBuffer(
   objectPath,
   buffer,
@@ -99,29 +123,98 @@ async function uploadBuffer(
     );
 
   if (error) {
-    const storageError =
-      new Error(
-        error.message ||
-          "Supabase storage upload failed."
-      );
-
-    storageError.status =
-      error.status ||
-      error.statusCode ||
-      null;
-
-    storageError.code =
-      error.name ||
-      error.code ||
-      "STORAGE_UPLOAD_ERROR";
-
-    throw storageError;
+    throw createStorageError(
+      error,
+      "Supabase storage upload failed.",
+      "STORAGE_UPLOAD_ERROR"
+    );
   }
 
   return {
     path:
       data?.path ||
       normalizedPath,
+  };
+}
+
+/*
+ * ==================================================
+ * SIGNED DIRECT UPLOAD
+ * ==================================================
+ *
+ * Used when the browser must upload a file directly
+ * to Supabase Storage rather than sending the binary
+ * through the application server.
+ *
+ * Security:
+ *
+ * - The Supabase secret key remains backend-only.
+ * - The caller receives only a temporary signed
+ *   upload URL/token for one server-selected path.
+ * - Object paths are normalized here before signing.
+ * - Upsert defaults to false so existing protected
+ *   files are not silently overwritten.
+ */
+async function createSignedUploadUrl(
+  objectPath,
+  {
+    upsert = false,
+  } = {}
+) {
+  const normalizedPath =
+    normalizeObjectPath(
+      objectPath
+    );
+
+  const {
+    data,
+    error,
+  } = await supabase.storage
+    .from(
+      SUPABASE_STORAGE_BUCKET
+    )
+    .createSignedUploadUrl(
+      normalizedPath,
+      {
+        upsert:
+          Boolean(upsert),
+      }
+    );
+
+  if (error) {
+    throw createStorageError(
+      error,
+      "Unable to create a signed storage upload URL.",
+      "STORAGE_SIGNED_UPLOAD_ERROR"
+    );
+  }
+
+  const signedUrl =
+    String(
+      data?.signedUrl || ""
+    ).trim();
+
+  const token =
+    String(
+      data?.token || ""
+    ).trim();
+
+  if (
+    !signedUrl ||
+    !token
+  ) {
+    throw new Error(
+      "Supabase did not return a valid signed upload authorization."
+    );
+  }
+
+  return {
+    path:
+      data?.path ||
+      normalizedPath,
+
+    signedUrl,
+    token,
   };
 }
 
@@ -145,23 +238,11 @@ async function downloadBuffer(
     );
 
   if (error) {
-    const storageError =
-      new Error(
-        error.message ||
-          "Supabase storage download failed."
-      );
-
-    storageError.status =
-      error.status ||
-      error.statusCode ||
-      null;
-
-    storageError.code =
-      error.name ||
-      error.code ||
-      "STORAGE_DOWNLOAD_ERROR";
-
-    throw storageError;
+    throw createStorageError(
+      error,
+      "Supabase storage download failed.",
+      "STORAGE_DOWNLOAD_ERROR"
+    );
   }
 
   const arrayBuffer =
@@ -192,23 +273,11 @@ async function removeObject(
     ]);
 
   if (error) {
-    const storageError =
-      new Error(
-        error.message ||
-          "Supabase storage delete failed."
-      );
-
-    storageError.status =
-      error.status ||
-      error.statusCode ||
-      null;
-
-    storageError.code =
-      error.name ||
-      error.code ||
-      "STORAGE_DELETE_ERROR";
-
-    throw storageError;
+    throw createStorageError(
+      error,
+      "Supabase storage delete failed.",
+      "STORAGE_DELETE_ERROR"
+    );
   }
 
   return data;
@@ -243,6 +312,7 @@ function isStorageNotFoundError(
 module.exports = {
   normalizeObjectPath,
   uploadBuffer,
+  createSignedUploadUrl,
   downloadBuffer,
   removeObject,
   isStorageNotFoundError,
