@@ -1,23 +1,29 @@
-const crypto = require("crypto");
-const fs = require("fs");
+﻿const crypto = require("crypto");
 const multer = require("multer");
 const path = require("path");
 
-const uploadDirectory = path.join(
-  __dirname,
-  "..",
-  "documents",
-  "employees"
-);
+const {
+  uploadBuffer,
+  removeObject,
+} = require("../services/storageService");
+
+const STORAGE_PREFIX =
+  "documents/employees";
 
 const MAX_FILE_SIZE =
   5 * 1024 * 1024;
 
-const MAX_EMPLOYEE_DOCUMENTS = 20;
-const MAX_INCIDENT_EVIDENCE_FILES = 10;
+const MAX_EMPLOYEE_DOCUMENTS =
+  20;
 
-const FORM_FIELD_LIMIT = 100;
-const FORM_FIELD_SIZE = 64 * 1024;
+const MAX_INCIDENT_EVIDENCE_FILES =
+  10;
+
+const FORM_FIELD_LIMIT =
+  100;
+
+const FORM_FIELD_SIZE =
+  64 * 1024;
 
 const EMPLOYEE_PART_LIMIT =
   FORM_FIELD_LIMIT +
@@ -29,10 +35,16 @@ const INCIDENT_PART_LIMIT =
 
 const FILE_TYPE_CONFIG = {
   "image/png": {
-    extension: ".png",
-    allowedExtensions: [".png"],
+    extension:
+      ".png",
 
-    signatureMatches(buffer) {
+    allowedExtensions: [
+      ".png",
+    ],
+
+    signatureMatches(
+      buffer
+    ) {
       return (
         buffer.length >= 8 &&
         buffer[0] === 0x89 &&
@@ -48,13 +60,17 @@ const FILE_TYPE_CONFIG = {
   },
 
   "image/jpeg": {
-    extension: ".jpg",
+    extension:
+      ".jpg",
+
     allowedExtensions: [
       ".jpg",
       ".jpeg",
     ],
 
-    signatureMatches(buffer) {
+    signatureMatches(
+      buffer
+    ) {
       return (
         buffer.length >= 3 &&
         buffer[0] === 0xff &&
@@ -65,15 +81,26 @@ const FILE_TYPE_CONFIG = {
   },
 
   "application/pdf": {
-    extension: ".pdf",
-    allowedExtensions: [".pdf"],
+    extension:
+      ".pdf",
 
-    signatureMatches(buffer) {
+    allowedExtensions: [
+      ".pdf",
+    ],
+
+    signatureMatches(
+      buffer
+    ) {
       return (
         buffer.length >= 5 &&
         buffer
-          .subarray(0, 5)
-          .toString("ascii") ===
+          .subarray(
+            0,
+            5
+          )
+          .toString(
+            "ascii"
+          ) ===
           "%PDF-"
       );
     },
@@ -86,168 +113,160 @@ const SAFE_UPLOAD_ERROR_CODES =
     "FILE_TYPE_MISMATCH",
     "FILE_SIGNATURE_MISMATCH",
     "INVALID_UPLOAD",
+    "STORAGE_UPLOAD_ERROR",
   ]);
-
-function ensureUploadDirectory() {
-  fs.mkdirSync(uploadDirectory, {
-    recursive: true,
-  });
-}
 
 function createUploadError(
   message,
   {
     code =
       "UPLOAD_VALIDATION_ERROR",
-    statusCode = 400,
+
+    statusCode =
+      400,
   } = {}
 ) {
   const error =
-    new Error(message);
+    new Error(
+      message
+    );
 
-  error.code = code;
-  error.statusCode = statusCode;
+  error.code =
+    code;
+
+  error.statusCode =
+    statusCode;
 
   return error;
 }
 
-function getFileTypeConfig(mimetype) {
+function getFileTypeConfig(
+  mimetype
+) {
   const normalizedMimeType =
-    String(mimetype || "")
+    String(
+      mimetype || ""
+    )
       .trim()
       .toLowerCase();
 
   return (
     FILE_TYPE_CONFIG[
       normalizedMimeType
-    ] || null
+    ] ||
+    null
   );
 }
 
-function flattenUploadedFiles(files) {
-  if (Array.isArray(files)) {
-    return files.filter(Boolean);
+function flattenUploadedFiles(
+  files
+) {
+  if (
+    Array.isArray(
+      files
+    )
+  ) {
+    return files.filter(
+      Boolean
+    );
   }
 
   if (
     files &&
-    typeof files === "object"
+    typeof files ===
+      "object"
   ) {
-    return Object.values(files)
+    return Object
+      .values(
+        files
+      )
       .flat()
-      .filter(Boolean);
+      .filter(
+        Boolean
+      );
   }
 
   return [];
 }
 
+function getUploadedObjectPath(
+  file
+) {
+  return String(
+    file?.storagePath ||
+    file?.path ||
+    ""
+  ).trim();
+}
+
+/*
+ * ==================================================
+ * CLOUD COMPENSATION
+ * ==================================================
+ *
+ * Used only for newly uploaded request objects.
+ *
+ * Historical/pre-existing files use the separate
+ * reference-aware lifecycle service.
+ */
 async function cleanupUploadedFiles(
   files
 ) {
   const uploadedFiles =
-    flattenUploadedFiles(files);
+    flattenUploadedFiles(
+      files
+    );
 
-  for (const file of uploadedFiles) {
-    const filePath = String(
-      file?.path || ""
-    ).trim();
+  for (
+    const file of
+    uploadedFiles
+  ) {
+    const objectPath =
+      getUploadedObjectPath(
+        file
+      );
 
-    if (!filePath) {
+    if (!objectPath) {
       continue;
     }
 
     try {
-      await fs.promises.unlink(
-        filePath
+      await removeObject(
+        objectPath
       );
     } catch (error) {
-      if (
-        error?.code !== "ENOENT"
-      ) {
-        console.error(
-          "UPLOAD CLEANUP ERROR:",
-          {
-            filePath,
-            message:
-              error?.message ||
-              error,
-          }
-        );
-      }
+      console.error(
+        "UPLOAD CLOUD CLEANUP ERROR:",
+        {
+          objectPath,
+
+          message:
+            error?.message ||
+            error,
+        }
+      );
     }
   }
 }
 
-ensureUploadDirectory();
-
 /*
  * ==================================================
- * STORAGE
+ * MEMORY-ONLY MULTIPART PARSING
  * ==================================================
  *
- * Stored extensions are controlled by the server.
- * Original client filenames never determine the
- * physical filename written to disk.
+ * The backend no longer writes employee documents
+ * or incident evidence to local disk.
+ *
+ * Bytes are:
+ *
+ * multipart request
+ * -> memory
+ * -> signature validation
+ * -> private Supabase Storage
  */
 const storage =
-  multer.diskStorage({
-    destination(
-      req,
-      file,
-      callback
-    ) {
-      ensureUploadDirectory();
+  multer.memoryStorage();
 
-      callback(
-        null,
-        uploadDirectory
-      );
-    },
-
-    filename(
-      req,
-      file,
-      callback
-    ) {
-      const typeConfig =
-        getFileTypeConfig(
-          file.mimetype
-        );
-
-      if (!typeConfig) {
-        return callback(
-          createUploadError(
-            "Unsupported upload file type.",
-            {
-              code:
-                "UNSUPPORTED_FILE_TYPE",
-              statusCode: 415,
-            }
-          )
-        );
-      }
-
-      const safeName =
-        `${Date.now()}-${crypto.randomUUID()}${typeConfig.extension}`;
-
-      return callback(
-        null,
-        safeName
-      );
-    },
-  });
-
-/*
- * ==================================================
- * DECLARED FILE-TYPE VALIDATION
- * ==================================================
- *
- * This is performed before the file is accepted by
- * Multer.
- *
- * Actual file bytes are validated separately after
- * Multer writes the file.
- */
 function fileFilter(
   req,
   file,
@@ -265,7 +284,9 @@ function fileFilter(
         {
           code:
             "UNSUPPORTED_FILE_TYPE",
-          statusCode: 415,
+
+          statusCode:
+            415,
         }
       ),
       false
@@ -276,16 +297,19 @@ function fileFilter(
     path
       .extname(
         String(
-          file.originalname || ""
+          file.originalname ||
+          ""
         )
       )
       .trim()
       .toLowerCase();
 
   if (
-    !typeConfig.allowedExtensions.includes(
-      originalExtension
-    )
+    !typeConfig
+      .allowedExtensions
+      .includes(
+        originalExtension
+      )
   ) {
     return callback(
       createUploadError(
@@ -293,119 +317,192 @@ function fileFilter(
         {
           code:
             "FILE_TYPE_MISMATCH",
-          statusCode: 415,
+
+          statusCode:
+            415,
         }
       ),
       false
     );
   }
 
-  return callback(null, true);
+  return callback(
+    null,
+    true
+  );
 }
 
-/*
- * Generic Multer instance retained for compatibility.
- *
- * Employee and incident routes should use their
- * dedicated hardened middleware properties below.
- */
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: {
-    fileSize: MAX_FILE_SIZE,
-  },
-});
+const upload =
+  multer({
+    storage,
+    fileFilter,
 
-/*
- * ==================================================
- * ACTUAL FILE CONTENT VALIDATION
- * ==================================================
- */
-async function validateStoredFileSignature(
+    limits: {
+      fileSize:
+        MAX_FILE_SIZE,
+    },
+  });
+
+function validateBufferedFileSignature(
   file
 ) {
-  const filePath = String(
-    file?.path || ""
-  ).trim();
-
   const typeConfig =
     getFileTypeConfig(
       file?.mimetype
     );
 
+  const buffer =
+    file?.buffer;
+
   if (
-    !filePath ||
-    !typeConfig
+    !typeConfig ||
+    !Buffer.isBuffer(
+      buffer
+    ) ||
+    buffer.length === 0
   ) {
     throw createUploadError(
       "Invalid uploaded file.",
       {
         code:
           "INVALID_UPLOAD",
-        statusCode: 415,
+
+        statusCode:
+          415,
       }
     );
   }
 
-  let handle = null;
+  if (
+    !typeConfig
+      .signatureMatches(
+        buffer
+      )
+  ) {
+    throw createUploadError(
+      "The uploaded file content does not match its declared file type.",
+      {
+        code:
+          "FILE_SIGNATURE_MISMATCH",
+
+        statusCode:
+          415,
+      }
+    );
+  }
+}
+
+function createStoredFilename(
+  mimetype
+) {
+  const typeConfig =
+    getFileTypeConfig(
+      mimetype
+    );
+
+  if (!typeConfig) {
+    throw createUploadError(
+      "Unsupported upload file type.",
+      {
+        code:
+          "UNSUPPORTED_FILE_TYPE",
+
+        statusCode:
+          415,
+      }
+    );
+  }
+
+  return (
+    `${Date.now()}-` +
+    `${crypto.randomUUID()}` +
+    `${typeConfig.extension}`
+  );
+}
+
+async function persistFilesToStorage(
+  files
+) {
+  const uploadedFiles =
+    [];
 
   try {
-    handle =
-      await fs.promises.open(
-        filePath,
-        "r"
-      );
-
-    const signatureBuffer =
-      Buffer.alloc(8);
-
-    const { bytesRead } =
-      await handle.read(
-        signatureBuffer,
-        0,
-        signatureBuffer.length,
-        0
-      );
-
-    const actualBytes =
-      signatureBuffer.subarray(
-        0,
-        bytesRead
-      );
-
-    if (
-      !typeConfig.signatureMatches(
-        actualBytes
-      )
+    for (
+      const file of
+      files
     ) {
-      throw createUploadError(
-        "The uploaded file content does not match its declared file type.",
+      const storedFilename =
+        createStoredFilename(
+          file.mimetype
+        );
+
+      const objectPath =
+        `${STORAGE_PREFIX}/${storedFilename}`;
+
+      await uploadBuffer(
+        objectPath,
+        file.buffer,
         {
-          code:
-            "FILE_SIGNATURE_MISMATCH",
-          statusCode: 415,
+          contentType:
+            file.mimetype,
+
+          upsert:
+            false,
         }
       );
+
+      /*
+       * Preserve the familiar Multer-shaped contract
+       * expected by the existing controllers.
+       */
+      file.filename =
+        storedFilename;
+
+      file.path =
+        objectPath;
+
+      file.storagePath =
+        objectPath;
+
+      /*
+       * The bytes now exist in Supabase.
+       * Release the in-memory copy before controller
+       * business/database work begins.
+       */
+      delete file.buffer;
+
+      uploadedFiles.push(
+        file
+      );
     }
-  } finally {
-    if (handle) {
-      await handle.close();
-    }
+
+    return files;
+  } catch (error) {
+    await cleanupUploadedFiles(
+      uploadedFiles
+    );
+
+    throw error;
   }
 }
 
 function isSafeUploadValidationError(
   error
 ) {
-  return SAFE_UPLOAD_ERROR_CODES.has(
-    error?.code
+  return (
+    SAFE_UPLOAD_ERROR_CODES.has(
+      error?.code
+    ) ||
+    Number(
+      error?.statusCode ||
+      error?.status
+    ) === 415
   );
 }
 
 /*
  * ==================================================
- * EMPLOYEE DOCUMENT UPLOAD
+ * EMPLOYEE DOCUMENTS
  * ==================================================
  */
 
@@ -415,28 +512,40 @@ const employeeDocumentFields =
       length:
         MAX_EMPLOYEE_DOCUMENTS,
     },
-    (_, index) => ({
+    (
+      _,
+      index
+    ) => ({
       name:
         `documents[${index}]`,
-      maxCount: 1,
+
+      maxCount:
+        1,
     })
   );
 
-const employeeUpload = multer({
-  storage,
-  fileFilter,
+const employeeUpload =
+  multer({
+    storage,
+    fileFilter,
 
-  limits: {
-    fileSize: MAX_FILE_SIZE,
-    files:
-      MAX_EMPLOYEE_DOCUMENTS,
-    fields: FORM_FIELD_LIMIT,
-    parts:
-      EMPLOYEE_PART_LIMIT,
-    fieldSize:
-      FORM_FIELD_SIZE,
-  },
-});
+    limits: {
+      fileSize:
+        MAX_FILE_SIZE,
+
+      files:
+        MAX_EMPLOYEE_DOCUMENTS,
+
+      fields:
+        FORM_FIELD_LIMIT,
+
+      parts:
+        EMPLOYEE_PART_LIMIT,
+
+      fieldSize:
+        FORM_FIELD_SIZE,
+    },
+  });
 
 const parseEmployeeDocuments =
   employeeUpload.fields(
@@ -493,7 +602,9 @@ function sendEmployeeUploadError(
         "LIMIT_PART_COUNT",
         "LIMIT_FIELD_KEY",
         "LIMIT_FIELD_VALUE",
-      ].includes(error.code)
+      ].includes(
+        error.code
+      )
     ) {
       return res
         .status(400)
@@ -519,13 +630,14 @@ function sendEmployeeUploadError(
     return res
       .status(
         Number.isInteger(
-          error.statusCode
+          error?.statusCode
         )
           ? error.statusCode
-          : 400
+          : 415
       )
       .json({
-        error: error.message,
+        error:
+          error.message,
       });
   }
 
@@ -535,105 +647,105 @@ function sendEmployeeUploadError(
   );
 
   return res
-    .status(400)
+    .status(500)
     .json({
       error:
-        "Invalid employee document upload request.",
+        "Unable to store employee document.",
     });
 }
 
-upload.employeeDocuments = (
-  req,
-  res,
-  next
-) => {
-  parseEmployeeDocuments(
+upload.employeeDocuments =
+  (
     req,
     res,
-    async (uploadError) => {
-      const files =
-        flattenUploadedFiles(
-          req.files
-        );
+    next
+  ) => {
+    parseEmployeeDocuments(
+      req,
+      res,
+      async (
+        uploadError
+      ) => {
+        const files =
+          flattenUploadedFiles(
+            req.files
+          );
 
-      /*
-       * Existing employeeController expects
-       * req.files to be a flat array.
-       */
-      req.files = files;
+        req.files =
+          files;
 
-      if (uploadError) {
-        await cleanupUploadedFiles(
-          files
-        );
-
-        req.files = [];
-
-        return sendEmployeeUploadError(
-          res,
+        if (
           uploadError
-        );
-      }
+        ) {
+          req.files =
+            [];
 
-      try {
-        for (const file of files) {
-          await validateStoredFileSignature(
-            file
+          return sendEmployeeUploadError(
+            res,
+            uploadError
           );
         }
 
-        return next();
-      } catch (error) {
-        await cleanupUploadedFiles(
-          files
-        );
+        try {
+          for (
+            const file of
+            files
+          ) {
+            validateBufferedFileSignature(
+              file
+            );
+          }
 
-        req.files = [];
+          await persistFilesToStorage(
+            files
+          );
 
-        return sendEmployeeUploadError(
-          res,
-          error
-        );
+          return next();
+        } catch (error) {
+          await cleanupUploadedFiles(
+            files
+          );
+
+          req.files =
+            [];
+
+          return sendEmployeeUploadError(
+            res,
+            error
+          );
+        }
       }
-    }
-  );
-};
+    );
+  };
 
 /*
  * ==================================================
- * INCIDENT EVIDENCE UPLOAD
+ * INCIDENT EVIDENCE
  * ==================================================
- *
- * Security controls:
- *
- * - exact evidenceFiles field
- * - maximum 10 files
- * - maximum 5 MB per file
- * - PNG/JPEG/PDF only
- * - MIME/extension pairing
- * - server-controlled stored extension
- * - actual magic-byte verification
- * - multipart request limits
- * - cleanup after parser/signature failure
- * - request-scoped cleanup for files not committed
- *   to incident_evidence records
  */
 
-const incidentUpload = multer({
-  storage,
-  fileFilter,
+const incidentUpload =
+  multer({
+    storage,
+    fileFilter,
 
-  limits: {
-    fileSize: MAX_FILE_SIZE,
-    files:
-      MAX_INCIDENT_EVIDENCE_FILES,
-    fields: FORM_FIELD_LIMIT,
-    parts:
-      INCIDENT_PART_LIMIT,
-    fieldSize:
-      FORM_FIELD_SIZE,
-  },
-});
+    limits: {
+      fileSize:
+        MAX_FILE_SIZE,
+
+      files:
+        MAX_INCIDENT_EVIDENCE_FILES,
+
+      fields:
+        FORM_FIELD_LIMIT,
+
+      parts:
+        INCIDENT_PART_LIMIT,
+
+      fieldSize:
+        FORM_FIELD_SIZE,
+    },
+  });
 
 const parseIncidentEvidence =
   incidentUpload.array(
@@ -672,7 +784,7 @@ function sendIncidentUploadError(
         .json({
           error:
             error.code ===
-            "LIMIT_FILE_COUNT"
+              "LIMIT_FILE_COUNT"
               ? "A maximum of 10 incident evidence files may be uploaded."
               : "Unexpected upload field. Use evidenceFiles for incident evidence.",
         });
@@ -684,7 +796,9 @@ function sendIncidentUploadError(
         "LIMIT_PART_COUNT",
         "LIMIT_FIELD_KEY",
         "LIMIT_FIELD_VALUE",
-      ].includes(error.code)
+      ].includes(
+        error.code
+      )
     ) {
       return res
         .status(400)
@@ -710,13 +824,14 @@ function sendIncidentUploadError(
     return res
       .status(
         Number.isInteger(
-          error.statusCode
+          error?.statusCode
         )
           ? error.statusCode
-          : 400
+          : 415
       )
       .json({
-        error: error.message,
+        error:
+          error.message,
       });
   }
 
@@ -726,42 +841,28 @@ function sendIncidentUploadError(
   );
 
   return res
-    .status(400)
+    .status(500)
     .json({
       error:
-        "Unable to upload incident evidence.",
+        "Unable to store incident evidence.",
     });
 }
 
-/*
- * Registers a request-scoped ownership boundary.
- *
- * Multer writes files before the incident controller
- * performs business validation or database work.
- *
- * Unless the controller explicitly calls:
- *
- * req.claimIncidentEvidenceFiles()
- *
- * the newly uploaded physical files are treated as
- * uncommitted request files and are removed when the
- * response finishes or the connection closes.
- *
- * This covers controller early-return paths without
- * scattering file-deletion calls throughout every
- * validation branch.
- */
 function registerIncidentCleanupBoundary(
   req,
   res,
   files
 ) {
-  let ownershipClaimed = false;
-  let cleanupStarted = false;
+  let ownershipClaimed =
+    false;
+
+  let cleanupStarted =
+    false;
 
   req.claimIncidentEvidenceFiles =
     () => {
-      ownershipClaimed = true;
+      ownershipClaimed =
+        true;
     };
 
   const cleanupIfUnclaimed =
@@ -773,16 +874,21 @@ function registerIncidentCleanupBoundary(
         return;
       }
 
-      cleanupStarted = true;
+      cleanupStarted =
+        true;
 
       cleanupUploadedFiles(
         files
-      ).catch((error) => {
-        console.error(
-          "INCIDENT REQUEST CLEANUP ERROR:",
+      ).catch(
+        (
           error
-        );
-      });
+        ) => {
+          console.error(
+            "INCIDENT REQUEST CLOUD CLEANUP ERROR:",
+            error
+          );
+        }
+      );
     };
 
   res.once(
@@ -796,63 +902,75 @@ function registerIncidentCleanupBoundary(
   );
 }
 
-upload.incidentEvidence = (
-  req,
-  res,
-  next
-) => {
-  parseIncidentEvidence(
+upload.incidentEvidence =
+  (
     req,
     res,
-    async (uploadError) => {
-      const files =
-        flattenUploadedFiles(
-          req.files
-        );
+    next
+  ) => {
+    parseIncidentEvidence(
+      req,
+      res,
+      async (
+        uploadError
+      ) => {
+        const files =
+          flattenUploadedFiles(
+            req.files
+          );
 
-      req.files = files;
+        req.files =
+          files;
 
-      if (uploadError) {
-        await cleanupUploadedFiles(
-          files
-        );
-
-        req.files = [];
-
-        return sendIncidentUploadError(
-          res,
+        if (
           uploadError
-        );
-      }
+        ) {
+          req.files =
+            [];
 
-      try {
-        for (const file of files) {
-          await validateStoredFileSignature(
-            file
+          return sendIncidentUploadError(
+            res,
+            uploadError
           );
         }
-      } catch (error) {
-        await cleanupUploadedFiles(
+
+        try {
+          for (
+            const file of
+            files
+          ) {
+            validateBufferedFileSignature(
+              file
+            );
+          }
+
+          await persistFilesToStorage(
+            files
+          );
+        } catch (error) {
+          await cleanupUploadedFiles(
+            files
+          );
+
+          req.files =
+            [];
+
+          return sendIncidentUploadError(
+            res,
+            error
+          );
+        }
+
+        registerIncidentCleanupBoundary(
+          req,
+          res,
           files
         );
 
-        req.files = [];
-
-        return sendIncidentUploadError(
-          res,
-          error
-        );
+        return next();
       }
+    );
+  };
 
-      registerIncidentCleanupBoundary(
-        req,
-        res,
-        files
-      );
-
-      return next();
-    }
-  );
-};
-
-module.exports = upload;
+module.exports =
+  upload;

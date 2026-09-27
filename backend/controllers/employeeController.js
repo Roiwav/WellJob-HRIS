@@ -1,6 +1,8 @@
-const fs = require("fs");
-
 const db = require("../config/db");
+
+const {
+  removeObject,
+} = require("../services/storageService");
 
 const {
   logAudit,
@@ -382,42 +384,34 @@ async function cleanupUploadedFiles(
       : [];
 
   for (
-    const file of uploadedFiles
+    const file of
+    uploadedFiles
   ) {
-    const filePath =
+    const objectPath =
       toNullable(
+        file?.storagePath ||
         file?.path
       );
 
-    if (!filePath) {
+    if (!objectPath) {
       continue;
     }
 
     try {
-      await fs.promises.unlink(
-        filePath
+      await removeObject(
+        objectPath
       );
     } catch (error) {
-      /*
-       * ENOENT means the target is already absent,
-       * which is already the desired compensated
-       * state.
-       */
-      if (
-        error?.code !==
-        "ENOENT"
-      ) {
-        console.error(
-          "EMPLOYEE FILE CLEANUP ERROR:",
-          {
-            filePath,
+      console.error(
+        "EMPLOYEE CLOUD FILE CLEANUP ERROR:",
+        {
+          objectPath,
 
-            message:
-              error?.message ||
-              error,
-          }
-        );
-      }
+          message:
+            error?.message ||
+            error,
+        }
+      );
     }
   }
 }
