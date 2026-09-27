@@ -19,6 +19,12 @@ const {
   getEmployeeIncidentSummary,
 } = require("../controllers/employeeIncidentSummaryController");
 
+
+const {
+  createIncidentEvidenceUploadAuthorizations,
+  createIncidentWorkflowEvidenceUploadAuthorizations,
+} = require("../controllers/storageUploadController");
+
 const {
   verifyToken,
 } = require("../middleware/authMiddleware");
@@ -245,6 +251,43 @@ router.get(
     "HR_COORDINATOR"
   ),
   getIncidentById
+);
+
+
+/*
+ * ==================================================
+ * INCIDENT CREATE-EVIDENCE DIRECT-UPLOAD AUTHORIZATION
+ * ==================================================
+ *
+ * Mirrors the existing create-incident role access.
+ */
+router.post(
+  "/incident-evidence/upload-authorizations/create",
+  verifyToken,
+  authorizeRoles(
+    "HR_MANAGER",
+    "HR_STAFF",
+    "HR_COORDINATOR"
+  ),
+  createIncidentEvidenceUploadAuthorizations
+);
+
+/*
+ * ==================================================
+ * INCIDENT WORKFLOW-EVIDENCE DIRECT-UPLOAD AUTHORIZATION
+ * ==================================================
+ *
+ * Investigation/resolution evidence submission stays
+ * restricted to HR Manager and HR Staff.
+ */
+router.post(
+  "/incident-evidence/upload-authorizations/workflow",
+  verifyToken,
+  authorizeRoles(
+    "HR_MANAGER",
+    "HR_STAFF"
+  ),
+  createIncidentWorkflowEvidenceUploadAuthorizations
 );
 
 /*

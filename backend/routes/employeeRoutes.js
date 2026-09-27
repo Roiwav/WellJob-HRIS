@@ -20,6 +20,11 @@ const {
   getEmployeeDocumentFile,
 } = require("../controllers/employeeDocumentController");
 
+
+const {
+  createEmployeeDocumentUploadAuthorizations,
+} = require("../controllers/storageUploadController");
+
 const {
   verifyToken,
 } = require("../middleware/authMiddleware");
@@ -115,6 +120,28 @@ router.get(
     "HR_COORDINATOR"
   ),
   getEmployeeDocumentFile
+);
+
+
+/*
+ * ==================================================
+ * EMPLOYEE DOCUMENT DIRECT-UPLOAD AUTHORIZATION
+ * ==================================================
+ *
+ * Creates temporary authorization for direct upload
+ * into private Supabase Storage.
+ *
+ * HR Coordinator remains intentionally excluded from
+ * employee create/edit operations.
+ */
+router.post(
+  "/employee-documents/upload-authorizations",
+  verifyToken,
+  authorizeRoles(
+    "HR_MANAGER",
+    "HR_STAFF"
+  ),
+  createEmployeeDocumentUploadAuthorizations
 );
 
 /*
