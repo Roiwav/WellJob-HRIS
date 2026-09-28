@@ -1,4 +1,3 @@
-
 import React, {
   Suspense,
   lazy,
@@ -81,6 +80,10 @@ const SystemConfiguration = lazy(() =>
 
 const SystemMaintenance = lazy(() =>
   import("./pages/SystemMaintenance")
+);
+
+const ProfileSettings = lazy(() =>
+  import("./pages/ProfileSettings")
 );
 
 // Audit pages
@@ -608,6 +611,16 @@ function ApplicationContent({
               <MainLayout />
             }
           >
+            {/* Profile & Account Settings */}
+            <Route
+              path="/profile-settings"
+              element={
+                <LazyRoute>
+                  <ProfileSettings />
+                </LazyRoute>
+              }
+            />
+
             {/* Dashboard */}
             <Route
               element={
