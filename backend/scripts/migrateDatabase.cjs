@@ -70,6 +70,16 @@ const MIGRATIONS = [
 
   {
     name: "add_one_active_deployment_invariant.sql",
+
+    prepare: async (
+      connection,
+      databaseFamily
+    ) =>
+      prepareOneActiveDeploymentInvariantForMySql(
+        connection,
+        databaseFamily
+      ),
+
     isApplied: async (connection) => {
       const guardColumn =
         await columnExists(
@@ -258,7 +268,64 @@ function requiredEnv(
   return value;
 }
 
+function getDatabaseSslOptions(
+  host
+) {
+  const encodedCertificate =
+    String(
+      process.env
+        .DB_SSL_CA_BASE64 ??
+      ""
+    ).trim();
+
+  if (
+    !encodedCertificate
+  ) {
+    return undefined;
+  }
+
+  const caCertificate =
+    Buffer.from(
+      encodedCertificate,
+      "base64"
+    ).toString(
+      "utf8"
+    );
+
+  if (
+    !caCertificate.includes(
+      "-----BEGIN CERTIFICATE-----"
+    ) ||
+    !caCertificate.includes(
+      "-----END CERTIFICATE-----"
+    )
+  ) {
+    throw new Error(
+      "DB_SSL_CA_BASE64 must contain a valid Base64-encoded PEM certificate."
+    );
+  }
+
+  return {
+    ca:
+      caCertificate,
+
+    rejectUnauthorized:
+      true,
+
+    minVersion:
+      "TLSv1.2",
+
+    servername:
+      host,
+  };
+}
+
 function getConnectionOptions() {
+  const host =
+    requiredEnv(
+      "DB_HOST"
+    );
+
   const port = Number.parseInt(
     requiredEnv("DB_PORT"),
     10
@@ -275,9 +342,7 @@ function getConnectionOptions() {
   }
 
   return {
-    host: requiredEnv(
-      "DB_HOST"
-    ),
+    host,
 
     port,
 
@@ -296,6 +361,14 @@ function getConnectionOptions() {
       "DB_NAME"
     ),
 
+    ssl:
+      getDatabaseSslOptions(
+        host
+      ),
+
+    connectTimeout:
+      15000,
+
     /*
      * Migration files are trusted,
      * repository-owned SQL and may contain
@@ -303,6 +376,131 @@ function getConnectionOptions() {
      */
     multipleStatements: true,
   };
+}
+
+async function getDatabaseFamily(
+  connection
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        VERSION() AS version,
+        @@version_comment AS version_comment
+      `
+    );
+
+  const identity =
+    `${String(
+      rows[0]?.version ||
+      ""
+    )} ${String(
+      rows[0]?.version_comment ||
+      ""
+    )}`.toLowerCase();
+
+  return identity.includes(
+    "mariadb"
+  )
+    ? "mariadb"
+    : "mysql";
+}
+
+function normalizeMigrationSqlForTarget(
+  migrationName,
+  sql,
+  databaseFamily
+) {
+  if (
+    databaseFamily !==
+      "mysql" ||
+    migrationName !==
+      "add_one_active_deployment_invariant.sql"
+  ) {
+    return sql;
+  }
+
+  /*
+   * MariaDB calls a stored generated column
+   * PERSISTENT. MySQL uses STORED.
+   *
+   * The repository checksum is always calculated
+   * from the original migration file. Only the SQL
+   * sent to MySQL is normalized in memory.
+   */
+  return sql.replace(
+    /\bPERSISTENT\b/gi,
+    "STORED"
+  );
+}
+
+async function prepareOneActiveDeploymentInvariantForMySql(
+  connection,
+  databaseFamily
+) {
+  if (
+    databaseFamily !==
+    "mysql"
+  ) {
+    return;
+  }
+
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        rc.UPDATE_RULE AS update_rule,
+        rc.DELETE_RULE AS delete_rule
+      FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS AS rc
+      WHERE rc.CONSTRAINT_SCHEMA = DATABASE()
+        AND rc.TABLE_NAME = 'deployment_assignments'
+        AND rc.CONSTRAINT_NAME =
+          'fk_deployment_assignments_employee'
+      LIMIT 1
+      `
+    );
+
+  if (
+    rows.length === 0
+  ) {
+    return;
+  }
+
+  const updateRule =
+    String(
+      rows[0]?.update_rule ||
+      ""
+    ).toUpperCase();
+
+  if (
+    updateRule !==
+    "CASCADE"
+  ) {
+    return;
+  }
+
+  /*
+   * MySQL 8.x does not allow ON UPDATE CASCADE
+   * when employee_id is referenced by the stored
+   * generated column active_employee_id_guard.
+   *
+   * Employee primary-key IDs are immutable in the
+   * application, so RESTRICT preserves the intended
+   * relationship while remaining MySQL-compatible.
+   */
+  await connection.query(
+    `
+    ALTER TABLE deployment_assignments
+      DROP FOREIGN KEY
+        fk_deployment_assignments_employee,
+      ADD CONSTRAINT
+        fk_deployment_assignments_employee
+        FOREIGN KEY (employee_id)
+        REFERENCES employees(id)
+        ON UPDATE RESTRICT
+        ON DELETE RESTRICT
+    `
+  );
 }
 
 function getMigrationPath(
@@ -2044,8 +2242,17 @@ async function runMigrations() {
     false;
 
   try {
+    const databaseFamily =
+      await getDatabaseFamily(
+        connection
+      );
+
     console.log(
       "WELLJOB HRIS database migrations"
+    );
+
+    console.log(
+      `Database engine: ${databaseFamily}`
     );
 
     console.log(
@@ -2082,11 +2289,20 @@ async function runMigrations() {
         MIGRATIONS
     ) {
       const {
-        sql,
+        sql:
+          repositorySql,
+
         checksum,
       } =
         readMigration(
           migration.name
+        );
+
+      const executableSql =
+        normalizeMigrationSqlForTarget(
+          migration.name,
+          repositorySql,
+          databaseFamily
         );
 
       const recordedMigration =
@@ -2189,6 +2405,16 @@ async function runMigrations() {
         );
       }
 
+      if (
+        typeof migration.prepare ===
+        "function"
+      ) {
+        await migration.prepare(
+          connection,
+          databaseFamily
+        );
+      }
+
       console.log(
         `APPLY   ${migration.name}`
       );
@@ -2203,7 +2429,7 @@ async function runMigrations() {
        * verified successfully.
        */
       await connection.query(
-        sql
+        executableSql
       );
 
       const verificationChecker =

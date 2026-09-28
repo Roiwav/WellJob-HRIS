@@ -47,6 +47,7 @@ const REQUIRED_APPLICATION_TABLES = [
   "smart_suggestion_states",
   "client_companies",
   "company_positions",
+  "password_reset_requests",
 ];
 
 const REQUIRED_SYSTEM_TABLES = [
@@ -65,6 +66,8 @@ const EXPECTED_MIGRATIONS = [
   "add_hr_coordinator_scope.sql",
   "add_company_position_master_data.sql",
   "add_user_email_password_reset.sql",
+  "add_password_reset_approval_requests.sql",
+  "add_account_credentials_delivery_status.sql",
 ];
 
 function requiredEnv(
@@ -136,7 +139,64 @@ function getDatabaseName() {
   return databaseName;
 }
 
+function getDatabaseSslOptions(
+  host
+) {
+  const encodedCertificate =
+    String(
+      process.env
+        .DB_SSL_CA_BASE64 ??
+      ""
+    ).trim();
+
+  if (
+    !encodedCertificate
+  ) {
+    return undefined;
+  }
+
+  const caCertificate =
+    Buffer.from(
+      encodedCertificate,
+      "base64"
+    ).toString(
+      "utf8"
+    );
+
+  if (
+    !caCertificate.includes(
+      "-----BEGIN CERTIFICATE-----"
+    ) ||
+    !caCertificate.includes(
+      "-----END CERTIFICATE-----"
+    )
+  ) {
+    throw new Error(
+      "DB_SSL_CA_BASE64 must contain a valid Base64-encoded PEM certificate."
+    );
+  }
+
+  return {
+    ca:
+      caCertificate,
+
+    rejectUnauthorized:
+      true,
+
+    minVersion:
+      "TLSv1.2",
+
+    servername:
+      host,
+  };
+}
+
 function getConnectionOptions() {
+  const host =
+    requiredEnv(
+      "DB_HOST"
+    );
+
   const port =
     Number.parseInt(
       requiredEnv(
@@ -158,10 +218,7 @@ function getConnectionOptions() {
   }
 
   return {
-    host:
-      requiredEnv(
-        "DB_HOST"
-      ),
+    host,
 
     port,
 
@@ -178,7 +235,93 @@ function getConnectionOptions() {
             true,
         }
       ),
+
+    ssl:
+      getDatabaseSslOptions(
+        host
+      ),
+
+    connectTimeout:
+      15000,
   };
+}
+
+async function getDatabaseFamily(
+  connection
+) {
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        VERSION() AS version,
+        @@version_comment AS version_comment
+      `
+    );
+
+  const version =
+    String(
+      rows[0]?.version ||
+      ""
+    );
+
+  const versionComment =
+    String(
+      rows[0]?.version_comment ||
+      ""
+    );
+
+  const identity =
+    `${version} ${versionComment}`
+      .toLowerCase();
+
+  return identity.includes(
+    "mariadb"
+  )
+    ? "mariadb"
+    : "mysql";
+}
+
+function normalizeBaselineSqlForTarget(
+  baselineSql,
+  databaseFamily
+) {
+  if (
+    databaseFamily !==
+    "mysql"
+  ) {
+    return baselineSql;
+  }
+
+  /*
+   * MySQL 8.x rejects ON UPDATE CASCADE when the
+   * foreign-key base column is referenced by a
+   * stored generated column.
+   *
+   * deployment_assignments.active_employee_id_guard
+   * is generated from employee_id, so the canonical
+   * Aiven/MySQL form uses ON UPDATE RESTRICT for this
+   * one foreign key. Business rows and identifiers
+   * are unchanged.
+   */
+  const pattern =
+    /(CONSTRAINT\s+fk_deployment_assignments_employee[\s\S]*?REFERENCES\s+employees\s*\(\s*id\s*\)[\s\S]*?ON\s+UPDATE\s+)CASCADE/i;
+
+  const normalized =
+    baselineSql.replace(
+      pattern,
+      "$1RESTRICT"
+    );
+
+  if (
+    normalized ===
+    baselineSql
+  ) {
+    throw new Error(
+      "Unable to apply the required MySQL compatibility normalization to baseline.sql."
+    );
+  }
+
+  return normalized;
 }
 
 function readBaselineSql() {
@@ -1480,7 +1623,7 @@ async function main() {
   const connectionOptions =
     getConnectionOptions();
 
-  const baselineSql =
+  const rawBaselineSql =
     readBaselineSql();
 
   let adminConnection =
@@ -1505,6 +1648,21 @@ async function main() {
     adminConnection =
       await mysql.createConnection(
         connectionOptions
+      );
+
+    const databaseFamily =
+      await getDatabaseFamily(
+        adminConnection
+      );
+
+    console.log(
+      `Database engine: ${databaseFamily}`
+    );
+
+    const baselineSql =
+      normalizeBaselineSqlForTarget(
+        rawBaselineSql,
+        databaseFamily
       );
 
     await adminConnection.query(
