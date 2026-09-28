@@ -17,6 +17,9 @@ require("dotenv").config({
 const app =
   require("./app");
 
+const db =
+  require("./config/db");
+
 
 const {
   initChatSocket,
@@ -31,15 +34,14 @@ const {
  * LOCAL / TEMPORARY RENDER PERSISTENT RUNTIME
  * ==================================================
  *
- * This file retains the current persistent HTTP +
- * Socket.IO architecture for:
+ * This launcher remains responsible for:
  *
- * - local development
+ * - local npm start
  * - temporary Render fallback
+ * - current Socket.IO server
  *
- * Vercel executes the exported Express app without
- * requiring this process to own a permanent TCP
- * listener.
+ * Vercel uses app.js directly and therefore does not
+ * execute this persistent listener.
  */
 
 
@@ -49,6 +51,7 @@ function getServerPort() {
       process.env.PORT,
       10
     );
+
 
   if (
     !Number.isInteger(
@@ -62,13 +65,21 @@ function getServerPort() {
     );
   }
 
+
   return port;
 }
 
 
-function startPersistentServer() {
+/*
+ * ==================================================
+ * START PERSISTENT SERVER
+ * ==================================================
+ */
+
+async function startPersistentServer() {
   const port =
     getServerPort();
+
 
   const frontendOrigin =
     String(
@@ -76,6 +87,7 @@ function startPersistentServer() {
         .FRONTEND_ORIGIN ||
       ""
     ).trim();
+
 
   if (
     !frontendOrigin
@@ -86,14 +98,25 @@ function startPersistentServer() {
   }
 
 
+  /*
+   * Persistent deployments verify Aiven before
+   * opening the HTTP listener.
+   *
+   * app.js itself performs no startup connection
+   * probe, keeping Vercel imports serverless-safe.
+   */
+  await db.verifyConnection();
+
+
+  console.log(
+    "Database connection verified."
+  );
+
+
   const server =
     app.listen(
       port,
       () => {
-        console.log(
-          "Database connection verified."
-        );
-
         console.log(
           `Server running on port ${port}`
         );
@@ -120,24 +143,34 @@ function startPersistentServer() {
 
 
 /*
- * node server.js / npm start
- *
- * Start persistent runtime.
+ * ==================================================
+ * DIRECT EXECUTION
+ * ==================================================
  */
+
 if (
   require.main ===
   module
 ) {
-  startPersistentServer();
+  startPersistentServer()
+    .catch(
+      (error) => {
+        console.error(
+          "SERVER STARTUP FAILED:",
+          error
+        );
+
+        process.exitCode =
+          1;
+      }
+    );
 }
 
 
 /*
- * Export the Express application as well.
- *
- * This keeps server.js safe if a deployment/runtime
- * imports it rather than executing it directly.
+ * Keep server.js import-safe.
  */
+
 module.exports =
   app;
 

@@ -1,10 +1,26 @@
-const mysql = require("mysql2");
+﻿const mysql =
+  require("mysql2");
 
-function getRequiredEnv(name, { allowEmpty = false } = {}) {
-  const exists = Object.prototype.hasOwnProperty.call(
-    process.env,
-    name
-  );
+
+/*
+ * ==================================================
+ * REQUIRED ENVIRONMENT HELPER
+ * ==================================================
+ */
+
+function getRequiredEnv(
+  name,
+  {
+    allowEmpty = false,
+  } = {}
+) {
+  const exists =
+    Object.prototype
+      .hasOwnProperty
+      .call(
+        process.env,
+        name
+      );
 
   if (!exists) {
     throw new Error(
@@ -12,31 +28,76 @@ function getRequiredEnv(name, { allowEmpty = false } = {}) {
     );
   }
 
-  const value = String(process.env[name] ?? "").trim();
 
-  if (!allowEmpty && !value) {
+  const value =
+    String(
+      process.env[
+        name
+      ] ??
+      ""
+    ).trim();
+
+
+  if (
+    !allowEmpty &&
+    !value
+  ) {
     throw new Error(
       `Missing required environment variable: ${name}`
     );
   }
 
+
   return value;
 }
 
-const dbHost = getRequiredEnv("DB_HOST");
-const dbPortRaw = getRequiredEnv("DB_PORT");
-const dbUser = getRequiredEnv("DB_USER");
 
-const dbPassword = getRequiredEnv("DB_PASSWORD", {
-  allowEmpty: true,
-});
+/*
+ * ==================================================
+ * DATABASE ENVIRONMENT
+ * ==================================================
+ */
 
-const dbName = getRequiredEnv("DB_NAME");
+const dbHost =
+  getRequiredEnv(
+    "DB_HOST"
+  );
 
-const dbPort = Number(dbPortRaw);
+const dbPortRaw =
+  getRequiredEnv(
+    "DB_PORT"
+  );
+
+const dbUser =
+  getRequiredEnv(
+    "DB_USER"
+  );
+
+const dbPassword =
+  getRequiredEnv(
+    "DB_PASSWORD",
+    {
+      allowEmpty:
+        true,
+    }
+  );
+
+const dbName =
+  getRequiredEnv(
+    "DB_NAME"
+  );
+
+
+const dbPort =
+  Number(
+    dbPortRaw
+  );
+
 
 if (
-  !Number.isInteger(dbPort) ||
+  !Number.isInteger(
+    dbPort
+  ) ||
   dbPort <= 0 ||
   dbPort > 65535
 ) {
@@ -45,34 +106,103 @@ if (
   );
 }
 
+
+/*
+ * ==================================================
+ * CONNECTION POOL LIMIT
+ * ==================================================
+ *
+ * Render/local keeps the historical default of 10.
+ *
+ * Vercel will later receive an explicit lower
+ * DB_CONNECTION_LIMIT environment value so multiple
+ * Fluid Compute instances do not each reserve an
+ * unnecessarily large MySQL pool.
+ *
+ * No deployment-specific value is hard-coded here.
+ */
+
+function getConnectionLimit() {
+  const rawValue =
+    String(
+      process.env
+        .DB_CONNECTION_LIMIT ??
+      ""
+    ).trim();
+
+
+  if (!rawValue) {
+    return 10;
+  }
+
+
+  const value =
+    Number.parseInt(
+      rawValue,
+      10
+    );
+
+
+  if (
+    !Number.isInteger(
+      value
+    ) ||
+    value <= 0 ||
+    value > 100
+  ) {
+    throw new Error(
+      "DB_CONNECTION_LIMIT must be an integer between 1 and 100."
+    );
+  }
+
+
+  return value;
+}
+
+
+const connectionLimit =
+  getConnectionLimit();
+
+
 /*
  * ==================================================
  * OPTIONAL DATABASE SSL CONFIGURATION
  * ==================================================
  *
  * Local XAMPP:
- *   Leave DB_SSL_CA_BASE64 unset.
+ * DB_SSL_CA_BASE64 may remain unset.
  *
- * Aiven MySQL:
- *   Set DB_SSL_CA_BASE64 to the Base64-encoded
- *   CA certificate in the hosting environment.
+ * Aiven:
+ * Store the Base64-encoded CA certificate in the
+ * deployment environment.
  *
- * Never disable SSL certificate verification.
+ * Certificate verification remains enabled.
  */
 
 function getDatabaseSslOptions() {
-  const encodedCertificate = String(
-    process.env.DB_SSL_CA_BASE64 ?? ""
-  ).trim();
+  const encodedCertificate =
+    String(
+      process.env
+        .DB_SSL_CA_BASE64 ??
+      ""
+    ).trim();
 
-  if (!encodedCertificate) {
+
+  if (
+    !encodedCertificate
+  ) {
     return undefined;
   }
 
-  const caCertificate = Buffer.from(
-    encodedCertificate,
-    "base64"
-  ).toString("utf8");
+
+  const caCertificate =
+    Buffer.from(
+      encodedCertificate,
+      "base64"
+    ).toString(
+      "utf8"
+    );
+
 
   if (
     !caCertificate.includes(
@@ -87,60 +217,119 @@ function getDatabaseSslOptions() {
     );
   }
 
+
   return {
-    ca: caCertificate,
-    rejectUnauthorized: true,
-    minVersion: "TLSv1.2",
-    servername: dbHost,
+    ca:
+      caCertificate,
+
+    rejectUnauthorized:
+      true,
+
+    minVersion:
+      "TLSv1.2",
+
+    servername:
+      dbHost,
   };
 }
+
 
 /*
  * ==================================================
  * MYSQL CONNECTION POOL
  * ==================================================
+ *
+ * mysql2 creates the pool synchronously but opens
+ * actual MySQL connections only when a query or
+ * getConnection operation requires one.
+ *
+ * This is suitable for a reusable Express module:
+ *
+ * - cold import does not perform a DB probe
+ * - warm instances may reuse the same pool
+ * - individual routes continue using the exact same
+ *   db.query(), db.promise(), transaction APIs
  */
 
-const db = mysql.createPool({
-  host: dbHost,
-  port: dbPort,
-  user: dbUser,
-  password: dbPassword,
-  database: dbName,
+const db =
+  mysql.createPool({
+    host:
+      dbHost,
 
-  ssl: getDatabaseSslOptions(),
+    port:
+      dbPort,
 
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
+    user:
+      dbUser,
+
+    password:
+      dbPassword,
+
+    database:
+      dbName,
+
+    ssl:
+      getDatabaseSslOptions(),
+
+    waitForConnections:
+      true,
+
+    connectionLimit,
+
+    queueLimit:
+      0,
+
+    enableKeepAlive:
+      true,
+
+    keepAliveInitialDelay:
+      0,
+  });
+
 
 /*
  * ==================================================
- * INITIAL CONNECTION CHECK
+ * EXPLICIT CONNECTION VERIFICATION
  * ==================================================
+ *
+ * Do not call this automatically during module load.
+ *
+ * Traditional persistent server startup may call it
+ * deliberately before accepting HTTP requests.
+ *
+ * Vercel Functions will instead connect lazily when
+ * a route actually executes a database operation.
  */
 
-db.getConnection((err, connection) => {
-  if (err) {
-    /*
-     * Log technical database errors on the
-     * backend only. Never return database
-     * credentials or connection details
-     * through an API response.
-     */
+async function verifyDatabaseConnection() {
+  const connection =
+    await db
+      .promise()
+      .getConnection();
 
-    console.error(
-      "Database connection failed:",
-      err
+
+  try {
+    await connection.query(
+      "SELECT 1"
     );
 
-    return;
+    return true;
+  } finally {
+    connection.release();
   }
+}
 
-  console.log("MySQL Connected");
 
-  connection.release();
-});
+/*
+ * Preserve the existing mysql2 Pool export so every
+ * current controller/service continues working.
+ *
+ * Attach one additive helper for server startup.
+ */
 
-module.exports = db;
+db.verifyConnection =
+  verifyDatabaseConnection;
+
+
+module.exports =
+  db;
