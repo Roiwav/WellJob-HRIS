@@ -40,6 +40,10 @@ import {
   normalizeEvidenceFiles,
 } from "../utils/incidents/evidenceFiles";
 
+import {
+  prepareIncidentWorkflowDirectUploads,
+} from "../utils/incidents/incidentDirectUpload";
+
 const INCIDENT_API_URL =
   `${API_BASE}/incidents`;
 
@@ -2063,7 +2067,6 @@ export default function Incidents() {
         auditAction,
         successTitle,
         successMessage,
-        formData,
       }) => {
         const workflowAction =
           String(
@@ -2139,40 +2142,33 @@ export default function Incidents() {
                 method:
                   "PATCH",
 
-                ...(formData
-                  ? {
-                      body:
-                        formData,
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+
+                body:
+                  JSON.stringify(
+                    {
+                      ...payload,
+
+                      workflowAction:
+                        payload.workflowAction,
+
+                      userId:
+                        user?.userId ||
+                        user?.id,
+
+                      username:
+                        user?.username,
+
+                      fullName:
+                        actorFullName,
+
+                      role:
+                        user?.role,
                     }
-                  : {
-                      headers: {
-                        "Content-Type":
-                          "application/json",
-                      },
-
-                      body:
-                        JSON.stringify(
-                          {
-                            ...payload,
-
-                            workflowAction:
-                              payload.workflowAction,
-
-                            userId:
-                              user?.userId ||
-                              user?.id,
-
-                            username:
-                              user?.username,
-
-                            fullName:
-                              actorFullName,
-
-                            role:
-                              user?.role,
-                          }
-                        ),
-                    }),
+                  ),
               }
             );
 
@@ -2517,7 +2513,8 @@ export default function Incidents() {
       resolutionData
     ) => {
       if (
-        !canInvestigate
+        !canInvestigate ||
+        !incident
       ) {
         return false;
       }
@@ -2531,79 +2528,48 @@ export default function Incidents() {
               .proofFiles
           : [];
 
-      const validFiles =
-        proofFiles.filter(
-          (
-            item
-          ) =>
-            item?.file instanceof
-              File &&
-            !item?.error
+      /*
+       * ==================================================
+       * VERCEL-SAFE INCIDENT EVIDENCE
+       * ==================================================
+       *
+       * Binary:
+       * Browser -> Supabase
+       *
+       * Final workflow request:
+       * Browser -> WELLJOB backend
+       * JSON metadata + signed descriptors only
+       */
+      let directUploads;
+
+      try {
+        directUploads =
+          await prepareIncidentWorkflowDirectUploads({
+            incidentId:
+              incident.id,
+
+            workflowAction:
+              "SUBMIT_RESOLUTION",
+
+            proofFiles,
+          });
+      } catch (
+        error
+      ) {
+        console.error(
+          "Incident evidence direct upload error:",
+          error
         );
 
-      const formData =
-        new FormData();
+        showNotice(
+          "error",
+          "Evidence Upload Failed",
+          error?.message ||
+            "The proof files could not be uploaded. Please try again."
+        );
 
-      formData.append(
-        "status",
-        "For Review"
-      );
-
-      formData.append(
-        "workflowAction",
-        "SUBMIT_RESOLUTION"
-      );
-
-      formData.append(
-        "actionTaken",
-        resolutionData.actionTaken
-      );
-
-      formData.append(
-        "resolutionNotes",
-        resolutionData.remarks
-      );
-
-      formData.append(
-        "recommendation",
-        incident.recommendation ||
-          ""
-      );
-
-      formData.append(
-        "userId",
-        user?.userId ||
-          user?.id ||
-          ""
-      );
-
-      formData.append(
-        "username",
-        user?.username ||
-          ""
-      );
-
-      formData.append(
-        "fullName",
-        actorFullName
-      );
-
-      formData.append(
-        "role",
-        user?.role ||
-          ""
-      );
-
-      validFiles.forEach(
-        (
-          item
-        ) =>
-          formData.append(
-            "evidenceFiles",
-            item.file,
-            item.name
-          )
-      );
+        return false;
+      }
 
       const updatedIncident =
         normalizeIncidentWithRules(
@@ -2673,9 +2639,9 @@ export default function Incidents() {
             recommendation:
               incident.recommendation ||
               "",
-          },
 
-          formData,
+            directUploads,
+          },
 
           auditAction:
             "SUBMIT_RESOLUTION",
