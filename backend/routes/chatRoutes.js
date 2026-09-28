@@ -1,13 +1,17 @@
 /** WELLJOB Messenger: direct chats, groups, activity notices and private PDF batches. */
 const express = require('express');
 const db = require('../config/db');
-const multer = require('multer');
-const path = require('node:path');
-const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { chatAuth, isChatRole, normalizeRole } = require('../middleware/chatAuth');
 const { config, col, table, userSelect } = require('../config/chatConfig');
 const { publishToUsers } = require('../services/chatSocket');
+const {
+  createSignedUploadUrl,
+  createSignedDownloadUrl,
+  downloadBuffer,
+  removeObject,
+  isStorageNotFoundError,
+} = require('../services/storageService');
 
 const router = express.Router();
 router.use(chatAuth);
@@ -17,7 +21,6 @@ const MAX_FILES = 30;
 const MESSAGE_LIMIT = 2000;
 const PAGE_SIZE = 50;
 const MAX_GROUP_MEMBERS = 30;
-const PRIVATE_FOLDER = path.resolve(__dirname, '../private_chat_uploads');
 
 function httpError(status, message) { return Object.assign(new Error(message), { status }); }
 function fail(res, status, message) { return res.status(status).json({ error: message }); }
@@ -48,8 +51,9 @@ function userDto(u) {
     role: normalizeRole(u.role), avatarFilename: u.avatarFilename || null, avatarUrl: null };
 }
 function safeFilename(name) {
-  return path.basename(String(name || 'attachment.pdf').replace(/\\/g, '/'))
-    .replace(/[\x00-\x1f\x7f"<>:|?*]/g, '_').slice(0, 240) || 'attachment.pdf';
+  const normalized = String(name || 'attachment.pdf').replace(/\\/g, '/');
+  const basename = normalized.split('/').pop() || 'attachment.pdf';
+  return basename.replace(/[\x00-\x1f\x7f"<>:|?*]/g, '_').slice(0, 240) || 'attachment.pdf';
 }
 function validPdf(buf) {
   return Buffer.isBuffer(buf) && buf.length > 0 && buf.length <= MAX_BATCH_BYTES &&
@@ -57,46 +61,163 @@ function validPdf(buf) {
     buf.subarray(Math.max(0, buf.length - 2048)).toString('latin1').includes('%%EOF');
 }
 
-/** Bounded *combined* memory buffering, including chunked multipart requests. */
-const boundedStorage = {
-  _handleFile(req, file, callback) {
-    const chunks = [];
-    let size = 0;
-    let completed = false;
-    function finish(error, result) {
-      if (completed) return;
-      completed = true;
-      callback(error, result);
+const CHAT_ATTACHMENT_PREFIX = 'chat/attachments';
+const CHAT_UPLOAD_DESCRIPTOR_VERSION = 1;
+const CHAT_UPLOAD_TTL_MS = 10 * 60 * 1000;
+const CHAT_UPLOAD_CLEANUP_GRACE_MS = 24 * 60 * 60 * 1000;
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function chatAttachmentObjectPath(storageName) {
+  if (!UUID_V4_PATTERN.test(String(storageName || ''))) {
+    throw httpError(400, 'Invalid attachment storage identity.');
+  }
+  return `${CHAT_ATTACHMENT_PREFIX}/${storageName}`;
+}
+function chatUploadSecret() {
+  const secret = String(process.env.JWT_SECRET || '').trim();
+  if (!secret) throw new Error('JWT_SECRET is required for Messenger upload authorization.');
+  return secret;
+}
+function signChatUploadDescriptor(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const signature = crypto.createHmac('sha256', chatUploadSecret())
+    .update(`welljob-chat-upload-v1.${encoded}`)
+    .digest('base64url');
+  return `${encoded}.${signature}`;
+}
+function verifyChatUploadDescriptor(rawDescriptor, userId, selection, { allowExpired = false } = {}) {
+  if (typeof rawDescriptor !== 'string' || rawDescriptor.length < 20 || rawDescriptor.length > 4096) {
+    throw httpError(400, 'Invalid Messenger upload authorization.');
+  }
+  const parts = rawDescriptor.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw httpError(400, 'Invalid Messenger upload authorization.');
+  }
+  const expected = crypto.createHmac('sha256', chatUploadSecret())
+    .update(`welljob-chat-upload-v1.${parts[0]}`)
+    .digest();
+  let received;
+  try { received = Buffer.from(parts[1], 'base64url'); }
+  catch { throw httpError(400, 'Invalid Messenger upload authorization.'); }
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) {
+    throw httpError(400, 'Invalid Messenger upload authorization.');
+  }
+  let payload;
+  try { payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')); }
+  catch { throw httpError(400, 'Invalid Messenger upload authorization.'); }
+
+  const descriptorUserId = id(payload?.uid);
+  const descriptorConversationId = id(payload?.cid);
+  const size = Number(payload?.size);
+  const expiresAt = Number(payload?.exp);
+  const storageName = String(payload?.storageName || '').trim();
+  const originalName = safeFilename(payload?.name);
+
+  if (
+    Number(payload?.v) !== CHAT_UPLOAD_DESCRIPTOR_VERSION ||
+    descriptorUserId !== userId ||
+    payload?.kind !== selection.kind ||
+    descriptorConversationId !== selection.value ||
+    !UUID_V4_PATTERN.test(storageName) ||
+    !Number.isSafeInteger(size) ||
+    size <= 0 ||
+    size > MAX_BATCH_BYTES ||
+    String(payload?.mime || '') !== 'application/pdf' ||
+    !Number.isSafeInteger(expiresAt)
+  ) {
+    throw httpError(400, 'Messenger upload authorization does not match this request.');
+  }
+
+  if (!allowExpired && Date.now() > expiresAt) {
+    throw httpError(410, 'Messenger upload authorization expired. Please choose the PDFs again.');
+  }
+
+  if (allowExpired && Date.now() - expiresAt > CHAT_UPLOAD_CLEANUP_GRACE_MS) {
+    throw httpError(410, 'Messenger upload cleanup authorization expired.');
+  }
+
+  return { storageName, originalName, size, expiresAt };
+}
+function validateUploadMetadata(rawFiles) {
+  if (!Array.isArray(rawFiles) || rawFiles.length < 1 || rawFiles.length > MAX_FILES) {
+    throw httpError(400, 'Choose 1–30 PDF files.');
+  }
+  const files = rawFiles.map((file, index) => {
+    if (!file || typeof file !== 'object' || Array.isArray(file)) {
+      throw httpError(400, `Invalid PDF metadata at item ${index + 1}.`);
     }
-    file.stream.on('data', chunk => {
-      if (completed) return;
-      size += chunk.length;
-      req.chatUploadBytes = (req.chatUploadBytes || 0) + chunk.length;
-      if (req.chatUploadBytes > MAX_BATCH_BYTES) {
-        file.stream.resume();
-        finish(httpError(413, 'Combined PDF size must not exceed 15 MB.'));
-        return;
+    const originalName = safeFilename(file.name || file.originalName);
+    const size = Number(file.size);
+    const mime = String(file.type || file.mimeType || 'application/pdf').trim().toLowerCase();
+    if (
+      !originalName.toLowerCase().endsWith('.pdf') ||
+      (mime && mime !== 'application/pdf') ||
+      !Number.isSafeInteger(size) ||
+      size <= 0 ||
+      size > MAX_BATCH_BYTES
+    ) {
+      throw httpError(400, 'Every attachment must be a valid PDF with a positive file size.');
+    }
+    return { originalName, size };
+  });
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+  if (total > MAX_BATCH_BYTES) {
+    throw httpError(413, 'Combined PDF size must not exceed 15 MB.');
+  }
+  return files;
+}
+async function removeUnreferencedChatObjects(storageNames) {
+  const unique = [...new Set(storageNames.filter(name => UUID_V4_PATTERN.test(String(name || ''))))];
+  for (const storageName of unique) {
+    try {
+      const [rows] = await sql.query(
+        'SELECT 1 FROM chat_attachments WHERE storage_name=? LIMIT 1',
+        [storageName]
+      );
+      if (rows.length) continue;
+      await removeObject(chatAttachmentObjectPath(storageName));
+    } catch (error) {
+      if (!isStorageNotFoundError(error)) {
+        console.error('CHAT ATTACHMENT CLEANUP ERROR:', {
+          storageName,
+          message: error?.message || error,
+        });
       }
-      chunks.push(chunk);
-    });
-    file.stream.on('error', error => finish(error));
-    file.stream.on('end', () => {
-      if (!completed) finish(null, { buffer: Buffer.concat(chunks, size), size });
-    });
-  },
-  _removeFile(req, file, callback) { delete file.buffer; callback(null); },
-};
-const upload = multer({
-  storage: boundedStorage,
-  limits: { fileSize: MAX_BATCH_BYTES, files: MAX_FILES, fields: 1, parts: MAX_FILES + 1 },
-  fileFilter(req, file, cb) {
-    if (path.extname(file.originalname || '').toLowerCase() !== '.pdf' ||
-        (file.mimetype && file.mimetype !== 'application/pdf')) {
-      return cb(httpError(400, 'Only PDF attachments are allowed.'));
     }
-    cb(null, true);
-  },
-}).fields([{ name: 'files', maxCount: MAX_FILES }, { name: 'file', maxCount: 1 }]);
+  }
+}
+async function validateDirectUploadDescriptors(rawUploads, userId, selection, options = {}) {
+  if (!Array.isArray(rawUploads) || rawUploads.length < 1 || rawUploads.length > MAX_FILES) {
+    throw httpError(400, 'Choose 1–30 authorized PDF uploads.');
+  }
+  const files = rawUploads.map(item =>
+    verifyChatUploadDescriptor(item?.descriptor, userId, selection, options)
+  );
+  const names = files.map(file => file.storageName);
+  if (new Set(names).size !== names.length) {
+    throw httpError(400, 'Duplicate Messenger upload authorization.');
+  }
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+  if (total > MAX_BATCH_BYTES) {
+    throw httpError(413, 'Combined PDF size must not exceed 15 MB.');
+  }
+  return files;
+}
+async function verifyStoredChatUploads(files) {
+  for (const file of files) {
+    const [usedRows] = await sql.query(
+      'SELECT 1 FROM chat_attachments WHERE storage_name=? LIMIT 1',
+      [file.storageName]
+    );
+    if (usedRows.length) {
+      throw httpError(409, 'One of these PDF uploads has already been finalized.');
+    }
+    const buffer = await downloadBuffer(chatAttachmentObjectPath(file.storageName));
+    if (buffer.length !== file.size || !validPdf(buffer)) {
+      throw httpError(400, 'A stored Messenger attachment failed PDF verification.');
+    }
+  }
+}
 
 async function findUser(userId, conn = sql) {
   const [rows] = await conn.query(`SELECT ${userSelect('u')},u.${col('status')} AS accountStatus,u.${col('assigned_company')} AS assignedCompany FROM ${table} u WHERE u.${col(config.userIdColumn)}=? LIMIT 1`, [userId]);
@@ -113,6 +234,22 @@ async function membership(groupIdValue, userId, conn = sql) {
 async function groupUsers(groupIdValue, conn = sql) {
   const [rows] = await conn.query('SELECT user_id FROM chat_group_members WHERE group_id=?', [groupIdValue]);
   return rows.map(row => Number(row.user_id));
+}
+async function authorizeSend(selection, senderId, conn = sql) {
+  if (selection.kind === 'group') {
+    const member = await membership(selection.value, senderId, conn);
+    if (!member) throw httpError(403, 'You are not a member of this group.');
+    return { receiver: null };
+  }
+  const conversation = await direct(selection.value, senderId, conn);
+  if (!conversation) throw httpError(404, 'Conversation not found.');
+  const receiver = Number(conversation.user1_id) === senderId
+    ? Number(conversation.user2_id)
+    : Number(conversation.user1_id);
+  if (!eligible(await findUser(receiver, conn))) {
+    throw httpError(403, 'Recipient is unavailable.');
+  }
+  return { receiver };
 }
 async function emit(users, eventName, payload) {
   try { await publishToUsers(users, eventName, payload); }
@@ -170,7 +307,6 @@ async function notifyGroupChange(groupIdValue, recipients, notice) {
 
 async function saveMessage(selection, senderId, body, files = []) {
   const conn = await sql.getConnection();
-  const writtenPaths = [];
   try {
     await conn.beginTransaction();
     let receiver = null;
@@ -179,34 +315,37 @@ async function saveMessage(selection, senderId, body, files = []) {
       if (!locked.length) throw httpError(404, 'Group not found.');
       if (!await membership(selection.value, senderId, conn)) throw httpError(403, 'You are not a member of this group.');
     } else {
-      const conversation = await direct(selection.value, senderId, conn);
-      if (!conversation) throw httpError(404, 'Conversation not found.');
-      receiver = Number(conversation.user1_id) === senderId ? Number(conversation.user2_id) : Number(conversation.user1_id);
-      if (!eligible(await findUser(receiver, conn))) throw httpError(403, 'Recipient is unavailable.');
+      const access = await authorizeSend(selection, senderId, conn);
+      receiver = access.receiver;
     }
     const target = selection.kind === 'group' ? 'chat_group_messages' : 'chat_messages';
     const foreignKey = selection.kind === 'group' ? 'group_id' : 'conversation_id';
-    const [insert] = await conn.query(`INSERT INTO ${target}(${foreignKey},sender_id,body) VALUES(?,?,?)`, [selection.value, senderId, body]);
-    if (files.length) {
-      await fs.mkdir(PRIVATE_FOLDER, { recursive: true, mode: 0o700 });
-      for (const file of files) {
-        const storageName = crypto.randomUUID();
-        const disk = path.join(PRIVATE_FOLDER, storageName);
-        await fs.writeFile(disk, file.buffer, { flag: 'wx', mode: 0o600 });
-        writtenPaths.push(disk);
-        await conn.query('INSERT INTO chat_attachments(conversation_type,message_id,storage_name,original_name,byte_size) VALUES(?,?,?,?,?)', [selection.kind, insert.insertId, storageName, safeFilename(file.originalname), file.size]);
-      }
+    const [insert] = await conn.query(
+      `INSERT INTO ${target}(${foreignKey},sender_id,body) VALUES(?,?,?)`,
+      [selection.value, senderId, body]
+    );
+    for (const file of files) {
+      await conn.query(
+        'INSERT INTO chat_attachments(conversation_type,message_id,storage_name,original_name,byte_size) VALUES(?,?,?,?,?)',
+        [selection.kind, insert.insertId, file.storageName, file.originalName, file.size]
+      );
     }
-    await conn.query(`UPDATE ${selection.kind === 'group' ? 'chat_groups' : 'chat_conversations'} SET updated_at=CURRENT_TIMESTAMP(3) WHERE id=?`, [selection.value]);
-    const users = selection.kind === 'group' ? await groupUsers(selection.value, conn) : [senderId, receiver];
+    await conn.query(
+      `UPDATE ${selection.kind === 'group' ? 'chat_groups' : 'chat_conversations'} SET updated_at=CURRENT_TIMESTAMP(3) WHERE id=?`,
+      [selection.value]
+    );
+    const users = selection.kind === 'group'
+      ? await groupUsers(selection.value, conn)
+      : [senderId, receiver];
     const message = await fetchMessage(selection.kind, insert.insertId, conn);
     await conn.commit();
     return { users, message };
   } catch (error) {
     await conn.rollback();
-    await Promise.all(writtenPaths.map(file => fs.unlink(file).catch(() => {})));
     throw error;
-  } finally { conn.release(); }
+  } finally {
+    conn.release();
+  }
 }
 async function notifySaved(saved, req) {
   await emit(saved.users, 'chat:message', { message: saved.message,
@@ -415,29 +554,96 @@ router.post('/conversations/:id/messages', async (req, res) => {
     await notifySaved(saved, req);
   } catch (e) { serverError(res, e); }
 });
-router.post('/conversations/:id/attachments', (req, res) => {
+router.post('/conversations/:id/attachments/authorize', async (req, res) => {
+  const selection = selectedConversation(req.params.id);
+  const body = cleanBody(req.body?.body);
+  if (!selection) return fail(res, 400, 'Invalid conversation.');
+  if (body.length > MESSAGE_LIMIT) return fail(res, 400, 'Message must contain at most 2000 characters.');
+
+  try {
+    const files = validateUploadMetadata(req.body?.files);
+    await authorizeSend(selection, req.chatUser.id);
+
+    const uploads = [];
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      const storageName = crypto.randomUUID();
+      const objectPath = chatAttachmentObjectPath(storageName);
+      const authorization = await createSignedUploadUrl(objectPath, { upsert: false });
+      const descriptor = signChatUploadDescriptor({
+        v: CHAT_UPLOAD_DESCRIPTOR_VERSION,
+        uid: req.chatUser.id,
+        kind: selection.kind,
+        cid: selection.value,
+        storageName,
+        name: file.originalName,
+        size: file.size,
+        mime: 'application/pdf',
+        exp: Date.now() + CHAT_UPLOAD_TTL_MS,
+      });
+      uploads.push({
+        clientIndex: index,
+        originalName: file.originalName,
+        size: file.size,
+        signedUrl: authorization.signedUrl,
+        descriptor,
+      });
+    }
+
+    return res.json({
+      success: true,
+      uploads,
+      expiresInSeconds: Math.floor(CHAT_UPLOAD_TTL_MS / 1000),
+    });
+  } catch (e) {
+    return serverError(res, e);
+  }
+});
+
+router.post('/conversations/:id/attachments', async (req, res) => {
+  const selection = selectedConversation(req.params.id);
+  const body = cleanBody(req.body?.body);
+  if (!selection) return fail(res, 400, 'Invalid conversation.');
+  if (body.length > MESSAGE_LIMIT) return fail(res, 400, 'Message must contain at most 2000 characters.');
+
+  let files = [];
+  try {
+    files = await validateDirectUploadDescriptors(
+      req.body?.directUploads,
+      req.chatUser.id,
+      selection
+    );
+    await authorizeSend(selection, req.chatUser.id);
+    await verifyStoredChatUploads(files);
+
+    const saved = await saveMessage(selection, req.chatUser.id, body, files);
+    res.status(201).json({ message: saved.message });
+    await notifySaved(saved, req);
+  } catch (e) {
+    if (files.length) {
+      await removeUnreferencedChatObjects(files.map(file => file.storageName));
+    }
+    return serverError(res, e);
+  }
+});
+
+router.post('/conversations/:id/attachments/cleanup', async (req, res) => {
   const selection = selectedConversation(req.params.id);
   if (!selection) return fail(res, 400, 'Invalid conversation.');
-  upload(req, res, async error => {
-    if (error) {
-      const status = error.status || (error.code === 'LIMIT_FILE_SIZE' || error.code === 'LIMIT_FILE_COUNT' || error.code === 'LIMIT_PART_COUNT' ? 413 : 400);
-      return fail(res, status, error.status ? error.message : 'PDF upload exceeded the 15 MB total or file count limit.');
-    }
-    const files = [...(req.files?.files || []), ...(req.files?.file || [])];
-    const body = cleanBody(req.body?.body);
-    if (!files.length || files.length > MAX_FILES || body.length > MESSAGE_LIMIT)
-      return fail(res, 400, 'Choose PDF files and keep your message within 2000 characters.');
-    if (files.reduce((total, file) => total + file.size, 0) > MAX_BATCH_BYTES)
-      return fail(res, 413, 'Combined PDF size must not exceed 15 MB.');
-    if (files.some(file => !validPdf(file.buffer)))
-      return fail(res, 400, 'Every attachment must be a valid PDF (15 MB combined maximum).');
-    try {
-      const saved = await saveMessage(selection, req.chatUser.id, body, files);
-      res.status(201).json({ message: saved.message });
-      await notifySaved(saved, req);
-    } catch (e) { serverError(res, e); }
-  });
+  try {
+    const files = await validateDirectUploadDescriptors(
+      req.body?.directUploads,
+      req.chatUser.id,
+      selection,
+      { allowExpired: true }
+    );
+    await removeUnreferencedChatObjects(files.map(file => file.storageName));
+    return res.json({ success: true });
+  } catch (e) {
+    return serverError(res, e);
+  }
 });
+
 router.get('/attachments/:id/download', async (req, res) => {
   const attachmentId = id(req.params.id), uid = req.chatUser.id;
   if (!attachmentId) return fail(res, 400, 'Invalid attachment.');
@@ -445,27 +651,42 @@ router.get('/attachments/:id/download', async (req, res) => {
     const [rows] = await sql.query('SELECT * FROM chat_attachments WHERE id=? LIMIT 1', [attachmentId]);
     const file = rows[0];
     if (!file) return fail(res, 404, 'Attachment not found.');
+
     if (file.conversation_type === 'direct') {
       const [message] = await sql.query('SELECT conversation_id FROM chat_messages WHERE id=?', [file.message_id]);
-      if (!message[0] || !await direct(message[0].conversation_id, uid)) return fail(res, 404, 'Attachment not found.');
-    } else {
+      if (!message[0] || !await direct(message[0].conversation_id, uid)) {
+        return fail(res, 404, 'Attachment not found.');
+      }
+    } else if (file.conversation_type === 'group') {
       const [message] = await sql.query('SELECT group_id FROM chat_group_messages WHERE id=?', [file.message_id]);
       if (!message[0]) return fail(res, 404, 'Attachment not found.');
       const member = await membership(message[0].group_id, uid);
-      if (!member || BigInt(file.message_id) <= BigInt(member.joined_after_message_id)) return fail(res, 404, 'Attachment not found.');
-    }
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(file.storage_name))
+      if (!member || BigInt(file.message_id) <= BigInt(member.joined_after_message_id)) {
+        return fail(res, 404, 'Attachment not found.');
+      }
+    } else {
       return fail(res, 404, 'Attachment not found.');
-    const disk = path.join(PRIVATE_FOLDER, file.storage_name);
-    const filename = safeFilename(file.original_name);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
+
+    const storageName = String(file.storage_name || '');
+    if (!UUID_V4_PATTERN.test(storageName)) return fail(res, 404, 'Attachment not found.');
+
+    const signed = await createSignedDownloadUrl(
+      chatAttachmentObjectPath(storageName),
+      { expiresIn: 60 }
+    );
+
     res.setHeader('Cache-Control', 'private, no-store');
-    res.setHeader('Content-Security-Policy', 'sandbox');
-    res.setHeader('Content-Disposition', `attachment; filename="attachment.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`);
-    return res.sendFile(disk, e => { if (e && !res.headersSent) serverError(res, e); });
-  } catch (e) { return serverError(res, e); }
+    return res.json({
+      downloadUrl: signed.signedUrl,
+      filename: safeFilename(file.original_name),
+      expiresIn: signed.expiresIn,
+    });
+  } catch (e) {
+    return serverError(res, e);
+  }
 });
+
 router.post('/conversations/:id/read', async (req, res) => {
   const selection = selectedConversation(req.params.id), uid = req.chatUser.id;
   if (!selection) return fail(res, 400, 'Invalid conversation.');

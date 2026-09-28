@@ -1,3 +1,4 @@
+
 /**
  * ==================================================
  * WELLJOB SOLUTIONS
@@ -212,64 +213,482 @@ export async function chatApi(
   return data;
 }
 /* One chat message may contain multiple PDFs. The 15 MB cap is COMBINED. */
-export function uploadChatPdfs(conversationId, files, body = '', onProgress = () => {}) {
+function normalizeChatPdfSelection(files, body) {
   const selected = Array.from(files || []);
-  const total = selected.reduce((n, file) => n + file.size, 0);
+  const total = selected.reduce((sum, file) => sum + Number(file?.size || 0), 0);
   const maxBytes = 15 * 1024 * 1024;
-  if (!selected.length || selected.length > 30 || total > maxBytes ||
-      selected.some(file => file.size <= 0 || !file.name.toLowerCase().endsWith('.pdf') ||
-        (file.type && file.type !== 'application/pdf'))) {
-    return Promise.reject(new Error('Select 1–30 valid PDF files with a combined size of 15 MB or less.'));
+
+  if (
+    !selected.length ||
+    selected.length > 30 ||
+    total > maxBytes ||
+    selected.some(
+      (file) =>
+        !file ||
+        Number(file.size) <= 0 ||
+        !String(file.name || "").toLowerCase().endsWith(".pdf") ||
+        (file.type && file.type !== "application/pdf")
+    )
+  ) {
+    throw new Error(
+      "Select 1–30 valid PDF files with a combined size of 15 MB or less."
+    );
   }
-  if (typeof body !== 'string' || body.trim().length > 2000) {
-    return Promise.reject(new Error('Message must contain at most 2000 characters.'));
+
+  const normalizedBody =
+    typeof body === "string"
+      ? body.trim()
+      : "";
+
+  if (normalizedBody.length > 2000) {
+    throw new Error(
+      "Message must contain at most 2000 characters."
+    );
   }
-  return new Promise((resolve, reject) => {
-    const token = getChatToken();
-    if (!token) { reject(new Error('Please sign in again.')); return; }
-    const request = new XMLHttpRequest();
-    request.open('POST', `${CHAT_SERVER_URL}/api/chat/conversations/${encodeURIComponent(conversationId)}/attachments`);
-    request.setRequestHeader('Authorization', `Bearer ${token}`);
-    request.upload.onprogress = event => {
-      if (event.lengthComputable) onProgress(Math.min(100, Math.round(event.loaded / event.total * 100)));
-    };
-    request.onerror = () => reject(new Error('PDF upload failed. Check your connection.'));
-    request.onload = () => {
-      let data = {};
-      try { data = JSON.parse(request.responseText); } catch { /* API response below */ }
-      if (request.status >= 200 && request.status < 300) resolve(data);
-      else reject(new Error(data.error || data.message || `PDF upload failed (${request.status}).`));
-    };
-    const payload = new FormData();
-    for (const file of selected) payload.append('files', file, file.name);
-    if (body.trim()) payload.append('body', body.trim());
-    request.send(payload);
-  });
+
+  return {
+    selected,
+    total,
+    body:
+      normalizedBody,
+  };
+}
+
+function uploadPdfToSignedUrl(
+  signedUrl,
+  file,
+  {
+    onLoaded,
+  } = {}
+) {
+  return new Promise(
+    (
+      resolve,
+      reject
+    ) => {
+      const request =
+        new XMLHttpRequest();
+
+      request.open(
+        "PUT",
+        signedUrl
+      );
+
+      request.setRequestHeader(
+        "Content-Type",
+        "application/pdf"
+      );
+
+      request.setRequestHeader(
+        "x-upsert",
+        "false"
+      );
+
+      request.upload.onprogress =
+        (event) => {
+          if (
+            event.lengthComputable &&
+            typeof onLoaded ===
+              "function"
+          ) {
+            onLoaded(
+              event.loaded,
+              event.total
+            );
+          }
+        };
+
+      request.onerror =
+        () => {
+          reject(
+            new Error(
+              "PDF upload to private storage failed. Check your connection."
+            )
+          );
+        };
+
+      request.onload =
+        () => {
+          if (
+            request.status >= 200 &&
+            request.status < 300
+          ) {
+            resolve();
+            return;
+          }
+
+          reject(
+            new Error(
+              `PDF upload failed (${request.status}).`
+            )
+          );
+        };
+
+      request.send(
+        file
+      );
+    }
+  );
+}
+
+async function cleanupChatDirectUploads(
+  conversationId,
+  directUploads
+) {
+  if (
+    !Array.isArray(
+      directUploads
+    ) ||
+    directUploads.length === 0
+  ) {
+    return;
+  }
+
+  try {
+    await chatApi(
+      `/conversations/${encodeURIComponent(
+        conversationId
+      )}/attachments/cleanup`,
+      {
+        method:
+          "POST",
+
+        body:
+          JSON.stringify({
+            directUploads,
+          }),
+      }
+    );
+  } catch {
+    /*
+     * Cleanup is best-effort only.
+     *
+     * The backend also refuses to delete any object
+     * that is already referenced by chat_attachments.
+     */
+  }
+}
+
+export async function uploadChatPdfs(
+  conversationId,
+  files,
+  body = "",
+  onProgress = () => {}
+) {
+  const {
+    selected,
+    total,
+    body:
+      normalizedBody,
+  } =
+    normalizeChatPdfSelection(
+      files,
+      body
+    );
+
+  const authorization =
+    await chatApi(
+      `/conversations/${encodeURIComponent(
+        conversationId
+      )}/attachments/authorize`,
+      {
+        method:
+          "POST",
+
+        body:
+          JSON.stringify({
+            body:
+              normalizedBody,
+
+            files:
+              selected.map(
+                (file) => ({
+                  name:
+                    file.name,
+
+                  type:
+                    file.type ||
+                    "application/pdf",
+
+                  size:
+                    file.size,
+                })
+              ),
+          }),
+      }
+    );
+
+  const uploads =
+    Array.isArray(
+      authorization?.uploads
+    )
+      ? authorization.uploads
+      : [];
+
+  if (
+    uploads.length !==
+    selected.length
+  ) {
+    throw new Error(
+      "The server returned an incomplete Messenger upload authorization."
+    );
+  }
+
+  const directUploads = [];
+  let completedBytes = 0;
+  let finalized = false;
+
+  try {
+    for (
+      let authorizationIndex = 0;
+      authorizationIndex <
+        uploads.length;
+      authorizationIndex += 1
+    ) {
+      const upload =
+        uploads[
+          authorizationIndex
+        ];
+
+      const clientIndex =
+        Number(
+          upload?.clientIndex
+        );
+
+      if (
+        !Number.isInteger(
+          clientIndex
+        ) ||
+        clientIndex < 0 ||
+        clientIndex >=
+          selected.length
+      ) {
+        throw new Error(
+          "Messenger upload authorization contains an invalid file index."
+        );
+      }
+
+      const signedUrl =
+        String(
+          upload?.signedUrl ||
+            ""
+        ).trim();
+
+      const descriptor =
+        String(
+          upload?.descriptor ||
+            ""
+        ).trim();
+
+      if (
+        !signedUrl ||
+        !descriptor
+      ) {
+        throw new Error(
+          "Messenger upload authorization is incomplete."
+        );
+      }
+
+      const file =
+        selected[
+          clientIndex
+        ];
+
+      await uploadPdfToSignedUrl(
+        signedUrl,
+        file,
+        {
+          onLoaded(
+            loaded
+          ) {
+            if (
+              total > 0 &&
+              typeof onProgress ===
+                "function"
+            ) {
+              onProgress(
+                Math.min(
+                  100,
+                  Math.round(
+                    (
+                      completedBytes +
+                      loaded
+                    ) /
+                      total *
+                      100
+                  )
+                )
+              );
+            }
+          },
+        }
+      );
+
+      completedBytes +=
+        file.size;
+
+      directUploads.push({
+        descriptor,
+      });
+
+      if (
+        typeof onProgress ===
+        "function"
+      ) {
+        onProgress(
+          Math.min(
+            100,
+            Math.round(
+              completedBytes /
+                total *
+                100
+            )
+          )
+        );
+      }
+    }
+
+    const result =
+      await chatApi(
+        `/conversations/${encodeURIComponent(
+          conversationId
+        )}/attachments`,
+        {
+          method:
+            "POST",
+
+          body:
+            JSON.stringify({
+              body:
+                normalizedBody,
+
+              directUploads,
+            }),
+        }
+      );
+
+    finalized = true;
+
+    if (
+      typeof onProgress ===
+        "function"
+    ) {
+      onProgress(
+        100
+      );
+    }
+
+    return result;
+  } catch (error) {
+    if (!finalized) {
+      await cleanupChatDirectUploads(
+        conversationId,
+        directUploads
+      );
+    }
+
+    throw error;
+  }
 }
 
 /* Preserve compatibility with any older component that sends a single PDF. */
-export function uploadChatPdf(conversationId, file, onProgress = () => {}) {
-  return uploadChatPdfs(conversationId, [file], '', onProgress);
+export function uploadChatPdf(
+  conversationId,
+  file,
+  onProgress = () => {}
+) {
+  return uploadChatPdfs(
+    conversationId,
+    [
+      file,
+    ],
+    "",
+    onProgress
+  );
 }
 
-/* Protected file download: do not expose the Bearer token in a link/URL. */
-export async function downloadChatAttachment(attachmentId, filename) {
-  const token = getChatToken();
-  if (!token) throw new Error('Please sign in again.');
-  const response = await fetch(`${CHAT_SERVER_URL}/api/chat/attachments/${encodeURIComponent(attachmentId)}/download`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `Unable to download attachment (${response.status}).`);
+/*
+ * Protected file download.
+ *
+ * The WELLJOB JWT is sent only to the WELLJOB API.
+ * After authorization, the browser receives a short-
+ * lived Supabase signed URL and downloads the binary
+ * without forwarding the WELLJOB Bearer token.
+ */
+export async function downloadChatAttachment(
+  attachmentId,
+  filename
+) {
+  const authorization =
+    await chatApi(
+      `/attachments/${encodeURIComponent(
+        attachmentId
+      )}/download`
+    );
+
+  const signedUrl =
+    String(
+      authorization?.downloadUrl ||
+        ""
+    ).trim();
+
+  if (!signedUrl) {
+    throw new Error(
+      "The attachment download authorization is invalid."
+    );
   }
-  const objectUrl = URL.createObjectURL(await response.blob());
-  const link = document.createElement('a');
-  link.href = objectUrl;
-  link.download = String(filename || 'attachment.pdf').replace(/[\\/]/g, '_');
-  document.body.appendChild(link);
+
+  const response =
+    await fetch(
+      signedUrl,
+      {
+        cache:
+          "no-store",
+      }
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      `Unable to download attachment (${response.status}).`
+    );
+  }
+
+  const objectUrl =
+    URL.createObjectURL(
+      await response.blob()
+    );
+
+  const link =
+    document.createElement(
+      "a"
+    );
+
+  link.href =
+    objectUrl;
+
+  link.download =
+    String(
+      authorization?.filename ||
+        filename ||
+        "attachment.pdf"
+    ).replace(
+      /[\\/]/g,
+      "_"
+    );
+
+  document.body.appendChild(
+    link
+  );
+
   link.click();
+
   link.remove();
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+
+  setTimeout(
+    () =>
+      URL.revokeObjectURL(
+        objectUrl
+      ),
+    1000
+  );
 }
