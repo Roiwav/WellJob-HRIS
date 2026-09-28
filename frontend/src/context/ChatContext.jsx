@@ -4,25 +4,18 @@
  * MESSENGER - CHAT CONTEXT
  * ==================================================
  *
- * Features:
- * - Uses existing WELLJOB authentication
- * - Connects to the existing Socket.IO backend
- * - Receives real-time message notifications
- * - Tracks unread messages
- * - Displays new-message toast notifications
- * - Cleans up connections on logout
- * - Prevents stale unread responses after
- *   account changes
+ * Vercel-safe Messenger notification state.
  *
- * IMPORTANT:
+ * Realtime transport:
+ * - No persistent Socket.IO client is created here.
+ * - Unread state and lightweight notification metadata
+ *   are refreshed through authenticated REST polling.
+ * - Aiven remains the source of truth.
  *
- * ChatProvider must be rendered inside:
- *
- * 1. The existing React Router
- * 2. The existing WELLJOB AuthProvider
- *
- * Do not create another authentication provider
- * or another BrowserRouter for the Messenger.
+ * Security:
+ * - Uses the existing WELLJOB authentication token.
+ * - Never exposes message bodies in toast notifications.
+ * - Ignores stale responses after account/session changes.
  */
 
 import {
@@ -37,76 +30,109 @@ import {
 
 import { Link } from "react-router-dom";
 
-import { io } from "socket.io-client";
-
 import { useAuth } from "./useAuth";
 
 import {
-  CHAT_SERVER_URL,
   chatApi,
   getChatToken,
 } from "../services/chatApi";
 
-/*
- * ==================================================
- * CHAT CONTEXT
- * ==================================================
- */
+const CHAT_NOTIFICATION_POLL_MS = 5000;
 
 const ChatContext = createContext(null);
 
-/*
- * ==================================================
- * CHAT PROVIDER
- * ==================================================
- */
+function normalizeUnread(value) {
+  const count = Number(value ?? 0);
+
+  return Number.isSafeInteger(count) && count >= 0
+    ? count
+    : 0;
+}
+
+function threadTimestamp(thread) {
+  const value =
+    thread?.lastAt ||
+    thread?.updatedAt ||
+    thread?.createdAt;
+
+  const time =
+    new Date(value || 0)
+      .getTime();
+
+  return Number.isFinite(time)
+    ? time
+    : 0;
+}
+
+function threadTitle(thread) {
+  if (thread?.kind === "group") {
+    return String(
+      thread?.name ||
+      "Group conversation"
+    ).trim();
+  }
+
+  return String(
+    thread?.partner?.fullName ||
+    thread?.partner?.username ||
+    "a WELLJOB user"
+  ).trim();
+}
+
+function snapshotThreads(threads) {
+  const snapshot =
+    new Map();
+
+  for (const thread of threads) {
+    if (thread?.id == null) {
+      continue;
+    }
+
+    snapshot.set(
+      String(thread.id),
+      {
+        unreadCount:
+          normalizeUnread(
+            thread.unreadCount
+          ),
+
+        lastAt:
+          threadTimestamp(
+            thread
+          ),
+      }
+    );
+  }
+
+  return snapshot;
+}
 
 export function ChatProvider({ children }) {
-  /*
-   * Use the existing WELLJOB authentication.
-   */
+  const { user } =
+    useAuth();
 
-  const { user } = useAuth();
+  const currentUserId =
+    Number(
+      user?.id ??
+      0
+    );
 
-  /*
-   * IMPORTANT:
-   *
-   * The Messenger backend uses users.id,
-   * which is the numeric database primary key.
-   *
-   * Do not use users.user_id as a fallback
-   * because it represents a different
-   * identifier in the WELLJOB system.
-   */
-
-  const currentUserId = Number(
-    user?.id ?? 0
-  );
-
-  /*
-   * Retrieve the existing login token.
-   *
-   * The current WELLJOB frontend stores
-   * the JWT in localStorage under "token".
-   */
-
-  const token = user
-    ? getChatToken(user)
-    : "";
+  const token =
+    user
+      ? getChatToken(user)
+      : "";
 
   const isAuthenticated =
-    Number.isSafeInteger(currentUserId) &&
+    Number.isSafeInteger(
+      currentUserId
+    ) &&
     currentUserId > 0 &&
     Boolean(token);
 
-  /*
-   * ==================================================
-   * STATE
-   * ==================================================
-   */
-
-  const [socket, setSocket] =
-    useState(null);
+  const sessionKey =
+    isAuthenticated
+      ? `${currentUserId}:${token}`
+      : null;
 
   const [unreadCount, setUnreadCount] =
     useState(0);
@@ -114,446 +140,389 @@ export function ChatProvider({ children }) {
   const [toast, setToast] =
     useState(null);
 
-  /*
-   * ==================================================
-   * REQUEST AND SESSION TRACKING
-   * ==================================================
-   *
-   * Prevent responses from a previous user
-   * session from updating the current user's
-   * unread message count.
-   */
+  const unreadRequestIdRef =
+    useRef(0);
 
-  const requestIdRef = useRef(0);
+  const notificationRequestIdRef =
+    useRef(0);
 
-  const activeSessionRef = useRef(null);
+  const activeSessionRef =
+    useRef(null);
 
-  const sessionKey = isAuthenticated
-    ? `${currentUserId}:${token}`
-    : null;
+  const threadSnapshotRef =
+    useRef(new Map());
 
-  activeSessionRef.current = sessionKey;
+  const snapshotReadyRef =
+    useRef(false);
 
-  /*
-   * ==================================================
-   * REFRESH UNREAD MESSAGE COUNT
-   * ==================================================
-   *
-   * This function may be called by:
-   *
-   * - Socket.IO connection events
-   * - New message notifications
-   * - Read receipt events
-   * - Messenger page components
-   * - Sidebar notification components
-   */
+  activeSessionRef.current =
+    sessionKey;
 
-  const refreshUnread = useCallback(
-    async () => {
-      const requestId =
-        ++requestIdRef.current;
+  const refreshUnread =
+    useCallback(
+      async () => {
+        const requestId =
+          ++unreadRequestIdRef.current;
 
-      const requestedSession =
-        sessionKey;
-
-      if (
-        !isAuthenticated ||
-        !requestedSession
-      ) {
-        setUnreadCount(0);
-
-        return;
-      }
-
-      try {
-        const result = await chatApi(
-          "/unread-count"
-        );
-
-        /*
-         * Ignore responses belonging to
-         * a previous account or session.
-         */
+        const requestedSession =
+          sessionKey;
 
         if (
-          requestId !==
-            requestIdRef.current ||
-          activeSessionRef.current !==
-            requestedSession
+          !isAuthenticated ||
+          !requestedSession
+        ) {
+          setUnreadCount(0);
+
+          return 0;
+        }
+
+        try {
+          const result =
+            await chatApi(
+              "/unread-count"
+            );
+
+          if (
+            requestId !==
+              unreadRequestIdRef.current ||
+            activeSessionRef.current !==
+              requestedSession
+          ) {
+            return null;
+          }
+
+          const count =
+            normalizeUnread(
+              result?.unreadCount
+            );
+
+          setUnreadCount(
+            count
+          );
+
+          return count;
+        } catch (error) {
+          if (
+            requestId !==
+              unreadRequestIdRef.current ||
+            activeSessionRef.current !==
+              requestedSession
+          ) {
+            return null;
+          }
+
+          console.error(
+            "CHAT UNREAD REFRESH ERROR:",
+            error
+          );
+
+          return null;
+        }
+      },
+      [
+        isAuthenticated,
+        sessionKey,
+      ]
+    );
+
+  const pollNotificationState =
+    useCallback(
+      async ({
+        allowToast = true,
+      } = {}) => {
+        const requestId =
+          ++notificationRequestIdRef.current;
+
+        const requestedSession =
+          sessionKey;
+
+        if (
+          !isAuthenticated ||
+          !requestedSession
         ) {
           return;
         }
 
-        const count = Number(
-          result?.unreadCount ?? 0
-        );
+        try {
+          const [
+            unreadResult,
+            conversationsResult,
+          ] =
+            await Promise.all([
+              chatApi(
+                "/unread-count"
+              ),
 
-        setUnreadCount(
-          Number.isSafeInteger(count) &&
-            count >= 0
-            ? count
-            : 0
-        );
-      } catch (error) {
-        /*
-         * Ignore outdated request errors
-         * after a session change.
-         */
+              chatApi(
+                "/conversations"
+              ),
+            ]);
 
-        if (
-          requestId !==
-            requestIdRef.current ||
-          activeSessionRef.current !==
-            requestedSession
-        ) {
-          return;
+          if (
+            requestId !==
+              notificationRequestIdRef.current ||
+            activeSessionRef.current !==
+              requestedSession
+          ) {
+            return;
+          }
+
+          setUnreadCount(
+            normalizeUnread(
+              unreadResult?.unreadCount
+            )
+          );
+
+          const conversations =
+            Array.isArray(
+              conversationsResult
+            )
+              ? conversationsResult
+              : [];
+
+          const previousSnapshot =
+            threadSnapshotRef.current;
+
+          const nextSnapshot =
+            snapshotThreads(
+              conversations
+            );
+
+          if (
+            snapshotReadyRef.current &&
+            allowToast
+          ) {
+            const candidates =
+              conversations
+                .filter(
+                  (thread) => {
+                    const currentUnread =
+                      normalizeUnread(
+                        thread?.unreadCount
+                      );
+
+                    if (
+                      currentUnread <= 0 ||
+                      thread?.id == null
+                    ) {
+                      return false;
+                    }
+
+                    const previous =
+                      previousSnapshot.get(
+                        String(
+                          thread.id
+                        )
+                      );
+
+                    if (!previous) {
+                      return true;
+                    }
+
+                    return (
+                      currentUnread >
+                        previous.unreadCount ||
+                      threadTimestamp(
+                        thread
+                      ) >
+                        previous.lastAt
+                    );
+                  }
+                )
+                .sort(
+                  (a, b) =>
+                    threadTimestamp(b) -
+                    threadTimestamp(a)
+                );
+
+            const newest =
+              candidates[0];
+
+            if (newest) {
+              setToast({
+                title:
+                  threadTitle(
+                    newest
+                  ),
+
+                isGroup:
+                  newest.kind ===
+                  "group",
+
+                receivedAt:
+                  Date.now(),
+              });
+            }
+          }
+
+          threadSnapshotRef.current =
+            nextSnapshot;
+
+          snapshotReadyRef.current =
+            true;
+        } catch (error) {
+          if (
+            requestId !==
+              notificationRequestIdRef.current ||
+            activeSessionRef.current !==
+              requestedSession
+          ) {
+            return;
+          }
+
+          console.error(
+            "CHAT NOTIFICATION POLL ERROR:",
+            error
+          );
         }
-
-        console.error(
-          "CHAT UNREAD REFRESH ERROR:",
-          error
-        );
-      }
-    },
-    [
-      isAuthenticated,
-      sessionKey,
-    ]
-  );
-
-  /*
-   * ==================================================
-   * SOCKET.IO CONNECTION
-   * ==================================================
-   *
-   * A connection is established only when
-   * an authenticated WELLJOB user is present.
-   *
-   * The same token used by the existing login
-   * is supplied during the socket handshake.
-   */
+      },
+      [
+        isAuthenticated,
+        sessionKey,
+      ]
+    );
 
   useEffect(() => {
-    /*
-     * Invalidate pending unread requests
-     * whenever the authenticated session
-     * changes.
-     */
+    unreadRequestIdRef.current +=
+      1;
 
-    requestIdRef.current += 1;
+    notificationRequestIdRef.current +=
+      1;
 
-    /*
-     * ==================================================
-     * LOGGED-OUT STATE
-     * ==================================================
-     */
+    threadSnapshotRef.current =
+      new Map();
+
+    snapshotReadyRef.current =
+      false;
+
+    setToast(null);
 
     if (
       !isAuthenticated ||
       !sessionKey
     ) {
-      setSocket(null);
-
       setUnreadCount(0);
 
-      setToast(null);
-
-      return;
+      return undefined;
     }
 
-    /*
-     * ==================================================
-     * INITIALIZE SOCKET.IO CLIENT
-     * ==================================================
-     */
+    let active =
+      true;
 
-    const client = io(
-      CHAT_SERVER_URL,
-      {
-        auth: {
-          token,
+    void pollNotificationState({
+      allowToast:
+        false,
+    });
+
+    const interval =
+      window.setInterval(
+        () => {
+          if (
+            active &&
+            !document.hidden
+          ) {
+            void pollNotificationState();
+          }
         },
-
-        transports: [
-          "websocket",
-          "polling",
-        ],
-
-        autoConnect: false,
-      }
-    );
-
-    let active = true;
-
-    /*
-     * Make the current socket available
-     * to Messenger components.
-     */
-
-    setSocket(client);
-
-    /*
-     * ==================================================
-     * CONNECTION EVENT
-     * ==================================================
-     *
-     * Refresh unread messages after a
-     * successful socket connection.
-     */
-
-    const handleConnect = () => {
-      if (!active) {
-        return;
-      }
-
-      refreshUnread();
-    };
-
-    /*
-     * ==================================================
-     * NEW MESSAGE EVENT
-     * ==================================================
-     *
-     * The backend publishes chat:message
-     * after successfully saving a message.
-     *
-     * The sender is identified by the
-     * authenticated server-side user ID.
-     */
-
-    const handleNewMessage = ({
-      sender,
-      message,
-    } = {}) => {
-      if (!active) {
-        return;
-      }
-
-      /*
-       * Update the unread message count.
-       */
-
-      refreshUnread();
-
-      const senderId = Number(
-        sender?.id ?? 0
+        CHAT_NOTIFICATION_POLL_MS
       );
 
-      /*
-       * Do not display a new-message toast
-       * when the event represents a message
-       * sent by the current user.
-       */
+    const refreshOnVisible =
+      () => {
+        if (
+          active &&
+          !document.hidden
+        ) {
+          void pollNotificationState();
+        }
+      };
 
-      if (
-        senderId === currentUserId
-      ) {
-        return;
-      }
-
-      if (message?.isSystem) {
-        setToast({ title: 'A group membership or admin setting changed.', isSystem: true, receivedAt: Date.now() });
-        return;
-      }
-
-      const senderName =
-        String(
-          sender?.fullName ||
-            sender?.username ||
-            "a WELLJOB user"
-        ).trim();
-
-      /*
-       * Only show the sender's name.
-       *
-       * The notification does not expose
-       * sensitive message content.
-       */
-
-      setToast({
-        title: senderName,
-        receivedAt: Date.now(),
-      });
-    };
-
-    /*
-     * ==================================================
-     * READ RECEIPT EVENT
-     * ==================================================
-     */
-
-    const handleReadReceipt = () => {
-      if (!active) {
-        return;
-      }
-
-      refreshUnread();
-    };
-
-    /*
-     * ==================================================
-     * CONNECTION ERROR
-     * ==================================================
-     */
-
-    const handleConnectError = (
-      error
-    ) => {
-      if (!active) {
-        return;
-      }
-
-      console.error(
-        "CHAT SOCKET CONNECTION ERROR:",
-        error?.message ||
-          "Unable to connect to Messenger."
-      );
-    };
-
-    /*
-     * ==================================================
-     * REGISTER SOCKET EVENTS
-     * ==================================================
-     */
-
-    client.on(
-      "connect",
-      handleConnect
+    window.addEventListener(
+      "focus",
+      refreshOnVisible
     );
 
-    client.on(
-      "chat:message",
-      handleNewMessage
+    document.addEventListener(
+      "visibilitychange",
+      refreshOnVisible
     );
-
-    client.on(
-      "chat:read",
-      handleReadReceipt
-    );
-
-    client.on(
-      "chat:changed",
-      handleReadReceipt
-    );
-
-    client.on(
-      "connect_error",
-      handleConnectError
-    );
-
-    /*
-     * ==================================================
-     * ESTABLISH CONNECTION
-     * ==================================================
-     */
-
-    client.connect();
-
-    /*
-     * Load unread messages even if the
-     * Socket.IO connection is temporarily
-     * unavailable.
-     */
-
-    refreshUnread();
-
-    /*
-     * ==================================================
-     * CLEANUP
-     * ==================================================
-     *
-     * Disconnect the previous socket when:
-     *
-     * - The user logs out
-     * - The authenticated session changes
-     * - ChatProvider unmounts
-     *
-     * This prevents stale socket connections
-     * from remaining active in the frontend.
-     */
 
     return () => {
-      active = false;
+      active =
+        false;
 
-      requestIdRef.current += 1;
+      window.clearInterval(
+        interval
+      );
 
-      client.removeAllListeners();
+      window.removeEventListener(
+        "focus",
+        refreshOnVisible
+      );
 
-      client.disconnect();
-
-      setSocket(
-        (previousSocket) =>
-          previousSocket === client
-            ? null
-            : previousSocket
+      document.removeEventListener(
+        "visibilitychange",
+        refreshOnVisible
       );
     };
   }, [
     isAuthenticated,
     sessionKey,
-    token,
-    currentUserId,
-    refreshUnread,
+    pollNotificationState,
   ]);
-
-  /*
-   * ==================================================
-   * CHAT TOAST AUTO-DISMISS
-   * ==================================================
-   *
-   * A new-message notification is displayed
-   * for approximately 4.5 seconds.
-   */
 
   useEffect(() => {
     if (!toast) {
-      return;
+      return undefined;
     }
 
-    const timeout = setTimeout(
-      () => {
-        setToast(null);
-      },
-      4500
-    );
+    const timeout =
+      window.setTimeout(
+        () => {
+          setToast(null);
+        },
+        4500
+      );
 
     return () => {
-      clearTimeout(timeout);
+      window.clearTimeout(
+        timeout
+      );
     };
   }, [toast]);
 
-  /*
-   * ==================================================
-   * SHARED CHAT CONTEXT VALUE
-   * ==================================================
-   */
+  const value =
+    useMemo(
+      () => ({
+        /*
+         * Retained as null for compatibility with any
+         * component that still reads context.socket.
+         *
+         * The Vercel production Messenger transport is
+         * REST polling, not a persistent process-local
+         * Socket.IO connection.
+         */
+        socket:
+          null,
 
-  const value = useMemo(
-    () => ({
-      socket,
+        realtimeMode:
+          "polling",
 
-      unreadCount,
+        unreadCount,
 
-      refreshUnread,
+        refreshUnread,
 
-      currentUserId,
+        currentUserId,
 
-      user,
-    }),
-    [
-      socket,
-      unreadCount,
-      refreshUnread,
-      currentUserId,
-      user,
-    ]
-  );
-
-  /*
-   * ==================================================
-   * RENDER PROVIDER
-   * ==================================================
-   */
+        user,
+      }),
+      [
+        unreadCount,
+        refreshUnread,
+        currentUserId,
+        user,
+      ]
+    );
 
   return (
     <ChatContext.Provider
@@ -592,7 +561,9 @@ export function ChatProvider({ children }) {
               font-semibold
             "
           >
-            {toast.isSystem ? "Group activity" : "New chat message"}
+            {toast.isGroup
+              ? "New group message"
+              : "New chat message"}
           </span>
 
           <span
@@ -603,7 +574,9 @@ export function ChatProvider({ children }) {
               dark:text-slate-300
             "
           >
-            {toast.isSystem ? toast.title : `From ${toast.title}`}
+            {toast.isGroup
+              ? `In ${toast.title}`
+              : `From ${toast.title}`}
           </span>
         </Link>
       )}
@@ -611,19 +584,11 @@ export function ChatProvider({ children }) {
   );
 }
 
-/*
- * ==================================================
- * USE CHAT HOOK
- * ==================================================
- *
- * Allows Messenger components to access
- * real-time chat functionality.
- */
-
 export function useChat() {
-  const context = useContext(
-    ChatContext
-  );
+  const context =
+    useContext(
+      ChatContext
+    );
 
   if (!context) {
     throw new Error(

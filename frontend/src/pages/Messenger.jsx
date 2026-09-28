@@ -5,6 +5,7 @@ import { useChat } from '../context/ChatContext';
 import AuthenticatedAvatar from '../components/profile/AuthenticatedAvatar';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const CHAT_POLL_INTERVAL_MS = 4000;
 const same = (a,b) => a!=null && b!=null && String(a)===String(b);
 const nameOf = (user) => user?.fullName || user?.username || 'Unknown user';
 const formattedTime = (value) => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString() : '';
@@ -14,6 +15,27 @@ function merged(previous,incoming) {
  const i=previous.findIndex(x=>same(x.id,incoming.id));
  if(i<0)return [...previous,incoming];
  return previous.map((x,j)=>j===i?{...x,...incoming}:x);
+}
+function mergedBatch(previous,incoming=[]) {
+ let next=previous;
+ let changed=false;
+ for(const item of incoming){
+  if(!item?.id)continue;
+  const i=next.findIndex(x=>same(x.id,item.id));
+  if(i<0){
+   if(!changed)next=[...next];
+   next.push(item);
+   changed=true;
+   continue;
+  }
+  const combined={...next[i],...item};
+  if(JSON.stringify(next[i])!==JSON.stringify(combined)){
+   if(!changed)next=[...next];
+   next[i]=combined;
+   changed=true;
+  }
+ }
+ return changed?next:previous;
 }
 const solidButton='rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:bg-blue-700';
 const subtleButton='rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800';
@@ -98,7 +120,7 @@ function MemberSelector({
 }
 
 export default function Messenger({compact=false}) {
- const {user,currentUserId,socket,refreshUnread}=useChat();
+ const {user,currentUserId,refreshUnread}=useChat();
  const [directory,setDirectory]=useState([]);
  const [threads,setThreads]=useState([]);
  const [activeId,setActiveId]=useState(null);
@@ -129,6 +151,8 @@ export default function Messenger({compact=false}) {
  const activeRef=useRef(null);
  const scrollRestore=useRef(null);
  const overviewVersion=useRef(0);
+ const followBottom=useRef(true);
+ const pollInFlight=useRef(false);
  activeRef.current=activeId;
  const active=threads.find(t=>same(t.id,activeId));
  const isGroup=active?.kind==='group';
@@ -140,22 +164,23 @@ export default function Messenger({compact=false}) {
  const freeGroupSlots=Math.max(0,30-members.length);
  const selectedBytes=selectedFiles.reduce((total,file)=>total+file.size,0);
 
- const loadOverview=useCallback(async()=>{
-  if(!user){setDirectory([]);setThreads([]);setLoading(false);return;}
+ const loadOverview=useCallback(async({silent=false}={})=>{
+  if(!user){setDirectory([]);setThreads([]);setLoading(false);return [];}
   const requestId=++overviewVersion.current;
   try {const [users,conversations]=await Promise.all([chatApi('/users'),chatApi('/conversations')]);
-   if(requestId!==overviewVersion.current)return;
+   if(requestId!==overviewVersion.current)return [];
    const list=Array.isArray(conversations)?conversations:[];
    setDirectory(Array.isArray(users)?users:[]);setThreads(list);
    setActiveId(prev=>prev!=null&&!list.some(t=>same(t.id,prev))?null:prev);
-  }catch(e){if(requestId===overviewVersion.current)setError(e.message||'Unable to load Messenger.');}
+   return list;
+  }catch(e){if(requestId===overviewVersion.current&&!silent)setError(e.message||'Unable to load Messenger.');return [];}
    finally{if(requestId===overviewVersion.current)setLoading(false);}
  },[user]);
  useEffect(()=>{loadOverview();},[loadOverview]);
- const loadMembers=useCallback(async(conversationId)=>{
-  if(!String(conversationId).startsWith('g:')){setMembers([]);return;}
-  try {const result=await chatApi(`/groups/${conversationId.slice(2)}/members`);if(same(activeRef.current,conversationId))setMembers(Array.isArray(result)?result:[]);}
-  catch(e){if(same(activeRef.current,conversationId))setError(e.message||'Unable to load members.');}
+ const loadMembers=useCallback(async(conversationId,{silent=false}={})=>{
+  if(!String(conversationId).startsWith('g:')){setMembers([]);return [];}
+  try {const result=await chatApi(`/groups/${conversationId.slice(2)}/members`);const list=Array.isArray(result)?result:[];if(same(activeRef.current,conversationId))setMembers(list);return list;}
+  catch(e){if(same(activeRef.current,conversationId)&&!silent)setError(e.message||'Unable to load members.');return [];}
  },[]);
  const markRead=useCallback(async(conversationId)=>{
   try{await chatApi(`/conversations/${encodeURIComponent(conversationId)}/read`,{method:'POST'});
@@ -164,7 +189,7 @@ export default function Messenger({compact=false}) {
  },[refreshUnread]);
  useEffect(()=>{
   const cid=activeId;const ver=++historyVersion.current;
-  setMessages([]);setMembers([]);setHasMore(false);setShowMembers(false);setAdding(false);setAddChosen([]);setAddSearch('');setAddError('');setSelectedFiles([]);setFileProgress(null);setLoadingMessages(!!cid);scrollRestore.current=null;
+  setMessages([]);setMembers([]);setHasMore(false);setShowMembers(false);setAdding(false);setAddChosen([]);setAddSearch('');setAddError('');setSelectedFiles([]);setFileProgress(null);setLoadingMessages(!!cid);scrollRestore.current=null;followBottom.current=true;
   if(!cid)return;
   async function run(){try{
    const response=await chatApi(`/conversations/${encodeURIComponent(cid)}/messages`);
@@ -175,20 +200,47 @@ export default function Messenger({compact=false}) {
    finally{if(ver===historyVersion.current)setLoadingMessages(false);}}
   run();return()=>{historyVersion.current+=1;};
  },[activeId,markRead,loadMembers]);
- useEffect(()=>{const el=listRef.current;if(!el)return;const restore=scrollRestore.current;if(restore){el.scrollTop=el.scrollHeight-restore.height+restore.top;scrollRestore.current=null;}else el.scrollTop=el.scrollHeight;},[messages,activeId]);
+ useEffect(()=>{const el=listRef.current;if(!el)return;const restore=scrollRestore.current;if(restore){el.scrollTop=el.scrollHeight-restore.height+restore.top;scrollRestore.current=null;return;}if(followBottom.current)el.scrollTop=el.scrollHeight;},[messages,activeId]);
  useEffect(()=>{
-  if(!socket)return;
-  function onMessage({message}={}){if(!message)return;
-    // New messages immediately take priority even before the refreshed list returns.
-    setThreads(previous=>previous.map(t=>same(t.id,message.conversationId)?{...t,lastAt:message.createdAt,lastBody:message.isSystem?message.body:(message.body||((message.attachments||[]).length?'PDF attachments':t.lastBody))}:t));
-    loadOverview();if(same(message.conversationId,activeRef.current)){
-    setMessages(prev=>merged(prev,message));if(!same(message.senderId,currentUserId))markRead(message.conversationId);
-   }}
-  function onRead({conversationId,readerId,readAt}={}){if(same(conversationId,activeRef.current)&&!String(conversationId).startsWith('g:')&&!same(readerId,currentUserId))setMessages(prev=>prev.map(m=>same(m.senderId,currentUserId)?{...m,readAt:readAt||new Date().toISOString()}:m));loadOverview();}
-  function onChanged({conversationId}={}){loadOverview();if(conversationId&&same(conversationId,activeRef.current))loadMembers(conversationId);refreshUnread();}
-  socket.on('chat:message',onMessage);socket.on('chat:read',onRead);socket.on('chat:changed',onChanged);
-  return()=>{socket.off('chat:message',onMessage);socket.off('chat:read',onRead);socket.off('chat:changed',onChanged);};
- },[socket,currentUserId,markRead,loadOverview,loadMembers,refreshUnread]);
+  if(!user)return undefined;
+  let cancelled=false;
+  async function poll(){
+   if(cancelled||pollInFlight.current||document.hidden)return;
+   pollInFlight.current=true;
+   try{
+    const list=await loadOverview({silent:true});
+    if(cancelled)return;
+    const cid=activeRef.current;
+    if(cid){
+     const response=await chatApi(`/conversations/${encodeURIComponent(cid)}/messages`);
+     if(!cancelled&&same(activeRef.current,cid)){
+      const incoming=Array.isArray(response?.messages)?response.messages:[];
+      setMessages(prev=>mergedBatch(prev,incoming));
+      setHasMore(!!response?.hasMore);
+      const activeThread=list.find(t=>same(t.id,cid));
+      if(Number(activeThread?.unreadCount||0)>0)await markRead(cid);
+      if(String(cid).startsWith('g:'))await loadMembers(cid,{silent:true});
+     }
+    }
+    await refreshUnread();
+   }catch(e){
+    if(!cancelled)console.error('CHAT POLL ERROR:',e);
+   }finally{
+    pollInFlight.current=false;
+   }
+  }
+  const timer=window.setInterval(()=>{void poll();},CHAT_POLL_INTERVAL_MS);
+  const onVisible=()=>{if(!document.hidden)void poll();};
+  document.addEventListener('visibilitychange',onVisible);
+  window.addEventListener('focus',onVisible);
+  return()=>{
+   cancelled=true;
+   window.clearInterval(timer);
+   document.removeEventListener('visibilitychange',onVisible);
+   window.removeEventListener('focus',onVisible);
+  };
+ },[user,loadOverview,loadMembers,markRead,refreshUnread]);
+
  const filtered=useMemo(()=>directory.filter(u=>[u.username,u.fullName,u.role].filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())),[directory,query]);
  const directByPartner=useMemo(()=>new Map(threads.filter(t=>t.kind!=='group'&&t.partner).map(t=>[String(t.partner.id),t])),[threads]);
  // ONE chronological list for ALL groups and direct chats, not separate groups/users sections.
@@ -229,6 +281,7 @@ export default function Messenger({compact=false}) {
     ? await uploadChatPdfs(cid,files,body,setFileProgress)
     : await chatApi(`/conversations/${encodeURIComponent(cid)}/messages`,{method:'POST',body:JSON.stringify({body})});
    if(same(activeRef.current,cid)){
+    followBottom.current=true;
     setMessages(prev=>merged(prev,response.message));
     setDraft(now=>now===original?'':now);
     setSelectedFiles([]);
@@ -238,7 +291,7 @@ export default function Messenger({compact=false}) {
   finally{setBusy(false);setFileProgress(null);if(uploadRef.current)uploadRef.current.value='';}
  }
  async function downloadPdf(a){try{setError('');await downloadChatAttachment(a.id,a.name);}catch(e){report(e);}}
- async function older(){if(!hasMore||busy||loadingOlder||!messages.length)return;const cid=activeId,ver=historyVersion.current;setLoadingOlder(true);const el=listRef.current;
+ async function older(){if(!hasMore||busy||loadingOlder||!messages.length)return;const cid=activeId,ver=historyVersion.current;setLoadingOlder(true);followBottom.current=false;const el=listRef.current;
   try{const response=await chatApi(`/conversations/${encodeURIComponent(cid)}/messages?before=${messages[0].id}`);if(ver!==historyVersion.current||!same(activeRef.current,cid))return;
    scrollRestore.current=el?{top:el.scrollTop,height:el.scrollHeight}:null;
    setMessages(prev=>[...(response.messages||[]).filter(m=>!prev.some(x=>same(x.id,m.id))),...prev]);setHasMore(!!response.hasMore);
@@ -316,7 +369,7 @@ export default function Messenger({compact=false}) {
      {isGroup&&showMembers&&<div className="max-h-40 shrink-0 overflow-y-auto border-b border-slate-200 p-2 text-xs dark:border-slate-700"><div className="flex items-center justify-between gap-2"><strong className="dark:text-white">Members ({members.length})</strong><div className="flex gap-1">{admin&&<button type="button" className={subtleButton} onClick={rename} title="Rename group"><FiEdit2/></button>}{admin&&<button type="button" className={subtleButton} onClick={()=>{setAddChosen([]);setAddSearch('');setAddError('');setAdding(true);}} title="Add members"><FiUserPlus/></button>}</div></div>
       {members.map(m=><div key={m.id} className="flex items-center gap-2 border-b border-slate-100 py-1 dark:border-slate-800"><span className="min-w-0 flex-1 truncate dark:text-white">{nameOf(m)} {m.isAdmin?'(Admin)':''}</span>{admin&&!m.isAdmin&&<button type="button" title="Make admin" disabled={busy} onClick={()=>changeMember('admin',m.id)}><FiShield/></button>}{(admin||same(m.id,currentUserId))&&<button type="button" title={same(m.id,currentUserId)?'Leave group':'Remove member'} disabled={busy} onClick={()=>{if(window.confirm(same(m.id,currentUserId)?'Leave this group?':'Remove this group member?'))changeMember('remove',m.id);}}><FiTrash2/></button>}</div>)}
      </div>}
-     <div ref={listRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-slate-50 p-3 dark:bg-slate-950/40">{hasMore&&<button type="button" disabled={loadingOlder} onClick={older} className={`${subtleButton} mx-auto block text-xs`}>{loadingOlder?'Loading...':'Load older messages'}</button>}{loadingMessages&&<p className="text-center text-xs text-slate-500">Loading messages...</p>}{!loadingMessages&&!messages.length&&<p className="p-5 text-center text-xs text-slate-500">Start your conversation.</p>}
+     <div ref={listRef} onScroll={(event)=>{const el=event.currentTarget;followBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<96;}} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-slate-50 p-3 dark:bg-slate-950/40">{hasMore&&<button type="button" disabled={loadingOlder} onClick={older} className={`${subtleButton} mx-auto block text-xs`}>{loadingOlder?'Loading...':'Load older messages'}</button>}{loadingMessages&&<p className="text-center text-xs text-slate-500">Loading messages...</p>}{!loadingMessages&&!messages.length&&<p className="p-5 text-center text-xs text-slate-500">Start your conversation.</p>}
       {messages.map(m=>{
         if(m.isSystem)return <div key={m.id} className="flex justify-center py-1"><div role="status" className="max-w-[95%] rounded-full bg-slate-200 px-3 py-1.5 text-center text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">{m.body}<span className="ml-2 whitespace-nowrap text-slate-500">{formattedTime(m.createdAt)}</span></div></div>;
         const mine=same(m.senderId,currentUserId);
