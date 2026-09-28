@@ -1,4 +1,3 @@
-import axios from "axios";
 import {
   FiAlertTriangle,
   FiInfo,
@@ -7,10 +6,12 @@ import {
 
 import useEmployeeForm from "../../hooks/employees/useEmployeeForm";
 import {
-  EMPLOYEE_API_URL,
-  buildEmployeeFormData,
   getEmployeeApiError,
 } from "../../utils/employees/employeeFormHelpers";
+
+import {
+  saveEmployeeWithDirectUploads,
+} from "../../utils/employees/employeeDirectUpload";
 
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
@@ -126,22 +127,15 @@ export default function EditEmployeeModal({
           ""
         );
 
-        const requestData =
-          buildEmployeeFormData(
-            formData
-          );
-
         const employeeName =
           toProperName(
             formData.name
           );
 
-        await axios.put(
-          `${EMPLOYEE_API_URL}/${encodeURIComponent(
-            employeeId
-          )}`,
-          requestData
-        );
+        await saveEmployeeWithDirectUploads({
+          formData,
+          employeeId,
+        });
 
         setShowReview(
           false
