@@ -1,111 +1,59 @@
-const path = require("path");
+﻿const path =
+  require("path");
 
-// LOAD ENVIRONMENT VARIABLES FIRST
+
 require("dotenv").config({
-  path: path.join(__dirname, ".env"),
+  path:
+    path.join(
+      __dirname,
+      ".env"
+    ),
+
+  quiet:
+    true,
 });
 
-/*
- * ==================================================
- * REQUIRED ENVIRONMENT CONFIGURATION
- * ==================================================
- *
- * Fail early during startup when deployment-specific
- * configuration is missing instead of allowing the
- * application to start in a partially configured
- * state.
- *
- * DB_PASSWORD is required to exist as a variable,
- * but an empty value remains technically valid for
- * environments whose database account has no
- * password configured.
- */
 
-const REQUIRED_ENVIRONMENT = [
-  {
-    name: "DB_HOST",
-  },
-  {
-    name: "DB_PORT",
-  },
-  {
-    name: "DB_USER",
-  },
-  {
-    name: "DB_PASSWORD",
-    allowEmpty: true,
-  },
-  {
-    name: "DB_NAME",
-  },
-  {
-    name: "PORT",
-  },
-  {
-    name: "JWT_SECRET",
-  },
-  {
-    name: "FRONTEND_ORIGIN",
-  },
-];
+const app =
+  require("./app");
 
-const JSON_BODY_LIMIT = "1mb";
 
-/*
- * ==================================================
- * ENVIRONMENT VALIDATION
- * ==================================================
- */
-
-function validateEnvironment() {
-  const missingVariables = [];
-
-  for (const requirement of REQUIRED_ENVIRONMENT) {
-    const exists =
-      Object.prototype.hasOwnProperty.call(
-        process.env,
-        requirement.name
-      );
-
-    if (!exists) {
-      missingVariables.push(
-        requirement.name
-      );
-
-      continue;
-    }
-
-    const value = String(
-      process.env[
-        requirement.name
-      ] ?? ""
-    ).trim();
-
-    if (
-      !requirement.allowEmpty &&
-      !value
-    ) {
-      missingVariables.push(
-        requirement.name
-      );
-    }
-  }
-
-  if (missingVariables.length > 0) {
-    throw new Error(
-      `Missing required environment configuration: ${missingVariables.join(
-        ", "
-      )}`
-    );
-  }
-
-  const port = Number.parseInt(
-    process.env.PORT,
-    10
+const {
+  initChatSocket,
+} =
+  require(
+    "./services/chatSocket"
   );
 
+
+/*
+ * ==================================================
+ * LOCAL / TEMPORARY RENDER PERSISTENT RUNTIME
+ * ==================================================
+ *
+ * This file retains the current persistent HTTP +
+ * Socket.IO architecture for:
+ *
+ * - local development
+ * - temporary Render fallback
+ *
+ * Vercel executes the exported Express app without
+ * requiring this process to own a permanent TCP
+ * listener.
+ */
+
+
+function getServerPort() {
+  const port =
+    Number.parseInt(
+      process.env.PORT,
+      10
+    );
+
   if (
-    !Number.isInteger(port) ||
+    !Number.isInteger(
+      port
+    ) ||
     port <= 0 ||
     port > 65535
   ) {
@@ -114,559 +62,85 @@ function validateEnvironment() {
     );
   }
 
-  const dbPort = Number.parseInt(
-    process.env.DB_PORT,
-    10
-  );
-
-  if (
-    !Number.isInteger(dbPort) ||
-    dbPort <= 0 ||
-    dbPort > 65535
-  ) {
-    throw new Error(
-      "DB_PORT must be a valid TCP port number."
-    );
-  }
+  return port;
 }
 
-validateEnvironment();
 
-/*
- * ==================================================
- * CORE DEPENDENCIES
- * ==================================================
- */
+function startPersistentServer() {
+  const port =
+    getServerPort();
 
-const express = require("express");
+  const frontendOrigin =
+    String(
+      process.env
+        .FRONTEND_ORIGIN ||
+      ""
+    ).trim();
 
-const cors = require("cors");
-
-const compression = require("compression");
-
-// DATABASE
-const db =
-  require("./config/db");
-
-// MAINTENANCE MIDDLEWARE
-const checkMaintenanceMode =
-  require(
-    "./middleware/maintenanceMiddleware"
-  );
-
-/*
- * ==================================================
- * EXISTING WELLJOB ROUTES
- * ==================================================
- */
-
-const authRoutes =
-  require("./routes/authRoutes");
-
-const userRoutes =
-  require("./routes/userRoutes");
-
-const employeeRoutes =
-  require(
-    "./routes/employeeRoutes"
-  );
-
-const incidentRoutes =
-  require(
-    "./routes/incidentRoutes"
-  );
-
-const deploymentRoutes =
-  require(
-    "./routes/deploymentRoutes"
-  );
-
-const auditLogRoutes =
-  require(
-    "./routes/auditLogRoutes"
-  );
-
-const kpiDecisionRoutes =
-  require(
-    "./routes/kpiDecisionRoutes"
-  );
-
-const kpiDataRoutes =
-  require(
-    "./routes/kpiDataRoutes"
-  );
-
-const smartAlertRoutes =
-  require(
-    "./routes/smartAlertRoutes"
-  );
-
-const smartSuggestionRoutes =
-  require(
-    "./routes/smartSuggestionRoutes"
-  );
-
-const settingsRoutes =
-  require(
-    "./routes/settingsRoutes"
-  );
-
-const dashboardRoutes =
-  require(
-    "./routes/dashboardRoutes"
-  );
-
-/*
- * ==================================================
- * NEW: WELLJOB MESSENGER MODULE
- * ==================================================
- *
- * chatRoutes:
- * Handles authenticated Messenger API requests.
- *
- * chatSocket:
- * Provides real-time messaging and chat
- * notification delivery using Socket.IO.
- *
- * The Messenger uses existing WELLJOB accounts
- * and the existing authentication system.
- */
-
-const chatRoutes =
-  require(
-    "./routes/chatRoutes"
-  );
-
-const {
-  initChatSocket,
-} = require(
-  "./services/chatSocket"
-);
-
-/*
- * ==================================================
- * INITIALIZE EXPRESS APPLICATION
- * ==================================================
- */
-
-const app = express();
-
-/*
- * ==================================================
- * CORS CONFIGURATION
- * ==================================================
- *
- * Browser requests are allowed only from the
- * configured frontend origin.
- *
- * Requests without an Origin header remain allowed
- * so backend-to-backend tools, PowerShell tests,
- * Postman-style clients, and health checks continue
- * to work normally.
- */
-
-const FRONTEND_ORIGIN = String(
-  process.env.FRONTEND_ORIGIN
-).trim();
-
-const corsOptions = {
-  origin(
-    requestOrigin,
-    callback
+  if (
+    !frontendOrigin
   ) {
-    /*
-     * Non-browser/server-side requests commonly
-     * have no Origin header.
-     */
-
-    if (!requestOrigin) {
-      return callback(
-        null,
-        true
-      );
-    }
-
-    /*
-     * Allow only the configured browser frontend.
-     */
-
-    if (
-      requestOrigin ===
-      FRONTEND_ORIGIN
-    ) {
-      return callback(
-        null,
-        true
-      );
-    }
-
-    /*
-     * Do not grant CORS permission to any other
-     * browser origin.
-     */
-
-    return callback(
-      null,
-      false
-    );
-  },
-};
-
-/*
- * ==================================================
- * CORE MIDDLEWARE
- * ==================================================
- */
-
-app.use(
-  cors(corsOptions)
-);
-
-app.use(
-  compression()
-);
-
-/*
- * ==================================================
- * JSON REQUEST BODY LIMIT
- * ==================================================
- *
- * Express defaults JSON bodies to approximately
- * 100 KB. The system-wide violation policy can
- * legitimately exceed that size.
- *
- * Keep this limit aligned with the application-level
- * configuration limit enforced by settingsRoutes.js.
- *
- * This remains intentionally bounded at 1 MB instead
- * of accepting unlimited JSON payloads.
- */
-
-app.use(
-  express.json({
-    limit: JSON_BODY_LIMIT,
-  })
-);
-
-/*
- * ==================================================
- * DOCUMENT SECURITY
- * ==================================================
- *
- * Employee documents and incident evidence are not
- * exposed through a public static /documents route.
- *
- * Files stored under backend/documents must only be
- * accessed through their dedicated authenticated
- * API endpoints, where JWT authentication, RBAC,
- * record ownership/association validation, path
- * containment, and response security controls are
- * enforced.
- */
-
-/*
- * ==================================================
- * SYSTEM MAINTENANCE GATE
- * ==================================================
- *
- * Existing /api maintenance middleware remains
- * active for all registered API routes, including
- * the new Messenger API.
- */
-
-app.use(
-  "/api",
-  checkMaintenanceMode
-);
-
-/*
- * ==================================================
- * EXISTING WELLJOB API ROUTES
- * ==================================================
- */
-
-app.use(
-  "/api",
-  authRoutes
-);
-
-app.use(
-  "/api",
-  userRoutes
-);
-
-app.use(
-  "/api",
-  employeeRoutes
-);
-
-app.use(
-  "/api",
-  incidentRoutes
-);
-
-app.use(
-  "/api",
-  deploymentRoutes
-);
-
-app.use(
-  "/api",
-  kpiDecisionRoutes
-);
-
-app.use(
-  "/api",
-  kpiDataRoutes
-);
-
-app.use(
-  "/api",
-  smartAlertRoutes
-);
-
-app.use(
-  "/api",
-  smartSuggestionRoutes
-);
-
-app.use(
-  "/api",
-  auditLogRoutes
-);
-
-app.use(
-  "/api",
-  settingsRoutes
-);
-
-app.use(
-  "/api",
-  dashboardRoutes
-);
-
-/*
- * ==================================================
- * NEW: MESSENGER API ROUTES
- * ==================================================
- *
- * Registers:
- *
- * GET  /api/chat/users
- * GET  /api/chat/unread-count
- * GET  /api/chat/conversations
- *
- * POST /api/chat/conversations
- *
- * GET  /api/chat/conversations/:id/messages
- * POST /api/chat/conversations/:id/messages
- * POST /api/chat/conversations/:id/read
- *
- * Authentication and authorization are handled
- * by the chatAuth middleware inside chatRoutes.js.
- */
-
-app.use(
-  "/api/chat",
-  chatRoutes
-);
-
-/*
- * ==================================================
- * DEFAULT TEST ROUTE
- * ==================================================
- */
-
-app.get(
-  "/",
-  (req, res) => {
-    return res.send(
-      "API is running..."
+    throw new Error(
+      "FRONTEND_ORIGIN is required."
     );
   }
-);
 
-/*
- * ==================================================
- * CENTRAL 404 RESPONSE
- * ==================================================
- *
- * Any request that reaches this point did not
- * match an existing application route.
- *
- * Always return JSON instead of exposing Express
- * implementation details or a default HTML page.
- */
 
-app.use(
-  (req, res) => {
-    return res
-      .status(404)
-      .json({
-        error:
-          "Route not found.",
-      });
-  }
-);
+  const server =
+    app.listen(
+      port,
+      () => {
+        console.log(
+          "Database connection verified."
+        );
 
-/*
- * ==================================================
- * CENTRAL ERROR BOUNDARY
- * ==================================================
- *
- * Final safety boundary for errors forwarded through
- * Express middleware or application routes.
- *
- * Known request parsing failures receive an
- * appropriate client-facing HTTP status.
- *
- * Unexpected technical details remain only in
- * the backend logs.
- */
+        console.log(
+          `Server running on port ${port}`
+        );
 
-app.use(
-  (
-    err,
-    req,
-    res,
-    next
-  ) => {
-    console.error(
-      "UNHANDLED SERVER ERROR:",
-      err
+        console.log(
+          "WELLJOB Messenger API registered at /api/chat"
+        );
+
+        console.log(
+          "WELLJOB Messenger Socket.IO initialized"
+        );
+      }
     );
 
-    if (res.headersSent) {
-      return next(err);
-    }
 
-    /*
-     * Express/body-parser payload size rejection.
-     *
-     * A request exceeding the configured JSON limit
-     * is a client request-size problem, not an
-     * internal server failure.
-     */
-
-    if (
-      err?.type ===
-        "entity.too.large" ||
-      err?.status === 413 ||
-      err?.statusCode === 413
-    ) {
-      return res
-        .status(413)
-        .json({
-          success: false,
-
-          error:
-            "Request payload is too large.",
-
-          message:
-            `JSON request bodies must not exceed ${JSON_BODY_LIMIT}.`,
-        });
-    }
-
-    /*
-     * Malformed JSON should return HTTP 400 rather
-     * than being exposed as a generic server error.
-     */
-
-    if (
-      err instanceof
-        SyntaxError &&
-      err?.status === 400 &&
-      Object.prototype.hasOwnProperty.call(
-        err,
-        "body"
-      )
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-
-          error:
-            "Invalid JSON request body.",
-
-          message:
-            "Check the request body syntax and try again.",
-        });
-    }
-
-    return res
-      .status(500)
-      .json({
-        success: false,
-
-        error:
-          "Internal server error.",
-      });
-  }
-);
-
-/*
- * ==================================================
- * SERVER PORT
- * ==================================================
- */
-
-const PORT =
-  Number.parseInt(
-    process.env.PORT,
-    10
+  initChatSocket(
+    server,
+    frontendOrigin
   );
 
-/*
- * ==================================================
- * START EXISTING WELLJOB HTTP SERVER
- * ==================================================
- *
- * IMPORTANT:
- *
- * Only one HTTP server is started.
- *
- * The existing Express application continues
- * to handle all WELLJOB REST API requests.
- *
- * Socket.IO is attached to the SAME HTTP server
- * to provide real-time Messenger functionality.
- */
 
-const server = app.listen(
-  PORT,
-  () => {
-    console.log(
-      "Database connection verified."
-    );
+  return server;
+}
 
-    console.log(`Server running on port ${PORT}`);
-
-    console.log(
-      "WELLJOB Messenger API registered at /api/chat"
-    );
-
-    console.log(
-      "WELLJOB Messenger Socket.IO initialized"
-    );
-  }
-);
 
 /*
- * ==================================================
- * INITIALIZE MESSENGER SOCKET.IO
- * ==================================================
+ * node server.js / npm start
  *
- * The existing frontend origin is reused
- * for Socket.IO CORS configuration.
- *
- * No second HTTP server is created.
- *
- * The Messenger uses the existing JWT
- * authentication system through chatAuth.js.
+ * Start persistent runtime.
  */
+if (
+  require.main ===
+  module
+) {
+  startPersistentServer();
+}
 
-initChatSocket(
-  server,
-  FRONTEND_ORIGIN
-);
+
+/*
+ * Export the Express application as well.
+ *
+ * This keeps server.js safe if a deployment/runtime
+ * imports it rather than executing it directly.
+ */
+module.exports =
+  app;
+
+module.exports
+  .startPersistentServer =
+  startPersistentServer;
