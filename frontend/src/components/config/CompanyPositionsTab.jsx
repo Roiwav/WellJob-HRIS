@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
 } from "react";
-
 import {
   FiAlertTriangle,
   FiBriefcase,
@@ -16,21 +15,16 @@ import {
   FiSearch,
   FiSlash,
 } from "react-icons/fi";
-
 import { API_BASE } from "../../config/api";
 import authenticatedFetch from "../../utils/authenticatedFetch";
-
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import Dialog from "../ui/Dialog";
 import SuccessToast from "../ui/SuccessToast";
-
 const COMPANIES_URL = `${API_BASE}/settings/client-companies`;
 const POSITIONS_URL = `${API_BASE}/settings/company-positions`;
-
 const REQUEST_TIMEOUT_MS = 15000;
 const MAX_POSITION_LENGTH = 150;
-
 const INPUT_CLASS = [
   "min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5",
   "text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400",
@@ -39,41 +33,46 @@ const INPUT_CLASS = [
   "dark:border-slate-700 dark:bg-slate-900 dark:text-white",
   "dark:focus:border-indigo-400 dark:disabled:bg-slate-800",
 ].join(" ");
-
 function toNumber(value) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function toOptionalNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const parsed = Number.parseInt(String(value), 10);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+
+  return parsed;
+}
 function toBoolean(value, fallback = true) {
   if (typeof value === "boolean") return value;
   if (value === 1 || value === "1") return true;
   if (value === 0 || value === "0") return false;
-
   const normalized = String(value ?? "")
     .trim()
     .toLowerCase();
-
   if (["true", "active", "enabled"].includes(normalized)) {
     return true;
   }
-
   if (["false", "inactive", "disabled"].includes(normalized)) {
     return false;
   }
-
   return fallback;
 }
-
 function normalizeCompany(item) {
   if (!item || typeof item !== "object") return null;
-
   const id = toNumber(
     item.id ??
       item.companyId ??
       item.company_id
   );
-
   const companyName = String(
     item.companyName ??
       item.company_name ??
@@ -81,9 +80,7 @@ function normalizeCompany(item) {
       item.name ??
       ""
   ).trim();
-
   if (!id || !companyName) return null;
-
   return {
     id,
     companyName,
@@ -95,16 +92,13 @@ function normalizeCompany(item) {
     ),
   };
 }
-
 function normalizePosition(item) {
   if (!item || typeof item !== "object") return null;
-
   const id = toNumber(
     item.id ??
       item.positionId ??
       item.position_id
   );
-
   const positionName = String(
     item.positionName ??
       item.position_name ??
@@ -112,9 +106,7 @@ function normalizePosition(item) {
       item.name ??
       ""
   ).trim();
-
   if (!id || !positionName) return null;
-
   return {
     id,
     positionName,
@@ -124,16 +116,22 @@ function normalizePosition(item) {
         item.active,
       true
     ),
+    assignedEmployeeCount: toOptionalNumber(
+      item.assignedEmployeeCount ??
+        item.assigned_employee_count ??
+        item.employeeCount ??
+        item.employee_count ??
+        item.deployedEmployeeCount ??
+        item.deployed_employee_count
+    ),
   };
 }
-
 function normalizeCompanies(data) {
   const items = Array.isArray(data)
     ? data
     : Array.isArray(data?.companies)
       ? data.companies
       : [];
-
   return items
     .map(normalizeCompany)
     .filter(Boolean)
@@ -141,7 +139,6 @@ function normalizeCompanies(data) {
       if (a.isActive !== b.isActive) {
         return a.isActive ? -1 : 1;
       }
-
       return a.companyName.localeCompare(
         b.companyName,
         "en",
@@ -149,14 +146,12 @@ function normalizeCompanies(data) {
       );
     });
 }
-
 function normalizePositions(data) {
   const items = Array.isArray(data)
     ? data
     : Array.isArray(data?.positions)
       ? data.positions
       : [];
-
   return items
     .map(normalizePosition)
     .filter(Boolean)
@@ -164,7 +159,6 @@ function normalizePositions(data) {
       if (a.isActive !== b.isActive) {
         return a.isActive ? -1 : 1;
       }
-
       return a.positionName.localeCompare(
         b.positionName,
         "en",
@@ -172,15 +166,12 @@ function normalizePositions(data) {
       );
     });
 }
-
 async function requestJson(url, options = {}) {
   const controller = new AbortController();
-
   const timeoutId = window.setTimeout(
     () => controller.abort(),
     REQUEST_TIMEOUT_MS
   );
-
   try {
     const response = await authenticatedFetch(url, {
       ...options,
@@ -190,9 +181,7 @@ async function requestJson(url, options = {}) {
         ...(options.headers || {}),
       },
     });
-
     const data = await response.json().catch(() => null);
-
     if (!response.ok) {
       throw new Error(
         data?.message ||
@@ -200,21 +189,17 @@ async function requestJson(url, options = {}) {
           `Request failed with status ${response.status}`
       );
     }
-
     return data;
   } finally {
     window.clearTimeout(timeoutId);
   }
 }
-
 function getErrorMessage(error, fallback) {
   if (error?.name === "AbortError") {
     return "The server took too long to respond. Check that the backend and database are running, then try again.";
   }
-
   return error?.message || fallback;
 }
-
 function StatusBadge({ active }) {
   return (
     <span
@@ -230,34 +215,27 @@ function StatusBadge({ active }) {
       ) : (
         <FiSlash aria-hidden="true" />
       )}
-
       {active ? "Active" : "Inactive"}
     </span>
   );
 }
-
 function MetricCard({ label, value, icon }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-slate-800/70">
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-          {icon}
-        </div>
-
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            {label}
-          </p>
-
-          <p className="mt-1 text-xl font-extrabold text-gray-900 dark:text-white">
-            {value}
-          </p>
-        </div>
+    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400">
+          {label}
+        </p>
+        <p className="mt-0.5 text-lg font-black text-gray-900 dark:text-white">
+          {value}
+        </p>
       </div>
     </div>
   );
 }
-
 function emitPositionUpdate(action, companyId) {
   window.dispatchEvent(
     new CustomEvent("dataUpdated", {
@@ -271,33 +249,25 @@ function emitPositionUpdate(action, companyId) {
     })
   );
 }
-
 export default function CompanyPositionsTab({
   canEdit = false,
 }) {
   const mountedRef = useRef(true);
   const positionRequestRef = useRef(0);
-
   const [companies, setCompanies] = useState([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [positions, setPositions] = useState([]);
-
   const [loadingCompanies, setLoadingCompanies] = useState(true);
   const [loadingPositions, setLoadingPositions] = useState(false);
   const [saving, setSaving] = useState(false);
-
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newPositionName, setNewPositionName] = useState("");
   const [formError, setFormError] = useState("");
-
   const [pendingPosition, setPendingPosition] = useState(null);
-
   const selectedCompany = useMemo(
     () =>
       companies.find(
@@ -306,48 +276,37 @@ export default function CompanyPositionsTab({
       ) || null,
     [companies, selectedCompanyId]
   );
-
   const loadCompanies = useCallback(async () => {
     setLoadingCompanies(true);
     setError("");
-
     try {
       const data = await requestJson(COMPANIES_URL);
-
       if (!mountedRef.current) return false;
-
       const nextCompanies = normalizeCompanies(data);
-
       setCompanies(nextCompanies);
-
       setSelectedCompanyId((currentId) => {
         const currentExists = nextCompanies.some(
           (company) =>
             String(company.id) === String(currentId)
         );
-
         if (currentExists) {
           return currentId;
         }
-
         const firstActive = nextCompanies.find(
           (company) => company.isActive
         );
-
         return String(
           firstActive?.id ??
             nextCompanies[0]?.id ??
             ""
         );
       });
-
       return true;
     } catch (loadError) {
       console.error(
         "Unable to load client companies:",
         loadError
       );
-
       if (mountedRef.current) {
         setError(
           getErrorMessage(
@@ -356,7 +315,6 @@ export default function CompanyPositionsTab({
           )
         );
       }
-
       return false;
     } finally {
       if (mountedRef.current) {
@@ -364,31 +322,25 @@ export default function CompanyPositionsTab({
       }
     }
   }, []);
-
   const loadPositions = useCallback(async (companyId) => {
     if (!companyId) {
       setPositions([]);
       return true;
     }
-
     const requestId = positionRequestRef.current + 1;
     positionRequestRef.current = requestId;
-
     setLoadingPositions(true);
     setError("");
-
     try {
       const data = await requestJson(
         `${COMPANIES_URL}/${encodeURIComponent(companyId)}/positions`
       );
-
       if (
         !mountedRef.current ||
         positionRequestRef.current !== requestId
       ) {
         return false;
       }
-
       setPositions(normalizePositions(data));
       return true;
     } catch (loadError) {
@@ -396,7 +348,6 @@ export default function CompanyPositionsTab({
         "Unable to load company positions:",
         loadError
       );
-
       if (
         mountedRef.current &&
         positionRequestRef.current === requestId
@@ -408,7 +359,6 @@ export default function CompanyPositionsTab({
           )
         );
       }
-
       return false;
     } finally {
       if (
@@ -419,30 +369,24 @@ export default function CompanyPositionsTab({
       }
     }
   }, []);
-
   useEffect(() => {
     mountedRef.current = true;
-
     void loadCompanies();
-
     return () => {
       mountedRef.current = false;
       positionRequestRef.current += 1;
     };
   }, [loadCompanies]);
-
   useEffect(() => {
     setQuery("");
     setStatusFilter("All");
     setPendingPosition(null);
-
     if (selectedCompanyId) {
       void loadPositions(selectedCompanyId);
     } else {
       setPositions([]);
     }
   }, [loadPositions, selectedCompanyId]);
-
   const activePositionCount = useMemo(
     () =>
       positions.filter(
@@ -450,49 +394,38 @@ export default function CompanyPositionsTab({
       ).length,
     [positions]
   );
-
   const inactivePositionCount =
     positions.length - activePositionCount;
-
   const filteredPositions = useMemo(() => {
     const search = query.trim().toLowerCase();
-
     return positions.filter((position) => {
       const matchesSearch =
         !search ||
         position.positionName
           .toLowerCase()
           .includes(search);
-
       const matchesStatus =
         statusFilter === "All" ||
         (statusFilter === "Active" &&
           position.isActive) ||
         (statusFilter === "Inactive" &&
           !position.isActive);
-
       return matchesSearch && matchesStatus;
     });
   }, [positions, query, statusFilter]);
-
   const normalizedPositionName = newPositionName
     .trim()
     .replace(/\s+/g, " ");
-
   const canManageSelectedCompany =
     Boolean(
       canEdit &&
         selectedCompany?.id &&
         selectedCompany.isActive
     );
-
   const handleRefresh = useCallback(async () => {
     if (saving) return;
-
     const companyId = selectedCompanyId;
-
     await loadCompanies();
-
     if (companyId) {
       await loadPositions(companyId);
     }
@@ -502,23 +435,18 @@ export default function CompanyPositionsTab({
     saving,
     selectedCompanyId,
   ]);
-
   const handleOpenAdd = useCallback(() => {
     if (!canManageSelectedCompany || saving) return;
-
     setNewPositionName("");
     setFormError("");
     setShowAddDialog(true);
   }, [canManageSelectedCompany, saving]);
-
   const handleCloseAdd = useCallback(() => {
     if (saving) return;
-
     setShowAddDialog(false);
     setNewPositionName("");
     setFormError("");
   }, [saving]);
-
   const handleAddPosition = useCallback(async () => {
     if (
       !canManageSelectedCompany ||
@@ -527,12 +455,10 @@ export default function CompanyPositionsTab({
     ) {
       return;
     }
-
     if (!normalizedPositionName) {
       setFormError("Position name is required.");
       return;
     }
-
     if (
       normalizedPositionName.length >
       MAX_POSITION_LENGTH
@@ -542,14 +468,11 @@ export default function CompanyPositionsTab({
       );
       return;
     }
-
     const companyId = selectedCompany.id;
-
     try {
       setSaving(true);
       setFormError("");
       setError("");
-
       const data = await requestJson(
         `${COMPANIES_URL}/${encodeURIComponent(companyId)}/positions`,
         {
@@ -562,29 +485,23 @@ export default function CompanyPositionsTab({
           }),
         }
       );
-
       if (!mountedRef.current) return;
-
       setShowAddDialog(false);
       setNewPositionName("");
-
       setSuccessMessage(
         data?.message ||
           `${normalizedPositionName} was added successfully.`
       );
-
       emitPositionUpdate(
         "ADD_COMPANY_POSITION",
         companyId
       );
-
       await loadPositions(companyId);
     } catch (saveError) {
       console.error(
         "Unable to add company position:",
         saveError
       );
-
       if (mountedRef.current) {
         setFormError(
           getErrorMessage(
@@ -605,13 +522,11 @@ export default function CompanyPositionsTab({
     saving,
     selectedCompany,
   ]);
-
   const handleRequestStatusChange = useCallback(
     (position) => {
       if (!canEdit || saving || !position?.id) {
         return;
       }
-
       if (
         !position.isActive &&
         !selectedCompany?.isActive
@@ -621,13 +536,11 @@ export default function CompanyPositionsTab({
         );
         return;
       }
-
       setError("");
       setPendingPosition(position);
     },
     [canEdit, saving, selectedCompany]
   );
-
   const handleConfirmStatusChange = useCallback(async () => {
     if (
       !canEdit ||
@@ -637,9 +550,7 @@ export default function CompanyPositionsTab({
     ) {
       return;
     }
-
     const nextIsActive = !pendingPosition.isActive;
-
     if (
       nextIsActive &&
       !selectedCompany.isActive
@@ -650,14 +561,11 @@ export default function CompanyPositionsTab({
       );
       return;
     }
-
     const companyId = selectedCompany.id;
     const positionName = pendingPosition.positionName;
-
     try {
       setSaving(true);
       setError("");
-
       const data = await requestJson(
         `${POSITIONS_URL}/${encodeURIComponent(pendingPosition.id)}/status`,
         {
@@ -670,11 +578,8 @@ export default function CompanyPositionsTab({
           }),
         }
       );
-
       if (!mountedRef.current) return;
-
       setPendingPosition(null);
-
       setSuccessMessage(
         data?.message ||
           `${positionName} was ${
@@ -683,24 +588,20 @@ export default function CompanyPositionsTab({
               : "deactivated"
           } successfully.`
       );
-
       emitPositionUpdate(
         nextIsActive
           ? "REACTIVATE_COMPANY_POSITION"
           : "DEACTIVATE_COMPANY_POSITION",
         companyId
       );
-
       await loadPositions(companyId);
     } catch (saveError) {
       console.error(
         "Unable to update position status:",
         saveError
       );
-
       if (mountedRef.current) {
         setPendingPosition(null);
-
         setError(
           getErrorMessage(
             saveError,
@@ -720,18 +621,16 @@ export default function CompanyPositionsTab({
     saving,
     selectedCompany,
   ]);
-
   const pendingNextIsActive =
     pendingPosition
       ? !pendingPosition.isActive
       : false;
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {error && (
         <section
           role="alert"
-          className="rounded-3xl border border-red-200 bg-red-50 p-5 text-red-800 shadow-sm dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+          className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
         >
           <div className="flex items-start gap-3">
             <FiAlertTriangle
@@ -739,16 +638,13 @@ export default function CompanyPositionsTab({
               size={20}
               aria-hidden="true"
             />
-
             <div className="min-w-0">
               <h3 className="font-extrabold">
                 Position configuration error
               </h3>
-
               <p className="mt-1 text-sm leading-6">
                 {error}
               </p>
-
               <div className="mt-3">
                 <Button
                   type="button"
@@ -767,47 +663,34 @@ export default function CompanyPositionsTab({
           </div>
         </section>
       )}
-
-      <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
-        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-6 sm:px-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="rounded-2xl bg-white/15 p-3 text-white ring-1 ring-white/20">
+      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+        <div className="border-b border-gray-100 px-5 py-5 sm:px-6 dark:border-white/10">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
                 <FiMapPin
-                  size={22}
+                  size={20}
                   aria-hidden="true"
                 />
               </div>
-
-              <div>
-                <h2 className="text-xl font-extrabold text-white">
-                  Company Position Master
-                </h2>
-
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-indigo-100">
-                  Manage approved deployment positions
-                  for each client company. Only active
-                  positions can be selected for new
-                  employee deployments.
-                </p>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white ring-1 ring-white/20">
-                    {positions.length} total
-                  </span>
-
-                  <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white ring-1 ring-white/20">
-                    {activePositionCount} active
-                  </span>
-
-                  <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white ring-1 ring-white/20">
-                    No rename / no hard delete
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-black text-gray-900 dark:text-white">
+                    Position Configuration
+                  </h2>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    Deployment Setup
                   </span>
                 </div>
+                <p className="mt-1.5 max-w-3xl text-sm leading-6 text-gray-500 dark:text-gray-400">
+                  Select a client company and manage its approved deployment positions.
+                </p>
+                <p className="mt-2 text-[11px] font-semibold text-gray-400 dark:text-gray-500">
+                  Position names cannot be renamed or hard deleted.
+                </p>
               </div>
             </div>
-
-            <div className="flex flex-wrap gap-2">
+            <div className="flex shrink-0 flex-wrap gap-2">
               <Button
                 type="button"
                 variant="secondary"
@@ -821,7 +704,6 @@ export default function CompanyPositionsTab({
               >
                 Refresh
               </Button>
-
               {canEdit && (
                 <Button
                   type="button"
@@ -840,13 +722,11 @@ export default function CompanyPositionsTab({
             </div>
           </div>
         </div>
-
-        <div className="p-5 sm:p-6">
+        <div className="grid gap-4 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
           <label className="block">
             <span className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-200">
               Client Company
             </span>
-
             <select
               value={selectedCompanyId}
               disabled={
@@ -864,7 +744,6 @@ export default function CompanyPositionsTab({
                   No companies available
                 </option>
               )}
-
               {companies.map((company) => (
                 <option
                   key={company.id}
@@ -877,56 +756,64 @@ export default function CompanyPositionsTab({
                 </option>
               ))}
             </select>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Select a client company to review and manage its approved deployment positions.
+            </p>
           </label>
-
-          {selectedCompany && (
+          {selectedCompany ? (
             <div
               className={[
-                "mt-4 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between",
+                "flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between",
                 selectedCompany.isActive
-                  ? "border-indigo-200 bg-indigo-50 dark:border-indigo-500/30 dark:bg-indigo-500/10"
+                  ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/20 dark:bg-emerald-500/10"
                   : "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
               ].join(" ")}
             >
-              <div className="flex items-center gap-3">
-                <FiBriefcase
-                  aria-hidden="true"
-                  className="shrink-0"
-                />
-
-                <div>
-                  <p className="font-extrabold text-gray-900 dark:text-white">
+              <div className="flex min-w-0 items-center gap-3">
+                <div
+                  className={[
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                    selectedCompany.isActive
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                      : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+                  ].join(" ")}
+                >
+                  <FiBriefcase
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate font-extrabold text-gray-900 dark:text-white">
                     {selectedCompany.companyName}
                   </p>
-
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
                     {selectedCompany.isActive
                       ? "Position management is enabled."
-                      : "Inactive company: adding and reactivating positions is disabled."}
+                      : "Adding and reactivating positions is disabled while this company is inactive."}
                   </p>
                 </div>
               </div>
-
               <StatusBadge
                 active={selectedCompany.isActive}
               />
             </div>
+          ) : (
+            <div className="flex items-center rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-gray-400">
+              Select a company to view its configuration status.
+            </div>
           )}
         </div>
-
-        <div className="grid gap-3 border-t border-gray-200 p-5 sm:grid-cols-3 sm:p-6 dark:border-white/10">
+        <div className="grid gap-3 border-t border-gray-100 bg-gray-50/70 p-4 sm:grid-cols-3 sm:px-6 sm:py-5 dark:border-white/10 dark:bg-slate-950/30">
           <MetricCard
             label="Total Positions"
             value={positions.length}
             icon={<FiMapPin aria-hidden="true" />}
           />
-
           <MetricCard
             label="Active"
             value={activePositionCount}
             icon={<FiCheckCircle aria-hidden="true" />}
           />
-
           <MetricCard
             label="Inactive"
             value={inactivePositionCount}
@@ -934,22 +821,32 @@ export default function CompanyPositionsTab({
           />
         </div>
       </section>
-
-      <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5 dark:border-white/10 dark:bg-slate-900">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-black text-gray-900 dark:text-white">
+              Position Directory
+            </h3>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Search and filter the positions configured for the selected company.
+            </p>
+          </div>
+          <span className="w-fit rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            {filteredPositions.length} shown
+          </span>
+        </div>
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
           <div className="relative">
             <FiSearch
               className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
               aria-hidden="true"
             />
-
             <label
               htmlFor="position-search"
               className="sr-only"
             >
               Search positions
             </label>
-
             <input
               id="position-search"
               type="search"
@@ -962,7 +859,6 @@ export default function CompanyPositionsTab({
               className={`${INPUT_CLASS} pl-11`}
             />
           </div>
-
           <select
             aria-label="Filter positions by status"
             value={statusFilter}
@@ -978,79 +874,79 @@ export default function CompanyPositionsTab({
           </select>
         </div>
       </section>
-
       {loadingCompanies || loadingPositions ? (
         <section
           role="status"
-          className="rounded-3xl border border-indigo-200 bg-indigo-50 p-5 text-sm font-semibold text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+          className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm font-semibold text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
         >
           Loading company position configuration...
         </section>
       ) : !companies.length ? (
-        <section className="rounded-3xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center dark:border-white/10 dark:bg-slate-900">
+        <section className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center dark:border-white/10 dark:bg-slate-900">
           <h3 className="font-extrabold text-gray-900 dark:text-white">
             No client companies configured
           </h3>
-
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
             Add a client company first before creating
             deployment positions.
           </p>
         </section>
       ) : filteredPositions.length ? (
-        <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-white/10">
-              <thead className="bg-gray-50 dark:bg-slate-800">
+              <thead className="bg-gray-50/90 dark:bg-slate-800/80">
                 <tr>
-                  <th className="px-5 py-3 text-left text-xs font-extrabold uppercase text-gray-500">
+                  <th className="px-5 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Position
                   </th>
-
-                  <th className="px-5 py-3 text-left text-xs font-extrabold uppercase text-gray-500">
-                    Company
+                  <th className="px-5 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Assigned Employees
                   </th>
-
-                  <th className="px-5 py-3 text-left text-xs font-extrabold uppercase text-gray-500">
+                  <th className="px-5 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Status
                   </th>
-
                   {canEdit && (
-                    <th className="px-5 py-3 text-right text-xs font-extrabold uppercase text-gray-500">
+                    <th className="px-5 py-3.5 text-right text-[11px] font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       Action
                     </th>
                   )}
                 </tr>
               </thead>
-
               <tbody className="divide-y divide-gray-200 dark:divide-white/10">
                 {filteredPositions.map((position) => {
                   const reactivateBlocked =
                     !position.isActive &&
                     !selectedCompany?.isActive;
-
                   return (
-                    <tr key={position.id}>
+                    <tr key={position.id} className="transition-colors hover:bg-gray-50/70 dark:hover:bg-white/[0.03]">
                       <td className="px-5 py-4">
                         <p className="font-extrabold text-gray-900 dark:text-white">
                           {position.positionName}
                         </p>
-
-                        <p className="mt-1 text-xs text-gray-500">
-                          Position ID: {position.id}
-                        </p>
                       </td>
-
-                      <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-                        {selectedCompany?.companyName || "-"}
+                      <td className="px-5 py-4">
+                        {position.assignedEmployeeCount === null ? (
+                          <span
+                            className="text-sm font-semibold text-gray-400 dark:text-gray-500"
+                            title="Employee count is not included in the current position data."
+                          >
+                            —
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-extrabold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+                            {position.assignedEmployeeCount}{" "}
+                            {position.assignedEmployeeCount === 1
+                              ? "employee"
+                              : "employees"}
+                          </span>
+                        )}
                       </td>
-
                       <td className="px-5 py-4">
                         <StatusBadge
                           active={position.isActive}
                         />
                       </td>
-
                       {canEdit && (
                         <td className="px-5 py-4 text-right">
                           <Button
@@ -1085,17 +981,15 @@ export default function CompanyPositionsTab({
           </div>
         </section>
       ) : (
-        <section className="rounded-3xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center dark:border-white/10 dark:bg-slate-900">
+        <section className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center dark:border-white/10 dark:bg-slate-900">
           <FiMapPin
             className="mx-auto text-gray-400"
             size={28}
             aria-hidden="true"
           />
-
           <h3 className="mt-3 font-extrabold text-gray-900 dark:text-white">
             No positions found
           </h3>
-
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
             {positions.length
               ? "No position matches the current filters."
@@ -1103,7 +997,6 @@ export default function CompanyPositionsTab({
           </p>
         </section>
       )}
-
       <Dialog
         open={showAddDialog}
         onClose={handleCloseAdd}
@@ -1127,7 +1020,6 @@ export default function CompanyPositionsTab({
             >
               Cancel
             </Button>
-
             <Button
               type="button"
               leftIcon={<FiPlus />}
@@ -1155,27 +1047,22 @@ export default function CompanyPositionsTab({
                   className="mt-0.5 shrink-0"
                   aria-hidden="true"
                 />
-
                 <p>{formError}</p>
               </div>
             </div>
           )}
-
           <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-500/30 dark:bg-indigo-500/10">
             <p className="text-xs font-bold uppercase text-indigo-700 dark:text-indigo-300">
               Client Company
             </p>
-
             <p className="mt-1 font-extrabold text-indigo-900 dark:text-indigo-200">
               {selectedCompany?.companyName || "-"}
             </p>
           </div>
-
           <label className="block">
             <span className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-200">
               Position Name
             </span>
-
             <input
               type="text"
               value={newPositionName}
@@ -1202,7 +1089,6 @@ export default function CompanyPositionsTab({
               }}
               className={INPUT_CLASS}
             />
-
             <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
               Maximum {MAX_POSITION_LENGTH} characters.
               Position names must be unique within the
@@ -1211,7 +1097,6 @@ export default function CompanyPositionsTab({
           </label>
         </div>
       </Dialog>
-
       <ConfirmDialog
         open={Boolean(pendingPosition)}
         title={
@@ -1248,14 +1133,12 @@ export default function CompanyPositionsTab({
           </strong>
           ?
         </p>
-
         <p className="mt-2">
           {pendingNextIsActive
             ? "The position will become available again for future employee deployment choices."
             : "The position will be removed from future active choices. Existing deployment history will remain unchanged."}
         </p>
       </ConfirmDialog>
-
       <SuccessToast
         title="Company position updated"
         message={successMessage}
