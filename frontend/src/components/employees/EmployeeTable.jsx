@@ -6,35 +6,28 @@ import {
   FiSliders,
   FiUsers,
 } from "react-icons/fi";
-
 import {
   getComplianceStatus as getDefaultComplianceStatus,
   getEmployeeCompany,
   getEmployeeDisplayName,
 } from "../../utils/employees/employeeHelpers";
-
 import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
 import IconButton from "../ui/IconButton";
-
 import ComplianceBadge from "./ComplianceBadge";
 import StatusBadge from "./StatusBadge";
-
 const COMPLIANCE_STATUS_ALIASES = {
   Complete: "Valid",
   "No Compliance": "No Data",
 };
-
 function normalizeComplianceStatus(status) {
   const value = String(status || "").trim();
-
   return (
     COMPLIANCE_STATUS_ALIASES[value] ||
     value ||
     "No Data"
   );
 }
-
 function getEmployeeId(employee) {
   return (
     employee?.id ||
@@ -43,7 +36,16 @@ function getEmployeeId(employee) {
     "-"
   );
 }
-
+function getEmployeePosition(employee) {
+  return String(
+    employee?.position ||
+      employee?.jobPosition ||
+      employee?.job_position ||
+      employee?.positionName ||
+      employee?.position_name ||
+      ""
+  ).trim() || "Not Assigned";
+}
 function getEmployeeKey(
   employee,
   index
@@ -56,7 +58,6 @@ function getEmployeeKey(
     `employee-${index}`
   );
 }
-
 function EmployeeEmptyState({
   totalRecords,
   searchQuery,
@@ -68,15 +69,12 @@ function EmployeeEmptyState({
     String(
       searchQuery || ""
     ).trim();
-
   const canClearSearch =
     typeof onClearSearch ===
     "function";
-
   const canClearFilters =
     typeof onClearFilters ===
     "function";
-
   if (totalRecords === 0) {
     return (
       <EmptyState
@@ -86,7 +84,6 @@ function EmployeeEmptyState({
       />
     );
   }
-
   if (search) {
     return (
       <div className="space-y-4">
@@ -95,7 +92,6 @@ function EmployeeEmptyState({
           title="No search results"
           description={`No employee matched “${search}”. Check the spelling or try a different name, employee ID, company, or position.`}
         />
-
         <div className="flex flex-wrap justify-center gap-2">
           {canClearSearch && (
             <Button
@@ -113,7 +109,6 @@ function EmployeeEmptyState({
               Clear Search
             </Button>
           )}
-
           {hasFilters &&
             canClearFilters && (
               <Button
@@ -135,7 +130,6 @@ function EmployeeEmptyState({
       </div>
     );
   }
-
   if (hasFilters) {
     return (
       <div className="space-y-4">
@@ -144,7 +138,6 @@ function EmployeeEmptyState({
           title="No filtered results"
           description="Employee records exist, but none match the selected employment or compliance filters."
         />
-
         {canClearFilters && (
           <div className="flex justify-center">
             <Button
@@ -166,7 +159,6 @@ function EmployeeEmptyState({
       </div>
     );
   }
-
   return (
     <EmptyState
       icon="employees"
@@ -175,7 +167,6 @@ function EmployeeEmptyState({
     />
   );
 }
-
 export default function EmployeeTable({
   employees = [],
   totalRecords = 0,
@@ -197,57 +188,50 @@ export default function EmployeeTable({
     )
       ? employees
       : [];
-
   const numericTotalRecords =
     Number(
       totalRecords
     );
-
   const safeTotalRecords =
     Number.isFinite(
       numericTotalRecords
     )
       ? numericTotalRecords
       : safeEmployees.length;
-
   const complianceResolver =
     typeof getComplianceStatus ===
     "function"
       ? getComplianceStatus
       : getDefaultComplianceStatus;
-
   /*
-   * ==================================================
-   * EMPLOYEE TABLE ACCESS
-   * ==================================================
-   *
-   * SUPER_ADMIN:
-   * - view only
-   *
-   * HR_COORDINATOR:
-   * - view only
-   *
-   * HR_MANAGER / HR_STAFF:
-   * - editing follows existing permissions
-   *
-   * HR_MANAGER:
-   * - archive follows existing permission
+   \* ==================================================
+   \* EMPLOYEE TABLE ACCESS
+   \* ==================================================
+   \*
+   \* SUPER_ADMIN:
+   \* - view only
+   \*
+   \* HR_COORDINATOR:
+   \* - view only
+   \*
+   \* HR_MANAGER / HR_STAFF:
+   \* - editing follows existing permissions
+   \*
+   \* HR_MANAGER:
+   \* - archive follows existing permission
    */
   const isReadOnly =
     isSuperAdmin ||
     isHRCoordinator;
-
   const canEdit =
     !isReadOnly &&
     typeof onEdit ===
       "function";
-
   const canArchive =
     isHRManager &&
     !isReadOnly &&
     typeof onArchive ===
       "function";
-
   const recordCountLabel =
     safeTotalRecords >
     safeEmployees.length
@@ -258,7 +242,6 @@ export default function EmployeeTable({
             ? "record"
             : "records"
         }`;
-
   return (
     <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
       <div className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-white/10">
@@ -268,16 +251,14 @@ export default function EmployeeTable({
               aria-hidden="true"
               className="shrink-0 text-indigo-600 dark:text-indigo-400"
             />
-
             Employee Records
           </h2>
-
           <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-            View registered employees, employment status,
-            company assignment, and compliance condition.
+            {isHRCoordinator
+              ? "View assigned-company employees, positions, employment status, and compliance condition."
+              : "View registered employees, employment status, company assignment, and compliance condition."}
           </p>
         </div>
-
         <span
           aria-label={
             recordCountLabel
@@ -287,7 +268,6 @@ export default function EmployeeTable({
           {recordCountLabel}
         </span>
       </div>
-
       {safeEmployees.length ===
       0 ? (
         <div className="p-5 sm:p-6">
@@ -320,35 +300,30 @@ export default function EmployeeTable({
                 >
                   Employee ID
                 </th>
-
                 <th
                   scope="col"
                   className="px-6 py-4"
                 >
                   Full Name
                 </th>
-
                 <th
                   scope="col"
                   className="px-6 py-4"
                 >
-                  Company
+                  {isHRCoordinator ? "Position" : "Company"}
                 </th>
-
                 <th
                   scope="col"
                   className="px-6 py-4"
                 >
                   Status
                 </th>
-
                 <th
                   scope="col"
                   className="px-6 py-4"
                 >
                   Compliance
                 </th>
-
                 <th
                   scope="col"
                   className="px-6 py-4 text-right"
@@ -357,7 +332,6 @@ export default function EmployeeTable({
                 </th>
               </tr>
             </thead>
-
             <tbody className="divide-y divide-gray-100 dark:divide-white/5">
               {safeEmployees.map(
                 (
@@ -368,17 +342,18 @@ export default function EmployeeTable({
                     getEmployeeId(
                       employee
                     );
-
                   const employeeName =
                     getEmployeeDisplayName(
                       employee
                     );
-
                   const employeeCompany =
                     getEmployeeCompany(
                       employee
                     );
-
+                  const employeePosition =
+                    getEmployeePosition(
+                      employee
+                    );
                   const complianceStatus =
                     normalizeComplianceStatus(
                       employee
@@ -388,7 +363,6 @@ export default function EmployeeTable({
                             ?.documents
                         )
                     );
-
                   return (
                     <tr
                       key={getEmployeeKey(
@@ -404,7 +378,6 @@ export default function EmployeeTable({
                           }
                         </span>
                       </td>
-
                       <td className="whitespace-nowrap px-6 py-4 align-middle">
                         <div className="min-w-0">
                           <p
@@ -417,8 +390,7 @@ export default function EmployeeTable({
                               employeeName
                             }
                           </p>
-
-                          {employee?.position && (
+                          {!isHRCoordinator && employee?.position && (
                             <p
                               title={
                                 employee.position
@@ -432,20 +404,20 @@ export default function EmployeeTable({
                           )}
                         </div>
                       </td>
-
                       <td className="px-6 py-4 align-middle">
                         <p
                           title={
-                            employeeCompany
+                            isHRCoordinator
+                              ? employeePosition
+                              : employeeCompany
                           }
                           className="max-w-[240px] truncate text-sm font-semibold text-gray-700 dark:text-gray-300"
                         >
-                          {
-                            employeeCompany
-                          }
+                          {isHRCoordinator
+                            ? employeePosition
+                            : employeeCompany}
                         </p>
                       </td>
-
                       <td className="px-6 py-4 align-middle">
                         <StatusBadge
                           status={
@@ -455,7 +427,6 @@ export default function EmployeeTable({
                           }
                         />
                       </td>
-
                       <td className="px-6 py-4 align-middle">
                         <ComplianceBadge
                           status={
@@ -463,7 +434,6 @@ export default function EmployeeTable({
                           }
                         />
                       </td>
-
                       <td className="px-6 py-4 align-middle">
                         <div className="flex items-center justify-end gap-2">
                           <IconButton
@@ -481,7 +451,6 @@ export default function EmployeeTable({
                               aria-hidden="true"
                             />
                           </IconButton>
-
                           {canEdit && (
                             <IconButton
                               label={`Edit ${employeeName}`}
@@ -499,7 +468,6 @@ export default function EmployeeTable({
                               />
                             </IconButton>
                           )}
-
                           {canArchive && (
                             <IconButton
                               label={`Archive ${employeeName}`}

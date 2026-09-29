@@ -455,42 +455,37 @@ export function ChatProvider({ children }) {
             setToast(null);
           }}
           className="
-            fixed bottom-5 right-5
-            z-[1100]
-            w-[calc(100%-2.5rem)]
+            fixed bottom-5 right-24
+            z-[1150]
+            w-[calc(100vw-7.5rem)]
             max-w-xs
             rounded-2xl
-            border border-blue-200
+            border border-slate-200
+            border-l-4 border-l-blue-500
             bg-white
-            p-4
+            px-4 py-3.5
             text-sm text-slate-900
             shadow-xl
-            transition
+            transition duration-200
+            hover:-translate-y-0.5
+            hover:border-slate-300
             hover:shadow-2xl
+            sm:bottom-6 sm:right-24 sm:w-72
             dark:border-slate-700
+            dark:border-l-blue-400
             dark:bg-slate-900
             dark:text-white
+            dark:hover:border-slate-600
           "
           role="status"
+          aria-live="polite"
         >
-          <span
-            className="
-              block
-              font-semibold
-            "
-          >
+          <span className="block text-xs font-extrabold uppercase tracking-wide text-blue-600 dark:text-blue-400">
             {toast.isSystem
-              ? "Group activity"
-              : "New chat message"}
+              ? "Messenger update"
+              : "New message"}
           </span>
-          <span
-            className="
-              mt-1
-              block
-              text-slate-600
-              dark:text-slate-300
-            "
-          >
+          <span className="mt-1 block truncate font-semibold text-slate-700 dark:text-slate-200">
             {toast.isSystem
               ? toast.title
               : `From ${toast.title}`}
