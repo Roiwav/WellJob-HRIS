@@ -8,7 +8,6 @@ import {
   FiEye,
   FiFileText,
   FiShield,
-  FiUser,
   FiX,
 } from "react-icons/fi";
 import {
@@ -54,69 +53,69 @@ const EMPTY_INCIDENT_SUMMARY = Object.freeze({
 });
 const STATUS_CLASSES = {
   Valid:
-    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+    "border border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300",
   "Expiring Soon":
-    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
   Expired:
-    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+    "border border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300",
   "No Data":
-    "border border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
+    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
   Incomplete:
-    "border border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/20 dark:text-orange-300",
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
   Inactive:
-    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300",
+    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
   Deployed:
-    "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
+    "border border-indigo-200/80 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
   "Floating / Standby":
-    "border border-purple-200 bg-purple-100 text-purple-700 dark:border-purple-500/30 dark:bg-purple-500/20 dark:text-purple-300",
+    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
   Open:
-    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+    "border border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300",
   Investigating:
-    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
   "For Review":
-    "border border-indigo-200 bg-indigo-100 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/20 dark:text-indigo-300",
+    "border border-indigo-200/80 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
   Closed:
-    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+    "border border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300",
 };
 const RISK_CLASSES = {
   "High Risk":
-    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+    "border border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300",
   Repeat:
-    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
   Monitor:
-    "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
+    "border border-indigo-200/80 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
   "Low Risk":
-    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+    "border border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300",
   Unavailable:
-    "border border-gray-200 bg-gray-100 text-gray-600 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
+    "border border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
 const KPI_CLASSES = {
   "Critical Concern":
-    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+    "border border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300",
   "Needs Improvement":
-    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
   "Minor Concern":
-    "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
+    "border border-indigo-200/80 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
   "Good Standing":
-    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+    "border border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300",
   Unavailable:
-    "border border-gray-200 bg-gray-100 text-gray-600 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
+    "border border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
 const RECOMMENDATION_CLASSES = {
   Retain:
-    "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
+    "border border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300",
   "Monitor Employee":
-    "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
+    "border border-indigo-200/80 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
   "Final Warning":
-    "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
   "Suspension Review":
-    "border border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/20 dark:text-orange-300",
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
   "Termination Review":
-    "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+    "border border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300",
   "HR Review Required":
-    "border border-indigo-200 bg-indigo-100 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/20 dark:text-indigo-300",
+    "border border-indigo-200/80 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
   Unavailable:
-    "border border-gray-200 bg-gray-100 text-gray-600 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
+    "border border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
 function getClassName(classes, value, fallback) {
   return classes[value] || classes[fallback];
@@ -366,7 +365,7 @@ function buildDocumentFile(document = {}) {
   if (!rawPath) {
     return null;
   }
-  const normalizedPath = String(rawPath).replace(/\\/g, "/");
+  const normalizedPath = String(rawPath).split("\\").join("/");
   const cleanPath = normalizedPath.toLowerCase().split("?")[0];
   return {
     documentId: document.id,
@@ -419,18 +418,6 @@ function getSeverityKPILevel(severity) {
   }
   return "Minor Concern";
 }
-/*
- * ==================================================
- * HISTORICAL INCIDENT SUMMARY VALIDATION
- * ==================================================
- *
- * The HR Coordinator's summary comes exclusively
- * from the protected summary endpoint.
- *
- * Do not replace an unsuccessful request with zeros.
- * Doing so would incorrectly display Good Standing
- * or Low Risk when historical data is unavailable.
- */
 function parseHistoricalSummary(data, expectedEmployeeId) {
   if (
     !data ||
@@ -487,23 +474,6 @@ function parseHistoricalSummary(data, expectedEmployeeId) {
   }
   return validated;
 }
-/*
- * ==================================================
- * EMPLOYEE MODAL
- * ==================================================
- *
- * HR_COORDINATOR:
- * - Overall KPI counters use the protected historical
- *   summary endpoint.
- * - Detailed history uses the existing company-scoped
- *   incident-history endpoint.
- *
- * OTHER AUTHORIZED ROLES:
- * - Keep the existing incident-history-derived summary.
- *
- * Both requests are scoped to the current employee ID
- * to avoid briefly showing another employee's data.
- */
 export default function EmployeeModal({ employee, onClose }) {
   const { user } = useAuth();
   const isHRCoordinator =
@@ -932,6 +902,13 @@ export default function EmployeeModal({ employee, onClose }) {
     employeeStatus === "Inactive"
       ? "Not Assigned"
       : employee.company || "Not Assigned";
+  const positionDisplay =
+    employeeStatus === "Deployed"
+      ? employee?.position ||
+        employee?.jobTitle ||
+        employee?.job_title ||
+        ""
+      : "";
   const employeeInitials =
     getEmployeeInitials(employeeName);
   /*
@@ -1034,78 +1011,18 @@ export default function EmployeeModal({ employee, onClose }) {
         closeOnEscape
         scrollBody={false}
         bodyClassName="min-h-0 flex-1 p-0"
+        className="border-slate-200 dark:border-slate-800"
       >
-        <div className="flex h-full min-h-0 flex-col">
-          <header className="shrink-0 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4 dark:border-white/10 dark:from-slate-900 dark:to-slate-900 sm:px-6 sm:py-5 lg:px-8">
+        <div className="flex h-full min-h-0 flex-col bg-slate-50/60 dark:bg-slate-950">
+          <header className="shrink-0 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
             <div className="flex items-start justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-4">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xl font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-                  {employeeInitials}
-                </div>
-                <div className="min-w-0">
-                  <h2 className="truncate text-2xl font-bold text-gray-900 dark:text-white">
-                    {employeeName}
-                  </h2>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-200">
-                      {employeeId || "-"}
-                    </span>
-                    <StatusPill
-                      className={getClassName(
-                        STATUS_CLASSES,
-                        employeeStatus,
-                        "No Data"
-                      )}
-                      icon={
-                        employeeStatus === "Inactive" ? (
-                          <FiShield aria-hidden="true" />
-                        ) : null
-                      }
-                    >
-                      {employeeStatus}
-                    </StatusPill>
-                    <StatusPill
-                      className={getClassName(
-                        STATUS_CLASSES,
-                        overallCompliance,
-                        "No Data"
-                      )}
-                      icon={
-                        ["Expired", "Expiring Soon"].includes(
-                          overallCompliance
-                        ) ? (
-                          <FiAlertTriangle aria-hidden="true" />
-                        ) : null
-                      }
-                    >
-                      Overall Compliance: {overallCompliance}
-                    </StatusPill>
-                    <StatusPill
-                      className={getClassName(
-                        RISK_CLASSES,
-                        displayedRiskLevel,
-                        "Unavailable"
-                      )}
-                      icon={
-                        riskLevel === "High Risk" &&
-                        !incidentSummaryLoading ? (
-                          <FiAlertTriangle aria-hidden="true" />
-                        ) : null
-                      }
-                    >
-                      Risk: {displayedRiskLevel}
-                    </StatusPill>
-                    <StatusPill
-                      className={getClassName(
-                        KPI_CLASSES,
-                        displayedKPILevel,
-                        "Unavailable"
-                      )}
-                    >
-                      KPI: {displayedKPILevel}
-                    </StatusPill>
-                  </div>
-                </div>
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Employee Overview
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  Core employee assignment and compliance information.
+                </p>
               </div>
               <IconButton
                 label="Close employee details"
@@ -1117,158 +1034,55 @@ export default function EmployeeModal({ employee, onClose }) {
                 <FiX aria-hidden="true" />
               </IconButton>
             </div>
-          </header>
-          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-5 text-gray-900 dark:text-white sm:px-6 sm:py-6 lg:px-8">
-            {historicalSummaryError && (
-              <div
-                role="alert"
-                className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
-              >
-                {historicalSummaryError}
-              </div>
-            )}
-            {historyError && (
-              <div
-                role="alert"
-                className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
-              >
-                {historyError}
-              </div>
-            )}
-            {previewError && (
-              <div
-                role="alert"
-                className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
-              >
-                {previewError}
-              </div>
-            )}
-            {hasAttentionNeeded && (
-              <div
-                className={[
-                  "rounded-2xl border p-5",
-                  expired.length
-                    ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
-                    : "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
-                ].join(" ")}
-              >
-                <div className="flex items-start gap-3">
-                  <FiAlertTriangle
-                    aria-hidden="true"
-                    size={18}
-                    className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300"
-                  />
-                  <div>
-                    <p className="font-semibold text-amber-700 dark:text-amber-300">
-                      Compliance Attention Needed
-                    </p>
-                    <div className="mt-1 space-y-1 text-sm text-amber-700/90 dark:text-amber-200">
-                      {expired.length > 0 && (
-                        <p>
-                          {expired.length} document(s) already expired.
-                        </p>
+            <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-xs font-bold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                    {employeeInitials}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-lg font-bold text-slate-900 dark:text-slate-100">
+                        {employeeName}
+                      </p>
+                      <span className="inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {employeeId || "-"}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                      <span className="inline-flex items-center gap-1.5 font-medium">
+                        <FiBriefcase aria-hidden="true" />
+                        {companyDisplay}
+                      </span>
+                      {positionDisplay && (
+                        <>
+                          <span className="text-slate-300 dark:text-slate-600">•</span>
+                          <span className="font-medium">{positionDisplay}</span>
+                        </>
                       )}
-                      {expiringSoon.length > 0 && (
-                        <p>
-                          {expiringSoon.length} document(s) expiring soon.
-                        </p>
-                      )}
-                      {noData.length > 0 && (
-                        <p>
-                          {noData.length} document(s) missing proof or
-                          expiration data.
-                        </p>
-                      )}
+                      <span className="text-slate-300 dark:text-slate-600">•</span>
+                      <span className="inline-flex items-center gap-1.5 font-medium">
+                        <FiShield aria-hidden="true" />
+                        {employeeStatus}
+                      </span>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-            <section>
-              <SectionTitle>Basic Information</SectionTitle>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <InfoBox
-                  icon={
-                    <FiUser size={16} aria-hidden="true" />
-                  }
-                  label="Employee Name"
-                  value={employeeName}
-                />
-                <InfoBox
-                  icon={
-                    <FiShield size={16} aria-hidden="true" />
-                  }
-                  label="Employee ID"
-                  value={employeeId}
-                />
-                <InfoBox
-                  icon={
-                    <FiBriefcase size={16} aria-hidden="true" />
-                  }
-                  label="Company Assignment"
-                  value={companyDisplay}
-                />
-              </div>
-            </section>
-            <section>
-              <SectionTitle>Employment Status</SectionTitle>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <BadgeBox
-                  label="Current Status"
-                  value={employeeStatus}
-                  className={getClassName(
-                    STATUS_CLASSES,
-                    employeeStatus,
-                    "No Data"
-                  )}
-                />
-                <BadgeBox
-                  label="Compliance Summary"
-                  value={overallCompliance}
-                  className={getClassName(
-                    STATUS_CLASSES,
-                    overallCompliance,
-                    "No Data"
-                  )}
-                />
-              </div>
-            </section>
-            <section>
-              <SectionTitle>
-                Incident and KPI Summary
-              </SectionTitle>
-              {isHRCoordinator && (
-                <p className="mb-4 text-sm leading-6 text-gray-500 dark:text-gray-400">
-                  Overall employee statistics include recorded
-                  incidents from previous and current company
-                  assignments. Previous-company incident details
-                  remain restricted.
-                </p>
-              )}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                <StatBox
-                  label="Total Incidents"
-                  value={getDisplayedStatistic("total")}
-                />
-                <StatBox
-                  label="Open Cases"
-                  value={getDisplayedStatistic("open")}
-                  valueClassName="text-red-500"
-                />
-                <StatBox
-                  label="Closed Cases"
-                  value={getDisplayedStatistic("closed")}
-                  valueClassName="text-green-500"
-                />
-                <StatBox
-                  label="Severity Score"
-                  value={getDisplayedStatistic("severityScore")}
-                  valueClassName="text-indigo-500"
-                />
-                <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-                  <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                    Risk Level
-                  </p>
+                <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
+                  <StatusPill
+                    className={getClassName(
+                      STATUS_CLASSES,
+                      overallCompliance,
+                      "No Data"
+                    )}
+                    icon={
+                      ["Expired", "Expiring Soon"].includes(overallCompliance) ? (
+                        <FiAlertTriangle aria-hidden="true" />
+                      ) : null
+                    }
+                  >
+                    Compliance: {overallCompliance}
+                  </StatusPill>
                   <StatusPill
                     className={getClassName(
                       RISK_CLASSES,
@@ -1276,299 +1090,353 @@ export default function EmployeeModal({ employee, onClose }) {
                       "Unavailable"
                     )}
                     icon={
-                      riskLevel === "High Risk" &&
-                      !incidentSummaryLoading ? (
+                      riskLevel === "High Risk" && !incidentSummaryLoading ? (
                         <FiAlertTriangle aria-hidden="true" />
                       ) : null
                     }
                   >
-                    {displayedRiskLevel}
+                    Risk: {displayedRiskLevel}
                   </StatusPill>
                 </div>
               </div>
-            </section>
-            <section>
-              <SectionTitle>
-                System Recommendation
-              </SectionTitle>
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <StatusPill
-                      className={getClassName(
-                        RECOMMENDATION_CLASSES,
-                        displayedRecommendation,
-                        "Unavailable"
-                      )}
-                    >
-                      {displayedRecommendation}
-                    </StatusPill>
-                    <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                      {displayedRecommendationReason}
-                    </p>
+            </div>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 text-slate-900 dark:text-slate-100 sm:px-6 sm:py-5">
+            <div className="mx-auto max-w-[1500px] space-y-5">
+              {historicalSummaryError && (
+                <AlertBox tone="warning">
+                  {historicalSummaryError}
+                </AlertBox>
+              )}
+              {historyError && (
+                <AlertBox tone="warning">
+                  {historyError}
+                </AlertBox>
+              )}
+              {previewError && (
+                <AlertBox tone="danger">
+                  {previewError}
+                </AlertBox>
+              )}
+              {hasAttentionNeeded && (
+                <div
+                  className={[
+                    "rounded-2xl border px-4 py-3",
+                    expired.length
+                      ? "border-rose-200 bg-rose-50 dark:border-rose-500/25 dark:bg-rose-500/10"
+                      : "border-amber-200 bg-amber-50 dark:border-amber-500/25 dark:bg-amber-500/10",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start gap-3">
+                    <FiAlertTriangle
+                      aria-hidden="true"
+                      className={[
+                        "mt-0.5 shrink-0",
+                        expired.length
+                          ? "text-rose-600 dark:text-rose-300"
+                          : "text-amber-600 dark:text-amber-300",
+                      ].join(" ")}
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                        Compliance attention needed
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+                        {expired.length > 0 && (
+                          <span>{expired.length} expired</span>
+                        )}
+                        {expiringSoon.length > 0 && (
+                          <span>{expiringSoon.length} expiring soon</span>
+                        )}
+                        {noData.length > 0 && (
+                          <span>{noData.length} missing file or date</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <StatusPill
+                </div>
+              )}
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <SectionTitle
+                  title="Incident & KPI Summary"
+                  description={
+                    isHRCoordinator
+                      ? "Overall statistics may include incidents from previous and current company assignments."
+                      : "Current incident totals and system-generated employee indicators."
+                  }
+                />
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+                  <StatBox
+                    label="Total Incidents"
+                    value={getDisplayedStatistic("total")}
+                  />
+                  <StatBox
+                    label="Open Cases"
+                    value={getDisplayedStatistic("open")}
+                    valueClassName="text-rose-600 dark:text-rose-300"
+                  />
+                  <StatBox
+                    label="Closed Cases"
+                    value={getDisplayedStatistic("closed")}
+                    valueClassName="text-emerald-600 dark:text-emerald-300"
+                  />
+                  <StatBox
+                    label="Severity Score"
+                    value={getDisplayedStatistic("severityScore")}
+                  />
+                  <MetricBadgeBox
+                    label="Risk Level"
+                    value={displayedRiskLevel}
+                    className={getClassName(
+                      RISK_CLASSES,
+                      displayedRiskLevel,
+                      "Unavailable"
+                    )}
+                  />
+                  <MetricBadgeBox
+                    label="KPI Level"
+                    value={displayedKPILevel}
                     className={getClassName(
                       KPI_CLASSES,
                       displayedKPILevel,
                       "Unavailable"
                     )}
-                  >
-                    KPI Level: {displayedKPILevel}
-                  </StatusPill>
+                  />
                 </div>
-              </div>
-            </section>
-            <section>
-              <SectionTitle>
-                Recent Incident History
-              </SectionTitle>
-              {isHRCoordinator && (
-                <p className="mb-4 text-sm leading-6 text-gray-500 dark:text-gray-400">
-                  Detailed records shown below are limited to
-                  incidents you are authorized to view for your
-                  assigned company. Historical statistics above
-                  may include incidents from previous companies.
-                </p>
-              )}
-              {historyLoading ? (
-                <EmptyBox
-                  text="Loading incident history from backend..."
+                {isHRCoordinator && (
+                  <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Previous-company incident details remain restricted. Only authorized incident details are shown below.
+                  </p>
+                )}
+              </section>
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <SectionTitle
+                  title="System Recommendation"
+                  description="Decision-support guidance based on the incident indicators currently available."
                 />
-              ) : historyError ? (
-                <EmptyBox
-                  text="Incident history is unavailable."
-                />
-              ) : recentIncidents.length === 0 ? (
-                <EmptyBox
-                  text={
-                    isHRCoordinator &&
-                    incidentSummaryAvailable &&
-                    incidentSummary.total > 0
-                      ? "This employee has recorded incidents in the overall summary, but no detailed incident records are available for your assigned company."
-                      : "No incident history found for this employee."
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+                  <StatusPill
+                    className={getClassName(
+                      RECOMMENDATION_CLASSES,
+                      displayedRecommendation,
+                      "Unavailable"
+                    )}
+                  >
+                    {displayedRecommendation}
+                  </StatusPill>
+                  <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    {displayedRecommendationReason}
+                  </p>
+                </div>
+              </section>
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <SectionTitle
+                  title="Recent Incident History"
+                  description={
+                    isHRCoordinator
+                      ? "Detailed records are limited to incidents you are authorized to view for your assigned company."
+                      : "Up to five of the most recent incident records for this employee."
                   }
                 />
-              ) : (
-                <div className="space-y-3">
-                  {recentIncidents.map((incident, index) => (
-                    <div
-                      key={`${incident.id}-${index}`}
-                      className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40"
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                          <p className="font-semibold text-gray-900 dark:text-white">
-                            {incident.violation ||
-                              "No violation type"}
-                          </p>
-                          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            {incident.displayId} •{" "}
-                            {formatDate(
-                              incident.reportedAt ||
-                                incident.date
-                            )}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <StatusPill
-                            className={getClassName(
-                              STATUS_CLASSES,
-                              incident.status,
-                              "Open"
-                            )}
-                          >
-                            {incident.status || "Open"}
-                          </StatusPill>
-                          <StatusPill
-                            className={getClassName(
-                              KPI_CLASSES,
-                              getSeverityKPILevel(
-                                incident.severity
-                              ),
-                              "Minor Concern"
-                            )}
-                          >
-                            {incident.severity || "Minor"}
-                          </StatusPill>
-                        </div>
-                      </div>
-                      {incident.description && (
-                        <p className="mt-3 text-sm leading-6 text-gray-700 dark:text-gray-300">
-                          {incident.description}
-                        </p>
-                      )}
-                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                          Disciplinary Action
-                        </p>
-                        <p className="mt-2 font-bold text-slate-800 dark:text-slate-100">
-                          Sanction:{" "}
-                          {incident.sanction || "For HR Review"}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-            <section>
-              <SectionTitle>
-                Compliance Documents
-              </SectionTitle>
-              <div className="space-y-4">
-                {documents.length === 0 ? (
+                {historyLoading ? (
+                  <EmptyBox text="Loading incident history from backend..." />
+                ) : historyError ? (
+                  <EmptyBox text="Incident history is unavailable." />
+                ) : recentIncidents.length === 0 ? (
                   <EmptyBox
-                    text="No compliance documents found for this employee."
+                    text={
+                      isHRCoordinator &&
+                      incidentSummaryAvailable &&
+                      incidentSummary.total > 0
+                        ? "The overall summary contains recorded incidents, but no detailed incident records are available for your assigned company."
+                        : "No incident history found for this employee."
+                    }
                   />
                 ) : (
-                  documents.map((document) => {
-                    const isExpired =
-                      document.status === "Expired";
-                    const isExpiringSoon =
-                      document.status === "Expiring Soon";
-                    const isNoData =
-                      document.status === "No Data";
-                    return (
-                      <div
-                        key={document.name}
-                        className={[
-                          "rounded-2xl border p-5",
-                          isExpired
-                            ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
-                            : isExpiringSoon
-                              ? "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
-                              : isNoData
-                                ? "border-orange-300 bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10"
-                                : "border-gray-200 bg-white dark:border-white/10 dark:bg-slate-900/40",
-                        ].join(" ")}
+                  <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                    {recentIncidents.map((incident, index) => (
+                      <article
+                        key={`${incident.id}-${index}`}
+                        className="px-4 py-3"
                       >
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="flex items-start gap-3">
-                            <div
-                              className={[
-                                "mt-1",
-                                isExpired
-                                  ? "text-red-500"
-                                  : isExpiringSoon
-                                    ? "text-amber-500"
-                                    : isNoData
-                                      ? "text-orange-500"
-                                      : "text-indigo-500",
-                              ].join(" ")}
-                            >
-                              <FiFileText
-                                size={18}
-                                aria-hidden="true"
-                              />
-                            </div>
-                            <div>
-                              <p className="text-base font-semibold text-gray-900 dark:text-white">
-                                {document.name}
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900 dark:text-slate-100">
+                              {incident.violation || "No violation type"}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {incident.displayId} •{" "}
+                              {formatDate(
+                                incident.reportedAt ||
+                                  incident.date
+                              )}
+                            </p>
+                            {incident.description && (
+                              <p className="mt-2 text-sm leading-5 text-slate-600 dark:text-slate-300">
+                                {incident.description}
                               </p>
-                              <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                            )}
+                            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                                Sanction:
+                              </span>{" "}
+                              {incident.sanction || "For HR Review"}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap gap-2">
+                            <StatusPill
+                              className={getClassName(
+                                STATUS_CLASSES,
+                                incident.status,
+                                "Open"
+                              )}
+                            >
+                              {incident.status || "Open"}
+                            </StatusPill>
+                            <StatusPill
+                              className={getClassName(
+                                KPI_CLASSES,
+                                getSeverityKPILevel(
+                                  incident.severity
+                                ),
+                                "Minor Concern"
+                              )}
+                            >
+                              {incident.severity || "Minor"}
+                            </StatusPill>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <SectionTitle
+                  title="Compliance Documents"
+                  description="Uploaded compliance files and their current expiration condition."
+                />
+                {documents.length === 0 ? (
+                  <EmptyBox text="No compliance documents found for this employee." />
+                ) : (
+                  <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                    {documents.map((document) => {
+                      const isExpired =
+                        document.status === "Expired";
+                      const isExpiringSoon =
+                        document.status === "Expiring Soon";
+                      const isNoData =
+                        document.status === "No Data";
+                      return (
+                        <article
+                          key={document.name}
+                          className="px-4 py-3"
+                        >
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <div
+                                className={[
+                                  "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                                  isExpired
+                                    ? "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300"
+                                    : isExpiringSoon
+                                      ? "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"
+                                      : isNoData
+                                        ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                                        : "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300",
+                                ].join(" ")}
+                              >
+                                <FiFileText
+                                  size={16}
+                                  aria-hidden="true"
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-900 dark:text-slate-100">
+                                  {document.name}
+                                </p>
                                 {document.expirable ? (
-                                  <>
-                                    <div className="flex items-center gap-2">
-                                      <FiCalendar
-                                        size={14}
-                                        aria-hidden="true"
-                                      />
-                                      <span>
-                                        Expiration Date:{" "}
-                                        {document.expirationDate
-                                          ? formatDate(
-                                              document.expirationDate
-                                            )
-                                          : "Not Set"}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <FiClock
-                                        size={14}
-                                        aria-hidden="true"
-                                      />
-                                      <span>
-                                        {getDaysLabel(
-                                          document.expirationDate
-                                        )}
-                                      </span>
-                                    </div>
-                                  </>
+                                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <FiCalendar aria-hidden="true" />
+                                      {document.expirationDate
+                                        ? formatDate(
+                                            document.expirationDate
+                                          )
+                                        : "Expiration not set"}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <FiClock aria-hidden="true" />
+                                      {getDaysLabel(
+                                        document.expirationDate
+                                      )}
+                                    </span>
+                                  </div>
                                 ) : (
-                                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                     Permanent compliance document
                                   </p>
                                 )}
                                 {!document.file && (
-                                  <p className="text-sm font-medium text-orange-600 dark:text-orange-300">
+                                  <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-300">
                                     No uploaded file found
                                   </p>
                                 )}
                               </div>
                             </div>
-                          </div>
-                          <div className="flex flex-col items-start gap-2 lg:items-end">
-                            {document.file && (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                leftIcon={
-                                  <FiEye aria-hidden="true" />
-                                }
-                                loading={
-                                  previewLoadingId ===
-                                  document.file.documentId
-                                }
-                                disabled={
-                                  previewLoadingId !== null
-                                }
-                                onClick={() =>
-                                  void handleViewDocument(
-                                    document.file
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                              <StatusPill
+                                className={getClassName(
+                                  STATUS_CLASSES,
+                                  document.status,
+                                  "No Data"
+                                )}
+                                icon={
+                                  isExpired ||
+                                  isExpiringSoon ||
+                                  isNoData ? (
+                                    <FiAlertTriangle aria-hidden="true" />
+                                  ) : (
+                                    <FiCheckCircle aria-hidden="true" />
                                   )
                                 }
                               >
-                                View File
-                              </Button>
-                            )}
-                            <StatusPill
-                              className={getClassName(
-                                STATUS_CLASSES,
-                                document.status,
-                                "No Data"
+                                {document.status}
+                              </StatusPill>
+                              {document.file && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  leftIcon={
+                                    <FiEye aria-hidden="true" />
+                                  }
+                                  loading={
+                                    previewLoadingId ===
+                                    document.file.documentId
+                                  }
+                                  disabled={
+                                    previewLoadingId !== null
+                                  }
+                                  onClick={() =>
+                                    void handleViewDocument(
+                                      document.file
+                                    )
+                                  }
+                                >
+                                  View File
+                                </Button>
                               )}
-                              icon={
-                                isExpired ||
-                                isExpiringSoon ||
-                                isNoData ? (
-                                  <FiAlertTriangle
-                                    aria-hidden="true"
-                                  />
-                                ) : null
-                              }
-                            >
-                              {document.status}
-                            </StatusPill>
-                            {document.status === "Valid" && (
-                              <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-300">
-                                <FiCheckCircle
-                                  size={14}
-                                  aria-hidden="true"
-                                />
-                                Document verified
-                              </span>
-                            )}
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })
+                        </article>
+                      );
+                    })}
+                  </div>
                 )}
-              </div>
-            </section>
+              </section>
+            </div>
           </div>
-          <footer className="flex shrink-0 justify-end border-t border-gray-200 bg-white px-4 py-4 dark:border-white/10 dark:bg-slate-900 sm:px-6 lg:px-8">
+          <footer className="flex shrink-0 justify-end border-t border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
             <Button onClick={handleCloseEmployee}>
               Close
             </Button>
@@ -1599,7 +1467,7 @@ export default function EmployeeModal({ employee, onClose }) {
           </Button>
         }
       >
-        <div className="flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl bg-gray-50 dark:bg-slate-950/50">
+        <div className="flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50 dark:bg-slate-950/50">
           {previewFile?.type?.startsWith("image/") ||
           previewFile?.type === "image/*" ? (
             <img
@@ -1617,7 +1485,7 @@ export default function EmployeeModal({ employee, onClose }) {
                 previewFile?.name ||
                 "Uploaded file preview"
               }
-              className="h-full min-h-[60vh] w-full rounded-lg border border-gray-200 dark:border-white/10"
+              className="h-full min-h-[60vh] w-full rounded-lg border border-slate-200 dark:border-slate-800"
             />
           )}
         </div>
@@ -1633,7 +1501,7 @@ function StatusPill({
   return (
     <span
       className={[
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
+        "inline-flex w-fit items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold",
         className,
       ]
         .filter(Boolean)
@@ -1644,61 +1512,36 @@ function StatusPill({
     </span>
   );
 }
-function SectionTitle({ children }) {
-  return (
-    <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-      {children}
-    </h3>
-  );
-}
-function InfoBox({
-  icon,
-  label,
-  value,
+function SectionTitle({
+  title,
+  description,
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-      <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
-        {icon}
-        <span className="text-sm">
-          {label}
-        </span>
-      </div>
-      <p className="text-base font-semibold">
-        {value || "-"}
-      </p>
-    </div>
-  );
-}
-function BadgeBox({
-  label,
-  value,
-  className,
-}) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-        {label}
-      </p>
-      <StatusPill className={className}>
-        {value}
-      </StatusPill>
+    <div className="mb-3">
+      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+        {title}
+      </h3>
+      {description && (
+        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+          {description}
+        </p>
+      )}
     </div>
   );
 }
 function StatBox({
   label,
   value,
-  valueClassName = "text-gray-900 dark:text-white",
+  valueClassName = "text-slate-900 dark:text-slate-100",
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+      <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
         {label}
       </p>
       <p
         className={[
-          "text-2xl font-bold",
+          "mt-1 text-xl font-bold tabular-nums",
           valueClassName,
         ].join(" ")}
       >
@@ -1707,12 +1550,48 @@ function StatBox({
     </div>
   );
 }
+function MetricBadgeBox({
+  label,
+  value,
+  className,
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+      <p className="mb-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </p>
+      <StatusPill className={className}>
+        {value}
+      </StatusPill>
+    </div>
+  );
+}
 function EmptyBox({ text }) {
   return (
-    <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-      <p className="text-sm text-gray-500 dark:text-gray-400">
+    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 dark:border-slate-700 dark:bg-slate-950/60">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
         {text}
       </p>
+    </div>
+  );
+}
+function AlertBox({
+  children,
+  tone = "warning",
+}) {
+  const toneClasses =
+    tone === "danger"
+      ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300"
+      : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300";
+  return (
+    <div
+      role="alert"
+      className={[
+        "rounded-xl border px-4 py-3 text-sm font-medium",
+        toneClasses,
+      ].join(" ")}
+    >
+      {children}
     </div>
   );
 }

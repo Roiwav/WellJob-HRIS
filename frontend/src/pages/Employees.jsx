@@ -26,7 +26,6 @@ import EmployeeTable from "../components/employees/EmployeeTable";
 import Button from "../components/ui/Button";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import ErrorState from "../components/ui/ErrorState";
-import FilterBar from "../components/ui/FilterBar";
 import LoadingSkeleton from "../components/ui/LoadingSkeleton";
 import PageHeader from "../components/ui/PageHeader";
 import SearchInput from "../components/ui/SearchInput";
@@ -43,16 +42,22 @@ import {
   getComplianceStatus,
   hasActiveEmployeeFilters,
 } from "../utils/employees/employeeHelpers";
+
 const DATA_EVENT_SOURCE =
   "employees-page";
+
 const REQUEST_TIMEOUT_MS =
   45 * 1000;
+
 const DATA_UPDATE_DEBOUNCE_MS =
   300;
+
 const SEARCH_DEBOUNCE_MS =
   350;
+
 const EMPLOYEE_PAGE_SIZE =
   50;
+
 const EMPLOYEE_REFRESH_DOMAINS =
   new Set([
     "employees",
@@ -60,19 +65,22 @@ const EMPLOYEE_REFRESH_DOMAINS =
     "deployments",
     "deployment",
   ]);
+
 const ACTIVE_STATUS_OPTIONS =
   EMPLOYEE_STATUS_OPTIONS.filter(
     ({ value }) =>
       value !== "Inactive"
   );
+
 const SELECT_CLASS_NAME =
-  "min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 " +
-  "text-sm text-gray-900 shadow-sm outline-none transition " +
-  "focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 " +
-  "disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 " +
-  "dark:border-slate-700 dark:bg-slate-900 dark:text-white " +
-  "dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20 " +
-  "dark:disabled:bg-slate-800 dark:disabled:text-gray-500";
+  "min-h-10 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 " +
+  "text-sm font-medium text-slate-800 outline-none transition " +
+  "focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 " +
+  "disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 " +
+  "dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 " +
+  "dark:focus:border-indigo-400 dark:focus:ring-indigo-400/15 " +
+  "dark:disabled:bg-slate-800 dark:disabled:text-slate-500";
+
 function getAuthenticatedHeaders(
   additionalHeaders = {}
 ) {
@@ -94,6 +102,7 @@ function getAuthenticatedHeaders(
       : {}),
   };
 }
+
 function emitDataUpdated(
   action = "EMPLOYEES_UPDATED"
 ) {
@@ -114,6 +123,7 @@ function emitDataUpdated(
     )
   );
 }
+
 function shouldRefreshEmployees(
   event
 ) {
@@ -140,6 +150,7 @@ function shouldRefreshEmployees(
     )
   );
 }
+
 function getEmployeeId(
   employee
 ) {
@@ -150,6 +161,7 @@ function getEmployeeId(
       ""
   );
 }
+
 function getEmployeeName(
   employee
 ) {
@@ -163,6 +175,7 @@ function getEmployeeName(
       "the employee"
   ).trim();
 }
+
 function getEmployeePosition(
   employee
 ) {
@@ -175,6 +188,7 @@ function getEmployeePosition(
       ""
   ).trim();
 }
+
 function normalizeEmployee(
   employee = {}
 ) {
@@ -186,6 +200,7 @@ function normalizeEmployee(
       ),
   };
 }
+
 function isCanceledRequest(
   error
 ) {
@@ -198,6 +213,7 @@ function isCanceledRequest(
       "AbortError"
   );
 }
+
 function normalizePagination(
   pagination = {},
   fallbackPage = 1
@@ -272,6 +288,7 @@ function normalizePagination(
     activeTotal,
   };
 }
+
 function SelectFilter({
   id,
   label,
@@ -279,7 +296,7 @@ function SelectFilter({
   options,
   disabled,
   onChange,
-  className = "xl:w-52",
+  className = "",
 }) {
   return (
     <div
@@ -289,7 +306,7 @@ function SelectFilter({
         htmlFor={
           id
         }
-        className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-200"
+        className="mb-1.5 block text-[11px] font-semibold text-slate-500 dark:text-slate-400"
       >
         {label}
       </label>
@@ -336,6 +353,7 @@ function SelectFilter({
     </div>
   );
 }
+
 export default function Employees() {
   const navigate =
     useNavigate();
@@ -498,6 +516,8 @@ export default function Employees() {
     useState(false);
   const isMountedRef =
     useRef(true);
+  const hasCompletedInitialLoadRef =
+    useRef(false);
   const dataUpdateTimerRef =
     useRef(null);
   const searchDebounceTimerRef =
@@ -778,6 +798,8 @@ export default function Employees() {
             if (
               isMountedRef.current
             ) {
+              hasCompletedInitialLoadRef.current =
+                true;
               if (
                 showLoading
               ) {
@@ -810,7 +832,7 @@ export default function Employees() {
     () => {
       void fetchEmployees({
         showLoading:
-          true,
+          !hasCompletedInitialLoadRef.current,
       });
     },
     [
@@ -1615,10 +1637,10 @@ export default function Employees() {
       archiveTarget
     );
   return (
-    <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
+    <main className="min-w-0 space-y-5 p-4 sm:p-6 lg:p-7">
       <PageHeader
         eyebrow="Workforce Management"
-        title="Employees Management"
+        title="Employee Management"
         description={
           employeeDescription
         }
@@ -1702,60 +1724,118 @@ export default function Employees() {
         }
       />
       {isHRCoordinator && (
-        <section className="overflow-hidden rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 via-white to-blue-50 shadow-sm dark:border-indigo-500/20 dark:from-indigo-950/30 dark:via-slate-900 dark:to-blue-950/20">
-          <div className="flex flex-col gap-4 px-5 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
                 <FiBriefcase
-                  size={20}
+                  size={17}
                   aria-hidden="true"
                 />
               </span>
               <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
-                  Coordinator Workspace
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  Assigned Client Company
                 </p>
-                <h2 className="mt-1 truncate text-base font-extrabold text-gray-900 dark:text-white">
+                <p className="mt-0.5 truncate text-sm font-bold text-slate-900 dark:text-slate-100">
                   {assignedCompany || "Assigned Client Company"}
-                </h2>
-                <p className="mt-1 text-sm leading-5 text-gray-600 dark:text-gray-300">
-                  Find employees faster by position, employment status, and compliance condition.
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  Showing employees available within your assigned company scope.
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:min-w-[300px]">
-              <div className="rounded-xl border border-white/80 bg-white/80 px-4 py-3 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
-                <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  <FiUsers
-                    aria-hidden="true"
-                  />
-                  Active Workforce
-                </div>
-                <p className="mt-1 text-lg font-extrabold text-gray-900 dark:text-white">
-                  {activeEmployeeCount}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/80 bg-white/80 px-4 py-3 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
-                <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  <FiShield
-                    aria-hidden="true"
-                  />
-                  Access Mode
-                </div>
-                <p className="mt-1 text-sm font-extrabold text-indigo-700 dark:text-indigo-300">
-                  View Only
-                </p>
-              </div>
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <FiShield
+                aria-hidden="true"
+              />
+              View-only access
+              <span aria-hidden="true">•</span>
+              {activeEmployeeCount} active employee(s)
             </div>
           </div>
         </section>
       )}
-      <FilterBar
-        resultCount={
-          matchingEmployeeCount
-        }
-        resultLabel="employee"
-        actions={
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+        <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
+          <div
+            className={
+              isHRCoordinator
+                ? "min-w-0 xl:col-span-3"
+                : "min-w-0 xl:col-span-4"
+            }
+          >
+            <SearchInput
+              label="Search Employees"
+              placeholder={
+                isHRCoordinator
+                  ? "Search by name or employee ID..."
+                  : "Search by name, employee ID, or company..."
+              }
+              value={search}
+              disabled={isLoadingEmployees}
+              onChange={handleSearchChange}
+              onClear={handleClearSearch}
+            />
+          </div>
+          {isHRCoordinator && (
+            <SelectFilter
+              id="employee-position-filter"
+              label="Position"
+              value={filterPosition}
+              options={positionOptions}
+              disabled={isLoadingEmployees}
+              onChange={handlePositionChange}
+              className="min-w-0 xl:col-span-2"
+            />
+          )}
+          <SelectFilter
+            id="employee-status-filter"
+            label="Employment Status"
+            value={filterStatus}
+            options={ACTIVE_STATUS_OPTIONS}
+            disabled={isLoadingEmployees}
+            onChange={handleStatusChange}
+            className="min-w-0 xl:col-span-2"
+          />
+          <SelectFilter
+            id="employee-compliance-filter"
+            label="Compliance Status"
+            value={filterCompliance}
+            options={COMPLIANCE_OPTIONS}
+            disabled={isLoadingEmployees}
+            onChange={handleComplianceChange}
+            className={
+              isHRCoordinator
+                ? "min-w-0 xl:col-span-2"
+                : "min-w-0 xl:col-span-3"
+            }
+          />
+          <SelectFilter
+            id="employee-sort-filter"
+            label="Sort By"
+            value={sortBy}
+            options={EMPLOYEE_SORT_OPTIONS}
+            disabled={isLoadingEmployees}
+            onChange={handleSortChange}
+            className="min-w-0 xl:col-span-3"
+          />
+        </div>
+        <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">
+              {matchingEmployeeCount}
+            </span>
+            <span>
+              {matchingEmployeeCount === 1 ? "employee" : "employees"} in this view
+            </span>
+            {debouncedSearch && debouncedSearch !== search.trim() && (
+              <>
+                <span aria-hidden="true">•</span>
+                <span>Updating results...</span>
+              </>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -1763,111 +1843,12 @@ export default function Employees() {
               !hasActiveFilters ||
               isLoadingEmployees
             }
-            onClick={
-              handleResetFilters
-            }
+            onClick={handleResetFilters}
           >
             Clear Filters
           </Button>
-        }
-      >
-        <div className="w-full sm:col-span-2 xl:w-80">
-          <SearchInput
-            label={
-              isHRCoordinator
-                ? "Find Employee"
-                : "Search employees"
-            }
-            hideLabel={
-              !isHRCoordinator
-            }
-            placeholder={
-              isHRCoordinator
-                ? "Search by name or employee ID..."
-                : "Search by name, ID, or company..."
-            }
-            value={
-              search
-            }
-            disabled={
-              isLoadingEmployees
-            }
-            onChange={
-              handleSearchChange
-            }
-            onClear={
-              handleClearSearch
-            }
-          />
         </div>
-        {isHRCoordinator && (
-          <SelectFilter
-            id="employee-position-filter"
-            label="Position"
-            value={
-              filterPosition
-            }
-            options={
-              positionOptions
-            }
-            disabled={
-              isLoadingEmployees
-            }
-            onChange={
-              handlePositionChange
-            }
-          />
-        )}
-        <SelectFilter
-          id="employee-status-filter"
-          label="Employment Status"
-          value={
-            filterStatus
-          }
-          options={
-            ACTIVE_STATUS_OPTIONS
-          }
-          disabled={
-            isLoadingEmployees
-          }
-          onChange={
-            handleStatusChange
-          }
-        />
-        <SelectFilter
-          id="employee-compliance-filter"
-          label="Compliance Status"
-          value={
-            filterCompliance
-          }
-          options={
-            COMPLIANCE_OPTIONS
-          }
-          disabled={
-            isLoadingEmployees
-          }
-          onChange={
-            handleComplianceChange
-          }
-        />
-        <SelectFilter
-          id="employee-sort-filter"
-          label="Sort By"
-          value={
-            sortBy
-          }
-          options={
-            EMPLOYEE_SORT_OPTIONS
-          }
-          disabled={
-            isLoadingEmployees
-          }
-          onChange={
-            handleSortChange
-          }
-          className="xl:w-56"
-        />
-      </FilterBar>
+      </section>
       {pageError && (
         <ErrorState
           compact
