@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+
 import {
   FiCamera,
   FiCheckCircle,
@@ -10,11 +11,8 @@ import {
   FiZoomIn,
 } from "react-icons/fi";
 
+import { API_BASE } from "../../config/api";
 import { useAuth } from "../../context/useAuth";
-
-const API_BASE_URL = String(
-  import.meta.env.VITE_API_URL || "http://localhost:5000"
-).replace(/\/+$/, "");
 
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 const CROP_SIZE = 280;
@@ -128,7 +126,9 @@ function createCroppedAvatar(image, imageSize, zoom, offset) {
       const context = canvas.getContext("2d");
 
       if (!context) {
-        reject(new Error("Unable to prepare the profile picture."));
+        reject(
+          new Error("Unable to prepare the profile picture.")
+        );
         return;
       }
 
@@ -150,7 +150,11 @@ function createCroppedAvatar(image, imageSize, zoom, offset) {
       canvas.toBlob(
         (blob) => {
           if (!blob) {
-            reject(new Error("Unable to create the cropped profile picture."));
+            reject(
+              new Error(
+                "Unable to create the cropped profile picture."
+              )
+            );
             return;
           }
 
@@ -196,25 +200,39 @@ export default function ProfilePictureActions() {
 
   const [cropSourceUrl, setCropSourceUrl] = useState(null);
   const [cropSourceName, setCropSourceName] = useState("");
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [imageSize, setImageSize] = useState({
+    width: 0,
+    height: 0,
+  });
   const [zoom, setZoom] = useState(1);
-  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
-  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [cropOffset, setCropOffset] = useState({
+    x: 0,
+    y: 0,
+  });
+  const [showRemoveConfirm, setShowRemoveConfirm] =
+    useState(false);
 
   const userId = user?.id ?? null;
+
   const avatarFilename =
-    user?.avatarFilename ?? user?.avatar_filename ?? null;
+    user?.avatarFilename ??
+    user?.avatar_filename ??
+    null;
 
   const hasAvatar = Boolean(avatarFilename);
 
   const avatarKey =
-    userId && avatarFilename ? `${userId}:${avatarFilename}` : null;
+    userId && avatarFilename
+      ? `${userId}:${avatarFilename}`
+      : null;
 
   const displayName = getDisplayName(user);
   const initials = getInitials(user);
 
   const avatarUrl =
-    avatarKey && avatarState.key === avatarKey ? avatarState.url : null;
+    avatarKey && avatarState.key === avatarKey
+      ? avatarState.url
+      : null;
 
   useEffect(() => {
     if (!avatarKey || !userId) {
@@ -251,7 +269,7 @@ export default function ProfilePictureActions() {
     async function loadAvatar() {
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/users/${encodeURIComponent(
+          `${API_BASE}/users/${encodeURIComponent(
             String(userId)
           )}/avatar`,
           {
@@ -303,7 +321,10 @@ export default function ProfilePictureActions() {
         });
       } catch (loadError) {
         if (loadError?.name !== "AbortError") {
-          console.error("Unable to load profile picture:", loadError);
+          console.error(
+            "Unable to load profile picture:",
+            loadError
+          );
 
           setAvatarState({
             key: avatarKey,
@@ -352,7 +373,8 @@ export default function ProfilePictureActions() {
       return undefined;
     }
 
-    const previousOverflow = document.body.style.overflow;
+    const previousOverflow =
+      document.body.style.overflow;
 
     document.body.style.overflow = "hidden";
 
@@ -364,9 +386,15 @@ export default function ProfilePictureActions() {
       if (cropSourceUrl) {
         setCropSourceUrl(null);
         setCropSourceName("");
-        setImageSize({ width: 0, height: 0 });
+        setImageSize({
+          width: 0,
+          height: 0,
+        });
         setZoom(1);
-        setCropOffset({ x: 0, y: 0 });
+        setCropOffset({
+          x: 0,
+          y: 0,
+        });
       }
 
       if (showRemoveConfirm) {
@@ -374,13 +402,25 @@ export default function ProfilePictureActions() {
       }
     };
 
-    document.addEventListener("keydown", handleEscape);
+    document.addEventListener(
+      "keydown",
+      handleEscape
+    );
 
     return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow =
+        previousOverflow;
+
+      document.removeEventListener(
+        "keydown",
+        handleEscape
+      );
     };
-  }, [cropSourceUrl, showRemoveConfirm, isSaving]);
+  }, [
+    cropSourceUrl,
+    showRemoveConfirm,
+    isSaving,
+  ]);
 
   useEffect(() => {
     if (!imageSize.width || !imageSize.height) {
@@ -400,9 +440,15 @@ export default function ProfilePictureActions() {
   const resetCropEditor = () => {
     setCropSourceUrl(null);
     setCropSourceName("");
-    setImageSize({ width: 0, height: 0 });
+    setImageSize({
+      width: 0,
+      height: 0,
+    });
     setZoom(1);
-    setCropOffset({ x: 0, y: 0 });
+    setCropOffset({
+      x: 0,
+      y: 0,
+    });
 
     dragStateRef.current = null;
   };
@@ -426,7 +472,9 @@ export default function ProfilePictureActions() {
     setNotice("");
 
     if (!ALLOWED_TYPES.has(file.type)) {
-      setError("Select a JPG, PNG, or WebP image.");
+      setError(
+        "Select a JPG, PNG, or WebP image."
+      );
       return;
     }
 
@@ -446,17 +494,24 @@ export default function ProfilePictureActions() {
     );
 
     setCropSourceName(file.name);
-    setImageSize({ width: 0, height: 0 });
+
+    setImageSize({
+      width: 0,
+      height: 0,
+    });
+
     setZoom(1);
-    setCropOffset({ x: 0, y: 0 });
+
+    setCropOffset({
+      x: 0,
+      y: 0,
+    });
   };
 
   const handleCropImageLoad = (event) => {
     setImageSize({
-      width:
-        event.currentTarget.naturalWidth,
-      height:
-        event.currentTarget.naturalHeight,
+      width: event.currentTarget.naturalWidth,
+      height: event.currentTarget.naturalHeight,
     });
 
     setCropOffset({
@@ -478,20 +533,11 @@ export default function ProfilePictureActions() {
     );
 
     dragStateRef.current = {
-      pointerId:
-        event.pointerId,
-
-      startX:
-        event.clientX,
-
-      startY:
-        event.clientY,
-
-      originX:
-        cropOffset.x,
-
-      originY:
-        cropOffset.y,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: cropOffset.x,
+      originY: cropOffset.y,
     };
   };
 
@@ -512,11 +558,9 @@ export default function ProfilePictureActions() {
         dragState.originX +
           event.clientX -
           dragState.startX,
-
         dragState.originY +
           event.clientY -
           dragState.startY,
-
         imageSize,
         zoom
       )
@@ -563,8 +607,7 @@ export default function ProfilePictureActions() {
       );
     }
 
-    const formData =
-      new FormData();
+    const formData = new FormData();
 
     formData.append(
       "avatar",
@@ -572,15 +615,12 @@ export default function ProfilePictureActions() {
     );
 
     const response = await fetch(
-      `${API_BASE_URL}/api/users/me/avatar`,
+      `${API_BASE}/users/me/avatar`,
       {
         method: "PUT",
-
         headers: {
-          Authorization:
-            `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
-
         body: formData,
       }
     );
@@ -689,13 +729,11 @@ export default function ProfilePictureActions() {
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/users/me/avatar`,
+        `${API_BASE}/users/me/avatar`,
         {
           method: "DELETE",
-
           headers: {
-            Authorization:
-              `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           },
         }
       );

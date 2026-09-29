@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FiAlertTriangle,
@@ -12,50 +11,40 @@ import {
   FiUser,
   FiX,
 } from "react-icons/fi";
-
 import {
   getDaysUntilExpiration,
   normalizeEmployeeStatus,
 } from "../../utils/employees/employeeHelpers";
-
 import {
   parseEmployeeDocuments,
 } from "../../utils/employees/employeeFormHelpers";
-
 import authenticatedFetch from "../../utils/authenticatedFetch";
 import { fetchEmployeeDocumentPreview } from "../../utils/employees/employeeDocumentPreview";
 import { API_BASE } from "../../config/api";
 import { useAuth } from "../../context/useAuth";
-
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
 import IconButton from "../ui/IconButton";
-
 import {
   DOCUMENT_OPTIONS,
   getDocumentStatus as getExpirationStatus,
 } from "./employeeConstants";
-
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
-
 const EXPIRABLE_DOCUMENT_NAMES = new Set(
   DOCUMENT_OPTIONS
     .filter(({ expirable }) => expirable)
     .map(({ name }) => name)
 );
-
 const OPEN_INCIDENT_STATUSES = new Set([
   "Open",
   "Investigating",
   "For Review",
 ]);
-
 const SEVERITY_WEIGHTS = {
   Critical: 5,
   Major: 3,
   Minor: 1,
 };
-
 const EMPTY_INCIDENT_SUMMARY = Object.freeze({
   total: 0,
   open: 0,
@@ -63,227 +52,165 @@ const EMPTY_INCIDENT_SUMMARY = Object.freeze({
   critical: 0,
   severityScore: 0,
 });
-
 const STATUS_CLASSES = {
   Valid:
     "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
-
   "Expiring Soon":
     "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
   Expired:
     "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
-
   "No Data":
     "border border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
-
   Incomplete:
     "border border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/20 dark:text-orange-300",
-
   Inactive:
     "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300",
-
   Deployed:
     "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
-
   "Floating / Standby":
     "border border-purple-200 bg-purple-100 text-purple-700 dark:border-purple-500/30 dark:bg-purple-500/20 dark:text-purple-300",
-
   Open:
     "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
-
   Investigating:
     "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
   "For Review":
     "border border-indigo-200 bg-indigo-100 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/20 dark:text-indigo-300",
-
   Closed:
     "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
 };
-
 const RISK_CLASSES = {
   "High Risk":
     "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
-
   Repeat:
     "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
   Monitor:
     "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
-
   "Low Risk":
     "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
-
   Unavailable:
     "border border-gray-200 bg-gray-100 text-gray-600 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
 };
-
 const KPI_CLASSES = {
   "Critical Concern":
     "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
-
   "Needs Improvement":
     "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
   "Minor Concern":
     "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
-
   "Good Standing":
     "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
-
   Unavailable:
     "border border-gray-200 bg-gray-100 text-gray-600 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
 };
-
 const RECOMMENDATION_CLASSES = {
   Retain:
     "border border-green-200 bg-green-100 text-green-700 dark:border-green-500/30 dark:bg-green-500/20 dark:text-green-300",
-
   "Monitor Employee":
     "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
-
   "Final Warning":
     "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-
   "Suspension Review":
     "border border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/20 dark:text-orange-300",
-
   "Termination Review":
     "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
-
   "HR Review Required":
     "border border-indigo-200 bg-indigo-100 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/20 dark:text-indigo-300",
-
   Unavailable:
     "border border-gray-200 bg-gray-100 text-gray-600 dark:border-gray-500/30 dark:bg-gray-500/20 dark:text-gray-300",
 };
-
 function getClassName(classes, value, fallback) {
   return classes[value] || classes[fallback];
 }
-
 function formatIncidentId(id) {
   if (!id) return "-";
-
   const value = String(id);
-
   if (value.startsWith("INC-")) {
     return value;
   }
-
   const numericValue = Number(value);
-
   return Number.isNaN(numericValue)
     ? value
     : `INC-${String(numericValue).padStart(4, "0")}`;
 }
-
 function formatDate(value) {
   if (!value) return "Not Set";
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return "Invalid date";
   }
-
   return date.toLocaleDateString("en-PH", {
     year: "numeric",
     month: "long",
     day: "numeric",
   });
 }
-
 function normalizeIncidentStatus(status) {
   const value = String(status || "")
     .trim()
     .toLowerCase()
     .replace(/_/g, " ");
-
   if (value === "resolved" || value === "closed") {
     return "Closed";
   }
-
   if (value === "for review") {
     return "For Review";
   }
-
   if (value === "investigating") {
     return "Investigating";
   }
-
   return "Open";
 }
-
 function getDaysLabel(expirationDate) {
   const daysRemaining = getDaysUntilExpiration(expirationDate);
-
   if (daysRemaining === null) {
     return expirationDate
       ? "Invalid expiration date"
       : "No expiration date recorded";
   }
-
   if (daysRemaining < 0) {
     const elapsedDays = Math.abs(daysRemaining);
-
     return `Expired ${elapsedDays} day${
       elapsedDays === 1 ? "" : "s"
     } ago`;
   }
-
   if (daysRemaining === 0) {
     return "Expires today";
   }
-
   return `Expires in ${daysRemaining} day${
     daysRemaining === 1 ? "" : "s"
   }`;
 }
-
 function getOverallCompliance(documents) {
   if (!documents.length) {
     return "No Data";
   }
-
   const statuses = documents.map(({ status }) => status);
-
   if (statuses.includes("Expired")) {
     return "Expired";
   }
-
   if (statuses.includes("Expiring Soon")) {
     return "Expiring Soon";
   }
-
   if (statuses.includes("No Data")) {
     return "Incomplete";
   }
-
   if (statuses.every((status) => status === "Valid")) {
     return "Valid";
   }
-
   return "Incomplete";
 }
-
 function getKPILevel(severityScore, totalIncidents) {
   if (severityScore >= 8) {
     return "Critical Concern";
   }
-
   if (severityScore >= 4) {
     return "Needs Improvement";
   }
-
   if (totalIncidents >= 1) {
     return "Minor Concern";
   }
-
   return "Good Standing";
 }
-
 function getRiskLevel({
   kpiLevel,
   totalIncidents,
@@ -295,21 +222,17 @@ function getRiskLevel({
   ) {
     return "High Risk";
   }
-
   if (kpiLevel === "Needs Improvement") {
     return "Repeat";
   }
-
   if (
     kpiLevel === "Minor Concern" ||
     totalIncidents >= 1
   ) {
     return "Monitor";
   }
-
   return "Low Risk";
 }
-
 function getRecommendationDecision({
   totalIncidents,
   criticalIncidents,
@@ -323,7 +246,6 @@ function getRecommendationDecision({
         "requiring termination review.",
     };
   }
-
   if (
     criticalIncidents >= 1 ||
     riskLevel === "High Risk"
@@ -334,7 +256,6 @@ function getRecommendationDecision({
         "Employee has critical or high-risk incident records requiring suspension review.",
     };
   }
-
   if (
     totalIncidents >= 3 ||
     riskLevel === "Repeat"
@@ -345,7 +266,6 @@ function getRecommendationDecision({
         "Employee has repeated violations and should receive final warning.",
     };
   }
-
   if (
     totalIncidents >= 1 ||
     riskLevel === "Monitor"
@@ -356,14 +276,12 @@ function getRecommendationDecision({
         "Employee has recorded violation(s) and should be monitored.",
     };
   }
-
   return {
     recommendation: "Retain",
     reason:
       "Employee has no recorded violation and may be retained.",
   };
 }
-
 function getIncidentTimestamp(incident) {
   const dateValue =
     incident?.reportedAt ||
@@ -374,12 +292,9 @@ function getIncidentTimestamp(incident) {
     incident?.createdAt ||
     incident?.created_at ||
     "";
-
   const timestamp = new Date(dateValue).getTime();
-
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
-
 function getEmployeeId(employee) {
   return String(
     employee?.id ??
@@ -388,7 +303,6 @@ function getEmployeeId(employee) {
       ""
   ).trim();
 }
-
 function getEmployeeName(employee) {
   return (
     employee?.name ||
@@ -397,7 +311,6 @@ function getEmployeeName(employee) {
     "Employee"
   );
 }
-
 function normalizeIncident(incident = {}) {
   const date =
     incident.reportedAt ||
@@ -408,46 +321,35 @@ function normalizeIncident(incident = {}) {
     incident.createdAt ||
     incident.created_at ||
     "";
-
   const violation =
     incident.violation ||
     incident.violationType ||
     incident.violation_type ||
     "No violation type";
-
   return {
     ...incident,
-
     id: incident.id,
-
     displayId: formatIncidentId(incident.id),
-
     employeeId:
       incident.employeeId ||
       incident.employee_id ||
       incident.empId ||
       incident.employeeID ||
       "",
-
     employee:
       incident.employee ||
       incident.employeeName ||
       incident.employee_name ||
       "Unknown Employee",
-
     violation,
     violationType: violation,
-
     severity: incident.severity || "Minor",
     status: normalizeIncidentStatus(incident.status),
-
     date,
     reportedAt: incident.reportedAt || incident.reported_at || date,
     createdAt: incident.createdAt || incident.created_at || date,
-
     description: incident.description || "",
     recommendation: incident.recommendation || "",
-
     sanction:
       incident.sanction ||
       incident.actionTaken ||
@@ -455,53 +357,42 @@ function normalizeIncident(incident = {}) {
       "For HR Review",
   };
 }
-
 function buildDocumentFile(document = {}) {
   const rawPath =
     document.filePath ||
     document.file_path ||
     document.url ||
     (typeof document.file === "string" ? document.file : "");
-
   if (!rawPath) {
     return null;
   }
-
   const normalizedPath = String(rawPath).replace(/\\/g, "/");
   const cleanPath = normalizedPath.toLowerCase().split("?")[0];
-
   return {
     documentId: document.id,
-
     name:
       document.fileName ||
       document.file_name ||
       normalizedPath.split("/").pop()?.split("?")[0] ||
       document.name ||
       "Uploaded file",
-
     type: cleanPath.endsWith(".pdf")
       ? "application/pdf"
       : "image/*",
   };
 }
-
 function normalizeDocument(document = {}) {
   const expirationDate =
     document.expirationDate ||
     document.expiration_date ||
     "";
-
   const file = buildDocumentFile(document);
-
   const expirable = EXPIRABLE_DOCUMENT_NAMES.has(document.name);
-
   return {
     ...document,
     expirationDate,
     file,
     expirable,
-
     status: !file
       ? "No Data"
       : expirable
@@ -509,7 +400,6 @@ function normalizeDocument(document = {}) {
         : "Valid",
   };
 }
-
 function getEmployeeInitials(name) {
   return (
     String(name || "")
@@ -520,19 +410,15 @@ function getEmployeeInitials(name) {
       .join("") || "E"
   );
 }
-
 function getSeverityKPILevel(severity) {
   if (severity === "Critical") {
     return "Critical Concern";
   }
-
   if (severity === "Major") {
     return "Needs Improvement";
   }
-
   return "Minor Concern";
 }
-
 /*
  * ==================================================
  * HISTORICAL INCIDENT SUMMARY VALIDATION
@@ -553,16 +439,13 @@ function parseHistoricalSummary(data, expectedEmployeeId) {
   ) {
     throw new Error("Invalid incident summary response.");
   }
-
   if (
     String(data.employeeId ?? "") !==
     String(expectedEmployeeId)
   ) {
     throw new Error("Incident summary employee ID mismatch.");
   }
-
   const summary = data.summary;
-
   if (
     !summary ||
     typeof summary !== "object" ||
@@ -570,7 +453,6 @@ function parseHistoricalSummary(data, expectedEmployeeId) {
   ) {
     throw new Error("Incident summary is unavailable.");
   }
-
   const requiredFields = [
     "total",
     "open",
@@ -578,12 +460,9 @@ function parseHistoricalSummary(data, expectedEmployeeId) {
     "critical",
     "severityScore",
   ];
-
   const validated = {};
-
   for (const field of requiredFields) {
     const rawValue = summary[field];
-
     if (
       rawValue === null ||
       rawValue === undefined ||
@@ -591,29 +470,23 @@ function parseHistoricalSummary(data, expectedEmployeeId) {
     ) {
       throw new Error(`Missing incident summary field: ${field}`);
     }
-
     const value = Number(rawValue);
-
     if (
       !Number.isSafeInteger(value) ||
       value < 0
     ) {
       throw new Error(`Invalid incident summary field: ${field}`);
     }
-
     validated[field] = value;
   }
-
   if (
     validated.open + validated.closed !== validated.total ||
     validated.critical > validated.total
   ) {
     throw new Error("Inconsistent incident summary totals.");
   }
-
   return validated;
 }
-
 /*
  * ==================================================
  * EMPLOYEE MODAL
@@ -633,35 +506,29 @@ function parseHistoricalSummary(data, expectedEmployeeId) {
  */
 export default function EmployeeModal({ employee, onClose }) {
   const { user } = useAuth();
-
   const isHRCoordinator =
     user?.role === "HR_COORDINATOR";
-
   const employeeName = getEmployeeName(employee);
   const employeeId = getEmployeeId(employee);
   const employeeStatus = normalizeEmployeeStatus(employee?.status);
-
+  const hasEmployee = Boolean(employee);
   const [previewFile, setPreviewFile] = useState(null);
   const [previewLoadingId, setPreviewLoadingId] = useState(null);
   const [previewError, setPreviewError] = useState("");
-
   const [historyRequest, setHistoryRequest] = useState({
     employeeId: "",
     incidents: [],
     loading: true,
     error: "",
   });
-
   const [summaryRequest, setSummaryRequest] = useState({
     employeeId: "",
     summary: null,
     loading: true,
     error: "",
   });
-
   const previewControllerRef = useRef(null);
   const previewUrlRef = useRef("");
-
   /*
    * ==================================================
    * COMPANY-SCOPED DETAILED INCIDENT HISTORY
@@ -675,26 +542,22 @@ export default function EmployeeModal({ employee, onClose }) {
    * Employee Modal.
    */
   useEffect(() => {
-    if (!employee || !employeeId) {
+    if (!hasEmployee || !employeeId) {
       setHistoryRequest({
         employeeId: "",
         incidents: [],
         loading: false,
         error: "",
       });
-
       return undefined;
     }
-
     const controller = new AbortController();
-
     setHistoryRequest({
       employeeId,
       incidents: [],
       loading: true,
       error: "",
     });
-
     async function loadEmployeeIncidents() {
       try {
         const response = await authenticatedFetch(
@@ -704,9 +567,7 @@ export default function EmployeeModal({ employee, onClose }) {
             cache: "no-store",
           }
         );
-
         const data = await response.json().catch(() => null);
-
         if (!response.ok) {
           throw new Error(
             data?.error ||
@@ -714,15 +575,12 @@ export default function EmployeeModal({ employee, onClose }) {
               `Failed to load incidents. Status ${response.status}`
           );
         }
-
         if (!Array.isArray(data)) {
           throw new Error("Invalid incident history response.");
         }
-
         if (controller.signal.aborted) {
           return;
         }
-
         setHistoryRequest({
           employeeId,
           incidents: data.map(normalizeIncident),
@@ -736,12 +594,10 @@ export default function EmployeeModal({ employee, onClose }) {
         ) {
           return;
         }
-
         console.error(
           "Employee incidents backend fetch failed:",
           error
         );
-
         setHistoryRequest({
           employeeId,
           incidents: [],
@@ -751,14 +607,11 @@ export default function EmployeeModal({ employee, onClose }) {
         });
       }
     }
-
     void loadEmployeeIncidents();
-
     return () => {
       controller.abort();
     };
-  }, [employeeId, Boolean(employee)]);
-
+  }, [employeeId, hasEmployee]);
   /*
    * ==================================================
    * PROTECTED HISTORICAL INCIDENT SUMMARY
@@ -774,7 +627,7 @@ export default function EmployeeModal({ employee, onClose }) {
    */
   useEffect(() => {
     if (
-      !employee ||
+      !hasEmployee ||
       !employeeId ||
       !isHRCoordinator
     ) {
@@ -784,19 +637,15 @@ export default function EmployeeModal({ employee, onClose }) {
         loading: false,
         error: "",
       });
-
       return undefined;
     }
-
     const controller = new AbortController();
-
     setSummaryRequest({
       employeeId,
       summary: null,
       loading: true,
       error: "",
     });
-
     async function loadHistoricalSummary() {
       try {
         const response = await authenticatedFetch(
@@ -806,9 +655,7 @@ export default function EmployeeModal({ employee, onClose }) {
             cache: "no-store",
           }
         );
-
         const data = await response.json().catch(() => null);
-
         if (!response.ok) {
           throw new Error(
             data?.error ||
@@ -816,16 +663,13 @@ export default function EmployeeModal({ employee, onClose }) {
               `Failed to load historical summary. Status ${response.status}`
           );
         }
-
         const summary = parseHistoricalSummary(
           data,
           employeeId
         );
-
         if (controller.signal.aborted) {
           return;
         }
-
         setSummaryRequest({
           employeeId,
           summary,
@@ -839,12 +683,10 @@ export default function EmployeeModal({ employee, onClose }) {
         ) {
           return;
         }
-
         console.error(
           "Employee historical incident summary fetch failed:",
           error
         );
-
         setSummaryRequest({
           employeeId,
           summary: null,
@@ -854,25 +696,20 @@ export default function EmployeeModal({ employee, onClose }) {
         });
       }
     }
-
     void loadHistoricalSummary();
-
     return () => {
       controller.abort();
     };
-  }, [employeeId, Boolean(employee), isHRCoordinator]);
-
+  }, [employeeId, hasEmployee, isHRCoordinator]);
   useEffect(() => {
     return () => {
       previewControllerRef.current?.abort();
-
       if (previewUrlRef.current) {
         URL.revokeObjectURL(previewUrlRef.current);
         previewUrlRef.current = "";
       }
     };
   }, []);
-
   /*
    * ==================================================
    * DOCUMENT SUMMARY
@@ -882,11 +719,9 @@ export default function EmployeeModal({ employee, onClose }) {
     const documents = parseEmployeeDocuments(
       employee?.documents
     ).map(normalizeDocument);
-
     return documents.reduce(
       (summary, document) => {
         summary.documents.push(document);
-
         if (document.status === "Expired") {
           summary.expired.push(document);
         } else if (document.status === "Expiring Soon") {
@@ -894,7 +729,6 @@ export default function EmployeeModal({ employee, onClose }) {
         } else if (document.status === "No Data") {
           summary.noData.push(document);
         }
-
         return summary;
       },
       {
@@ -905,7 +739,6 @@ export default function EmployeeModal({ employee, onClose }) {
       }
     );
   }, [employee?.documents]);
-
   /*
    * Guard against showing stale incident data when
    * the modal switches to a different employee.
@@ -913,24 +746,20 @@ export default function EmployeeModal({ employee, onClose }) {
   const historyIsCurrent =
     historyRequest.employeeId === employeeId &&
     Boolean(employeeId);
-
   const historyLoading =
-    Boolean(employee) &&
+    hasEmployee &&
     (!historyIsCurrent || historyRequest.loading);
-
   const historyError = historyIsCurrent
     ? historyRequest.error
     : "";
-
   const historyAvailable =
     historyIsCurrent &&
     !historyRequest.loading &&
     !historyRequest.error;
-
-  const employeeIncidents = historyAvailable
-    ? historyRequest.incidents
-    : [];
-
+  const employeeIncidents = useMemo(
+    () => (historyAvailable ? historyRequest.incidents : []),
+    [historyAvailable, historyRequest.incidents]
+  );
   /*
    * Detailed incident summary for non-coordinator
    * roles. This preserves the original modal behavior.
@@ -939,22 +768,17 @@ export default function EmployeeModal({ employee, onClose }) {
     return employeeIncidents.reduce(
       (summary, incident) => {
         summary.total += 1;
-
         summary.severityScore +=
           SEVERITY_WEIGHTS[incident.severity] || 0;
-
         if (OPEN_INCIDENT_STATUSES.has(incident.status)) {
           summary.open += 1;
         }
-
         if (incident.status === "Closed") {
           summary.closed += 1;
         }
-
         if (incident.severity === "Critical") {
           summary.critical += 1;
         }
-
         return summary;
       },
       {
@@ -962,7 +786,6 @@ export default function EmployeeModal({ employee, onClose }) {
       }
     );
   }, [employeeIncidents]);
-
   /*
    * The coordinator's historical summary is usable
    * only when it belongs to the selected employee
@@ -971,24 +794,20 @@ export default function EmployeeModal({ employee, onClose }) {
   const summaryIsCurrent =
     summaryRequest.employeeId === employeeId &&
     Boolean(employeeId);
-
   const historicalSummaryLoading =
-    Boolean(employee) &&
+    hasEmployee &&
     isHRCoordinator &&
     (!summaryIsCurrent || summaryRequest.loading);
-
   const historicalSummaryError =
     isHRCoordinator && summaryIsCurrent
       ? summaryRequest.error
       : "";
-
   const historicalSummaryAvailable =
     isHRCoordinator &&
     summaryIsCurrent &&
     !summaryRequest.loading &&
     !summaryRequest.error &&
     summaryRequest.summary !== null;
-
   /*
    * IMPORTANT:
    * Never fall back to company-scoped incidents when
@@ -1004,14 +823,11 @@ export default function EmployeeModal({ employee, onClose }) {
     : historyAvailable
       ? detailedIncidentSummary
       : null;
-
   const incidentSummaryLoading = isHRCoordinator
     ? historicalSummaryLoading
     : historyLoading;
-
   const incidentSummaryAvailable =
     incidentSummary !== null;
-
   /*
    * KPI and Risk computation uses the SAME incident
    * totals currently displayed in the summary cards.
@@ -1032,18 +848,15 @@ export default function EmployeeModal({ employee, onClose }) {
           "Incident statistics are unavailable. No recommendation can be generated from incomplete data.",
       };
     }
-
     const kpiLevel = getKPILevel(
       incidentSummary.severityScore,
       incidentSummary.total
     );
-
     const riskLevel = getRiskLevel({
       kpiLevel,
       totalIncidents: incidentSummary.total,
       criticalIncidents: incidentSummary.critical,
     });
-
     /*
      * Historical aggregate statistics may contain
      * confidential cases from previous companies.
@@ -1056,32 +869,25 @@ export default function EmployeeModal({ employee, onClose }) {
         return {
           kpiLevel,
           riskLevel,
-
           recommendation: "HR Review Required",
-
           reason:
             "The incident indicators include recorded cases from previous and current company assignments. " +
             "This summary is for awareness only. Detailed assessment and any disciplinary action require review " +
             "by authorized HR management.",
         };
       }
-
       return {
         kpiLevel,
         riskLevel,
-
         recommendation: "Retain",
-
         reason:
           "No recorded incidents were found in the employee's overall incident summary. " +
           "Continue regular HR monitoring.",
       };
     }
-
     return {
       kpiLevel,
       riskLevel,
-
       ...getRecommendationDecision({
         totalIncidents: incidentSummary.total,
         criticalIncidents: incidentSummary.critical,
@@ -1089,7 +895,6 @@ export default function EmployeeModal({ employee, onClose }) {
       }),
     };
   }, [incidentSummary, isHRCoordinator]);
-
   const recentIncidents = useMemo(
     () =>
       [...employeeIncidents]
@@ -1099,45 +904,36 @@ export default function EmployeeModal({ employee, onClose }) {
             getIncidentTimestamp(first)
         )
         .slice(0, 5),
-
     [employeeIncidents]
   );
-
   if (!employee) {
     return null;
   }
-
   const {
     documents,
     expired,
     expiringSoon,
     noData,
   } = documentSummary;
-
   const {
     kpiLevel,
     riskLevel,
     recommendation,
     reason,
   } = decisionSupport;
-
   const overallCompliance =
     getOverallCompliance(documents);
-
   const hasAttentionNeeded =
     expired.length > 0 ||
     expiringSoon.length > 0 ||
     noData.length > 0;
-
   const companyDisplay =
     employeeStatus === "Floating / Standby" ||
     employeeStatus === "Inactive"
       ? "Not Assigned"
       : employee.company || "Not Assigned";
-
   const employeeInitials =
     getEmployeeInitials(employeeName);
-
   /*
    * Loading and unavailable indicators must not be
    * displayed as genuine KPI or Risk classifications.
@@ -1145,66 +941,50 @@ export default function EmployeeModal({ employee, onClose }) {
   const displayedRiskLevel = incidentSummaryLoading
     ? "Loading..."
     : riskLevel;
-
   const displayedKPILevel = incidentSummaryLoading
     ? "Loading..."
     : kpiLevel;
-
   const displayedRecommendation = incidentSummaryLoading
     ? "Loading..."
     : recommendation;
-
   const displayedRecommendationReason = incidentSummaryLoading
     ? "Loading incident statistics..."
     : reason;
-
   const getDisplayedStatistic = (field) => {
     if (incidentSummaryLoading) {
       return "...";
     }
-
     if (!incidentSummaryAvailable) {
       return "Unavailable";
     }
-
     return incidentSummary[field];
   };
-
   const handleCloseEmployee = () => {
     if (!previewFile) {
       onClose?.();
     }
   };
-
   const handleClosePreview = () => {
     previewControllerRef.current?.abort();
     previewControllerRef.current = null;
-
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
       previewUrlRef.current = "";
     }
-
     setPreviewFile(null);
     setPreviewLoadingId(null);
   };
-
   const handleViewDocument = async (file) => {
     previewControllerRef.current?.abort();
-
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
       previewUrlRef.current = "";
     }
-
     const controller = new AbortController();
-
     previewControllerRef.current = controller;
-
     setPreviewFile(null);
     setPreviewError("");
     setPreviewLoadingId(file.documentId);
-
     try {
       const result = await fetchEmployeeDocumentPreview(
         file.documentId,
@@ -1212,14 +992,11 @@ export default function EmployeeModal({ employee, onClose }) {
           signal: controller.signal,
         }
       );
-
       if (controller.signal.aborted) {
         URL.revokeObjectURL(result.url);
         return;
       }
-
       previewUrlRef.current = result.url;
-
       setPreviewFile({
         url: result.url,
         type: result.mimeType,
@@ -1232,7 +1009,6 @@ export default function EmployeeModal({ employee, onClose }) {
       ) {
         return;
       }
-
       setPreviewError(
         error?.message ||
           "Unable to load this document preview."
@@ -1243,7 +1019,6 @@ export default function EmployeeModal({ employee, onClose }) {
       }
     }
   };
-
   return (
     <>
       <Dialog
@@ -1267,17 +1042,14 @@ export default function EmployeeModal({ employee, onClose }) {
                 <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xl font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
                   {employeeInitials}
                 </div>
-
                 <div className="min-w-0">
                   <h2 className="truncate text-2xl font-bold text-gray-900 dark:text-white">
                     {employeeName}
                   </h2>
-
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-200">
                       {employeeId || "-"}
                     </span>
-
                     <StatusPill
                       className={getClassName(
                         STATUS_CLASSES,
@@ -1292,7 +1064,6 @@ export default function EmployeeModal({ employee, onClose }) {
                     >
                       {employeeStatus}
                     </StatusPill>
-
                     <StatusPill
                       className={getClassName(
                         STATUS_CLASSES,
@@ -1309,7 +1080,6 @@ export default function EmployeeModal({ employee, onClose }) {
                     >
                       Overall Compliance: {overallCompliance}
                     </StatusPill>
-
                     <StatusPill
                       className={getClassName(
                         RISK_CLASSES,
@@ -1325,7 +1095,6 @@ export default function EmployeeModal({ employee, onClose }) {
                     >
                       Risk: {displayedRiskLevel}
                     </StatusPill>
-
                     <StatusPill
                       className={getClassName(
                         KPI_CLASSES,
@@ -1338,7 +1107,6 @@ export default function EmployeeModal({ employee, onClose }) {
                   </div>
                 </div>
               </div>
-
               <IconButton
                 label="Close employee details"
                 title="Close"
@@ -1350,7 +1118,6 @@ export default function EmployeeModal({ employee, onClose }) {
               </IconButton>
             </div>
           </header>
-
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-5 text-gray-900 dark:text-white sm:px-6 sm:py-6 lg:px-8">
             {historicalSummaryError && (
               <div
@@ -1360,7 +1127,6 @@ export default function EmployeeModal({ employee, onClose }) {
                 {historicalSummaryError}
               </div>
             )}
-
             {historyError && (
               <div
                 role="alert"
@@ -1369,7 +1135,6 @@ export default function EmployeeModal({ employee, onClose }) {
                 {historyError}
               </div>
             )}
-
             {previewError && (
               <div
                 role="alert"
@@ -1378,7 +1143,6 @@ export default function EmployeeModal({ employee, onClose }) {
                 {previewError}
               </div>
             )}
-
             {hasAttentionNeeded && (
               <div
                 className={[
@@ -1394,25 +1158,21 @@ export default function EmployeeModal({ employee, onClose }) {
                     size={18}
                     className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300"
                   />
-
                   <div>
                     <p className="font-semibold text-amber-700 dark:text-amber-300">
                       Compliance Attention Needed
                     </p>
-
                     <div className="mt-1 space-y-1 text-sm text-amber-700/90 dark:text-amber-200">
                       {expired.length > 0 && (
                         <p>
                           {expired.length} document(s) already expired.
                         </p>
                       )}
-
                       {expiringSoon.length > 0 && (
                         <p>
                           {expiringSoon.length} document(s) expiring soon.
                         </p>
                       )}
-
                       {noData.length > 0 && (
                         <p>
                           {noData.length} document(s) missing proof or
@@ -1424,10 +1184,8 @@ export default function EmployeeModal({ employee, onClose }) {
                 </div>
               </div>
             )}
-
             <section>
               <SectionTitle>Basic Information</SectionTitle>
-
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <InfoBox
                   icon={
@@ -1436,7 +1194,6 @@ export default function EmployeeModal({ employee, onClose }) {
                   label="Employee Name"
                   value={employeeName}
                 />
-
                 <InfoBox
                   icon={
                     <FiShield size={16} aria-hidden="true" />
@@ -1444,7 +1201,6 @@ export default function EmployeeModal({ employee, onClose }) {
                   label="Employee ID"
                   value={employeeId}
                 />
-
                 <InfoBox
                   icon={
                     <FiBriefcase size={16} aria-hidden="true" />
@@ -1454,10 +1210,8 @@ export default function EmployeeModal({ employee, onClose }) {
                 />
               </div>
             </section>
-
             <section>
               <SectionTitle>Employment Status</SectionTitle>
-
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <BadgeBox
                   label="Current Status"
@@ -1468,7 +1222,6 @@ export default function EmployeeModal({ employee, onClose }) {
                     "No Data"
                   )}
                 />
-
                 <BadgeBox
                   label="Compliance Summary"
                   value={overallCompliance}
@@ -1480,12 +1233,10 @@ export default function EmployeeModal({ employee, onClose }) {
                 />
               </div>
             </section>
-
             <section>
               <SectionTitle>
                 Incident and KPI Summary
               </SectionTitle>
-
               {isHRCoordinator && (
                 <p className="mb-4 text-sm leading-6 text-gray-500 dark:text-gray-400">
                   Overall employee statistics include recorded
@@ -1494,36 +1245,30 @@ export default function EmployeeModal({ employee, onClose }) {
                   remain restricted.
                 </p>
               )}
-
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <StatBox
                   label="Total Incidents"
                   value={getDisplayedStatistic("total")}
                 />
-
                 <StatBox
                   label="Open Cases"
                   value={getDisplayedStatistic("open")}
                   valueClassName="text-red-500"
                 />
-
                 <StatBox
                   label="Closed Cases"
                   value={getDisplayedStatistic("closed")}
                   valueClassName="text-green-500"
                 />
-
                 <StatBox
                   label="Severity Score"
                   value={getDisplayedStatistic("severityScore")}
                   valueClassName="text-indigo-500"
                 />
-
                 <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
                   <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
                     Risk Level
                   </p>
-
                   <StatusPill
                     className={getClassName(
                       RISK_CLASSES,
@@ -1542,12 +1287,10 @@ export default function EmployeeModal({ employee, onClose }) {
                 </div>
               </div>
             </section>
-
             <section>
               <SectionTitle>
                 System Recommendation
               </SectionTitle>
-
               <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
@@ -1560,12 +1303,10 @@ export default function EmployeeModal({ employee, onClose }) {
                     >
                       {displayedRecommendation}
                     </StatusPill>
-
                     <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
                       {displayedRecommendationReason}
                     </p>
                   </div>
-
                   <StatusPill
                     className={getClassName(
                       KPI_CLASSES,
@@ -1578,12 +1319,10 @@ export default function EmployeeModal({ employee, onClose }) {
                 </div>
               </div>
             </section>
-
             <section>
               <SectionTitle>
                 Recent Incident History
               </SectionTitle>
-
               {isHRCoordinator && (
                 <p className="mb-4 text-sm leading-6 text-gray-500 dark:text-gray-400">
                   Detailed records shown below are limited to
@@ -1592,7 +1331,6 @@ export default function EmployeeModal({ employee, onClose }) {
                   may include incidents from previous companies.
                 </p>
               )}
-
               {historyLoading ? (
                 <EmptyBox
                   text="Loading incident history from backend..."
@@ -1624,7 +1362,6 @@ export default function EmployeeModal({ employee, onClose }) {
                             {incident.violation ||
                               "No violation type"}
                           </p>
-
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                             {incident.displayId} •{" "}
                             {formatDate(
@@ -1633,7 +1370,6 @@ export default function EmployeeModal({ employee, onClose }) {
                             )}
                           </p>
                         </div>
-
                         <div className="flex flex-wrap gap-2">
                           <StatusPill
                             className={getClassName(
@@ -1644,7 +1380,6 @@ export default function EmployeeModal({ employee, onClose }) {
                           >
                             {incident.status || "Open"}
                           </StatusPill>
-
                           <StatusPill
                             className={getClassName(
                               KPI_CLASSES,
@@ -1658,18 +1393,15 @@ export default function EmployeeModal({ employee, onClose }) {
                           </StatusPill>
                         </div>
                       </div>
-
                       {incident.description && (
                         <p className="mt-3 text-sm leading-6 text-gray-700 dark:text-gray-300">
                           {incident.description}
                         </p>
                       )}
-
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
                         <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
                           Disciplinary Action
                         </p>
-
                         <p className="mt-2 font-bold text-slate-800 dark:text-slate-100">
                           Sanction:{" "}
                           {incident.sanction || "For HR Review"}
@@ -1680,12 +1412,10 @@ export default function EmployeeModal({ employee, onClose }) {
                 </div>
               )}
             </section>
-
             <section>
               <SectionTitle>
                 Compliance Documents
               </SectionTitle>
-
               <div className="space-y-4">
                 {documents.length === 0 ? (
                   <EmptyBox
@@ -1695,13 +1425,10 @@ export default function EmployeeModal({ employee, onClose }) {
                   documents.map((document) => {
                     const isExpired =
                       document.status === "Expired";
-
                     const isExpiringSoon =
                       document.status === "Expiring Soon";
-
                     const isNoData =
                       document.status === "No Data";
-
                     return (
                       <div
                         key={document.name}
@@ -1735,12 +1462,10 @@ export default function EmployeeModal({ employee, onClose }) {
                                 aria-hidden="true"
                               />
                             </div>
-
                             <div>
                               <p className="text-base font-semibold text-gray-900 dark:text-white">
                                 {document.name}
                               </p>
-
                               <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
                                 {document.expirable ? (
                                   <>
@@ -1749,7 +1474,6 @@ export default function EmployeeModal({ employee, onClose }) {
                                         size={14}
                                         aria-hidden="true"
                                       />
-
                                       <span>
                                         Expiration Date:{" "}
                                         {document.expirationDate
@@ -1759,13 +1483,11 @@ export default function EmployeeModal({ employee, onClose }) {
                                           : "Not Set"}
                                       </span>
                                     </div>
-
                                     <div className="flex items-center gap-2">
                                       <FiClock
                                         size={14}
                                         aria-hidden="true"
                                       />
-
                                       <span>
                                         {getDaysLabel(
                                           document.expirationDate
@@ -1778,7 +1500,6 @@ export default function EmployeeModal({ employee, onClose }) {
                                     Permanent compliance document
                                   </p>
                                 )}
-
                                 {!document.file && (
                                   <p className="text-sm font-medium text-orange-600 dark:text-orange-300">
                                     No uploaded file found
@@ -1787,7 +1508,6 @@ export default function EmployeeModal({ employee, onClose }) {
                               </div>
                             </div>
                           </div>
-
                           <div className="flex flex-col items-start gap-2 lg:items-end">
                             {document.file && (
                               <Button
@@ -1812,7 +1532,6 @@ export default function EmployeeModal({ employee, onClose }) {
                                 View File
                               </Button>
                             )}
-
                             <StatusPill
                               className={getClassName(
                                 STATUS_CLASSES,
@@ -1831,7 +1550,6 @@ export default function EmployeeModal({ employee, onClose }) {
                             >
                               {document.status}
                             </StatusPill>
-
                             {document.status === "Valid" && (
                               <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-300">
                                 <FiCheckCircle
@@ -1850,7 +1568,6 @@ export default function EmployeeModal({ employee, onClose }) {
               </div>
             </section>
           </div>
-
           <footer className="flex shrink-0 justify-end border-t border-gray-200 bg-white px-4 py-4 dark:border-white/10 dark:bg-slate-900 sm:px-6 lg:px-8">
             <Button onClick={handleCloseEmployee}>
               Close
@@ -1858,7 +1575,6 @@ export default function EmployeeModal({ employee, onClose }) {
           </footer>
         </div>
       </Dialog>
-
       <Dialog
         open={Boolean(previewFile)}
         onClose={handleClosePreview}
@@ -1909,7 +1625,6 @@ export default function EmployeeModal({ employee, onClose }) {
     </>
   );
 }
-
 function StatusPill({
   children,
   className,
@@ -1929,7 +1644,6 @@ function StatusPill({
     </span>
   );
 }
-
 function SectionTitle({ children }) {
   return (
     <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -1937,7 +1651,6 @@ function SectionTitle({ children }) {
     </h3>
   );
 }
-
 function InfoBox({
   icon,
   label,
@@ -1947,19 +1660,16 @@ function InfoBox({
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
       <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
         {icon}
-
         <span className="text-sm">
           {label}
         </span>
       </div>
-
       <p className="text-base font-semibold">
         {value || "-"}
       </p>
     </div>
   );
 }
-
 function BadgeBox({
   label,
   value,
@@ -1970,14 +1680,12 @@ function BadgeBox({
       <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
         {label}
       </p>
-
       <StatusPill className={className}>
         {value}
       </StatusPill>
     </div>
   );
 }
-
 function StatBox({
   label,
   value,
@@ -1988,7 +1696,6 @@ function StatBox({
       <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
         {label}
       </p>
-
       <p
         className={[
           "text-2xl font-bold",
@@ -2000,7 +1707,6 @@ function StatBox({
     </div>
   );
 }
-
 function EmptyBox({ text }) {
   return (
     <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">

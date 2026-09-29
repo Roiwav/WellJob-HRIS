@@ -9,7 +9,6 @@ import {
   employeeCompanyOf,
   employeeIdOf,
   employeeNameOf,
-  incidentEmployeeIdOf,
   kpiLevelOf,
   riskLevelOf,
   topEmployeesWithEvidence,
