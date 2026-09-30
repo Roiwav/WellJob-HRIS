@@ -28,27 +28,22 @@ import {
 
 const SEVERITY_STYLE = {
   Minor:
-    "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300",
-
+    "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
   Major:
-    "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300",
-
+    "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
   Critical:
-    "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300",
+    "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300",
 };
 
 const STATUS_STYLE = {
   Open:
-    "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300",
-
+    "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300",
   Investigating:
-    "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300",
-
+    "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
   "For Review":
-    "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300",
-
+    "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-300",
   Closed:
-    "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300",
+    "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
 };
 
 function getIncidentCode(
@@ -149,7 +144,7 @@ function PillBadge({
 
   return (
     <span
-      className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-extrabold ${style}`}
+      className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${style}`}
     >
       {icon}
 
@@ -164,8 +159,8 @@ function HighlightCard({
   children,
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
-      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+      <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {icon}
 
         {label}
@@ -180,7 +175,7 @@ function EmptyWorkflowState({
   message,
 }) {
   return (
-    <p className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium leading-6 text-gray-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-gray-400">
+    <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-400">
       {message}
     </p>
   );
@@ -237,14 +232,8 @@ export default function ViewIncidentModal({
     "Open";
 
   /*
-   * ==================================================
-   * POLICY SANCTION
-   * ==================================================
-   *
-   * This is the prescribed sanction captured by the
-   * server-authoritative violation policy.
-   *
-   * Never fall back to actionTaken/action_taken here.
+   * Prescribed sanction from the server-authoritative
+   * violation policy. Do not substitute actionTaken.
    */
   const policySanction =
     incident.policySanction ||
@@ -278,11 +267,6 @@ export default function ViewIncidentModal({
     incident.location ||
     "-";
 
-  /*
-   * ==================================================
-   * INVESTIGATION INFORMATION
-   * ==================================================
-   */
   const investigation =
     incident.investigation ||
     null;
@@ -316,11 +300,6 @@ export default function ViewIncidentModal({
       investigationStartedAt
     );
 
-  /*
-   * ==================================================
-   * RESOLUTION / PROOF INFORMATION
-   * ==================================================
-   */
   const resolution =
     incident.resolution ||
     null;
@@ -355,11 +334,6 @@ export default function ViewIncidentModal({
       resolutionSubmittedAt
     );
 
-  /*
-   * ==================================================
-   * REVIEW INFORMATION
-   * ==================================================
-   */
   const review =
     incident.review ||
     null;
@@ -461,49 +435,49 @@ export default function ViewIncidentModal({
       color={
         isStartReview
           ? "amber"
-          : "red"
+          : "indigo"
       }
       size="lg"
     >
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-w-0 space-y-5">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0 space-y-4">
           {isStartReview && (
             <AlertBox
               type="warning"
               title="Review before starting investigation"
-              message="Verify the reporter, employee, violation type, case age, alerts, and incident details before proceeding."
+              message="Verify the employee, reporter, violation, case age, alerts, and incident details before proceeding."
             />
           )}
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             <HighlightCard
               icon={
                 <FiAlertTriangle
                   aria-hidden="true"
                 />
               }
-              label="Severity Level"
+              label="Severity"
             >
-              <PillBadge
-                value={
-                  severity
-                }
-                styleMap={
-                  SEVERITY_STYLE
-                }
-                icon={
-                  <FiShield
-                    size={
-                      13
-                    }
-                    aria-hidden="true"
-                  />
-                }
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <PillBadge
+                  value={
+                    severity
+                  }
+                  styleMap={
+                    SEVERITY_STYLE
+                  }
+                  icon={
+                    <FiShield
+                      size={13}
+                      aria-hidden="true"
+                    />
+                  }
+                />
 
-              <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                Indicates the assessed seriousness and priority of the reported incident.
-              </p>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  Assessed incident seriousness
+                </span>
+              </div>
             </HighlightCard>
 
             <HighlightCard
@@ -514,26 +488,26 @@ export default function ViewIncidentModal({
               }
               label="Case Status"
             >
-              <PillBadge
-                value={
-                  status
-                }
-                styleMap={
-                  STATUS_STYLE
-                }
-                icon={
-                  <FiCheckCircle
-                    size={
-                      13
-                    }
-                    aria-hidden="true"
-                  />
-                }
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <PillBadge
+                  value={
+                    status
+                  }
+                  styleMap={
+                    STATUS_STYLE
+                  }
+                  icon={
+                    <FiCheckCircle
+                      size={13}
+                      aria-hidden="true"
+                    />
+                  }
+                />
 
-              <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                Shows the current workflow stage of the disciplinary case.
-              </p>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  Current incident workflow stage
+                </span>
+              </div>
             </HighlightCard>
           </div>
 
@@ -574,23 +548,9 @@ export default function ViewIncidentModal({
             />
 
             <Detail
-              label="Severity"
-              value={
-                severity
-              }
-            />
-
-            <Detail
               label="Policy Sanction"
               value={
                 policySanction
-              }
-            />
-
-            <Detail
-              label="Status"
-              value={
-                status
               }
             />
 
@@ -661,88 +621,90 @@ export default function ViewIncidentModal({
           <InfoCard title="Incident Description">
             <div className="flex items-start gap-3">
               <FiFileText
-                className="mt-1 shrink-0 text-gray-400"
+                className="mt-1 shrink-0 text-slate-400"
                 aria-hidden="true"
               />
 
-              <p className="whitespace-pre-line break-words text-sm leading-6 text-gray-700 dark:text-gray-300">
+              <p className="whitespace-pre-line break-words text-sm leading-6 text-slate-700 dark:text-slate-300">
                 {incident.description ||
                   "No description provided."}
               </p>
             </div>
           </InfoCard>
 
-          <InfoCard title="Investigation Information">
-            {hasInvestigation ? (
-              <>
-                <Detail
-                  label="Started By"
-                  value={
-                    investigationStartedBy
-                  }
-                />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <InfoCard title="Investigation Information">
+              {hasInvestigation ? (
+                <>
+                  <Detail
+                    label="Started By"
+                    value={
+                      investigationStartedBy
+                    }
+                  />
 
-                <Detail
-                  label="Username"
-                  value={
-                    investigationStartedByUsername
-                  }
-                />
+                  <Detail
+                    label="Username"
+                    value={
+                      investigationStartedByUsername
+                    }
+                  />
 
-                <Detail
-                  label="User ID"
-                  value={
-                    investigationStartedById
-                  }
-                />
+                  <Detail
+                    label="User ID"
+                    value={
+                      investigationStartedById
+                    }
+                  />
 
-                <Detail
-                  label="Date Started"
-                  value={formatDateTime(
-                    investigationStartedAt
-                  )}
-                />
-              </>
-            ) : (
-              <EmptyWorkflowState message="Investigation has not started yet." />
-            )}
-          </InfoCard>
+                  <Detail
+                    label="Date Started"
+                    value={formatDateTime(
+                      investigationStartedAt
+                    )}
+                  />
+                </>
+              ) : (
+                <EmptyWorkflowState message="Investigation has not started yet." />
+              )}
+            </InfoCard>
 
-          <InfoCard title="Resolution Proof">
-            {hasResolution ? (
-              <>
-                <Detail
-                  label="Submitted By"
-                  value={
-                    resolutionSubmittedBy
-                  }
-                />
+            <InfoCard title="Resolution Proof">
+              {hasResolution ? (
+                <>
+                  <Detail
+                    label="Submitted By"
+                    value={
+                      resolutionSubmittedBy
+                    }
+                  />
 
-                <Detail
-                  label="Username"
-                  value={
-                    resolutionSubmittedByUsername
-                  }
-                />
+                  <Detail
+                    label="Username"
+                    value={
+                      resolutionSubmittedByUsername
+                    }
+                  />
 
-                <Detail
-                  label="User ID"
-                  value={
-                    resolutionSubmittedById
-                  }
-                />
+                  <Detail
+                    label="User ID"
+                    value={
+                      resolutionSubmittedById
+                    }
+                  />
 
-                <Detail
-                  label="Submitted Date"
-                  value={formatDateTime(
-                    resolutionSubmittedAt
-                  )}
-                />
-              </>
-            ) : (
-              <EmptyWorkflowState message="No resolution proof has been submitted yet." />
-            )}
-          </InfoCard>
+                  <Detail
+                    label="Submitted Date"
+                    value={formatDateTime(
+                      resolutionSubmittedAt
+                    )}
+                  />
+                </>
+              ) : (
+                <EmptyWorkflowState message="No resolution proof has been submitted yet." />
+              )}
+            </InfoCard>
+          </div>
 
           {hasResolution && (
             <ProofReview
@@ -806,7 +768,7 @@ export default function ViewIncidentModal({
 
           {isReturned && (
             <InfoCard title="Reviewer Return Comment">
-              <p className="rounded-xl bg-red-50 p-3 text-sm leading-6 text-red-700 dark:bg-red-950/30 dark:text-red-300">
+              <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
                 {reviewComments ||
                   "The case was returned for correction."}
               </p>
@@ -814,7 +776,7 @@ export default function ViewIncidentModal({
           )}
 
           <InfoCard title="System Recommendation">
-            <p className="rounded-xl bg-indigo-50 p-3 text-sm font-semibold leading-6 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+            <p className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm font-semibold leading-6 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
               {incident.recommendation ||
                 "No recommendation generated."}
             </p>
@@ -880,7 +842,7 @@ export default function ViewIncidentModal({
           )}
         </div>
 
-        <aside className="min-w-0">
+        <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
           <CaseTimeline
             incident={
               incident

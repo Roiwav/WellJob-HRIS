@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
 } from "react";
-
 import {
   FiAlertCircle,
   FiCheckCircle,
@@ -12,36 +11,29 @@ import {
   FiFileText,
   FiXCircle,
 } from "react-icons/fi";
-
 import Button from "../../ui/Button";
 import Dialog from "../../ui/Dialog";
-
 import {
   formatDateTime,
 } from "../../../utils/incidents/incidentHelpers";
-
 import {
   fetchIncidentEvidencePreview,
   formatFileSize,
 } from "../../../utils/incidents/evidenceFiles";
-
 const DIALOG_TONE_BY_COLOR = {
   red: "danger",
   green: "success",
   indigo: "default",
   amber: "warning",
 };
-
 const DIALOG_SIZE_MAP = {
   sm: "md",
   md: "lg",
   lg: "xl",
   xl: "xl",
 };
-
 const EVIDENCE_OBJECT_URL_LIFETIME_MS =
   5 * 60 * 1000;
-
 function getDisplayValue(
   value,
   fallback = "-"
@@ -52,16 +44,13 @@ function getDisplayValue(
   ) {
     return fallback;
   }
-
   const normalizedValue =
     String(value).trim();
-
   return (
     normalizedValue ||
     fallback
   );
 }
-
 function getTimelineEventAction(
   event
 ) {
@@ -74,7 +63,6 @@ function getTimelineEventAction(
     .trim()
     .toUpperCase();
 }
-
 function getTimelineEventDate(
   event
 ) {
@@ -86,7 +74,6 @@ function getTimelineEventDate(
     null
   );
 }
-
 function getTimelineEventCreator(
   event
 ) {
@@ -98,38 +85,32 @@ function getTimelineEventCreator(
     "System"
   );
 }
-
 function getTimelineEventDescription(
   event
 ) {
   if (event?.description) {
     return event.description;
   }
-
   const action =
     getTimelineEventAction(
       event
     );
-
   const createdBy =
     getTimelineEventCreator(
       event
     );
-
   if (
     action ===
     "CREATE_INCIDENT"
   ) {
     return `Reported by ${createdBy}.`;
   }
-
   if (
     action ===
     "START_INVESTIGATION"
   ) {
     return `${createdBy} started the investigation.`;
   }
-
   if (
     action ===
       "SUBMIT_RESOLUTION" ||
@@ -138,50 +119,42 @@ function getTimelineEventDescription(
   ) {
     return `${createdBy} submitted proof for Super Admin review.`;
   }
-
   if (
     action ===
     "RETURN_INCIDENT"
   ) {
     return `${createdBy} returned the case for correction.`;
   }
-
   if (
     action ===
     "CLOSE_INCIDENT"
   ) {
     return `${createdBy} approved and closed the case.`;
   }
-
   return `Updated by ${createdBy}.`;
 }
-
 function getTimelineEventTitle(
   event
 ) {
   if (event?.title) {
     return event.title;
   }
-
   const action =
     getTimelineEventAction(
       event
     );
-
   if (
     action ===
     "CREATE_INCIDENT"
   ) {
     return "Reported";
   }
-
   if (
     action ===
     "START_INVESTIGATION"
   ) {
     return "Investigation Started";
   }
-
   if (
     action ===
       "SUBMIT_RESOLUTION" ||
@@ -190,24 +163,20 @@ function getTimelineEventTitle(
   ) {
     return "Proof Submitted";
   }
-
   if (
     action ===
     "RETURN_INCIDENT"
   ) {
     return "Returned by Super Admin";
   }
-
   if (
     action ===
     "CLOSE_INCIDENT"
   ) {
     return "Approved and Closed";
   }
-
   return "Timeline Event";
 }
-
 function getTimelineEventState(
   event
 ) {
@@ -215,26 +184,22 @@ function getTimelineEventState(
     getTimelineEventAction(
       event
     );
-
   if (
     action ===
     "RETURN_INCIDENT"
   ) {
     return "rejected";
   }
-
   if (
     action ===
     "CLOSE_INCIDENT"
   ) {
     return "closed";
   }
-
   const title =
     String(
       event?.title || ""
     ).toLowerCase();
-
   if (
     title.includes(
       "return"
@@ -245,7 +210,6 @@ function getTimelineEventState(
   ) {
     return "rejected";
   }
-
   if (
     title.includes(
       "closed"
@@ -256,10 +220,8 @@ function getTimelineEventState(
   ) {
     return "closed";
   }
-
   return "done";
 }
-
 function hasValidNumericId(
   value
 ) {
@@ -267,7 +229,6 @@ function hasValidNumericId(
     String(
       value ?? ""
     ).trim();
-
   if (
     !/^\d+$/.test(
       normalized
@@ -275,10 +236,8 @@ function hasValidNumericId(
   ) {
     return false;
   }
-
   const numericValue =
     Number(normalized);
-
   return (
     Number.isSafeInteger(
       numericValue
@@ -286,7 +245,6 @@ function hasValidNumericId(
     numericValue > 0
   );
 }
-
 export function BaseModal({
   children,
   onClose,
@@ -301,12 +259,10 @@ export function BaseModal({
     DIALOG_TONE_BY_COLOR[
       color
     ] || "default";
-
   const dialogSize =
     DIALOG_SIZE_MAP[
       size
     ] || "xl";
-
   return (
     <Dialog
       open
@@ -339,12 +295,10 @@ export function BaseModal({
       }
     >
       {children}
-
       <ModalStyle />
     </Dialog>
   );
 }
-
 export function NoticeModal({
   type = "success",
   title,
@@ -355,7 +309,6 @@ export function NoticeModal({
   const isSuccess =
     type ===
     "success";
-
   return (
     <Dialog
       open
@@ -422,7 +375,6 @@ export function NoticeModal({
             />
           )}
         </div>
-
         <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
           {message}
         </p>
@@ -430,7 +382,6 @@ export function NoticeModal({
     </Dialog>
   );
 }
-
 export function AlertBox({
   type = "warning",
   title,
@@ -440,7 +391,6 @@ export function AlertBox({
     type === "error"
       ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
       : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300";
-
   return (
     <div
       role={
@@ -448,28 +398,25 @@ export function AlertBox({
           ? "alert"
           : "status"
       }
-      className={`flex items-start gap-4 rounded-2xl border p-5 ${style}`}
+      className={`flex items-start gap-3 rounded-xl border p-4 ${style}`}
     >
-      <div className="rounded-full bg-white/50 p-3">
+      <div className="rounded-xl bg-white/50 p-2.5">
         <FiAlertCircle
           size={22}
           aria-hidden="true"
         />
       </div>
-
       <div className="min-w-0">
-        <h3 className="text-lg font-extrabold">
+        <h3 className="text-sm font-extrabold">
           {title}
         </h3>
-
-        <p className="mt-1 text-sm leading-6">
+        <p className="mt-1 text-xs leading-5">
           {message}
         </p>
       </div>
     </div>
   );
 }
-
 export function CaseTimeline({
   incident,
 }) {
@@ -478,7 +425,6 @@ export function CaseTimeline({
       incident?.status ||
         "Open"
     ).trim();
-
   const timelineEvents =
     Array.isArray(
       incident?.timelineEvents
@@ -493,7 +439,6 @@ export function CaseTimeline({
             )
           ? incident.timeline
           : [];
-
   const databaseSteps =
     timelineEvents
       .filter(
@@ -526,48 +471,39 @@ export function CaseTimeline({
               ) ||
               index
             }`,
-
           title:
             getTimelineEventTitle(
               event
             ),
-
           description:
             getTimelineEventDescription(
               event
             ),
-
           createdAt:
             getTimelineEventDate(
               event
             ),
-
           state:
             getTimelineEventState(
               event
             ),
         })
       );
-
   const investigation =
     incident?.investigation ||
     null;
-
   const resolution =
     incident?.resolution ||
     null;
-
   const review =
     incident?.review ||
     null;
-
   const reportedBy =
     incident?.reportedByName ||
     incident?.reported_by_name ||
     incident?.reportedBy ||
     incident?.reported_by ||
     "Unknown Reporter";
-
   const reportedAt =
     incident?.reportedAt ||
     incident?.reported_at ||
@@ -575,43 +511,36 @@ export function CaseTimeline({
     incident?.createdAt ||
     incident?.created_at ||
     null;
-
   const investigationStartedAt =
     investigation?.startedAt ||
     incident?.investigationStartedAt ||
     incident?.investigation_started_at ||
     null;
-
   const investigationStartedBy =
     investigation?.startedByName ||
     incident?.investigationStartedByName ||
     incident?.investigation_started_by_name ||
     "-";
-
   const resolutionSubmittedAt =
     resolution?.submittedAt ||
     incident?.resolutionSubmittedAt ||
     incident?.resolution_submitted_at ||
     null;
-
   const resolutionSubmittedBy =
     resolution?.submittedByName ||
     incident?.resolutionSubmittedByName ||
     incident?.resolution_submitted_by_name ||
     "-";
-
   const reviewedAt =
     review?.reviewedAt ||
     incident?.reviewedAt ||
     incident?.reviewed_at ||
     null;
-
   const reviewedBy =
     review?.reviewedByName ||
     incident?.reviewedByName ||
     incident?.reviewed_by_name ||
     "-";
-
   const reviewDecision =
     review?.decision ||
     incident?.reviewDecision ||
@@ -622,52 +551,41 @@ export function CaseTimeline({
         ? "Approved"
         : ""
     );
-
   const normalizedDecision =
     String(
       reviewDecision
     )
       .trim()
       .toLowerCase();
-
   const isReturned =
     normalizedDecision ===
       "returned" ||
     normalizedDecision ===
       "rejected";
-
   const fallbackSteps = [
     {
       id:
         "reported",
-
       title:
         "Reported",
-
       description:
         `Reported by ${reportedBy}`,
-
       createdAt:
         reportedAt,
-
       state:
         "done",
     },
     {
       id:
         "investigation",
-
       title:
         "Investigation Started",
-
       description:
         investigationStartedAt
           ? `Started by ${investigationStartedBy}`
           : "Waiting for HR action",
-
       createdAt:
         investigationStartedAt,
-
       state:
         investigationStartedAt
           ? "done"
@@ -676,18 +594,14 @@ export function CaseTimeline({
     {
       id:
         "proof",
-
       title:
         "Proof Submitted",
-
       description:
         resolutionSubmittedAt
           ? `Submitted by ${resolutionSubmittedBy}`
           : "Waiting for resolution proof",
-
       createdAt:
         resolutionSubmittedAt,
-
       state:
         resolutionSubmittedAt
           ? "done"
@@ -696,12 +610,10 @@ export function CaseTimeline({
     {
       id:
         "review",
-
       title:
         isReturned
           ? "Returned by Super Admin"
           : "Approved and Closed",
-
       description:
         reviewedAt
           ? `${
@@ -709,10 +621,8 @@ export function CaseTimeline({
               "Reviewed"
             } by ${reviewedBy}`
           : "Waiting for Super Admin review",
-
       createdAt:
         reviewedAt,
-
       state:
         isReturned
           ? "rejected"
@@ -722,20 +632,17 @@ export function CaseTimeline({
             : "pending",
     },
   ];
-
   const steps =
     databaseSteps.length >
     0
       ? databaseSteps
       : fallbackSteps;
-
   return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950">
-      <p className="mb-5 text-xs font-bold uppercase tracking-wide text-gray-500">
+    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+      <p className="mb-4 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         Case Timeline
       </p>
-
-      <div className="space-y-5">
+      <div className="space-y-4">
         {steps.map(
           (
             item,
@@ -746,7 +653,6 @@ export function CaseTimeline({
                 "done" ||
               item.state ===
                 "closed";
-
             const iconStyle =
               item.state ===
               "rejected"
@@ -754,7 +660,6 @@ export function CaseTimeline({
                 : isCompleted
                   ? "border-green-300 bg-green-100 text-green-700 dark:border-green-500/40 dark:bg-green-500/15 dark:text-green-300"
                   : "border-slate-300 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400";
-
             return (
               <div
                 key={
@@ -767,10 +672,9 @@ export function CaseTimeline({
                     1 && (
                   <span
                     aria-hidden="true"
-                    className="absolute left-[15px] top-8 h-full w-px bg-gray-200 dark:bg-white/10"
+                    className="absolute left-[15px] top-8 h-full w-px bg-slate-200 dark:bg-slate-800"
                   />
                 )}
-
                 <div
                   className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${iconStyle}`}
                 >
@@ -789,24 +693,20 @@ export function CaseTimeline({
                     />
                   )}
                 </div>
-
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-gray-900 dark:text-white">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">
                     {
                       item.title
                     }
                   </p>
-
-                  <p className="mt-0.5 break-words text-xs text-gray-500">
+                  <p className="mt-0.5 break-words text-xs leading-5 text-slate-500 dark:text-slate-400">
                     {item.description ||
                       "-"}
                   </p>
-
-                  <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-500">
                     <FiClock
                       aria-hidden="true"
                     />
-
                     {formatDateTime(
                       item.createdAt
                     )}
@@ -820,7 +720,6 @@ export function CaseTimeline({
     </div>
   );
 }
-
 export function ProofReview({
   resolution,
 }) {
@@ -834,28 +733,23 @@ export function ProofReview({
       </InfoCard>
     );
   }
-
   const submittedBy =
     resolution.submittedByName ||
     resolution.submitted_by_name ||
     "-";
-
   const submittedAt =
     resolution.submittedAt ||
     resolution.submitted_at ||
     null;
-
   const actionTaken =
     resolution.actionTaken ||
     resolution.action_taken ||
     "-";
-
   const remarks =
     resolution.remarks ||
     resolution.resolutionNotes ||
     resolution.resolution_notes ||
     "-";
-
   const proofFiles =
     Array.isArray(
       resolution.proofFiles
@@ -866,7 +760,6 @@ export function ProofReview({
           )
         ? resolution.proof_files
         : [];
-
   return (
     <InfoCard title="Resolution Proof Review">
       <Detail
@@ -875,7 +768,6 @@ export function ProofReview({
           submittedBy
         }
       />
-
       <Detail
         label="Submitted Date"
         value={
@@ -884,21 +776,18 @@ export function ProofReview({
           )
         }
       />
-
       <TextDetail
         label="Action Taken"
         value={
           actionTaken
         }
       />
-
       <TextDetail
         label="Remarks"
         value={
           remarks
         }
       />
-
       <ProofList
         files={
           proofFiles
@@ -907,7 +796,6 @@ export function ProofReview({
     </InfoCard>
   );
 }
-
 export function TextDetail({
   label,
   value,
@@ -917,7 +805,6 @@ export function TextDetail({
       <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
         {label}
       </p>
-
       <p className="mt-1 whitespace-pre-line break-words text-sm leading-6">
         {getDisplayValue(
           value
@@ -926,7 +813,6 @@ export function TextDetail({
     </div>
   );
 }
-
 function ProofFileCard({
   file,
   index,
@@ -937,43 +823,35 @@ function ProofFileCard({
     setIsOpening,
   ] =
     useState(false);
-
   const [
     openError,
     setOpenError,
   ] =
     useState("");
-
   const abortControllerRef =
     useRef(null);
-
   const fileId =
     file?.id ||
     file?.name ||
     `proof-${index}`;
-
   const fileName =
     file?.name ||
     file?.fileName ||
     "Uploaded file";
-
   const localUrl =
     file?.isLocal
       ? file?.localUrl ||
         null
       : null;
-
   const incidentId =
     file?.incidentId ??
     file?.incident_id ??
     null;
-
   const evidenceId =
     file?.evidenceId ??
     file?.evidence_id ??
     file?.id ??
     null;
-
   const hasProtectedReference =
     !file?.isLocal &&
     hasValidNumericId(
@@ -982,7 +860,6 @@ function ProofFileCard({
     hasValidNumericId(
       evidenceId
     );
-
   useEffect(
     () => {
       return () => {
@@ -990,7 +867,6 @@ function ProofFileCard({
           abortControllerRef.current
         ) {
           abortControllerRef.current.abort();
-
           abortControllerRef.current =
             null;
         }
@@ -998,7 +874,6 @@ function ProofFileCard({
     },
     []
   );
-
   const handleOpenProtectedEvidence =
     useCallback(
       async () => {
@@ -1008,21 +883,17 @@ function ProofFileCard({
         ) {
           return;
         }
-
         setOpenError(
           ""
         );
-
         if (
           !hasProtectedReference
         ) {
           setOpenError(
             "The saved evidence reference is unavailable."
           );
-
           return;
         }
-
         /*
          * Open the target window synchronously
          * from the user click.
@@ -1037,40 +908,32 @@ function ProofFileCard({
             "about:blank",
             "_blank"
           );
-
         if (
           !previewWindow
         ) {
           setOpenError(
             "The evidence preview was blocked by the browser. Allow pop-ups for this site and try again."
           );
-
           return;
         }
-
         try {
           previewWindow.opener =
             null;
         } catch {
           // Browser may restrict opener assignment.
         }
-
         if (
           abortControllerRef.current
         ) {
           abortControllerRef.current.abort();
         }
-
         const controller =
           new AbortController();
-
         abortControllerRef.current =
           controller;
-
         setIsOpening(
           true
         );
-
         try {
           const preview =
             await fetchIncidentEvidencePreview({
@@ -1079,7 +942,6 @@ function ProofFileCard({
               signal:
                 controller.signal,
             });
-
           if (
             controller.signal
               .aborted
@@ -1091,26 +953,21 @@ function ProofFileCard({
                 preview.url
               );
             }
-
             if (
               !previewWindow.closed
             ) {
               previewWindow.close();
             }
-
             return;
           }
-
           if (
             previewWindow.closed
           ) {
             URL.revokeObjectURL(
               preview.url
             );
-
             return;
           }
-
           /*
            * The protected binary has now been
            * retrieved through authenticatedFetch.
@@ -1122,7 +979,6 @@ function ProofFileCard({
           previewWindow.location.replace(
             preview.url
           );
-
           /*
            * Blob URLs consume browser memory.
            *
@@ -1145,14 +1001,12 @@ function ProofFileCard({
           ) {
             previewWindow.close();
           }
-
           if (
             error?.name ===
             "AbortError"
           ) {
             return;
           }
-
           setOpenError(
             error?.message ||
               "Unable to open the incident evidence file."
@@ -1165,7 +1019,6 @@ function ProofFileCard({
             abortControllerRef.current =
               null;
           }
-
           setIsOpening(
             false
           );
@@ -1179,27 +1032,23 @@ function ProofFileCard({
         isOpening,
       ]
     );
-
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-start gap-3">
-        <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
+        <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
           <FiFileText
             aria-hidden="true"
           />
         </div>
-
         <div className="min-w-0 flex-1">
-          <p className="break-all text-sm font-bold text-gray-900 dark:text-white">
+          <p className="break-all text-sm font-bold text-slate-900 dark:text-white">
             {fileName}
           </p>
-
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             {file?.type ||
               "Uploaded file"}
           </p>
-
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             {formatFileSize(
               file?.size
             )}{" "}
@@ -1207,21 +1056,18 @@ function ProofFileCard({
             {file?.status ||
               "Uploaded"}
           </p>
-
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-slate-400 dark:text-slate-500">
             {file?.uploadedAt
               ? formatDateTime(
                   file.uploadedAt
                 )
               : "-"}
           </p>
-
           {file?.error && (
             <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-300">
               {file.error}
             </p>
           )}
-
           {openError && (
             <p
               role="alert"
@@ -1230,7 +1076,6 @@ function ProofFileCard({
               {openError}
             </p>
           )}
-
           <div className="mt-3 flex flex-wrap gap-2">
             {file?.isLocal &&
               localUrl && (
@@ -1245,7 +1090,6 @@ function ProofFileCard({
                   Open local preview
                 </a>
               )}
-
             {!file?.isLocal && (
               <Button
                 type="button"
@@ -1267,7 +1111,6 @@ function ProofFileCard({
                   : "Open"}
               </Button>
             )}
-
             {onRemove && (
               <Button
                 type="button"
@@ -1283,7 +1126,6 @@ function ProofFileCard({
               </Button>
             )}
           </div>
-
           {!file?.isLocal &&
             !hasProtectedReference &&
             !openError && (
@@ -1293,7 +1135,6 @@ function ProofFileCard({
                 protected file reference.
               </p>
             )}
-
           {file?.isLocal && (
             <p className="mt-2 text-[11px] leading-4 text-amber-700 dark:text-amber-300">
               Local preview only.
@@ -1307,7 +1148,6 @@ function ProofFileCard({
     </div>
   );
 }
-
 export function ProofList({
   files = [],
   onRemove,
@@ -1318,7 +1158,6 @@ export function ProofList({
     )
       ? files
       : [];
-
   if (
     safeFiles.length ===
     0
@@ -1329,7 +1168,6 @@ export function ProofList({
       </p>
     );
   }
-
   return (
     <div className="mt-4 grid gap-3 sm:grid-cols-2">
       {safeFiles.map(
@@ -1358,35 +1196,31 @@ export function ProofList({
     </div>
   );
 }
-
 export function InfoCard({
   title,
   children,
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm text-gray-700 dark:border-white/10 dark:bg-slate-900 dark:text-gray-300">
-      <p className="mb-4 text-xs font-bold uppercase tracking-wide text-gray-500">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+      <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {title}
       </p>
-
       <div className="space-y-2">
         {children}
       </div>
     </div>
   );
 }
-
 export function Detail({
   label,
   value,
 }) {
   return (
     <div className="grid grid-cols-1 gap-1 text-sm sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-3">
-      <span className="font-semibold text-gray-500">
+      <span className="font-medium text-slate-500 dark:text-slate-400">
         {label}
       </span>
-
-      <span className="min-w-0 break-words font-medium text-gray-900 dark:text-white">
+      <span className="min-w-0 break-words font-semibold text-slate-900 dark:text-white">
         {getDisplayValue(
           value
         )}
@@ -1394,7 +1228,6 @@ export function Detail({
     </div>
   );
 }
-
 export function Field({
   label,
   required = false,
@@ -1402,9 +1235,8 @@ export function Field({
 }) {
   return (
     <div>
-      <div className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+      <div className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
         {label}
-
         {required && (
           <>
             {" "}
@@ -1414,29 +1246,25 @@ export function Field({
             >
               *
             </span>
-
             <span className="sr-only">
               Required
             </span>
           </>
         )}
       </div>
-
       {children}
     </div>
   );
 }
-
 export function ModalFooter({
   children,
 }) {
   return (
-    <div className="flex flex-col-reverse gap-3 border-t border-gray-200 pt-5 sm:flex-row sm:flex-wrap sm:justify-end dark:border-white/10">
+    <div className="flex flex-col-reverse gap-2.5 border-t border-slate-200 pt-4 sm:flex-row sm:flex-wrap sm:justify-end dark:border-slate-800">
       {children}
     </div>
   );
 }
-
 function ModalStyle() {
   return (
     <style>{`
@@ -1455,39 +1283,31 @@ function ModalStyle() {
           box-shadow 150ms ease,
           background-color 150ms ease;
       }
-
       .input-field::placeholder {
         color: rgb(156 163 175);
       }
-
       .input-field:hover:not(:disabled) {
         border-color: rgb(156 163 175);
       }
-
       .input-field:focus {
         border-color: rgb(99 102 241);
         box-shadow: 0 0 0 3px rgb(224 231 255);
       }
-
       .input-field:disabled {
         cursor: not-allowed;
         opacity: 0.65;
       }
-
       .dark .input-field {
         border-color: rgba(255, 255, 255, 0.1);
         background: rgb(15 23 42);
         color: white;
       }
-
       .dark .input-field::placeholder {
         color: rgb(148 163 184);
       }
-
       .dark .input-field:hover:not(:disabled) {
         border-color: rgba(255, 255, 255, 0.2);
       }
-
       .dark .input-field:focus {
         border-color: rgb(129 140 248);
         box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
