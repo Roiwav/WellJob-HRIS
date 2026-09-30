@@ -1,4 +1,3 @@
-
 /**
  * ==================================================
  * WELLJOB SOLUTIONS
@@ -55,6 +54,9 @@ export const CHAT_SERVER_URL = String(
  */
 
 export function getChatToken(_user) {
+  // Retain the optional argument for backward-compatible callers.
+  void _user;
+
   try {
     return (
       localStorage.getItem("token") ||
@@ -92,6 +94,9 @@ export async function chatApi(
   options = {},
   _user
 ) {
+  // Retain the optional third argument for backward-compatible callers.
+  void _user;
+
   /*
    * Retrieve the existing WELLJOB login token.
    */

@@ -14,36 +14,28 @@ import {
   FiRefreshCw,
   FiTrendingUp,
 } from "react-icons/fi";
-
 import ExecutiveActionItems from "../components/dashboard/insights/ExecutiveActionItems";
 import WorkforceHealthBanner from "../components/dashboard/insights/WorkforceHealthBanner";
 import ExecutiveInsightTabs from "../components/dashboard/insights/ExecutiveInsightTabs";
 import DashboardDrilldownModal from "../components/dashboard/modals/DashboardDrilldownModal";
 import EditEmployeeModal from "../components/employees/EditEmployeeModal";
-
 import { buildExecutiveActionItems } from "../utils/dashboard/prescriptiveAnalytics";
 import { buildDashboardInsights } from "../utils/dashboard/dashboardInsights";
 import authenticatedFetch from "../utils/authenticatedFetch";
 import { API_BASE } from "../config/api";
-
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
-
 import KPICards from "../components/dashboard/cards/KPICards";
 import DeploymentTrendChart from "../components/dashboard/charts/DeploymentTrendChart";
 import IncidentTrendChart from "../components/dashboard/charts/IncidentTrendChart";
 import SeverityPieChart from "../components/dashboard/charts/SeverityPieChart";
 import CaseAgingChart from "../components/dashboard/charts/CaseAgingChart";
-
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const DASHBOARD_API_URL = `${API_BASE}/dashboard/overview`;
-
 const DATA_EVENT_SOURCE = "dashboard-page";
 const REQUEST_TIMEOUT_MS = 45 * 1000;
 const DATA_UPDATE_DEBOUNCE_MS = 300;
-
 const activeRequests = new Map();
-
 const monthList = [
   "Jan",
   "Feb",
@@ -58,13 +50,11 @@ const monthList = [
   "Nov",
   "Dec",
 ];
-
 const FORECAST_RANGES = [
   "weekly",
   "monthly",
   "yearly",
 ];
-
 const INSIGHT_CARD_TONES = {
   indigo:
     "from-indigo-50 to-white dark:from-indigo-950/30 dark:to-slate-900",
@@ -75,7 +65,6 @@ const INSIGHT_CARD_TONES = {
   emerald:
     "from-emerald-50 to-white dark:from-emerald-950/30 dark:to-slate-900",
 };
-
 function emitDataUpdated(
   action = "DASHBOARD_UPDATED"
 ) {
@@ -90,13 +79,11 @@ function emitDataUpdated(
     })
   );
 }
-
 function normalizeText(value) {
   return String(value || "")
     .trim()
     .toLowerCase();
 }
-
 function shouldRefreshDashboardForEvent(
   event
 ) {
@@ -107,11 +94,9 @@ function shouldRefreshDashboardForEvent(
       /[_\s]+/g,
       "-"
     );
-
   if (!domain) {
     return true;
   }
-
   return (
     domain.startsWith(
       "employee"
@@ -130,50 +115,40 @@ function shouldRefreshDashboardForEvent(
     )
   );
 }
-
 function normalizeStatus(status) {
   const value = normalizeText(status);
-
   if (
     value === "for_review" ||
     value === "for review"
   ) {
     return "For Review";
   }
-
   if (
     value === "resolved" ||
     value === "closed"
   ) {
     return "Closed";
   }
-
   if (value === "investigating") {
     return "Investigating";
   }
-
   return "Open";
 }
-
 function isArchivedEmployee(employee) {
   return (
     employee?.archived === true ||
     Number(employee?.archived) === 1
   );
 }
-
 function parseDocuments(documents) {
   if (Array.isArray(documents)) {
     return documents;
   }
-
   if (typeof documents !== "string") {
     return [];
   }
-
   try {
     const parsed = JSON.parse(documents);
-
     return Array.isArray(parsed)
       ? parsed
       : [];
@@ -181,7 +156,6 @@ function parseDocuments(documents) {
     return [];
   }
 }
-
 function normalizeBackendEmployee(
   employee = {}
 ) {
@@ -190,58 +164,46 @@ function normalizeBackendEmployee(
     employee.employeeId ||
     employee.employee_id ||
     "";
-
   return {
     ...employee,
-
     id: employeeId,
     employeeId,
-
     name:
       employee.name ||
       employee.full_name ||
       employee.fullName ||
       "Unknown Employee",
-
     company:
       employee.company ||
       employee.clientCompany ||
       "Unassigned",
-
     status:
       employee.status ||
       "Unknown",
-
     employmentType:
       employee.employmentType ||
       employee.employment_type ||
       "",
-
     contractStart:
       employee.contractStart ||
       employee.contract_start ||
       null,
-
     contractEnd:
       employee.contractEnd ||
       employee.contract_end ||
       null,
-
     createdAt:
       employee.createdAt ||
       employee.created_at ||
       null,
-
     archived:
       isArchivedEmployee(employee),
-
     documents:
       parseDocuments(
         employee.documents
       ),
   };
 }
-
 function normalizeBackendIncident(
   incident = {}
 ) {
@@ -254,91 +216,72 @@ function normalizeBackendIncident(
     incident.createdAt ||
     incident.created_at ||
     new Date().toISOString();
-
   return {
     ...incident,
-
     id: incident.id,
-
     employeeId:
       incident.employeeId ||
       incident.employee_id ||
       incident.empId ||
       incident.employeeID ||
       "",
-
     employee:
       incident.employee ||
       incident.employeeName ||
       incident.employee_name ||
       "Unknown Employee",
-
     company:
       incident.company ||
       "",
-
     violation:
       incident.violation ||
       incident.violationType ||
       incident.violation_type ||
       "No violation type",
-
     severity:
       incident.severity ||
       "Minor",
-
     status:
       normalizeStatus(
         incident.status ||
           "Open"
       ),
-
     date,
-
     reportedAt:
       incident.reportedAt ||
       incident.reported_at ||
       date,
-
     createdAt:
       incident.createdAt ||
       incident.created_at ||
       date,
   };
 }
-
 async function requestJson(
   url,
   options = {}
 ) {
   const controller =
     new AbortController();
-
   const timeoutId =
     window.setTimeout(() => {
       controller.abort();
     }, REQUEST_TIMEOUT_MS);
-
   try {
     const response =
       await authenticatedFetch(url, {
         ...options,
-
         signal:
           controller.signal,
-
         cache: "no-store",
-
         headers: {
           Accept: "application/json",
           ...(options.headers || {}),
         },
       });
-
     const data = await response
       .json()
       .catch(() => null);
-
     if (!response.ok) {
       throw new Error(
         data?.error ||
@@ -346,7 +289,6 @@ async function requestJson(
           `Request failed with status ${response.status}`
       );
     }
-
     return data;
   } catch (error) {
     if (
@@ -357,7 +299,6 @@ async function requestJson(
         "The server took too long to respond."
       );
     }
-
     throw error;
   } finally {
     window.clearTimeout(
@@ -365,30 +306,24 @@ async function requestJson(
     );
   }
 }
-
 function getSharedRequest(url) {
   if (!activeRequests.has(url)) {
     const requestPromise =
       requestJson(url).finally(() => {
         activeRequests.delete(url);
       });
-
     activeRequests.set(
       url,
       requestPromise
     );
   }
-
   return activeRequests.get(url);
 }
-
 function normalizeDateValue(value) {
   if (!value) {
     return "";
   }
-
   const date = new Date(value);
-
   if (
     Number.isNaN(
       date.getTime()
@@ -396,21 +331,16 @@ function normalizeDateValue(value) {
   ) {
     return String(value);
   }
-
   const year =
     date.getFullYear();
-
   const month = String(
     date.getMonth() + 1
   ).padStart(2, "0");
-
   const day = String(
     date.getDate()
   ).padStart(2, "0");
-
   return `${year}-${month}-${day}`;
 }
-
 function getRecordDate(record) {
   return (
     record?.reportedAt ||
@@ -423,7 +353,6 @@ function getRecordDate(record) {
     ""
   );
 }
-
 function isInSelectedDashboardRange(
   value,
   selectedYear,
@@ -431,24 +360,19 @@ function isInSelectedDashboardRange(
 ) {
   const dateValue =
     normalizeDateValue(value);
-
   if (!dateValue) {
     return false;
   }
-
   const recordYear =
     dateValue.slice(0, 4);
-
   const recordMonth =
     dateValue.slice(5, 7);
-
   if (
     recordYear !==
     String(selectedYear)
   ) {
     return false;
   }
-
   if (
     Number(selectedMonth) > 0
   ) {
@@ -459,10 +383,8 @@ function isInSelectedDashboardRange(
       ).padStart(2, "0")
     );
   }
-
   return true;
 }
-
 function aggregateByMonth(
   dataset = [],
   key,
@@ -471,7 +393,6 @@ function aggregateByMonth(
 ) {
   const currentMonthIndex =
     new Date().getMonth();
-
   return monthList
     .map((month, index) => {
       const monthNumber =
@@ -479,7 +400,6 @@ function aggregateByMonth(
           2,
           "0"
         );
-
       const total =
         dataset.reduce(
           (sum, item) => {
@@ -487,7 +407,6 @@ function aggregateByMonth(
               normalizeDateValue(
                 item?.date
               );
-
             if (
               !itemDate ||
               !itemDate.startsWith(
@@ -498,7 +417,6 @@ function aggregateByMonth(
             ) {
               return sum;
             }
-
             return (
               sum +
               (Number(
@@ -508,7 +426,6 @@ function aggregateByMonth(
           },
           0
         );
-
       return {
         label: month,
         value: total,
@@ -522,7 +439,6 @@ function aggregateByMonth(
           currentMonthIndex
     );
 }
-
 function buildMultiYearMonthlyTrend({
   source = [],
   valueKey,
@@ -534,7 +450,6 @@ function buildMultiYearMonthlyTrend({
   const selectedIsCurrentYear =
     String(selectedYear) ===
     String(currentYear);
-
   const visibleMonthLimit =
     selectedIsCurrentYear
       ? Math.max(
@@ -542,7 +457,6 @@ function buildMultiYearMonthlyTrend({
           Number(currentMonth) || 1
         )
       : 12;
-
   return monthList
     .slice(0, visibleMonthLimit)
     .map((month, index) => {
@@ -551,11 +465,9 @@ function buildMultiYearMonthlyTrend({
           2,
           "0"
         );
-
       const row = {
         label: month,
       };
-
       years.forEach((year) => {
         row[String(year)] =
           source.reduce(
@@ -564,7 +476,6 @@ function buildMultiYearMonthlyTrend({
                 normalizeDateValue(
                   item?.date
                 );
-
               if (
                 itemDate &&
                 itemDate.slice(0, 4) ===
@@ -579,17 +490,14 @@ function buildMultiYearMonthlyTrend({
                   ) || 0)
                 );
               }
-
               return sum;
             },
             0
           );
       });
-
       return row;
     });
 }
-
 function formatLastUpdated(
   date = new Date()
 ) {
@@ -604,17 +512,14 @@ function formatLastUpdated(
     }
   );
 }
-
 function getCaseAgeInDays(
   dateString
 ) {
   if (!dateString) {
     return null;
   }
-
   const incidentDate =
     new Date(dateString);
-
   if (
     Number.isNaN(
       incidentDate.getTime()
@@ -622,9 +527,7 @@ function getCaseAgeInDays(
   ) {
     return null;
   }
-
   const today = new Date();
-
   today.setHours(0, 0, 0, 0);
   incidentDate.setHours(
     0,
@@ -632,17 +535,14 @@ function getCaseAgeInDays(
     0,
     0
   );
-
   const diffMs =
     today.getTime() -
     incidentDate.getTime();
-
   return Math.floor(
     diffMs /
       (1000 * 60 * 60 * 24)
   );
 }
-
 function isActiveIncident(status) {
   return [
     "Open",
@@ -652,7 +552,6 @@ function isActiveIncident(status) {
     normalizeStatus(status)
   );
 }
-
 function buildSeverityDistribution(
   incidents = []
 ) {
@@ -661,13 +560,11 @@ function buildSeverityDistribution(
     Major: 0,
     Critical: 0,
   };
-
   incidents.forEach(
     (incident) => {
       const severity =
         incident.severity ||
         "Minor";
-
       if (
         severityMap[severity] !==
         undefined
@@ -677,7 +574,6 @@ function buildSeverityDistribution(
       }
     }
   );
-
   return Object.entries(
     severityMap
   ).map(([name, value]) => ({
@@ -685,7 +581,6 @@ function buildSeverityDistribution(
     value,
   }));
 }
-
 function buildCaseAgingDistribution(
   incidents = []
 ) {
@@ -694,7 +589,6 @@ function buildCaseAgingDistribution(
     "8-30 Days": 0,
     "30+ Days": 0,
   };
-
   incidents.forEach(
     (incident) => {
       if (
@@ -704,16 +598,13 @@ function buildCaseAgingDistribution(
       ) {
         return;
       }
-
       const age =
         getCaseAgeInDays(
           getRecordDate(incident)
         );
-
       if (age === null) {
         return;
       }
-
       if (age <= 7) {
         agingBuckets[
           "0-7 Days"
@@ -729,7 +620,6 @@ function buildCaseAgingDistribution(
       }
     }
   );
-
   return Object.entries(
     agingBuckets
   ).map(([name, value]) => ({
@@ -737,7 +627,6 @@ function buildCaseAgingDistribution(
     value,
   }));
 }
-
 function InsightCard({
   title,
   value,
@@ -746,22 +635,20 @@ function InsightCard({
   return (
     <article
       className={[
-        "rounded-2xl border border-slate-200 bg-gradient-to-br p-5 shadow-sm dark:border-white/10",
+        "rounded-xl border border-slate-200 bg-gradient-to-br px-4 py-3.5 shadow-sm dark:border-white/10",
         INSIGHT_CARD_TONES[tone] ||
           INSIGHT_CARD_TONES.indigo,
       ].join(" ")}
     >
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <p className="text-[11px] font-bold uppercase tracking-[0.04em] text-slate-500 dark:text-slate-400">
         {title}
       </p>
-
-      <h3 className="mt-2 text-xl font-extrabold text-slate-900 dark:text-white">
+      <h3 className="mt-1.5 text-lg font-extrabold text-slate-900 dark:text-white">
         {value}
       </h3>
     </article>
   );
 }
-
 function PredictiveInsightsPanel({
   predictions = {
     weekly: [],
@@ -773,14 +660,12 @@ function PredictiveInsightsPanel({
     forecastRange,
     setForecastRange,
   ] = useState("weekly");
-
   const [
     selectedCategory,
     setSelectedCategory,
   ] = useState(
     "All Categories"
   );
-
   const categories = [
     "All Categories",
     "I. ABSENCES AND TARDINESS",
@@ -792,7 +677,6 @@ function PredictiveInsightsPanel({
     "VII. SEXUAL HARASSMENT",
     "VIII. HABITUAL VIOLATIONS",
   ];
-
   const basePredictions =
     useMemo(() => {
       return Array.isArray(
@@ -808,7 +692,6 @@ function PredictiveInsightsPanel({
       predictions,
       forecastRange,
     ]);
-
   const activePredictions =
     useMemo(() => {
       return basePredictions.filter(
@@ -822,39 +705,32 @@ function PredictiveInsightsPanel({
       basePredictions,
       selectedCategory,
     ]);
-
   return (
     <section
       aria-labelledby="forecasting-panel-title"
-      className="rounded-3xl border border-indigo-200 bg-gradient-to-b from-indigo-50/40 to-white p-6 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/20 dark:to-slate-900"
+      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
     >
-      <div className="mb-6 flex flex-col items-start justify-between gap-5 xl:flex-row xl:items-center">
-        <div className="flex items-center gap-4">
+      <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 dark:shadow-none"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300"
             aria-hidden="true"
           >
-            <FiTrendingUp size={24} />
+            <FiTrendingUp size={19} />
           </div>
-
-          <div>
+          <div className="min-w-0">
             <h2
               id="forecasting-panel-title"
-              className="text-lg font-extrabold text-slate-900 dark:text-white"
+              className="text-base font-extrabold text-slate-900 dark:text-white"
             >
-              System Forecasting &amp;
-              Next Steps
+              Operational Forecast &amp; Next Steps
             </h2>
-
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Run-rate predictive
-              analysis based on current
-              workforce data.
+            <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              Rule-based projection generated from current workforce and incident records.
             </p>
           </div>
         </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <select
             aria-label="Filter forecasts by violation category"
             value={
@@ -865,7 +741,7 @@ function PredictiveInsightsPanel({
                 event.target.value
               )
             }
-            className="h-10 cursor-pointer rounded-xl border border-indigo-200 bg-white px-4 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            className="h-9 max-w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white sm:max-w-[320px]"
           >
             {categories.map(
               (category) => (
@@ -878,9 +754,8 @@ function PredictiveInsightsPanel({
               )
             )}
           </select>
-
           <div
-            className="flex shrink-0 rounded-xl bg-indigo-100/60 p-1 dark:bg-slate-800/80"
+            className="flex shrink-0 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
             role="group"
             aria-label="Forecast range"
           >
@@ -889,7 +764,6 @@ function PredictiveInsightsPanel({
                 const isActive =
                   forecastRange ===
                   range;
-
                 return (
                   <button
                     key={range}
@@ -903,10 +777,10 @@ function PredictiveInsightsPanel({
                       )
                     }
                     className={[
-                      "min-h-10 rounded-lg px-5 py-2 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+                      "min-h-8 rounded-lg px-3 py-1.5 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
                       isActive
                         ? "bg-white text-indigo-700 shadow-sm dark:bg-indigo-600 dark:text-white"
-                        : "text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-white",
+                        : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white",
                     ].join(" ")}
                   >
                     {range
@@ -920,34 +794,26 @@ function PredictiveInsightsPanel({
           </div>
         </div>
       </div>
-
       {activePredictions.length ===
       0 ? (
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/50 px-5 py-12 text-center dark:border-white/10 dark:bg-slate-950/30">
+        <div className="flex flex-col gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 dark:border-slate-700 dark:bg-slate-950/30 sm:flex-row sm:items-center">
           <div
-            className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-200/70 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
             aria-hidden="true"
           >
-            <FiBarChart2
-              className="text-slate-400"
-              size={20}
-            />
+            <FiBarChart2 size={17} />
           </div>
-
-          <p className="text-base font-bold text-slate-700 dark:text-slate-300">
-            No operational trend
-            detected.
-          </p>
-
-          <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-            The system has not reached
-            the percentage threshold to
-            trigger a forecast for this
-            category and period.
-          </p>
+          <div>
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+              No forecast threshold reached
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              Current records do not yet meet the configured threshold for this category and time range.
+            </p>
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {activePredictions.map(
             (
               prediction,
@@ -958,80 +824,61 @@ function PredictiveInsightsPanel({
                   prediction?.action ||
                     ""
                 );
-
               const isForecast =
                 rawAction.includes(
                   "Forecast:"
                 );
-
               const actionText =
                 rawAction.replace(
                   "Forecast: ",
                   ""
                 );
-
               const caseCount =
                 Number(
                   prediction?.count
                 ) || 0;
-
               return (
                 <article
                   key={
                     prediction?.id ||
                     `${prediction?.category || "prediction"}-${index}`
                   }
-                  className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800/80 dark:hover:border-indigo-500/50"
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950/30"
                 >
-                  <div>
-                    <div className="mb-4 flex items-start justify-between gap-2">
-                      <div className="flex flex-col">
-                        <span className="text-4xl font-black tracking-tight text-indigo-600 dark:text-indigo-400">
-                          {prediction?.percentage ||
-                            "0%"}
-                        </span>
-
-                        <span className="mt-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                          Affected Workforce
-                        </span>
-                      </div>
-
-                      <span className="flex shrink-0 items-center justify-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                        {caseCount}{" "}
-                        {caseCount === 1
-                          ? "Case"
-                          : "Cases"}
-                      </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-300">
+                        {prediction?.percentage ||
+                          "0%"}
+                      </p>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Share of Cases
+                      </p>
                     </div>
-
-                    <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
-                      {prediction?.category ||
-                        "Uncategorized"}
-                    </h4>
-
-                    <h3 className="mt-2 text-base font-extrabold leading-tight text-slate-900 dark:text-white">
-                      {prediction?.title ||
-                        "Operational Notice"}
-                    </h3>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 shadow-sm dark:bg-slate-800 dark:text-slate-300">
+                      {caseCount}{" "}
+                      {caseCount === 1
+                        ? "case"
+                        : "cases"}
+                    </span>
                   </div>
-
-                  <div className="mt-5">
-                    <div
-                      className="mb-4 h-px w-full bg-slate-100 dark:bg-slate-700/50"
-                      aria-hidden="true"
-                    />
-
-                    <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
-                      {isForecast && (
-                        <span className="font-extrabold text-indigo-600 dark:text-indigo-400">
-                          Forecast:{" "}
-                        </span>
-                      )}
-
-                      {actionText ||
-                        "No suggested action available."}
-                    </p>
-                  </div>
+                  <p className="mt-3 text-[10px] font-bold uppercase tracking-wide text-indigo-500">
+                    {prediction?.category ||
+                      "Uncategorized"}
+                  </p>
+                  <h3 className="mt-1.5 text-sm font-bold leading-5 text-slate-900 dark:text-white">
+                    {prediction?.title ||
+                      "Operational Notice"}
+                  </h3>
+                  <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                    {isForecast && (
+                      <span className="font-bold text-indigo-600 dark:text-indigo-300">
+                        Forecast:{" "}
+                      </span>
+                    )}
+                    {actionText ||
+                      "No suggested action available."}
+                  </p>
                 </article>
               );
             }
@@ -1041,70 +888,54 @@ function PredictiveInsightsPanel({
     </section>
   );
 }
-
 export default function Dashboard() {
   const navigate = useNavigate();
-
   const currentDate =
     new Date();
-
   const currentYear =
     currentDate
       .getFullYear()
       .toString();
-
   const currentMonth =
     currentDate.getMonth() + 1;
-
   const [
     selectedYear,
     setSelectedYear,
   ] = useState(currentYear);
-
   const [
     selectedMonth,
     setSelectedMonth,
   ] = useState(0);
-
   const [
     loading,
     setLoading,
   ] = useState(true);
-
   const [
     refreshing,
     setRefreshing,
   ] = useState(false);
-
   const [
     lastUpdated,
     setLastUpdated,
   ] = useState("");
-
   const [
     fetchError,
     setFetchError,
   ] = useState("");
-
   const [
     activeDrilldown,
     setActiveDrilldown,
   ] = useState(null);
-
   const [
     editingEmployee,
     setEditingEmployee,
   ] = useState(null);
-
   const isLoadingRef =
     useRef(false);
-
   const refreshTimerRef =
     useRef(null);
-
   const isMountedRef =
     useRef(true);
-
   const [data, setData] =
     useState({
       kpis: {
@@ -1114,20 +945,16 @@ export default function Dashboard() {
         activeIncidents: 0,
         expiringDocs: 0,
       },
-
       workforce: [],
       incidents: [],
       rawEmployees: [],
       rawIncidents: [],
     });
-
   useEffect(() => {
     isMountedRef.current = true;
-
     return () => {
       isMountedRef.current =
         false;
-
       if (
         refreshTimerRef.current
       ) {
@@ -1137,7 +964,6 @@ export default function Dashboard() {
       }
     };
   }, []);
-
   const loadData = useCallback(
     async ({
       silent = false,
@@ -1146,23 +972,18 @@ export default function Dashboard() {
       if (isLoadingRef.current) {
         return false;
       }
-
       isLoadingRef.current = true;
-
       if (!silent) {
         setLoading(true);
       }
-
       try {
         if (showError) {
           setFetchError("");
         }
-
         const overview =
           await getSharedRequest(
             DASHBOARD_API_URL
           );
-
         if (
           !overview ||
           typeof overview !==
@@ -1172,7 +993,6 @@ export default function Dashboard() {
             "Dashboard data is unavailable."
           );
         }
-
         const employeesRaw =
           Array.isArray(
             overview.employees
@@ -1181,7 +1001,6 @@ export default function Dashboard() {
                 normalizeBackendEmployee
               )
             : [];
-
         const incidentsRaw =
           Array.isArray(
             overview.incidents
@@ -1190,13 +1009,11 @@ export default function Dashboard() {
                 normalizeBackendIncident
               )
             : [];
-
         const nonArchivedEmployees =
           employeesRaw.filter(
             (employee) =>
               !employee.archived
           );
-
         const workforce =
           Array.isArray(
             overview.deploymentTrend
@@ -1207,7 +1024,6 @@ export default function Dashboard() {
                     normalizeDateValue(
                       record?.date
                     ),
-
                   employees:
                     Number(
                       record?.employees
@@ -1217,7 +1033,6 @@ export default function Dashboard() {
                   (item) => item.date
                 )
             : [];
-
         const incidents =
           incidentsRaw
             .map((incident) => ({
@@ -1232,63 +1047,50 @@ export default function Dashboard() {
             .filter(
               (item) => item.date
             );
-
         const backendKpis =
           overview.kpis || {};
-
         if (!isMountedRef.current) {
           return false;
         }
-
         setData({
           kpis: {
             total:
               Number(
                 backendKpis.total
               ) || 0,
-
             deployed:
               Number(
                 backendKpis.deployed
               ) || 0,
-
             available:
               Number(
                 backendKpis.available
               ) || 0,
-
             activeIncidents:
               Number(
                 backendKpis.activeIncidents
               ) || 0,
-
             expiringDocs:
               Number(
                 backendKpis.expiringDocs
               ) || 0,
           },
-
           workforce,
           incidents,
-
           rawEmployees:
             nonArchivedEmployees,
-
           rawIncidents:
             incidentsRaw,
         });
-
         setLastUpdated(
           formatLastUpdated()
         );
-
         return true;
       } catch (error) {
         console.error(
           "Dashboard backend fetch error:",
           error
         );
-
         if (
           showError &&
           isMountedRef.current
@@ -1298,12 +1100,10 @@ export default function Dashboard() {
               "Unable to load dashboard data."
           );
         }
-
         return false;
       } finally {
         isLoadingRef.current =
           false;
-
         if (
           !silent &&
           isMountedRef.current
@@ -1314,11 +1114,9 @@ export default function Dashboard() {
     },
     []
   );
-
   useEffect(() => {
     void loadData();
   }, [loadData]);
-
   useEffect(() => {
     const scheduleRefresh = () => {
       if (
@@ -1328,7 +1126,6 @@ export default function Dashboard() {
           refreshTimerRef.current
         );
       }
-
       refreshTimerRef.current =
         window.setTimeout(() => {
           void loadData({
@@ -1337,7 +1134,6 @@ export default function Dashboard() {
           });
         }, DATA_UPDATE_DEBOUNCE_MS);
     };
-
     const handleDataUpdated = (
       event
     ) => {
@@ -1350,15 +1146,12 @@ export default function Dashboard() {
       ) {
         return;
       }
-
       scheduleRefresh();
     };
-
     window.addEventListener(
       "dataUpdated",
       handleDataUpdated
     );
-
     return () => {
       if (
         refreshTimerRef.current
@@ -1367,14 +1160,12 @@ export default function Dashboard() {
           refreshTimerRef.current
         );
       }
-
       window.removeEventListener(
         "dataUpdated",
         handleDataUpdated
       );
     };
   }, [loadData]);
-
   const handleRefresh =
     useCallback(async () => {
       if (
@@ -1383,9 +1174,7 @@ export default function Dashboard() {
       ) {
         return;
       }
-
       setRefreshing(true);
-
       try {
         await loadData({
           silent: true,
@@ -1402,17 +1191,14 @@ export default function Dashboard() {
       loadData,
       refreshing,
     ]);
-
   const isCurrentYear =
     selectedYear ===
     currentYear;
-
   const availableYears =
     useMemo(() => {
       const years = new Set([
         currentYear,
       ]);
-
       data.workforce.forEach(
         (item) => {
           if (item?.date) {
@@ -1422,7 +1208,6 @@ export default function Dashboard() {
           }
         }
       );
-
       data.incidents.forEach(
         (item) => {
           if (item?.date) {
@@ -1432,7 +1217,6 @@ export default function Dashboard() {
           }
         }
       );
-
       return [...years].sort(
         (first, second) =>
           Number(second) -
@@ -1443,20 +1227,17 @@ export default function Dashboard() {
       data.incidents,
       currentYear,
     ]);
-
   const availableMonths =
     useMemo(() => {
       return monthList.map(
         (month, index) => {
           const monthNumber =
             index + 1;
-
           const isFutureMonth =
             selectedYear ===
               currentYear &&
             monthNumber >
               currentMonth;
-
           return {
             name: month,
             value: monthNumber,
@@ -1470,13 +1251,11 @@ export default function Dashboard() {
       currentYear,
       currentMonth,
     ]);
-
   const handleYearChange =
     useCallback(
       (event) => {
         const nextYear =
           event.target.value;
-
         const nextMonth =
           nextYear ===
             currentYear &&
@@ -1484,7 +1263,6 @@ export default function Dashboard() {
             currentMonth
             ? 0
             : selectedMonth;
-
         setSelectedYear(nextYear);
         setSelectedMonth(nextMonth);
       },
@@ -1494,7 +1272,6 @@ export default function Dashboard() {
         selectedMonth,
       ]
     );
-
   const handleMonthChange =
     useCallback(
       (event) => {
@@ -1502,7 +1279,6 @@ export default function Dashboard() {
           Number(
             event.target.value
           );
-
         if (
           selectedYear ===
             currentYear &&
@@ -1511,7 +1287,6 @@ export default function Dashboard() {
           setSelectedMonth(0);
           return;
         }
-
         setSelectedMonth(nextMonth);
       },
       [
@@ -1520,7 +1295,6 @@ export default function Dashboard() {
         currentMonth,
       ]
     );
-
   const workforceTrend =
     useMemo(
       () =>
@@ -1536,7 +1310,6 @@ export default function Dashboard() {
         isCurrentYear,
       ]
     );
-
   const incidentTrend =
     useMemo(
       () =>
@@ -1552,18 +1325,15 @@ export default function Dashboard() {
         isCurrentYear,
       ]
     );
-
   const comparisonYears =
     useMemo(() => {
       const selected = Number(
         selectedYear
       );
-
       const availableYearSet =
         new Set(
           availableYears.map(Number)
         );
-
       return [
         selected - 1,
         selected,
@@ -1576,20 +1346,16 @@ export default function Dashboard() {
       selectedYear,
       availableYears,
     ]);
-
   const deploymentComparisonTrend =
     useMemo(() => {
       return buildMultiYearMonthlyTrend(
         {
           source:
             data.workforce,
-
           valueKey:
             "employees",
-
           years:
             comparisonYears,
-
           selectedYear,
           currentYear,
           currentMonth,
@@ -1602,20 +1368,16 @@ export default function Dashboard() {
       currentYear,
       currentMonth,
     ]);
-
   const incidentComparisonTrend =
     useMemo(() => {
       return buildMultiYearMonthlyTrend(
         {
           source:
             data.incidents,
-
           valueKey:
             "incidents",
-
           years:
             comparisonYears,
-
           selectedYear,
           currentYear,
           currentMonth,
@@ -1628,7 +1390,6 @@ export default function Dashboard() {
       currentYear,
       currentMonth,
     ]);
-
   const reportScope =
     useMemo(() => {
       const scopedIncidents =
@@ -1642,7 +1403,6 @@ export default function Dashboard() {
               selectedMonth
             )
         );
-
       return {
         incidents:
           scopedIncidents,
@@ -1652,26 +1412,21 @@ export default function Dashboard() {
       selectedYear,
       selectedMonth,
     ]);
-
   const currentKPIS =
     data.kpis;
-
   const utilizationRate =
     useMemo(() => {
       const total =
         Number(
           currentKPIS.total
         ) || 0;
-
       const deployed =
         Number(
           currentKPIS.deployed
         ) || 0;
-
       if (!total) {
         return 0;
       }
-
       return Number(
         (
           (deployed / total) *
@@ -1679,7 +1434,6 @@ export default function Dashboard() {
         ).toFixed(1)
       );
     }, [currentKPIS]);
-
   const filteredSeverity =
     useMemo(
       () =>
@@ -1688,7 +1442,6 @@ export default function Dashboard() {
         ),
       [reportScope.incidents]
     );
-
   const filteredAging =
     useMemo(
       () =>
@@ -1697,7 +1450,6 @@ export default function Dashboard() {
         ),
       [reportScope.incidents]
     );
-
   const selectedPeriodLabel =
     Number(selectedMonth) === 0
       ? selectedYear
@@ -1706,45 +1458,36 @@ export default function Dashboard() {
             selectedMonth - 1
           ]
         } ${selectedYear}`;
-
   const executiveActions =
     useMemo(() => {
       return buildExecutiveActionItems(
         {
           employees:
             data.rawEmployees,
-
           incidents:
-            reportScope.incidents,
-
+            data.rawIncidents,
           kpis:
             currentKPIS,
-
           utilizationRate,
         }
       );
     }, [
       data.rawEmployees,
-      reportScope.incidents,
+      data.rawIncidents,
       currentKPIS,
       utilizationRate,
     ]);
-
   const dashboardInsights =
     useMemo(() => {
       return buildDashboardInsights({
         employees:
           data.rawEmployees,
-
         incidents:
           data.rawIncidents,
-
         selectedYear,
         selectedMonth,
-
         kpis:
           currentKPIS,
-
         utilizationRate,
       });
     }, [
@@ -1755,7 +1498,6 @@ export default function Dashboard() {
       currentKPIS,
       utilizationRate,
     ]);
-
   const kpiTrendData =
     useMemo(
       () => ({
@@ -1765,25 +1507,21 @@ export default function Dashboard() {
           direction: "flat",
           tone: "neutral",
         },
-
         deployed: {
           label:
             "Current deployed",
           direction: "flat",
           tone: "neutral",
         },
-
         available: {
           label:
             "Current available",
           direction: "flat",
           tone: "neutral",
         },
-
         utilizationRate: {
           label: `${utilizationRate}% current`,
           direction: "flat",
-
           tone:
             utilizationRate >= 80
               ? "good"
@@ -1791,29 +1529,23 @@ export default function Dashboard() {
                 ? "bad"
                 : "neutral",
         },
-
         activeIncidents: {
           label:
             "Current active cases",
-
           direction: "flat",
-
           tone:
             currentKPIS.activeIncidents >
             0
               ? "bad"
               : "good",
         },
-
         expiringDocs: {
           label: `${currentKPIS.expiringDocs} due soon`,
-
           direction:
             currentKPIS.expiringDocs >
             0
               ? "up"
               : "flat",
-
           tone:
             currentKPIS.expiringDocs >
             0
@@ -1826,7 +1558,6 @@ export default function Dashboard() {
         utilizationRate,
       ]
     );
-
   const handleOpenDrilldown =
     useCallback(
       (key) => {
@@ -1835,7 +1566,6 @@ export default function Dashboard() {
           "deployed",
           "available",
         ];
-
         if (
           disabledKeys.includes(
             key
@@ -1843,7 +1573,6 @@ export default function Dashboard() {
         ) {
           return;
         }
-
         if (
           key ===
           "activeIncidents"
@@ -1851,11 +1580,9 @@ export default function Dashboard() {
           navigate("/incidents");
           return;
         }
-
         const detail =
           dashboardInsights
             ?.drilldowns?.[key];
-
         if (detail) {
           setActiveDrilldown(
             detail
@@ -1867,24 +1594,20 @@ export default function Dashboard() {
         navigate,
       ]
     );
-
   const handleCloseDrilldown =
     useCallback(() => {
       setActiveDrilldown(null);
     }, []);
-
   const handleCloseEmployeeModal =
     useCallback(() => {
       setEditingEmployee(null);
     }, []);
-
   const handleRowClick =
     useCallback(
       async (row) => {
         const employeeId =
           row?.employeeId ??
           row?.employee_id;
-
         if (
           employeeId === null ||
           employeeId === undefined ||
@@ -1893,27 +1616,22 @@ export default function Dashboard() {
         ) {
           return;
         }
-
         try {
           setFetchError("");
-
           const employee =
             await getSharedRequest(
               `${EMPLOYEE_API_URL}/${encodeURIComponent(
                 String(employeeId)
               )}`
             );
-
           if (!isMountedRef.current) {
             return;
           }
-
           setEditingEmployee(
             normalizeBackendEmployee(
               employee
             )
           );
-
           setActiveDrilldown(
             null
           );
@@ -1922,7 +1640,6 @@ export default function Dashboard() {
             "Dashboard employee detail fetch error:",
             error
           );
-
           if (isMountedRef.current) {
             setFetchError(
               error?.message ||
@@ -1933,21 +1650,17 @@ export default function Dashboard() {
       },
       []
     );
-
   const handleEmployeeSaveSuccess =
     useCallback(async () => {
       setEditingEmployee(null);
-
       await loadData({
         silent: true,
         showError: false,
       });
-
       emitDataUpdated(
         "DASHBOARD_EMPLOYEE_EDIT"
       );
     }, [loadData]);
-
   const totalIncidentsForYear =
     useMemo(
       () =>
@@ -1960,10 +1673,8 @@ export default function Dashboard() {
         ),
       [incidentTrend]
     );
-
   const totalIncidentsForPeriod =
     reportScope.incidents.length;
-
   const peakDeploymentMonth =
     useMemo(() => {
       if (
@@ -1971,7 +1682,6 @@ export default function Dashboard() {
       ) {
         return "N/A";
       }
-
       const highest =
         workforceTrend.reduce(
           (currentHighest, item) =>
@@ -1983,12 +1693,10 @@ export default function Dashboard() {
               : currentHighest,
           workforceTrend[0]
         );
-
       return highest?.value
         ? `${highest.label} (${highest.value})`
         : "N/A";
     }, [workforceTrend]);
-
   const highestIncidentMonth =
     useMemo(() => {
       if (
@@ -1996,7 +1704,6 @@ export default function Dashboard() {
       ) {
         return "N/A";
       }
-
       const highest =
         incidentTrend.reduce(
           (currentHighest, item) =>
@@ -2008,12 +1715,10 @@ export default function Dashboard() {
               : currentHighest,
           incidentTrend[0]
         );
-
       return highest?.value
         ? `${highest.label} (${highest.value})`
         : "N/A";
     }, [incidentTrend]);
-
   const topSeverity =
     useMemo(() => {
       if (
@@ -2021,7 +1726,6 @@ export default function Dashboard() {
       ) {
         return "N/A";
       }
-
       const highest =
         filteredSeverity.reduce(
           (currentHighest, item) =>
@@ -2033,38 +1737,30 @@ export default function Dashboard() {
               : currentHighest,
           filteredSeverity[0]
         );
-
       return highest?.value
         ? highest.name
         : "N/A";
     }, [filteredSeverity]);
-
   const handleExportPDF =
     useCallback(() => {
       const doc = new jsPDF();
-
       doc.setFontSize(16);
-
       doc.text(
         "Welljob Solutions & General Services Inc.",
         14,
         18
       );
-
       doc.setFontSize(12);
-
       doc.text(
-        "Executive Workforce Dashboard Report",
+        "Workforce Operations Dashboard Report",
         14,
         26
       );
-
       doc.text(
-        `Report Scope: ${selectedPeriodLabel}`,
+        `Historical Analytics Scope: ${selectedPeriodLabel}`,
         14,
         34
       );
-
       doc.text(
         `Generated: ${
           lastUpdated ||
@@ -2073,73 +1769,58 @@ export default function Dashboard() {
         14,
         42
       );
-
       autoTable(doc, {
         startY: 52,
-
         head: [
           ["Metric", "Value"],
         ],
-
         body: [
           [
             "Total Employees",
             currentKPIS.total,
           ],
-
           [
             "Deployed Employees",
             currentKPIS.deployed,
           ],
-
           [
             "Available Workers",
             currentKPIS.available,
           ],
-
           [
             "Utilization Rate",
             `${utilizationRate}%`,
           ],
-
           [
             "Current Active Incidents",
             currentKPIS.activeIncidents,
           ],
-
           [
             "Expiring Documents",
             currentKPIS.expiringDocs,
           ],
-
           [
-            "Incidents in Report Scope",
+            "Incident Reports in Scope",
             totalIncidentsForPeriod,
           ],
-
           [
             "Total Year Incidents",
             totalIncidentsForYear,
           ],
-
           [
-            "Peak Deployment Month",
+            "Peak Deployment Activity",
             peakDeploymentMonth,
           ],
-
           [
-            "Highest Incident Month",
+            "Highest Incident Activity",
             highestIncidentMonth,
           ],
-
           [
-            "Top Severity in Scope",
+            "Most Common Severity in Scope",
             topSeverity,
           ],
         ],
-
         theme: "grid",
-
         headStyles: {
           fillColor: [
             79,
@@ -2148,15 +1829,12 @@ export default function Dashboard() {
           ],
         },
       });
-
       const firstTableFinalY =
         doc.lastAutoTable?.finalY ||
         52;
-
       autoTable(doc, {
         startY:
           firstTableFinalY + 10,
-
         head: [
           [
             "Priority",
@@ -2165,7 +1843,6 @@ export default function Dashboard() {
             "Basis",
           ],
         ],
-
         body:
           executiveActions.length >
           0
@@ -2173,13 +1850,10 @@ export default function Dashboard() {
                 (action) => [
                   action?.priority ||
                     "-",
-
                   action?.type ||
                     "-",
-
                   action?.recommendation ||
                     "-",
-
                   action?.basis ||
                     "-",
                 ]
@@ -2192,9 +1866,7 @@ export default function Dashboard() {
                   "-",
                 ],
               ],
-
         theme: "grid",
-
         headStyles: {
           fillColor: [
             22,
@@ -2202,38 +1874,30 @@ export default function Dashboard() {
             74,
           ],
         },
-
         styles: {
           fontSize: 8,
         },
-
         columnStyles: {
           0: {
             cellWidth: 24,
           },
-
           1: {
             cellWidth: 28,
           },
-
           2: {
             cellWidth: 78,
           },
-
           3: {
             cellWidth: 52,
           },
         },
       });
-
       const secondTableFinalY =
         doc.lastAutoTable?.finalY ||
         firstTableFinalY + 10;
-
       autoTable(doc, {
         startY:
           secondTableFinalY + 10,
-
         head: [
           [
             "Month",
@@ -2241,7 +1905,6 @@ export default function Dashboard() {
             "Incidents",
           ],
         ],
-
         body: monthList.map(
           (month) => {
             const deployment =
@@ -2250,14 +1913,12 @@ export default function Dashboard() {
                   item.label ===
                   month
               );
-
             const incident =
               incidentTrend.find(
                 (item) =>
                   item.label ===
                   month
               );
-
             return [
               month,
               deployment?.value ??
@@ -2267,9 +1928,7 @@ export default function Dashboard() {
             ];
           }
         ),
-
         theme: "striped",
-
         headStyles: {
           fillColor: [
             30,
@@ -2278,7 +1937,6 @@ export default function Dashboard() {
           ],
         },
       });
-
       doc.save(
         `Welljob_Dashboard_Report_${selectedPeriodLabel}.pdf`
       );
@@ -2296,7 +1954,6 @@ export default function Dashboard() {
       incidentTrend,
       executiveActions,
     ]);
-
   if (loading) {
     return (
       <div
@@ -2308,11 +1965,9 @@ export default function Dashboard() {
           className="animate-spin text-2xl text-indigo-500"
           aria-hidden="true"
         />
-
         <p className="font-semibold">
           Loading dashboard...
         </p>
-
         <p className="text-xs text-slate-400">
           Requests automatically stop
           after 45 seconds if the server
@@ -2321,9 +1976,8 @@ export default function Dashboard() {
       </div>
     );
   }
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {fetchError && (
         <div
           role="alert"
@@ -2331,7 +1985,6 @@ export default function Dashboard() {
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p>{fetchError}</p>
-
             <button
               type="button"
               onClick={
@@ -2348,53 +2001,44 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
       <section
         aria-labelledby="dashboard-page-title"
         className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900"
       >
-        <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-slate-900 px-6 py-6 text-white">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+        <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-slate-900 px-6 py-5 text-white">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white/90">
                 <FiBarChart2
                   aria-hidden="true"
                 />
-
-                Executive Overview
+                HR Operations Overview
               </div>
-
               <h1
                 id="dashboard-page-title"
                 className="text-3xl font-extrabold tracking-tight"
               >
-                Workforce Dashboard
+                Workforce Operations Dashboard
               </h1>
-
               <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">
-                Real-time summary of
-                employee deployment,
-                workforce availability,
-                incident monitoring,
-                document compliance, and
-                case aging.
+                Current workforce snapshot for deployment, availability, incidents, compliance, and HR monitoring.
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/70">
+                <span>
+                  Last Updated:{" "}
+                  {lastUpdated ||
+                    "Not yet updated"}
+                </span>
 
-              <p className="mt-3 text-xs text-white/70">
-                Last Updated:{" "}
-                {lastUpdated ||
-                  "Not yet updated"}
-              </p>
-
-              <p className="mt-1 text-xs font-semibold text-white/70">
-                Report Scope:{" "}
-                {
-                  selectedPeriodLabel
-                }
-              </p>
+                <span className="font-semibold">
+                  Historical Analytics:{" "}
+                  {
+                    selectedPeriodLabel
+                  }
+                </span>
+              </div>
             </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
               <select
                 aria-label="Filter dashboard by month"
                 value={
@@ -2411,7 +2055,6 @@ export default function Dashboard() {
                 >
                   All Months
                 </option>
-
                 {availableMonths.map(
                   (month) => (
                     <option
@@ -2431,7 +2074,6 @@ export default function Dashboard() {
                   )
                 )}
               </select>
-
               <select
                 aria-label="Filter dashboard by year"
                 value={
@@ -2454,7 +2096,6 @@ export default function Dashboard() {
                   )
                 )}
               </select>
-
               <button
                 type="button"
                 onClick={
@@ -2474,12 +2115,10 @@ export default function Dashboard() {
                   }
                   aria-hidden="true"
                 />
-
                 {refreshing
                   ? "Refreshing..."
                   : "Refresh"}
               </button>
-
               <RoleGuard
                 permission={
                   PERMISSIONS.CAN_EXPORT_PDF
@@ -2495,7 +2134,6 @@ export default function Dashboard() {
                   <FiDownload
                     aria-hidden="true"
                   />
-
                   Export PDF
                 </button>
               </RoleGuard>
@@ -2503,7 +2141,6 @@ export default function Dashboard() {
           </div>
         </div>
       </section>
-
       <KPICards
         kpis={currentKPIS}
         utilizationRate={
@@ -2514,17 +2151,14 @@ export default function Dashboard() {
           handleOpenDrilldown
         }
       />
-
       <WorkforceHealthBanner
         health={
           dashboardInsights.health
         }
       />
-
       <ExecutiveActionItems
         actions={executiveActions}
       />
-
       <ExecutiveInsightTabs
         insights={
           dashboardInsights
@@ -2533,86 +2167,129 @@ export default function Dashboard() {
           handleOpenDrilldown
         }
       />
-
-      <PredictiveInsightsPanel
-        predictions={
-          dashboardInsights.predictions
-        }
-      />
-
       <section
-        aria-label="Dashboard highlights"
-        className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
+        aria-labelledby="period-highlights-title"
+        className="space-y-3"
       >
+        <div>
+          <h2
+            id="period-highlights-title"
+            className="text-lg font-bold text-slate-900 dark:text-slate-100"
+          >
+            Period Highlights
+          </h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Historical summary for {selectedPeriodLabel}. Current workforce KPIs above remain a live snapshot.
+          </p>
+        </div>
+        <div
+          aria-label="Dashboard highlights"
+          className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
+        >
         <InsightCard
-          title="Peak Deployment Month"
+          title="Peak Deployment Activity"
           value={
             peakDeploymentMonth
           }
           tone="indigo"
         />
-
         <InsightCard
-          title="Highest Incident Month"
+          title="Highest Incident Activity"
           value={
             highestIncidentMonth
           }
           tone="red"
         />
-
         <InsightCard
-          title={`Top Severity (${selectedPeriodLabel})`}
+          title={`Most Common Severity (${selectedPeriodLabel})`}
           value={topSeverity}
           tone="amber"
         />
-
         <InsightCard
-          title={`Total Incidents (${selectedPeriodLabel})`}
+          title={`Incident Reports (${selectedPeriodLabel})`}
           value={
             totalIncidentsForPeriod
           }
           tone="emerald"
         />
+        </div>
       </section>
-
-      <DeploymentTrendChart
-        data={workforceTrend}
-        comparisonData={
-          deploymentComparisonTrend
-        }
-        years={
-          comparisonYears
-        }
-        selectedYear={
-          selectedYear
+      <section
+        aria-labelledby="historical-analytics-title"
+        className="space-y-4"
+      >
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2
+              id="historical-analytics-title"
+              className="text-lg font-bold text-slate-900 dark:text-slate-100"
+            >
+              Trends &amp; Distribution
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Historical analytics for {selectedPeriodLabel}: deployment activity, incident reports, severity, and active-case aging.
+            </p>
+          </div>
+          <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            Analytics Scope: {selectedPeriodLabel}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <DeploymentTrendChart
+            data={workforceTrend}
+            comparisonData={
+              deploymentComparisonTrend
+            }
+            years={
+              comparisonYears
+            }
+            selectedYear={
+              selectedYear
+            }
+            isCurrentYear={
+              isCurrentYear
+            }
+            currentMonth={
+              currentMonth
+            }
+          />
+          <IncidentTrendChart
+            data={incidentTrend}
+            comparisonData={
+              incidentComparisonTrend
+            }
+            years={
+              comparisonYears
+            }
+            selectedYear={
+              selectedYear
+            }
+            isCurrentYear={
+              isCurrentYear
+            }
+            currentMonth={
+              currentMonth
+            }
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <SeverityPieChart
+            data={
+              filteredSeverity
+            }
+          />
+          <CaseAgingChart
+            data={
+              filteredAging
+            }
+          />
+        </div>
+      </section>
+      <PredictiveInsightsPanel
+        predictions={
+          dashboardInsights.predictions
         }
       />
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <IncidentTrendChart
-          data={incidentTrend}
-          comparisonData={
-            incidentComparisonTrend
-          }
-          years={
-            comparisonYears
-          }
-          selectedYear={
-            selectedYear
-          }
-        />
-
-        <SeverityPieChart
-          data={
-            filteredSeverity
-          }
-        />
-
-        <CaseAgingChart
-          data={filteredAging}
-        />
-      </div>
-
       <DashboardDrilldownModal
         detail={activeDrilldown}
         onClose={
@@ -2622,7 +2299,6 @@ export default function Dashboard() {
           handleRowClick
         }
       />
-
       {editingEmployee && (
         <EditEmployeeModal
           employeeToEdit={

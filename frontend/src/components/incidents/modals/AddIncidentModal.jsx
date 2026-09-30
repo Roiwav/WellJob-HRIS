@@ -1775,7 +1775,7 @@ export default function AddIncidentModal({
               "Incident Report Saved",
 
             message:
-              "The incident report has been successfully saved to the database.",
+              "The incident report has been saved successfully.",
           });
 
           closeTimerRef.current =
@@ -1850,8 +1850,8 @@ export default function AddIncidentModal({
         }
         subtitle={
           isReviewing
-            ? "Check all incident information before final saving."
-            : "Complete and review the incident report before saving it."
+            ? "Review the incident details and policy results before saving."
+            : "Complete the incident details, verify the applicable policy, and review the report before saving."
         }
         color={
           isReviewing
@@ -2134,7 +2134,7 @@ export default function AddIncidentModal({
                 icon={
                   <FiShield />
                 }
-                title="Violation Classification"
+                title="Violation & Policy"
               />
 
               {isLoadingViolationPolicy && (
@@ -2177,14 +2177,14 @@ export default function AddIncidentModal({
                 violationPolicySource && (
                   <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 text-sm text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
                     <p className="font-bold">
-                      Policy source:{" "}
+                      Policy Reference:{" "}
                       {
                         violationPolicySource
                       }
                     </p>
 
                     <p className="mt-1 text-xs leading-5">
-                      New incident classification uses the current policy loaded from the server.
+                      Classification uses the current violation policy configured in the system.
                     </p>
                   </div>
                 )}
@@ -2200,7 +2200,7 @@ export default function AddIncidentModal({
                     htmlFor="incident-violation-search"
                     className="mb-2 block text-sm font-semibold text-gray-700 dark:text-gray-300"
                   >
-                    Violation Type{" "}
+                    Violation{" "}
                     <span className="text-red-500">
                       *
                     </span>
@@ -2242,7 +2242,7 @@ export default function AddIncidentModal({
                           ? "Loading violation policy..."
                           : violationPolicyError
                             ? "Violation policy unavailable"
-                            : "Search by section, number, category, or violation..."
+                            : "Search policy section, category, or violation..."
                       }
                       className="input-field"
                       style={{
@@ -2335,7 +2335,7 @@ export default function AddIncidentModal({
                     styleMap={
                       penaltyLevelStyle
                     }
-                    placeholder="Auto-generated"
+                    placeholder="Based on policy"
                   />
 
                   <ReadonlyBadge
@@ -2348,7 +2348,7 @@ export default function AddIncidentModal({
                     styleMap={
                       severityStyle
                     }
-                    placeholder="Auto-generated"
+                    placeholder="Based on policy"
                   />
                 </div>
               </div>
@@ -2375,7 +2375,7 @@ export default function AddIncidentModal({
               {formData.violation && (
                 <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
                   <p className="font-bold">
-                    Auto-selected Sanction
+                    Policy Sanction Reference
                   </p>
 
                   <p className="mt-1">
@@ -2391,7 +2391,7 @@ export default function AddIncidentModal({
                     offense:{" "}
                     <span className="font-semibold">
                       {formData.sanction ||
-                        "No sanction selected yet"}
+                        "No sanction configured"}
                     </span>
                   </p>
                 </div>
@@ -2566,7 +2566,7 @@ export default function AddIncidentModal({
               />
 
               <ReviewItem
-                label="Auto Sanction"
+                label="Policy Sanction Reference"
                 value={
                   formData.sanction
                 }

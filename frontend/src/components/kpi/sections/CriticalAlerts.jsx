@@ -8,154 +8,98 @@ import {
 const ALERT_CONFIG = {
   HIGH: {
     label: "Priority",
-    classes:
-      "border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
+    icon: FiAlertTriangle,
+    dot: "bg-rose-500",
+    iconClass:
+      "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300",
   },
-
   MEDIUM: {
     label: "Review",
-    classes:
-      "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+    icon: FiClock,
+    dot: "bg-amber-500",
+    iconClass:
+      "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300",
   },
-
   LOW: {
     label: "Monitor",
-    classes:
-      "border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300",
+    icon: FiInfo,
+    dot: "bg-indigo-500",
+    iconClass:
+      "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300",
   },
-
   UNKNOWN: {
     label: "Alert",
-    classes:
-      "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
+    icon: FiAlertCircle,
+    dot: "bg-slate-400",
+    iconClass:
+      "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
   },
 };
 
 function normalizeAlertLevel(level) {
-  const normalized = String(
-    level || ""
-  )
-    .trim()
-    .toUpperCase();
+  const normalized = String(level || "").trim().toUpperCase();
 
-  return Object.prototype.hasOwnProperty.call(
-    ALERT_CONFIG,
-    normalized
-  )
+  return Object.prototype.hasOwnProperty.call(ALERT_CONFIG, normalized)
     ? normalized
     : "UNKNOWN";
 }
 
-function AlertLevelIcon({ level }) {
-  switch (level) {
-    case "HIGH":
-      return (
-        <FiAlertTriangle
-          aria-hidden="true"
-        />
-      );
-
-    case "MEDIUM":
-      return (
-        <FiClock
-          aria-hidden="true"
-        />
-      );
-
-    case "LOW":
-      return (
-        <FiInfo
-          aria-hidden="true"
-        />
-      );
-
-    default:
-      return (
-        <FiAlertCircle
-          aria-hidden="true"
-        />
-      );
-  }
-}
-
-export default function CriticalAlerts({
-  alerts = [],
-}) {
-  const safeAlerts = Array.isArray(alerts)
-    ? alerts.filter(Boolean)
-    : [];
+export default function CriticalAlerts({ alerts = [] }) {
+  const safeAlerts = Array.isArray(alerts) ? alerts.filter(Boolean) : [];
 
   return (
-    <section
-      className="space-y-3"
-      aria-labelledby="critical-alerts-title"
-    >
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2
-            id="critical-alerts-title"
-            className="text-lg font-extrabold text-gray-900 dark:text-white"
-          >
-            Critical Alerts
-          </h2>
-
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500 dark:text-gray-400">
-            Active operational alerts grouped by HR monitoring priority.
-          </p>
-        </div>
+    <section aria-labelledby="critical-alerts-title">
+      <div>
+        <h2
+          id="critical-alerts-title"
+          className="text-sm font-black text-slate-900 dark:text-white"
+        >
+          Incident Attention
+        </h2>
+        <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+          Compact view of open incident priorities.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        {safeAlerts.map(
-          (alert, index) => {
-            const normalizedLevel =
-              normalizeAlertLevel(
-                alert.level
-              );
+      <div className="mt-3 divide-y divide-slate-200 dark:divide-slate-800">
+        {safeAlerts.map((alert, index) => {
+          const normalizedLevel = normalizeAlertLevel(alert.level);
+          const config = ALERT_CONFIG[normalizedLevel];
+          const Icon = config.icon;
 
-            const config =
-              ALERT_CONFIG[
-                normalizedLevel
-              ];
-
-            return (
-              <article
-                key={`${normalizedLevel}-${index}`}
-                className={`rounded-2xl border px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${config.classes}`}
+          return (
+            <div
+              key={`${normalizedLevel}-${index}`}
+              className="flex min-w-0 items-center gap-3 py-2.5 first:pt-0 last:pb-0"
+            >
+              <div
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${config.iconClass}`}
+                aria-hidden="true"
               >
-                <div className="flex items-start gap-3">
-                  <div
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/70 text-base shadow-sm dark:bg-slate-950/30"
+                <Icon size={14} />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${config.dot}`}
                     aria-hidden="true"
-                  >
-                    <AlertLevelIcon
-                      level={
-                        normalizedLevel
-                      }
-                    />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-black uppercase tracking-wide">
-                        {normalizedLevel}
-                      </span>
-
-                      <span className="rounded-full bg-white/60 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide opacity-80 dark:bg-slate-950/30">
-                        {config.label}
-                      </span>
-                    </div>
-
-                    <p className="mt-1 line-clamp-2 text-sm font-bold leading-5">
-                      {alert.text ||
-                        "No alert details available."}
-                    </p>
-                  </div>
+                  />
+                  <span className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                    {config.label}
+                  </span>
                 </div>
-              </article>
-            );
-          }
-        )}
+
+                <p
+                  className="mt-0.5 truncate text-xs font-semibold text-slate-700 dark:text-slate-200"
+                  title={alert.text || "No alert details available."}
+                >
+                  {alert.text || "No alert details available."}
+                </p>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

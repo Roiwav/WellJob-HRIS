@@ -64,9 +64,7 @@ if (
 }
 
 const runtimeApiOrigin =
-  typeof window !== "undefined"
-    ? `${window.location.protocol}//${window.location.hostname}:5000`
-    : "";
+  getRuntimeApiOrigin();
 
 const API_ORIGIN =
   configuredApiOrigin ||
@@ -99,7 +97,7 @@ export const documentUrl = (path) => {
 
   const relativePath =
     normalizedPath.replace(
-      /^\/+/, 
+      /^\/+/,
       ""
     );
 

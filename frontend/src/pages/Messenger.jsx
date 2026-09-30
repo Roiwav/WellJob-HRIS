@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FiArrowLeft, FiDownload, FiEdit2, FiMessageCircle, FiPaperclip, FiPlus, FiSearch, FiSend, FiShield, FiTrash2, FiUserPlus, FiUsers, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiDownload, FiEdit2, FiMessageCircle, FiPaperclip, FiSearch, FiSend, FiShield, FiTrash2, FiUserPlus, FiUsers, FiX } from 'react-icons/fi';
 import { chatApi, downloadChatAttachment, uploadChatPdfs } from '../services/chatApi';
 import { useChat } from '../context/ChatContext';
 import AuthenticatedAvatar from '../components/profile/AuthenticatedAvatar';
-
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const CHAT_POLL_INTERVAL_MS = 4000;
 const same = (a,b) => a!=null && b!=null && String(a)===String(b);
@@ -39,7 +38,6 @@ function mergedBatch(previous,incoming=[]) {
 }
 const solidButton='rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:bg-blue-700';
 const subtleButton='rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800';
-
 /** Shared checkbox-picker used by both Create Group and Add Members. */
 function MemberSelector({
   users,
@@ -59,7 +57,6 @@ function MemberSelector({
       .toLowerCase()
       .includes(normalized)
   );
-
   return (
     <>
       <label className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700">
@@ -113,12 +110,11 @@ function MemberSelector({
         })}
       </div>
       <p className="text-xs text-slate-500">
-        {selected.length} selected · {maxSelected} maximum
+        {selected.length} selected • {maxSelected} maximum
       </p>
     </>
   );
 }
-
 export default function Messenger({compact=false}) {
  const {user,currentUserId,refreshUnread}=useChat();
  const [directory,setDirectory]=useState([]);
@@ -128,6 +124,8 @@ export default function Messenger({compact=false}) {
  const [hasMore,setHasMore]=useState(false);
  const [members,setMembers]=useState([]);
  const [query,setQuery]=useState('');
+ const [newMessageMode,setNewMessageMode]=useState(false);
+ const [newMessageSearch,setNewMessageSearch]=useState('');
  const [draft,setDraft]=useState('');
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
@@ -163,7 +161,6 @@ export default function Messenger({compact=false}) {
  const availableToAdd=directory.filter(u=>!members.some(m=>same(u.id,m.id)));
  const freeGroupSlots=Math.max(0,30-members.length);
  const selectedBytes=selectedFiles.reduce((total,file)=>total+file.size,0);
-
  const loadOverview=useCallback(async({silent=false}={})=>{
   if(!user){setDirectory([]);setThreads([]);setLoading(false);return [];}
   const requestId=++overviewVersion.current;
@@ -241,21 +238,68 @@ export default function Messenger({compact=false}) {
   };
  },[user,loadOverview,loadMembers,markRead,refreshUnread]);
 
- const filtered=useMemo(()=>directory.filter(u=>[u.username,u.fullName,u.role].filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())),[directory,query]);
- const directByPartner=useMemo(()=>new Map(threads.filter(t=>t.kind!=='group'&&t.partner).map(t=>[String(t.partner.id),t])),[threads]);
- // ONE chronological list for ALL groups and direct chats, not separate groups/users sections.
- const searchText=query.trim().toLowerCase();
- const recentThreads=threads.filter(t=>
-   (t.kind==='group'?t.name:nameOf(t.partner)).toLowerCase().includes(searchText)
- ).sort((a,b)=>{
-   const newer=new Date(b.lastAt||b.createdAt).getTime();
-   const older=new Date(a.lastAt||a.createdAt).getTime();
-   return (Number.isFinite(newer)?newer:0)-(Number.isFinite(older)?older:0);
- });
- const availableUsers=filtered.filter(u=>!directByPartner.has(String(u.id)));
+ const directByPartner=useMemo(
+  ()=>new Map(
+   threads
+    .filter(t=>t.kind!=='group'&&t.partner)
+    .map(t=>[String(t.partner.id),t])
+  ),
+  [threads]
+ );
+ const recentThreads=useMemo(()=>{
+  const searchText=query.trim().toLowerCase();
+  return [...threads]
+   .filter(t=>
+    (t.kind==='group'?t.name:nameOf(t.partner))
+     .toLowerCase()
+     .includes(searchText)
+   )
+   .sort((a,b)=>{
+    const newer=new Date(b.lastAt||b.createdAt).getTime();
+    const older=new Date(a.lastAt||a.createdAt).getTime();
+    return (Number.isFinite(newer)?newer:0)-(Number.isFinite(older)?older:0);
+   });
+ },[threads,query]);
+ const newMessageUsers=useMemo(()=>{
+  const searchText=newMessageSearch.trim().toLowerCase();
+  return directory
+   .filter(account=>!same(account.id,currentUserId))
+   .filter(account=>
+    [account.fullName,account.username,account.role]
+     .filter(Boolean)
+     .join(' ')
+     .toLowerCase()
+     .includes(searchText)
+   )
+   .sort((a,b)=>nameOf(a).localeCompare(nameOf(b)));
+ },[directory,currentUserId,newMessageSearch]);
  function report(e){setError(e.message||'Messenger request failed.');}
- async function openUser(account){if(busy)return;setError('');const existing=directByPartner.get(String(account.id));if(existing){setActiveId(existing.id);return;}
-  setBusy(true);try{const result=await chatApi('/conversations',{method:'POST',body:JSON.stringify({recipientId:account.id})});await loadOverview();setActiveId(result.conversationId);}catch(e){report(e);}finally{setBusy(false);}}
+ async function openUser(account){
+  if(busy)return;
+  setError('');
+  const existing=directByPartner.get(String(account.id));
+  if(existing){
+   setActiveId(existing.id);
+   setNewMessageMode(false);
+   setNewMessageSearch('');
+   return;
+  }
+  setBusy(true);
+  try{
+   const result=await chatApi('/conversations',{
+    method:'POST',
+    body:JSON.stringify({recipientId:account.id}),
+   });
+   await loadOverview();
+   setActiveId(result.conversationId);
+   setNewMessageMode(false);
+   setNewMessageSearch('');
+  }catch(e){
+   report(e);
+  }finally{
+   setBusy(false);
+  }
+ }
  async function createGroup(e){e.preventDefault();if(busy||chosen.length<1||groupName.trim().length<2)return;setBusy(true);setError('');try{const result=await chatApi('/groups',{method:'POST',body:JSON.stringify({name:groupName.trim(),memberIds:chosen})});setCreating(false);setChosen([]);setGroupName('');await loadOverview();setActiveId(result.conversationId);}catch(e){report(e);}finally{setBusy(false);}}
  function chooseFiles(fileList) {
   if (!fileList?.length) return;
@@ -342,26 +386,168 @@ export default function Messenger({compact=false}) {
  }
  async function rename(){const entered=window.prompt('New group name (2–100 characters):',active.name);if(entered==null)return;const next=entered.trim();if(next.length<2||next.length>100){setError('Group name must contain 2–100 characters.');return;}
   setBusy(true);try{await chatApi(`/groups/${gid}/name`,{method:'PATCH',body:JSON.stringify({name:next})});await loadOverview();}catch(e){report(e);}finally{setBusy(false);}}
-
  const itemClass=(chosenNow)=>`flex w-full items-center gap-2 border-b border-slate-100 p-2 text-left text-sm hover:bg-slate-100 dark:border-slate-800 dark:hover:bg-slate-800 ${chosenNow?'bg-blue-50 dark:bg-slate-800':''}`;
  return <main className={compact?'flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white dark:bg-slate-900':'flex h-[calc(100vh-7rem)] min-h-[520px] min-w-0 flex-col gap-3 p-3 sm:p-5'}>
   {!compact&&<div><h1 className="text-2xl font-bold text-slate-900 dark:text-white">Messenger</h1><p className="text-sm text-slate-500 dark:text-slate-400">Private and group conversations between authorized WELLJOB users.</p></div>}
   {error&&<div role="alert" className="shrink-0 rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-200">{error} <button type="button" className="ml-2 underline" onClick={()=>setError('')}>Dismiss</button></div>}
   <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
    <aside className={`${activeId?'hidden sm:flex':'flex'} ${compact?'w-full sm:w-[210px]':'w-full sm:w-64 lg:w-80'} min-h-0 shrink-0 flex-col border-r border-slate-200 dark:border-slate-700`}>
-    <div className="flex shrink-0 gap-2 border-b border-slate-200 p-2 dark:border-slate-700"><label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 p-2 dark:border-slate-700"><FiSearch className="shrink-0"/><input className="min-w-0 flex-1 bg-transparent text-xs outline-none dark:text-white" placeholder="Search chats..." value={query} onChange={e=>setQuery(e.target.value)}/></label><button type="button" title="Create group" aria-label="Create group" className={solidButton} onClick={()=>{setChosen([]);setGroupName('');setCreateSearch('');setCreating(true);setError('');}}><FiPlus/></button></div>
-    <div className="min-h-0 flex-1 overflow-y-auto">
-     {loading&&<p className="p-3 text-xs text-slate-500">Loading...</p>}
-     {recentThreads.length>0&&<p className="bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-500 dark:bg-slate-800">RECENT CHATS · NEWEST FIRST</p>}
-     {recentThreads.map(t=><button key={t.id} type="button" className={itemClass(same(t.id,activeId))} onClick={()=>setActiveId(t.id)}>
-       {t.kind==='group'?<span className="rounded-full bg-blue-100 p-2 text-blue-700 dark:bg-blue-950 dark:text-blue-300"><FiUsers/></span>:<AuthenticatedAvatar user={t.partner} small/>}
-       <span className="min-w-0 flex-1"><span className="block truncate font-semibold dark:text-white">{t.kind==='group'?t.name:nameOf(t.partner)}</span><span className="block truncate text-[11px] text-slate-500">{t.lastBody||'No messages yet'}</span></span>
-       {t.unreadCount>0&&<span className="rounded-full bg-blue-600 px-2 text-xs text-white">{t.unreadCount}</span>}
-     </button>)}
-     {availableUsers.length>0&&<p className="bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-500 dark:bg-slate-800">START A NEW CHAT</p>}
-     {availableUsers.map(u=><button key={u.id} type="button" disabled={busy} className={itemClass(false)} onClick={()=>openUser(u)}><AuthenticatedAvatar user={u} small/><span className="min-w-0 flex-1"><span className="block truncate font-semibold dark:text-white">{nameOf(u)}</span><span className="block truncate text-[11px] text-slate-500">{u.role?.replaceAll('_',' ')}</span></span></button>)}
-     {!loading&&!recentThreads.length&&!availableUsers.length&&<p className="p-3 text-xs text-slate-500">No conversations found.</p>}
-    </div>
+    {newMessageMode ? (
+     <>
+      <div className="shrink-0 border-b border-slate-200 p-2 dark:border-slate-700">
+       <div className="flex items-center gap-2">
+        <button
+         type="button"
+         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+         aria-label="Back to recent chats"
+         title="Back to recent chats"
+         onClick={()=>{
+          setNewMessageMode(false);
+          setNewMessageSearch('');
+         }}
+        >
+         <FiArrowLeft/>
+        </button>
+        <div className="min-w-0">
+         <p className="truncate text-sm font-bold text-slate-900 dark:text-white">New Message</p>
+         <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">Choose a WELLJOB user</p>
+        </div>
+       </div>
+       <label className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-2 dark:border-slate-700">
+        <FiSearch className="shrink-0 text-slate-400"/>
+        <input
+         type="search"
+         className="min-w-0 flex-1 bg-transparent text-xs outline-none dark:text-white"
+         placeholder="Search people..."
+         value={newMessageSearch}
+         onChange={e=>setNewMessageSearch(e.target.value)}
+         autoFocus
+        />
+       </label>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+       <button
+        type="button"
+        className="flex w-full items-center gap-3 border-b border-slate-100 p-3 text-left hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
+        onClick={()=>{
+         setChosen([]);
+         setGroupName('');
+         setCreateSearch('');
+         setCreating(true);
+         setError('');
+        }}
+       >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+         <FiUsers/>
+        </span>
+        <span className="min-w-0 flex-1">
+         <span className="block truncate text-sm font-semibold text-slate-900 dark:text-white">Create group chat</span>
+         <span className="block truncate text-[11px] text-slate-500">Message multiple users</span>
+        </span>
+       </button>
+       <p className="bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:bg-slate-800">CONTACTS</p>
+       {loading&&<p className="p-3 text-xs text-slate-500">Loading contacts...</p>}
+       {!loading&&newMessageUsers.map(account=>{
+        const existing=directByPartner.has(String(account.id));
+        return <button
+         key={account.id}
+         type="button"
+         disabled={busy}
+         className={itemClass(false)}
+         onClick={()=>openUser(account)}
+        >
+         <AuthenticatedAvatar user={account} small/>
+         <span className="min-w-0 flex-1">
+          <span className="block truncate font-semibold dark:text-white">{nameOf(account)}</span>
+          <span className="block truncate text-[11px] text-slate-500">
+           {account.role?.replaceAll('_',' ')||'WELLJOB USER'}
+           {existing?' • Existing chat':''}
+          </span>
+         </span>
+        </button>;
+       })}
+       {!loading&&newMessageUsers.length===0&&(
+        <p className="p-3 text-xs text-slate-500">
+         {newMessageSearch.trim()?'No users match your search.':'No available users found.'}
+        </p>
+       )}
+      </div>
+     </>
+    ) : (
+     <>
+      <div className="shrink-0 border-b border-slate-200 p-2 dark:border-slate-700">
+       <button
+        type="button"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-blue-700"
+        onClick={()=>{
+         setNewMessageMode(true);
+         setNewMessageSearch('');
+         setError('');
+        }}
+       >
+        <FiEdit2/>
+        New Message
+       </button>
+       <label className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-2 dark:border-slate-700">
+        <FiSearch className="shrink-0 text-slate-400"/>
+        <input
+         type="search"
+         className="min-w-0 flex-1 bg-transparent text-xs outline-none dark:text-white"
+         placeholder="Search chats..."
+         value={query}
+         onChange={e=>setQuery(e.target.value)}
+        />
+       </label>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+       {loading&&<p className="p-3 text-xs text-slate-500">Loading conversations...</p>}
+       {!loading&&recentThreads.length>0&&(
+        <p className="bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:bg-slate-800">RECENT CHATS</p>
+       )}
+       {!loading&&recentThreads.map(t=>
+        <button
+         key={t.id}
+         type="button"
+         className={itemClass(same(t.id,activeId))}
+         onClick={()=>setActiveId(t.id)}
+        >
+         {t.kind==='group'
+          ? <span className="rounded-full bg-blue-100 p-2 text-blue-700 dark:bg-blue-950 dark:text-blue-300"><FiUsers/></span>
+          : <AuthenticatedAvatar user={t.partner} small/>
+         }
+         <span className="min-w-0 flex-1">
+          <span className="block truncate font-semibold dark:text-white">
+           {t.kind==='group'?t.name:nameOf(t.partner)}
+          </span>
+          <span className="block truncate text-[11px] text-slate-500">
+           {t.lastBody||'No messages yet'}
+          </span>
+         </span>
+         {t.unreadCount>0&&(
+          <span className="rounded-full bg-blue-600 px-2 text-xs text-white">{t.unreadCount}</span>
+         )}
+        </button>
+       )}
+       {!loading&&recentThreads.length===0&&(
+        <div className="p-4 text-center">
+         <FiMessageCircle className="mx-auto mb-2 text-slate-400" size={24}/>
+         <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+          {query.trim()?'No conversations match your search.':'No conversations yet.'}
+         </p>
+         {!query.trim()&&(
+          <button
+           type="button"
+           className="mt-2 text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+           onClick={()=>setNewMessageMode(true)}
+          >
+           Start a new message
+          </button>
+         )}
+        </div>
+       )}
+      </div>
+     </>
+    )}
    </aside>
    <section className={`${activeId?'flex':'hidden sm:flex'} min-h-0 min-w-0 flex-1 flex-col`}>
     {active?<>
@@ -377,15 +563,14 @@ export default function Messenger({compact=false}) {
         return <div key={m.id} className={`flex ${mine?'justify-end':'justify-start'}`}><div className={`max-w-[90%] min-w-0 rounded-2xl px-3 py-2 text-sm ${mine?'bg-blue-600 text-white':'bg-white text-slate-900 shadow dark:bg-slate-800 dark:text-white'}`}>
          {isGroup&&!mine&&<p className="mb-1 text-[11px] font-bold text-blue-600 dark:text-blue-300">{m.senderName||members.find(u=>same(u.id,m.senderId))?.fullName||'Group member'}</p>}
          {m.body&&<p className="whitespace-pre-wrap break-words">{m.body}</p>}
-         {files.map(a=><button key={a.id} type="button" onClick={()=>downloadPdf(a)} className={`my-1 flex max-w-full items-center gap-2 rounded-lg border p-2 text-left ${mine?'border-blue-300':'border-slate-300 dark:border-slate-600'}`}><FiPaperclip className="shrink-0"/><span className="min-w-0"><span className="block truncate text-xs font-bold">{a.name}</span><span className="block text-[10px]">PDF · {bytes(a.size)}</span></span><FiDownload className="shrink-0"/></button>)}
-         <p className={`mt-1 text-right text-[10px] ${mine?'text-blue-100':'text-slate-400'}`}>{formattedTime(m.createdAt)} {mine&&!isGroup?(m.readAt?' · Seen':' · Sent'):''}</p>
+         {files.map(a=><button key={a.id} type="button" onClick={()=>downloadPdf(a)} className={`my-1 flex max-w-full items-center gap-2 rounded-lg border p-2 text-left ${mine?'border-blue-300':'border-slate-300 dark:border-slate-600'}`}><FiPaperclip className="shrink-0"/><span className="min-w-0"><span className="block truncate text-xs font-bold">{a.name}</span><span className="block text-[10px]">PDF • {bytes(a.size)}</span></span><FiDownload className="shrink-0"/></button>)}
+         <p className={`mt-1 text-right text-[10px] ${mine?'text-blue-100':'text-slate-400'}`}>{formattedTime(m.createdAt)} {mine&&!isGroup?(m.readAt?' • Seen':' • Sent'):''}</p>
         </div></div>;
        })}
-
      </div>
      {selectedFiles.length>0&&<div className="shrink-0 border-t border-slate-200 bg-blue-50 p-2 text-xs text-blue-900 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-200">
-       <div className="flex items-center justify-between gap-2"><strong>{selectedFiles.length} PDFs · {bytes(selectedBytes)} / 15.00 MB combined</strong><button type="button" className="underline disabled:opacity-50" disabled={busy} onClick={()=>setSelectedFiles([])}>Clear all</button></div>
-       <div className="mt-1 max-h-24 space-y-1 overflow-y-auto">{selectedFiles.map((file,i)=><div key={i} className="flex items-center justify-between gap-2"><span className="min-w-0 flex-1 truncate">{file.name} · {bytes(file.size)}</span><button type="button" title={`Remove ${file.name}`} disabled={busy} onClick={()=>setSelectedFiles(prev=>prev.filter((_,j)=>j!==i))}><FiX/></button></div>)}</div>
+       <div className="flex items-center justify-between gap-2"><strong>{selectedFiles.length} PDFs • {bytes(selectedBytes)} / 15.00 MB combined</strong><button type="button" className="underline disabled:opacity-50" disabled={busy} onClick={()=>setSelectedFiles([])}>Clear all</button></div>
+       <div className="mt-1 max-h-24 space-y-1 overflow-y-auto">{selectedFiles.map((file,i)=><div key={i} className="flex items-center justify-between gap-2"><span className="min-w-0 flex-1 truncate">{file.name} • {bytes(file.size)}</span><button type="button" title={`Remove ${file.name}`} disabled={busy} onClick={()=>setSelectedFiles(prev=>prev.filter((_,j)=>j!==i))}><FiX/></button></div>)}</div>
      </div>}
      <form onSubmit={sendMessage} className="flex shrink-0 items-end gap-2 border-t border-slate-200 p-2 dark:border-slate-700">
        <input ref={uploadRef} type="file" multiple accept=".pdf,application/pdf" className="hidden" onChange={e=>{chooseFiles(e.target.files);e.target.value='';}}/>
@@ -394,8 +579,7 @@ export default function Messenger({compact=false}) {
        <button type="submit" className={solidButton} disabled={busy||(!draft.trim()&&!selectedFiles.length)||loadingMessages||active.canMessage===false} aria-label="Send message"><FiSend/></button>
      </form>
      {fileProgress!=null&&<div className="shrink-0 bg-blue-50 p-2 text-xs text-blue-700" role="status">Uploading {selectedFiles.length} PDFs: {fileProgress}%</div>}
-
-    </>:<div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-sm text-slate-500"><FiMessageCircle size={36}/><span>Select a conversation or create a group.</span></div>}
+    </>:<div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-sm text-slate-500"><FiMessageCircle size={36}/><span>Select a recent conversation or start a new message.</span></div>}
    </section>
   </div>
   {creating && (
@@ -452,7 +636,6 @@ export default function Messenger({compact=false}) {
       </form>
     </div>
   )}
-
   {adding && isGroup && admin && (
     <div
       className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 p-3"

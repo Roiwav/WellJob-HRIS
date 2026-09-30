@@ -23,22 +23,22 @@ const Messenger = lazy(() =>
  * ==================================================
  *
  * Desktop:
- * - Floating Messenger window
- * - User sidebar on the left
- * - Conversation panel on the right
+ * - Compact floating Messenger window
+ * - Launcher stays near the lower-right corner
+ * - Keeps clear vertical separation from
+ *   the Smart Suggestions button
  *
  * Mobile:
- * - One panel at a time
+ * - Uses most of the available viewport
+ * - Keeps a small safe margin around the window
  *
- * Messenger button remains above
- * the existing Smart Suggestions button.
+ * The existing Messenger page is reused in compact mode.
  */
 
 export default function FloatingMessenger() {
   const { unreadCount } = useChat();
 
-  const [isOpen, setIsOpen] =
-    useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   const safeUnreadCount = Math.max(
     0,
@@ -49,10 +49,6 @@ export default function FloatingMessenger() {
     safeUnreadCount > 99
       ? "99+"
       : String(safeUnreadCount);
-
-  /*
-   * Close using Escape.
-   */
 
   useEffect(() => {
     if (!isOpen) {
@@ -65,129 +61,93 @@ export default function FloatingMessenger() {
       }
     }
 
-    window.addEventListener(
-      "keydown",
-      handleKeyDown
-    );
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.removeEventListener(
-        "keydown",
-        handleKeyDown
-      );
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
   return (
     <>
-      {/*
-       * ==========================================
-       * FLOATING MESSENGER BUTTON
-       * ==========================================
-       */}
+      {!isOpen && (
+        <div className="fixed bottom-5 right-5 z-[1160] sm:bottom-6 sm:right-6">
+          <div className="group relative flex items-center">
+            <div className="pointer-events-none absolute right-16 hidden whitespace-nowrap rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-900">
+              Open Messenger
+            </div>
 
-      <div className="fixed bottom-[10.5rem] right-6 z-[1160]">
-        <div className="group relative flex items-center">
-          <div className="pointer-events-none absolute right-16 hidden whitespace-nowrap rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-900">
-            Messenger
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setIsOpen(
-                (previous) => !previous
-              );
-            }}
-            aria-label={
-              isOpen
-                ? "Close Messenger"
-                : "Open Messenger"
-            }
-            aria-expanded={isOpen}
-            aria-controls="welljob-floating-messenger"
-            title="Messenger"
-            className="relative flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 dark:focus:ring-offset-slate-950"
-          >
-            {isOpen ? (
-              <FiX
-                size={23}
-                aria-hidden="true"
-              />
-            ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(true);
+              }}
+              aria-label="Open Messenger"
+              aria-expanded={false}
+              aria-controls="welljob-floating-messenger"
+              title="Messenger"
+              className="relative flex h-14 w-14 items-center justify-center rounded-full border border-blue-500/20 bg-blue-600 text-white shadow-lg shadow-blue-600/20 transition duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 dark:border-blue-400/20 dark:focus:ring-offset-slate-950"
+            >
               <FiMessageCircle
                 size={23}
                 aria-hidden="true"
               />
-            )}
 
-            {!isOpen &&
-              safeUnreadCount > 0 && (
+              {safeUnreadCount > 0 && (
                 <span className="absolute -right-1 -top-1 flex min-h-6 min-w-6 items-center justify-center rounded-full bg-rose-600 px-1.5 text-[10px] font-black text-white ring-2 ring-white dark:ring-slate-950">
                   {unreadLabel}
                 </span>
               )}
-          </button>
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/*
-       * ==========================================
-       * FLOATING MESSENGER WINDOW
-       * ==========================================
-       *
-       * Desktop:
-       * Width: 620px
-       * Height: 440px
-       *
-       * The width allows the Messenger
-       * user sidebar and conversation
-       * to appear side by side.
-       */}
+      )}
 
       {isOpen && (
         <div
           id="welljob-floating-messenger"
+          role="dialog"
+          aria-modal="false"
+          aria-label="WELLJOB Messenger"
           className="
-            fixed inset-3 z-[1200]
+            fixed inset-2 z-[1200]
             flex min-h-0 min-w-0
             flex-col overflow-hidden
             rounded-2xl
-            border border-slate-200
-            bg-white shadow-2xl
+            border border-slate-200/90
+            bg-white
+            shadow-2xl
             dark:border-slate-700
             dark:bg-slate-900
 
             sm:inset-auto
-            sm:bottom-[15rem]
+            sm:bottom-6
             sm:right-6
-            sm:h-[min(440px,calc(100dvh-16.5rem))]
-            sm:min-h-0
-            sm:w-[min(620px,calc(100vw-3rem))]
+            sm:h-[min(520px,calc(100dvh-4.5rem))]
+            sm:w-[min(680px,calc(100vw-3rem))]
           "
         >
-          {/*
-           * ======================================
-           * WINDOW HEADER
-           * ======================================
-           */}
-
-          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+          <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-slate-50/95 px-4 py-3.5 dark:border-slate-700 dark:bg-slate-900 sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
                 <FiMessageCircle
-                  size={19}
+                  size={20}
+                  aria-hidden="true"
+                />
+
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-slate-50 bg-emerald-500 dark:border-slate-900"
                   aria-hidden="true"
                 />
               </span>
 
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                <h2 className="truncate text-sm font-extrabold text-slate-900 dark:text-white sm:text-[15px]">
                   WELLJOB Messenger
                 </h2>
 
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Private and group messages
+                <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  Private and group conversations
                 </p>
               </div>
             </div>
@@ -198,29 +158,21 @@ export default function FloatingMessenger() {
                 setIsOpen(false);
               }}
               aria-label="Close Messenger window"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-red-100 hover:text-red-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+              title="Close Messenger"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-transparent text-slate-500 transition hover:border-slate-200 hover:bg-white hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-white"
             >
               <FiX
-                size={18}
+                size={19}
                 aria-hidden="true"
               />
             </button>
           </header>
 
-          {/*
-           * ======================================
-           * MESSENGER CONTENT
-           * ======================================
-           *
-           * Reuses the existing Messenger
-           * with floating mode enabled.
-           */}
-
-          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden bg-white dark:bg-slate-900">
             <Suspense
               fallback={
                 <div
-                  className="flex h-full items-center justify-center p-5 text-sm text-slate-500 dark:text-slate-400"
+                  className="flex h-full items-center justify-center p-6 text-sm font-medium text-slate-500 dark:text-slate-400"
                   role="status"
                 >
                   Loading Messenger...

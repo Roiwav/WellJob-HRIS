@@ -5,41 +5,36 @@ import {
   useRef,
   useState,
 } from "react";
-
 import { useNavigate } from "react-router-dom";
 import {
   FiArchive,
+  FiBriefcase,
   FiPlus,
   FiRotateCcw,
+  FiShield,
   FiUsers,
 } from "react-icons/fi";
 import axios from "axios";
-
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { ROLES } from "../constants/roles";
 import { useAuth } from "../context/useAuth";
-
 import AddEmployeeModal from "../components/employees/AddEmployeeModal";
 import EditEmployeeModal from "../components/employees/EditEmployeeModal";
 import EmployeeModal from "../components/employees/EmployeeModal";
 import EmployeeTable from "../components/employees/EmployeeTable";
-
 import Button from "../components/ui/Button";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import ErrorState from "../components/ui/ErrorState";
-import FilterBar from "../components/ui/FilterBar";
 import LoadingSkeleton from "../components/ui/LoadingSkeleton";
 import PageHeader from "../components/ui/PageHeader";
 import SearchInput from "../components/ui/SearchInput";
 import SuccessToast from "../components/ui/SuccessToast";
-
 import {
   EMPLOYEE_API_URL,
   getEmployeeApiError,
   parseEmployeeDocuments,
 } from "../utils/employees/employeeFormHelpers";
-
 import {
   COMPLIANCE_OPTIONS,
   EMPLOYEE_SORT_OPTIONS,
@@ -78,13 +73,13 @@ const ACTIVE_STATUS_OPTIONS =
   );
 
 const SELECT_CLASS_NAME =
-  "min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 " +
-  "text-sm text-gray-900 shadow-sm outline-none transition " +
-  "focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 " +
-  "disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 " +
-  "dark:border-slate-700 dark:bg-slate-900 dark:text-white " +
-  "dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20 " +
-  "dark:disabled:bg-slate-800 dark:disabled:text-gray-500";
+  "min-h-10 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 " +
+  "text-sm font-medium text-slate-800 outline-none transition " +
+  "focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 " +
+  "disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 " +
+  "dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 " +
+  "dark:focus:border-indigo-400 dark:focus:ring-indigo-400/15 " +
+  "dark:disabled:bg-slate-800 dark:disabled:text-slate-500";
 
 function getAuthenticatedHeaders(
   additionalHeaders = {}
@@ -95,13 +90,10 @@ function getAuthenticatedHeaders(
         "token"
       ) || ""
     ).trim();
-
   return {
     Accept:
       "application/json",
-
     ...additionalHeaders,
-
     ...(token
       ? {
           Authorization:
@@ -121,12 +113,9 @@ function emitDataUpdated(
         detail: {
           source:
             DATA_EVENT_SOURCE,
-
           domain:
             "employees",
-
           action,
-
           at:
             Date.now(),
         },
@@ -140,25 +129,21 @@ function shouldRefreshEmployees(
 ) {
   const detail =
     event?.detail || {};
-
   if (
     detail.source ===
     DATA_EVENT_SOURCE
   ) {
     return false;
   }
-
   const domain =
     String(
       detail.domain || ""
     )
       .trim()
       .toLowerCase();
-
   if (!domain) {
     return true;
   }
-
   return (
     EMPLOYEE_REFRESH_DOMAINS.has(
       domain
@@ -191,12 +176,24 @@ function getEmployeeName(
   ).trim();
 }
 
+function getEmployeePosition(
+  employee
+) {
+  return String(
+    employee?.position ||
+      employee?.jobPosition ||
+      employee?.job_position ||
+      employee?.positionName ||
+      employee?.position_name ||
+      ""
+  ).trim();
+}
+
 function normalizeEmployee(
   employee = {}
 ) {
   return {
     ...employee,
-
     documents:
       parseEmployeeDocuments(
         employee.documents
@@ -230,7 +227,6 @@ function normalizePagination(
       10
     ) ||
     fallbackPage;
-
   const pageSize =
     Number.parseInt(
       String(
@@ -240,7 +236,6 @@ function normalizePagination(
       10
     ) ||
     EMPLOYEE_PAGE_SIZE;
-
   const total =
     Math.max(
       Number(
@@ -249,7 +244,6 @@ function normalizePagination(
       ),
       0
     );
-
   const activeTotal =
     Math.max(
       Number(
@@ -258,7 +252,6 @@ function normalizePagination(
       ),
       0
     );
-
   const totalPages =
     Number.parseInt(
       String(
@@ -275,28 +268,23 @@ function normalizePagination(
           )
         : 0
     );
-
   return {
     page:
       Math.max(
         page,
         1
       ),
-
     pageSize:
       Math.max(
         pageSize,
         1
       ),
-
     total,
-
     totalPages:
       Math.max(
         totalPages,
         0
       ),
-
     activeTotal,
   };
 }
@@ -308,7 +296,7 @@ function SelectFilter({
   options,
   disabled,
   onChange,
-  className = "xl:w-52",
+  className = "",
 }) {
   return (
     <div
@@ -318,11 +306,10 @@ function SelectFilter({
         htmlFor={
           id
         }
-        className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-200"
+        className="mb-1.5 block text-[11px] font-semibold text-slate-500 dark:text-slate-400"
       >
         {label}
       </label>
-
       <select
         id={
           id
@@ -370,24 +357,19 @@ function SelectFilter({
 export default function Employees() {
   const navigate =
     useNavigate();
-
   const {
     user,
   } =
     useAuth();
-
   const isSuperAdmin =
     user?.role ===
     ROLES.SUPER_ADMIN;
-
   const isHRManager =
     user?.role ===
     ROLES.HR_MANAGER;
-
   const isHRCoordinator =
     user?.role ===
     ROLES.HR_COORDINATOR;
-
   /*
    * ==================================================
    * EMPLOYEE PAGE ACCESS
@@ -408,20 +390,17 @@ export default function Employees() {
   const isReadOnlyEmployeeAccess =
     isSuperAdmin ||
     isHRCoordinator;
-
   const assignedCompany =
     String(
       user?.assignedCompany ??
         user?.assigned_company ??
         ""
     ).trim();
-
   const [
     employees,
     setEmployees,
   ] =
     useState([]);
-
   const [
     pagination,
     setPagination,
@@ -432,74 +411,72 @@ export default function Employees() {
           {
             page:
               1,
-
             pageSize:
               EMPLOYEE_PAGE_SIZE,
           },
           1
         )
     );
-
   const [
     page,
     setPage,
   ] =
     useState(1);
-
   const [
     showEmployeeForm,
     setShowEmployeeForm,
   ] =
     useState(false);
-
   const [
     generatedId,
     setGeneratedId,
   ] =
     useState("");
-
   const [
     editingEmployee,
     setEditingEmployee,
   ] =
     useState(null);
-
   const [
     viewEmployee,
     setViewEmployee,
   ] =
     useState(null);
-
   const [
     archiveTarget,
     setArchiveTarget,
   ] =
     useState(null);
-
   const [
     search,
     setSearch,
   ] =
     useState("");
-
   const [
     debouncedSearch,
     setDebouncedSearch,
   ] =
     useState("");
-
   const [
     filterStatus,
     setFilterStatus,
   ] =
     useState("All");
-
   const [
     filterCompliance,
     setFilterCompliance,
   ] =
     useState("All");
-
+  const [
+    filterPosition,
+    setFilterPosition,
+  ] =
+    useState("All");
+  const [
+    knownPositions,
+    setKnownPositions,
+  ] =
+    useState([]);
   const [
     sortBy,
     setSortBy,
@@ -507,70 +484,57 @@ export default function Employees() {
     useState(
       "latest"
     );
-
   const [
     successMessage,
     setSuccessMessage,
   ] =
     useState("");
-
   const [
     pageError,
     setPageError,
   ] =
     useState("");
-
   const [
     isLoadingEmployees,
     setIsLoadingEmployees,
   ] =
     useState(true);
-
   const [
     isRefreshingEmployees,
     setIsRefreshingEmployees,
   ] =
     useState(false);
-
   const [
     isOpeningAddEmployee,
     setIsOpeningAddEmployee,
   ] =
     useState(false);
-
   const [
     isArchiving,
     setIsArchiving,
   ] =
     useState(false);
-
   const isMountedRef =
     useRef(true);
-
+  const hasCompletedInitialLoadRef =
+    useRef(false);
   const dataUpdateTimerRef =
     useRef(null);
-
   const searchDebounceTimerRef =
     useRef(null);
-
   const employeeListAbortRef =
     useRef(null);
-
   const employeeDetailAbortRef =
     useRef(null);
-
   const employeeFormMetaAbortRef =
     useRef(null);
-
   useEffect(
     () => {
       isMountedRef.current =
         true;
-
       return () => {
         isMountedRef.current =
           false;
-
         if (
           dataUpdateTimerRef.current
         ) {
@@ -578,7 +542,6 @@ export default function Employees() {
             dataUpdateTimerRef.current
           );
         }
-
         if (
           searchDebounceTimerRef.current
         ) {
@@ -586,15 +549,12 @@ export default function Employees() {
             searchDebounceTimerRef.current
           );
         }
-
         employeeListAbortRef
           .current
           ?.abort();
-
         employeeDetailAbortRef
           .current
           ?.abort();
-
         employeeFormMetaAbortRef
           .current
           ?.abort();
@@ -602,7 +562,6 @@ export default function Employees() {
     },
     []
   );
-
   useEffect(
     () => {
       if (
@@ -612,7 +571,6 @@ export default function Employees() {
           searchDebounceTimerRef.current
         );
       }
-
       searchDebounceTimerRef.current =
         window.setTimeout(
           () => {
@@ -621,13 +579,11 @@ export default function Employees() {
                 search || ""
               ).trim()
             );
-
             searchDebounceTimerRef.current =
               null;
           },
           SEARCH_DEBOUNCE_MS
         );
-
       return () => {
         if (
           searchDebounceTimerRef.current
@@ -635,7 +591,6 @@ export default function Employees() {
           window.clearTimeout(
             searchDebounceTimerRef.current
           );
-
           searchDebounceTimerRef.current =
             null;
         }
@@ -645,29 +600,23 @@ export default function Employees() {
       search,
     ]
   );
-
   const fetchEmployees =
     useCallback(
       async ({
         showLoading =
           false,
-
         showRefreshing =
           false,
-
         showError =
           true,
       } = {}) => {
         employeeListAbortRef
           .current
           ?.abort();
-
         const controller =
           new AbortController();
-
         employeeListAbortRef.current =
           controller;
-
         if (
           isMountedRef.current
         ) {
@@ -678,7 +627,6 @@ export default function Employees() {
               true
             );
           }
-
           if (
             showRefreshing
           ) {
@@ -686,7 +634,6 @@ export default function Employees() {
               true
             );
           }
-
           if (
             showError
           ) {
@@ -695,7 +642,6 @@ export default function Employees() {
             );
           }
         }
-
         try {
           const {
             data,
@@ -705,22 +651,16 @@ export default function Employees() {
               {
                 timeout:
                   REQUEST_TIMEOUT_MS,
-
                 signal:
                   controller.signal,
-
                 headers:
                   getAuthenticatedHeaders(),
-
                 params: {
                   view:
                     "summary",
-
                   page,
-
                   pageSize:
                     EMPLOYEE_PAGE_SIZE,
-
                   /*
                    * HR Coordinator cannot override
                    * backend scope with this value.
@@ -731,22 +671,29 @@ export default function Employees() {
                    */
                   scope:
                     "active",
-
                   search:
-                    debouncedSearch,
-
+                    isHRCoordinator &&
+                    filterPosition !==
+                      "All"
+                      ? filterPosition
+                      : debouncedSearch,
                   status:
                     filterStatus,
-
                   compliance:
                     filterCompliance,
-
+                  ...(isHRCoordinator &&
+                  filterPosition !==
+                    "All"
+                    ? {
+                        position:
+                          filterPosition,
+                      }
+                    : {}),
                   sort:
                     sortBy,
                 },
               }
             );
-
           if (
             controller.signal
               .aborted ||
@@ -754,30 +701,52 @@ export default function Employees() {
           ) {
             return false;
           }
-
           const records =
             Array.isArray(
               data?.employees
             )
               ? data.employees
               : [];
-
           const nextPagination =
             normalizePagination(
               data?.pagination,
               page
             );
-
+          if (
+            isHRCoordinator
+          ) {
+            const discoveredPositions =
+              records
+                .map(
+                  getEmployeePosition
+                )
+                .filter(Boolean);
+            if (
+              discoveredPositions.length
+            ) {
+              setKnownPositions(
+                (
+                  currentPositions
+                ) =>
+                  [
+                    ...new Set([
+                      ...currentPositions,
+                      ...discoveredPositions,
+                    ]),
+                  ].sort((a, b) =>
+                    a.localeCompare(b)
+                  )
+              );
+            }
+          }
           setEmployees(
             records.map(
               normalizeEmployee
             )
           );
-
           setPagination(
             nextPagination
           );
-
           if (
             nextPagination
               .totalPages >
@@ -791,7 +760,6 @@ export default function Employees() {
                 .totalPages
             );
           }
-
           return true;
         } catch (
           error
@@ -803,12 +771,10 @@ export default function Employees() {
           ) {
             return false;
           }
-
           console.error(
             "Fetch employees error:",
             error
           );
-
           if (
             showError &&
             isMountedRef.current
@@ -820,7 +786,6 @@ export default function Employees() {
               )
             );
           }
-
           return false;
         } finally {
           if (
@@ -830,10 +795,11 @@ export default function Employees() {
           ) {
             employeeListAbortRef.current =
               null;
-
             if (
               isMountedRef.current
             ) {
+              hasCompletedInitialLoadRef.current =
+                true;
               if (
                 showLoading
               ) {
@@ -841,7 +807,6 @@ export default function Employees() {
                   false
                 );
               }
-
               if (
                 showRefreshing
               ) {
@@ -856,24 +821,24 @@ export default function Employees() {
       [
         debouncedSearch,
         filterCompliance,
+        filterPosition,
         filterStatus,
+        isHRCoordinator,
         page,
         sortBy,
       ]
     );
-
   useEffect(
     () => {
       void fetchEmployees({
         showLoading:
-          true,
+          !hasCompletedInitialLoadRef.current,
       });
     },
     [
       fetchEmployees,
     ]
   );
-
   useEffect(
     () => {
       const scheduleEmployeeRefresh =
@@ -885,7 +850,6 @@ export default function Employees() {
               dataUpdateTimerRef.current
             );
           }
-
           dataUpdateTimerRef.current =
             window.setTimeout(
               () => {
@@ -893,14 +857,12 @@ export default function Employees() {
                   showError:
                     false,
                 });
-
                 dataUpdateTimerRef.current =
                   null;
               },
               DATA_UPDATE_DEBOUNCE_MS
             );
         };
-
       const handleDataUpdated =
         (
           event
@@ -913,12 +875,10 @@ export default function Employees() {
             scheduleEmployeeRefresh();
           }
         };
-
       window.addEventListener(
         "dataUpdated",
         handleDataUpdated
       );
-
       return () => {
         if (
           dataUpdateTimerRef.current
@@ -926,11 +886,9 @@ export default function Employees() {
           window.clearTimeout(
             dataUpdateTimerRef.current
           );
-
           dataUpdateTimerRef.current =
             null;
         }
-
         window.removeEventListener(
           "dataUpdated",
           handleDataUpdated
@@ -941,38 +899,61 @@ export default function Employees() {
       fetchEmployees,
     ]
   );
-
   const hasActiveFilters =
     useMemo(
       () =>
         hasActiveEmployeeFilters({
           search,
-
           status:
             filterStatus,
-
           compliance:
             filterCompliance,
-
           sortBy,
-        }),
+        }) ||
+        (
+          isHRCoordinator &&
+          filterPosition !==
+            "All"
+        ),
       [
         filterCompliance,
+        filterPosition,
         filterStatus,
+        isHRCoordinator,
         search,
         sortBy,
       ]
     );
-
+  const positionOptions =
+    useMemo(
+      () => [
+        {
+          value:
+            "All",
+          label:
+            "All Positions",
+        },
+        ...knownPositions.map(
+          (
+            position
+          ) => ({
+            value:
+              position,
+            label:
+              position,
+          })
+        ),
+      ],
+      [
+        knownPositions,
+      ]
+    );
   const activeEmployeeCount =
     pagination.activeTotal;
-
   const matchingEmployeeCount =
     pagination.total;
-
   const totalPages =
     pagination.totalPages;
-
   const pageStart =
     matchingEmployeeCount >
     0
@@ -983,7 +964,6 @@ export default function Employees() {
           pagination.pageSize +
         1
       : 0;
-
   const pageEnd =
     matchingEmployeeCount >
     0
@@ -993,23 +973,32 @@ export default function Employees() {
           matchingEmployeeCount
         )
       : 0;
-
   const handleSearchChange =
     useCallback(
       (
         event
       ) => {
+        const nextSearch =
+          event.target.value;
         setSearch(
-          event.target.value
+          nextSearch
         );
-
+        if (
+          isHRCoordinator &&
+          nextSearch.trim()
+        ) {
+          setFilterPosition(
+            "All"
+          );
+        }
         setPage(
           1
         );
       },
-      []
+      [
+        isHRCoordinator,
+      ]
     );
-
   const handleClearSearch =
     useCallback(
       () => {
@@ -1019,26 +1008,21 @@ export default function Employees() {
           window.clearTimeout(
             searchDebounceTimerRef.current
           );
-
           searchDebounceTimerRef.current =
             null;
         }
-
         setSearch(
           ""
         );
-
         setDebouncedSearch(
           ""
         );
-
         setPage(
           1
         );
       },
       []
     );
-
   const handleStatusChange =
     useCallback(
       (
@@ -1047,14 +1031,41 @@ export default function Employees() {
         setFilterStatus(
           value
         );
-
         setPage(
           1
         );
       },
       []
     );
-
+  const handlePositionChange =
+    useCallback(
+      (
+        value
+      ) => {
+        if (
+          searchDebounceTimerRef.current
+        ) {
+          window.clearTimeout(
+            searchDebounceTimerRef.current
+          );
+          searchDebounceTimerRef.current =
+            null;
+        }
+        setFilterPosition(
+          value
+        );
+        setSearch(
+          ""
+        );
+        setDebouncedSearch(
+          ""
+        );
+        setPage(
+          1
+        );
+      },
+      []
+    );
   const handleComplianceChange =
     useCallback(
       (
@@ -1063,14 +1074,12 @@ export default function Employees() {
         setFilterCompliance(
           value
         );
-
         setPage(
           1
         );
       },
       []
     );
-
   const handleSortChange =
     useCallback(
       (
@@ -1079,14 +1088,12 @@ export default function Employees() {
         setSortBy(
           value
         );
-
         setPage(
           1
         );
       },
       []
     );
-
   const handleResetFilters =
     useCallback(
       () => {
@@ -1096,38 +1103,33 @@ export default function Employees() {
           window.clearTimeout(
             searchDebounceTimerRef.current
           );
-
           searchDebounceTimerRef.current =
             null;
         }
-
         setSearch(
           ""
         );
-
         setDebouncedSearch(
           ""
         );
-
         setFilterStatus(
           "All"
         );
-
         setFilterCompliance(
           "All"
         );
-
+        setFilterPosition(
+          "All"
+        );
         setSortBy(
           "latest"
         );
-
         setPage(
           1
         );
       },
       []
     );
-
   const handleRefresh =
     useCallback(
       async () => {
@@ -1136,7 +1138,6 @@ export default function Employees() {
         ) {
           return;
         }
-
         await fetchEmployees({
           showRefreshing:
             true,
@@ -1147,7 +1148,6 @@ export default function Employees() {
         isRefreshingEmployees,
       ]
     );
-
   const fetchEmployeeById =
     useCallback(
       async (
@@ -1157,28 +1157,22 @@ export default function Employees() {
           getEmployeeId(
             employee
           );
-
         if (
           !employeeId
         ) {
           return null;
         }
-
         employeeDetailAbortRef
           .current
           ?.abort();
-
         const controller =
           new AbortController();
-
         employeeDetailAbortRef.current =
           controller;
-
         try {
           setPageError(
             ""
           );
-
           const {
             data,
           } =
@@ -1189,15 +1183,12 @@ export default function Employees() {
               {
                 timeout:
                   REQUEST_TIMEOUT_MS,
-
                 signal:
                   controller.signal,
-
                 headers:
                   getAuthenticatedHeaders(),
               }
             );
-
           if (
             controller.signal
               .aborted ||
@@ -1205,7 +1196,6 @@ export default function Employees() {
           ) {
             return null;
           }
-
           return normalizeEmployee(
             data
           );
@@ -1219,12 +1209,10 @@ export default function Employees() {
           ) {
             return null;
           }
-
           console.error(
             "Fetch employee detail error:",
             error
           );
-
           if (
             isMountedRef.current
           ) {
@@ -1235,7 +1223,6 @@ export default function Employees() {
               )
             );
           }
-
           return null;
         } finally {
           if (
@@ -1250,7 +1237,6 @@ export default function Employees() {
       },
       []
     );
-
   const handleOpenAddEmployee =
     useCallback(
       async () => {
@@ -1260,26 +1246,20 @@ export default function Employees() {
         ) {
           return;
         }
-
         employeeFormMetaAbortRef
           .current
           ?.abort();
-
         const controller =
           new AbortController();
-
         employeeFormMetaAbortRef.current =
           controller;
-
         try {
           setIsOpeningAddEmployee(
             true
           );
-
           setPageError(
             ""
           );
-
           const {
             data,
           } =
@@ -1288,15 +1268,12 @@ export default function Employees() {
               {
                 timeout:
                   REQUEST_TIMEOUT_MS,
-
                 signal:
                   controller.signal,
-
                 headers:
                   getAuthenticatedHeaders(),
               }
             );
-
           if (
             controller.signal
               .aborted ||
@@ -1304,13 +1281,11 @@ export default function Employees() {
           ) {
             return;
           }
-
           const previewId =
             String(
               data?.employeeIdPreview ||
                 ""
             ).trim();
-
           if (
             !previewId
           ) {
@@ -1318,15 +1293,12 @@ export default function Employees() {
               "Employee ID preview is unavailable."
             );
           }
-
           setGeneratedId(
             previewId
           );
-
           setEditingEmployee(
             null
           );
-
           setShowEmployeeForm(
             true
           );
@@ -1340,12 +1312,10 @@ export default function Employees() {
           ) {
             return;
           }
-
           console.error(
             "Prepare employee form error:",
             error
           );
-
           if (
             isMountedRef.current
           ) {
@@ -1364,7 +1334,6 @@ export default function Employees() {
           ) {
             employeeFormMetaAbortRef.current =
               null;
-
             if (
               isMountedRef.current
             ) {
@@ -1380,25 +1349,21 @@ export default function Employees() {
         isReadOnlyEmployeeAccess,
       ]
     );
-
   const handleCloseEmployeeForm =
     useCallback(
       () => {
         setShowEmployeeForm(
           false
         );
-
         setEditingEmployee(
           null
         );
-
         setGeneratedId(
           ""
         );
       },
       []
     );
-
   const handleViewEmployee =
     useCallback(
       async (
@@ -1409,12 +1374,10 @@ export default function Employees() {
         ) {
           return;
         }
-
         const fullEmployee =
           await fetchEmployeeById(
             employee
           );
-
         if (
           fullEmployee &&
           isMountedRef.current
@@ -1428,7 +1391,6 @@ export default function Employees() {
         fetchEmployeeById,
       ]
     );
-
   const handleEditEmployee =
     useCallback(
       async (
@@ -1440,29 +1402,24 @@ export default function Employees() {
         ) {
           return;
         }
-
         const fullEmployee =
           await fetchEmployeeById(
             employee
           );
-
         if (
           !fullEmployee ||
           !isMountedRef.current
         ) {
           return;
         }
-
         setEditingEmployee(
           fullEmployee
         );
-
         setGeneratedId(
           getEmployeeId(
             fullEmployee
           )
         );
-
         setShowEmployeeForm(
           true
         );
@@ -1472,7 +1429,6 @@ export default function Employees() {
         isReadOnlyEmployeeAccess,
       ]
     );
-
   const handleOpenArchiveDialog =
     useCallback(
       (
@@ -1486,11 +1442,9 @@ export default function Employees() {
         ) {
           return;
         }
-
         setArchiveTarget(
           employee
         );
-
         setPageError(
           ""
         );
@@ -1501,7 +1455,6 @@ export default function Employees() {
         isReadOnlyEmployeeAccess,
       ]
     );
-
   const handleCloseArchiveDialog =
     useCallback(
       () => {
@@ -1517,7 +1470,6 @@ export default function Employees() {
         isArchiving,
       ]
     );
-
   const handleConfirmArchive =
     useCallback(
       async () => {
@@ -1525,7 +1477,6 @@ export default function Employees() {
           getEmployeeId(
             archiveTarget
           );
-
         if (
           !employeeId ||
           isArchiving ||
@@ -1534,21 +1485,17 @@ export default function Employees() {
         ) {
           return;
         }
-
         const employeeName =
           getEmployeeName(
             archiveTarget
           );
-
         try {
           setIsArchiving(
             true
           );
-
           setPageError(
             ""
           );
-
           await axios.put(
             `${EMPLOYEE_API_URL}/archive/${encodeURIComponent(
               employeeId
@@ -1557,7 +1504,6 @@ export default function Employees() {
             {
               timeout:
                 REQUEST_TIMEOUT_MS,
-
               headers:
                 getAuthenticatedHeaders({
                   "Content-Type":
@@ -1565,7 +1511,6 @@ export default function Employees() {
                 }),
             }
           );
-
           setEmployees(
             (
               currentEmployees
@@ -1580,19 +1525,15 @@ export default function Employees() {
                   employeeId
               )
           );
-
           setArchiveTarget(
             null
           );
-
           setSuccessMessage(
             `${employeeName} was archived successfully.`
           );
-
           emitDataUpdated(
             "ARCHIVE_EMPLOYEE"
           );
-
           await fetchEmployees({
             showError:
               false,
@@ -1604,7 +1545,6 @@ export default function Employees() {
             "Archive employee error:",
             error
           );
-
           setPageError(
             getEmployeeApiError(
               error,
@@ -1629,7 +1569,6 @@ export default function Employees() {
         isReadOnlyEmployeeAccess,
       ]
     );
-
   const handleSaveSuccess =
     useCallback(
       async (
@@ -1645,31 +1584,24 @@ export default function Employees() {
           isReadOnlyEmployeeAccess
         ) {
           handleCloseEmployeeForm();
-
           return;
         }
-
         const safeEmployeeName =
           employeeName ||
           "the employee";
-
         const isEditMode =
           mode === "edit";
-
         handleCloseEmployeeForm();
-
         setSuccessMessage(
           isEditMode
             ? `${safeEmployeeName}'s information was updated successfully.`
             : `${safeEmployeeName} was saved successfully.`
         );
-
         emitDataUpdated(
           isEditMode
             ? "EDIT_EMPLOYEE"
             : "ADD_EMPLOYEE"
         );
-
         if (
           !isEditMode &&
           page !==
@@ -1678,10 +1610,8 @@ export default function Employees() {
           setPage(
             1
           );
-
           return;
         }
-
         await fetchEmployees({
           showError:
             false,
@@ -1694,26 +1624,23 @@ export default function Employees() {
         page,
       ]
     );
-
   const employeeDescription =
     isHRCoordinator
       ? assignedCompany
-        ? `View employee records, deployment status, and compliance documents for ${assignedCompany}. HR Coordinator access is view-only.`
-        : "View employee records, deployment status, and compliance documents for your assigned client company. HR Coordinator access is view-only."
+        ? `Review employees assigned to ${assignedCompany}, including their position, deployment status, and compliance condition.`
+        : "Review employees under your assigned client company, including position, deployment status, and compliance condition."
       : isSuperAdmin
         ? "View employee records, deployment status, and compliance information. Super Admin access is view-only."
         : "Manage employee records, workforce status, deployment information, and compliance documents.";
-
   const archiveEmployeeId =
     getEmployeeId(
       archiveTarget
     );
-
   return (
-    <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
+    <main className="min-w-0 space-y-5 p-4 sm:p-6 lg:p-7">
       <PageHeader
         eyebrow="Workforce Management"
-        title="Employees Management"
+        title="Employee Management"
         description={
           employeeDescription
         }
@@ -1745,7 +1672,6 @@ export default function Employees() {
             >
               Refresh
             </Button>
-
             {isHRManager && (
               <Button
                 variant="secondary"
@@ -1766,7 +1692,6 @@ export default function Employees() {
                 Archived Employees
               </Button>
             )}
-
             {!isReadOnlyEmployeeAccess && (
               <RoleGuard
                 permission={
@@ -1798,13 +1723,119 @@ export default function Employees() {
           </>
         }
       />
-
-      <FilterBar
-        resultCount={
-          matchingEmployeeCount
-        }
-        resultLabel="employee"
-        actions={
+      {isHRCoordinator && (
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
+                <FiBriefcase
+                  size={17}
+                  aria-hidden="true"
+                />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  Assigned Client Company
+                </p>
+                <p className="mt-0.5 truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+                  {assignedCompany || "Assigned Client Company"}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  Showing employees available within your assigned company scope.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <FiShield
+                aria-hidden="true"
+              />
+              View-only access
+              <span aria-hidden="true">•</span>
+              {activeEmployeeCount} active employee(s)
+            </div>
+          </div>
+        </section>
+      )}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+        <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
+          <div
+            className={
+              isHRCoordinator
+                ? "min-w-0 xl:col-span-3"
+                : "min-w-0 xl:col-span-4"
+            }
+          >
+            <SearchInput
+              label="Search Employees"
+              placeholder={
+                isHRCoordinator
+                  ? "Search by name or employee ID..."
+                  : "Search by name, employee ID, or company..."
+              }
+              value={search}
+              disabled={isLoadingEmployees}
+              onChange={handleSearchChange}
+              onClear={handleClearSearch}
+            />
+          </div>
+          {isHRCoordinator && (
+            <SelectFilter
+              id="employee-position-filter"
+              label="Position"
+              value={filterPosition}
+              options={positionOptions}
+              disabled={isLoadingEmployees}
+              onChange={handlePositionChange}
+              className="min-w-0 xl:col-span-2"
+            />
+          )}
+          <SelectFilter
+            id="employee-status-filter"
+            label="Employment Status"
+            value={filterStatus}
+            options={ACTIVE_STATUS_OPTIONS}
+            disabled={isLoadingEmployees}
+            onChange={handleStatusChange}
+            className="min-w-0 xl:col-span-2"
+          />
+          <SelectFilter
+            id="employee-compliance-filter"
+            label="Compliance Status"
+            value={filterCompliance}
+            options={COMPLIANCE_OPTIONS}
+            disabled={isLoadingEmployees}
+            onChange={handleComplianceChange}
+            className={
+              isHRCoordinator
+                ? "min-w-0 xl:col-span-2"
+                : "min-w-0 xl:col-span-3"
+            }
+          />
+          <SelectFilter
+            id="employee-sort-filter"
+            label="Sort By"
+            value={sortBy}
+            options={EMPLOYEE_SORT_OPTIONS}
+            disabled={isLoadingEmployees}
+            onChange={handleSortChange}
+            className="min-w-0 xl:col-span-3"
+          />
+        </div>
+        <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">
+              {matchingEmployeeCount}
+            </span>
+            <span>
+              {matchingEmployeeCount === 1 ? "employee" : "employees"} in this view
+            </span>
+            {debouncedSearch && debouncedSearch !== search.trim() && (
+              <>
+                <span aria-hidden="true">•</span>
+                <span>Updating results...</span>
+              </>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -1812,91 +1843,12 @@ export default function Employees() {
               !hasActiveFilters ||
               isLoadingEmployees
             }
-            onClick={
-              handleResetFilters
-            }
+            onClick={handleResetFilters}
           >
             Clear Filters
           </Button>
-        }
-      >
-        <div className="w-full sm:col-span-2 xl:w-80">
-          <SearchInput
-            label="Search employees"
-            hideLabel
-            placeholder={
-              isHRCoordinator
-                ? "Search assigned-company employees..."
-                : "Search by name, ID, or company..."
-            }
-            value={
-              search
-            }
-            disabled={
-              isLoadingEmployees
-            }
-            onChange={
-              handleSearchChange
-            }
-            onClear={
-              handleClearSearch
-            }
-          />
         </div>
-
-        <SelectFilter
-          id="employee-status-filter"
-          label="Employment Status"
-          value={
-            filterStatus
-          }
-          options={
-            ACTIVE_STATUS_OPTIONS
-          }
-          disabled={
-            isLoadingEmployees
-          }
-          onChange={
-            handleStatusChange
-          }
-        />
-
-        <SelectFilter
-          id="employee-compliance-filter"
-          label="Compliance Status"
-          value={
-            filterCompliance
-          }
-          options={
-            COMPLIANCE_OPTIONS
-          }
-          disabled={
-            isLoadingEmployees
-          }
-          onChange={
-            handleComplianceChange
-          }
-        />
-
-        <SelectFilter
-          id="employee-sort-filter"
-          label="Sort Employees"
-          value={
-            sortBy
-          }
-          options={
-            EMPLOYEE_SORT_OPTIONS
-          }
-          disabled={
-            isLoadingEmployees
-          }
-          onChange={
-            handleSortChange
-          }
-          className="xl:w-56"
-        />
-      </FilterBar>
-
+      </section>
       {pageError && (
         <ErrorState
           compact
@@ -1910,11 +1862,10 @@ export default function Employees() {
           }
         />
       )}
-
       {isLoadingEmployees ? (
         <LoadingSkeleton
           rows={6}
-          columns={7}
+          columns={6}
           showHeader
         />
       ) : (
@@ -1933,7 +1884,12 @@ export default function Employees() {
               filterStatus !==
                 "All" ||
               filterCompliance !==
-                "All"
+                "All" ||
+              (
+                isHRCoordinator &&
+                filterPosition !==
+                  "All"
+              )
             }
             onClearSearch={
               handleClearSearch
@@ -1968,7 +1924,6 @@ export default function Employees() {
               isHRCoordinator
             }
           />
-
           {totalPages >
             1 && (
             <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-950">
@@ -1993,7 +1948,6 @@ export default function Employees() {
                 </span>{" "}
                 employees
               </p>
-
               <div className="flex items-center gap-2">
                 <Button
                   variant="secondary"
@@ -2017,7 +1971,6 @@ export default function Employees() {
                 >
                   Previous
                 </Button>
-
                 <span className="min-w-24 text-center text-sm font-semibold text-gray-700 dark:text-gray-200">
                   Page{" "}
                   {
@@ -2028,7 +1981,6 @@ export default function Employees() {
                     totalPages
                   }
                 </span>
-
                 <Button
                   variant="secondary"
                   size="sm"
@@ -2054,7 +2006,6 @@ export default function Employees() {
               </div>
             </div>
           )}
-
           {matchingEmployeeCount >
             0 &&
             totalPages <=
@@ -2073,7 +2024,6 @@ export default function Employees() {
           )}
         </>
       )}
-
       {!isReadOnlyEmployeeAccess &&
         showEmployeeForm &&
         !editingEmployee && (
@@ -2097,7 +2047,6 @@ export default function Employees() {
           }
         />
       )}
-
       {!isReadOnlyEmployeeAccess &&
         showEmployeeForm &&
         editingEmployee && (
@@ -2121,7 +2070,6 @@ export default function Employees() {
           }
         />
       )}
-
       {viewEmployee && (
         <EmployeeModal
           employee={
@@ -2134,7 +2082,6 @@ export default function Employees() {
           }
         />
       )}
-
       <ConfirmDialog
         open={
           Boolean(
@@ -2175,7 +2122,6 @@ export default function Employees() {
           </strong>
           ?
         </p>
-
         <p className="mt-2">
           The employee will be
           marked as{" "}
@@ -2190,7 +2136,6 @@ export default function Employees() {
           Archived Employees.
         </p>
       </ConfirmDialog>
-
       {successMessage && (
         <SuccessToast
           title="Employee record updated"

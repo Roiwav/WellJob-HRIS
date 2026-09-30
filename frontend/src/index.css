@@ -24,7 +24,7 @@
     min-height: 100vh;
     margin: 0;
     background-color: rgb(248 250 252);
-    color: rgb(15 23 42);
+    color: rgb(30 41 59);
     font-family:
       Inter,
       ui-sans-serif,
@@ -33,6 +33,10 @@
       BlinkMacSystemFont,
       "Segoe UI",
       sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: -0.005em;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -41,7 +45,40 @@
 
   .dark body {
     background-color: rgb(2 6 23);
+    color: rgb(226 232 240);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: rgb(15 23 42);
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+  }
+
+  .dark h1,
+  .dark h2,
+  .dark h3,
+  .dark h4,
+  .dark h5,
+  .dark h6 {
     color: rgb(241 245 249);
+  }
+
+  p,
+  li,
+  td,
+  th,
+  label,
+  input,
+  select,
+  textarea,
+  button {
+    line-height: 1.5;
   }
 
   button,
@@ -66,14 +103,14 @@
   }
 
   ::selection {
-    background-color: rgb(99 102 241 / 0.22);
+    background-color: rgb(99 102 241 / 0.18);
     color: inherit;
   }
 
   * {
     scrollbar-width: thin;
     scrollbar-color:
-      rgb(148 163 184 / 0.65)
+      rgb(148 163 184 / 0.55)
       transparent;
   }
 
@@ -89,26 +126,26 @@
   *::-webkit-scrollbar-thumb {
     border: 3px solid transparent;
     border-radius: 9999px;
-    background-color: rgb(148 163 184 / 0.65);
+    background-color: rgb(148 163 184 / 0.55);
     background-clip: padding-box;
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background-color: rgb(100 116 139 / 0.8);
+    background-color: rgb(100 116 139 / 0.72);
   }
 
   .dark * {
     scrollbar-color:
-      rgb(71 85 105 / 0.85)
+      rgb(71 85 105 / 0.75)
       transparent;
   }
 
   .dark *::-webkit-scrollbar-thumb {
-    background-color: rgb(71 85 105 / 0.85);
+    background-color: rgb(71 85 105 / 0.75);
   }
 
   .dark *::-webkit-scrollbar-thumb:hover {
-    background-color: rgb(100 116 139 / 0.9);
+    background-color: rgb(100 116 139 / 0.82);
   }
 }
 
@@ -157,32 +194,32 @@
    */
 
   .ui-page-title {
-    @apply text-2xl font-extrabold tracking-tight text-slate-900;
-    @apply dark:text-white;
+    @apply text-xl font-bold tracking-tight text-slate-900 sm:text-2xl;
+    @apply dark:text-slate-100;
   }
 
   .ui-section-title {
-    @apply text-lg font-extrabold text-slate-900;
-    @apply dark:text-white;
+    @apply text-base font-bold text-slate-900;
+    @apply dark:text-slate-100;
   }
 
   .ui-description {
-    @apply text-sm leading-6 text-slate-500;
+    @apply text-sm font-normal leading-6 text-slate-500;
     @apply dark:text-slate-400;
   }
 
   .ui-label {
-    @apply mb-1.5 block text-sm font-bold text-slate-700;
+    @apply mb-1.5 block text-xs font-semibold text-slate-600;
     @apply dark:text-slate-300;
   }
 
   .ui-helper-text {
-    @apply mt-1.5 text-xs leading-5 text-slate-500;
+    @apply mt-1.5 text-xs font-normal leading-5 text-slate-500;
     @apply dark:text-slate-400;
   }
 
   .ui-error-text {
-    @apply mt-1.5 text-xs font-semibold text-red-600;
+    @apply mt-1.5 text-xs font-medium text-red-600;
     @apply dark:text-red-400;
   }
 
@@ -192,28 +229,28 @@
 
   .ui-control {
     @apply min-h-11 w-full rounded-control border border-slate-300 bg-white px-4 py-2.5;
-    @apply text-sm font-semibold text-slate-900 shadow-control outline-none;
+    @apply text-sm font-medium text-slate-800 shadow-control outline-none;
     @apply transition duration-ui;
-    @apply placeholder:text-slate-400;
+    @apply placeholder:font-normal placeholder:text-slate-400;
     @apply hover:border-slate-400;
-    @apply focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20;
+    @apply focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15;
     @apply disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:opacity-70;
-    @apply dark:border-slate-700 dark:bg-slate-800 dark:text-white;
+    @apply dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200;
     @apply dark:placeholder:text-slate-500;
     @apply dark:hover:border-slate-600;
-    @apply dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20;
+    @apply dark:focus:border-indigo-400 dark:focus:ring-indigo-400/15;
     @apply dark:disabled:bg-slate-800 dark:disabled:text-slate-500;
   }
 
   .ui-control-error {
     @apply border-red-500;
-    @apply focus:border-red-500 focus:ring-red-500/20;
-    @apply dark:border-red-500 dark:focus:border-red-500 dark:focus:ring-red-500/20;
+    @apply focus:border-red-500 focus:ring-red-500/15;
+    @apply dark:border-red-500 dark:focus:border-red-500 dark:focus:ring-red-500/15;
   }
 
   .ui-control-success {
     @apply border-emerald-500;
-    @apply focus:border-emerald-500 focus:ring-emerald-500/20;
+    @apply focus:border-emerald-500 focus:ring-emerald-500/15;
     @apply dark:border-emerald-500;
   }
 
@@ -231,9 +268,9 @@
 
   .ui-button {
     @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-control px-4 py-2;
-    @apply text-sm font-bold shadow-control outline-none;
+    @apply text-sm font-semibold shadow-control outline-none;
     @apply transition duration-ui;
-    @apply focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-2;
+    @apply focus-visible:ring-2 focus-visible:ring-indigo-500/25 focus-visible:ring-offset-2;
     @apply disabled:cursor-not-allowed disabled:opacity-60;
     @apply dark:focus-visible:ring-offset-slate-900;
   }
@@ -241,7 +278,7 @@
   .ui-icon-button {
     @apply inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-control;
     @apply outline-none transition duration-ui;
-    @apply focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-2;
+    @apply focus-visible:ring-2 focus-visible:ring-indigo-500/25 focus-visible:ring-offset-2;
     @apply disabled:cursor-not-allowed disabled:opacity-60;
     @apply dark:focus-visible:ring-offset-slate-900;
   }
@@ -280,8 +317,21 @@
 }
 
 @layer utilities {
+  /*
+   * TYPOGRAPHY NORMALIZATION
+   *
+   * Existing screens use font-black / font-extrabold heavily.
+   * Soften those utilities globally to keep the HRIS readable
+   * without requiring every page to be rewritten at once.
+   */
+
+  .font-black,
+  .font-extrabold {
+    font-weight: 700;
+  }
+
   .ui-focus-ring {
-    @apply outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-2;
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/25 focus-visible:ring-offset-2;
     @apply dark:focus-visible:ring-offset-slate-900;
   }
 

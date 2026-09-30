@@ -1,5 +1,9 @@
 import SharedStatusBadge from "../ui/StatusBadge";
 
+const EMPLOYEE_STATUS_INLINE_CLASSES =
+  "!rounded-none !border-0 !bg-transparent !p-0 !font-medium " +
+  "!text-slate-600 dark:!text-slate-300";
+
 export default function StatusBadge({
   status,
   label,
@@ -15,7 +19,7 @@ export default function StatusBadge({
       tone={tone}
       icon={icon}
       size={size}
-      className={className}
+      className={`${EMPLOYEE_STATUS_INLINE_CLASSES} ${className}`.trim()}
     />
   );
 }

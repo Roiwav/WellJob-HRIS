@@ -5,11 +5,13 @@ import {
   EyeOff,
   HelpCircle,
   LoaderCircle,
+  LockKeyhole,
   Moon,
+  ShieldCheck,
   Sun,
 } from "lucide-react";
 
-import logo from "../assets/Logo.png";
+import welljobLogo from "../assets/welljob.png";
 import { useAuth } from "../context/useAuth";
 import Dialog from "../components/ui/Dialog";
 import useTheme from "../hooks/useTheme";
@@ -19,10 +21,10 @@ const GENERIC_RECOVERY_MESSAGE =
   "If the submitted details are eligible for recovery, a password-reset link may be sent to the account's verified recovery email.";
 
 const RECOVERY_INPUT_CLASS =
-  "h-11 w-full rounded-xl border border-gray-300 bg-white px-4 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-600 dark:bg-slate-800 dark:text-white";
+  "h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500";
 
 const RECOVERY_LABEL_CLASS =
-  "block text-sm font-semibold text-gray-700 dark:text-gray-200";
+  "block text-sm font-semibold text-slate-700 dark:text-slate-200";
 
 function normalizeIdentityInput(value) {
   return value.trim().replace(/\s+/g, " ");
@@ -41,21 +43,16 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [forgotPasswordOpen, setForgotPasswordOpen] =
-    useState(false);
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
 
   const [recoveryEmail, setRecoveryEmail] = useState("");
-  const [recoveryUsername, setRecoveryUsername] =
-    useState("");
-  const [recoveryFullName, setRecoveryFullName] =
-    useState("");
+  const [recoveryUsername, setRecoveryUsername] = useState("");
+  const [recoveryFullName, setRecoveryFullName] = useState("");
 
   const [recoveryError, setRecoveryError] = useState("");
-  const [recoveryMessage, setRecoveryMessage] =
-    useState("");
+  const [recoveryMessage, setRecoveryMessage] = useState("");
 
-  const [isRequestingRecovery, setIsRequestingRecovery] =
-    useState(false);
+  const [isRequestingRecovery, setIsRequestingRecovery] = useState(false);
 
   const handleLogin = async (event) => {
     event.preventDefault();
@@ -94,7 +91,6 @@ export default function Login() {
               ? "The server is currently unavailable. Please try again."
               : "Invalid username or password.")
         );
-
         return;
       }
 
@@ -108,7 +104,6 @@ export default function Login() {
         setError(
           "Login succeeded, but the authentication session could not be created. Please try again."
         );
-
         return;
       }
 
@@ -120,7 +115,6 @@ export default function Login() {
         setError(
           "Login succeeded, but the user session could not be initialized. Please try again."
         );
-
         return;
       }
 
@@ -135,13 +129,8 @@ export default function Login() {
           data.user?.must_change_password === "1",
       };
 
-      // Preserve the existing session storage behavior.
       localStorage.setItem("token", token);
-
-      localStorage.setItem(
-        "user",
-        JSON.stringify(normalizedUser)
-      );
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
 
       setUser(normalizedUser);
 
@@ -149,7 +138,6 @@ export default function Login() {
         navigate("/change-password", {
           replace: true,
         });
-
         return;
       }
 
@@ -218,10 +206,8 @@ export default function Login() {
     }
 
     const email = recoveryEmail.trim();
-
     const recoveryAccountUsername =
       normalizeIdentityInput(recoveryUsername);
-
     const fullName =
       normalizeIdentityInput(recoveryFullName);
 
@@ -229,7 +215,6 @@ export default function Login() {
       setRecoveryError(
         "Enter your registered recovery email address."
       );
-
       return;
     }
 
@@ -237,7 +222,6 @@ export default function Login() {
       setRecoveryError(
         "Recovery email must not exceed 254 characters."
       );
-
       return;
     }
 
@@ -245,7 +229,6 @@ export default function Login() {
       setRecoveryError(
         "Enter the username of your WELLJOB account."
       );
-
       return;
     }
 
@@ -253,7 +236,6 @@ export default function Login() {
       setRecoveryError(
         "Username must not exceed 150 characters."
       );
-
       return;
     }
 
@@ -261,7 +243,6 @@ export default function Login() {
       setRecoveryError(
         "Enter the full name registered to your WELLJOB account."
       );
-
       return;
     }
 
@@ -269,7 +250,6 @@ export default function Login() {
       setRecoveryError(
         "Full name must not exceed 150 characters."
       );
-
       return;
     }
 
@@ -302,7 +282,6 @@ export default function Login() {
           setRecoveryError(
             "Too many recovery requests. Please wait and try again later."
           );
-
           return;
         }
 
@@ -310,7 +289,6 @@ export default function Login() {
           setRecoveryError(
             "Password recovery is temporarily unavailable. Please try again later."
           );
-
           return;
         }
 
@@ -318,7 +296,6 @@ export default function Login() {
           data?.message ||
             "Unable to process your request right now. Please try again later."
         );
-
         return;
       }
 
@@ -330,9 +307,7 @@ export default function Login() {
        * require all three fields before creating
        * a pending approval request.
        */
-      setRecoveryMessage(
-        GENERIC_RECOVERY_MESSAGE
-      );
+      setRecoveryMessage(GENERIC_RECOVERY_MESSAGE);
 
       setRecoveryEmail("");
       setRecoveryUsername("");
@@ -352,207 +327,379 @@ export default function Login() {
     !recoveryFullName.trim();
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900">
-      <header className="border-b border-gray-200 bg-white/80 px-6 py-4 backdrop-blur-sm dark:border-slate-800/50 dark:bg-slate-950/80">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <img
-              src={logo}
-              alt="Welljob Solutions logo"
-              className="h-9 w-9 shrink-0 object-contain"
-            />
+    <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-slate-50 text-slate-900 transition-colors dark:bg-[#020817] dark:text-white lg:h-screen lg:overflow-hidden">
+      <style>{`
+        @keyframes login-grid-shift {
+          from { background-position: 0 0; }
+          to { background-position: 52px 52px; }
+        }
 
-            <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg dark:text-white">
-              Welljob Solutions &amp; General Services
-            </h1>
+        @keyframes login-orbit {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes login-orbit-reverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
+        }
+
+        @keyframes login-pulse {
+          0%, 100% {
+            opacity: .45;
+            transform: scale(.92);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1.08);
+          }
+        }
+
+        .login-grid {
+          background-image:
+            linear-gradient(rgba(56,189,248,.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(99,102,241,.05) 1px, transparent 1px);
+          background-size: 52px 52px;
+          animation: login-grid-shift 34s linear infinite;
+        }
+
+        .login-orbit-a {
+          animation: login-orbit 14s linear infinite;
+        }
+
+        .login-orbit-b {
+          animation: login-orbit-reverse 20s linear infinite;
+        }
+
+        .login-pulse {
+          animation: login-pulse 2.6s ease-in-out infinite;
+        }
+
+        @media (min-width: 1024px) and (max-height: 720px) {
+          .login-brand-title {
+            font-size: 2rem !important;
+            line-height: 1.02 !important;
+          }
+
+          .login-brand-copy {
+            margin-top: .75rem !important;
+            line-height: 1.35rem !important;
+          }
+
+          .login-orbit-shell {
+            width: 165px !important;
+            height: 165px !important;
+            margin-top: .75rem !important;
+          }
+
+          .login-card-head {
+            padding-top: .8rem !important;
+            padding-bottom: .8rem !important;
+          }
+
+          .login-card-body {
+            padding-top: .9rem !important;
+            padding-bottom: .9rem !important;
+          }
+
+          .login-form {
+            gap: .75rem !important;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .login-grid {
+            animation: none !important;
+          }
+        }
+      `}</style>
+
+      <div className="pointer-events-none absolute inset-0 hidden dark:block">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_8%_8%,rgba(79,70,229,0.30),transparent_28%),radial-gradient(circle_at_88%_14%,rgba(14,165,233,0.16),transparent_30%),radial-gradient(circle_at_82%_86%,rgba(124,58,237,0.22),transparent_30%)]" />
+        <div className="login-grid absolute inset-0 opacity-90" />
+        <div className="absolute -bottom-20 left-[-8%] h-32 w-[116%] rounded-[50%] border-t border-cyan-400/25 shadow-[0_-10px_36px_rgba(34,211,238,0.12)]" />
+      </div>
+
+      <header className="relative z-20 shrink-0 border-b border-slate-200/80 bg-white/90 px-5 py-3 backdrop-blur-xl dark:border-white/[0.07] dark:bg-slate-950 sm:px-8 lg:px-10">
+        <div className="mx-auto flex w-full max-w-[1380px] items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-13 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-blue-200 bg-white p-1.5 shadow-sm dark:border-blue-400/20 dark:bg-slate-950 dark:shadow-[0_0_24px_rgba(59,130,246,0.14)]">
+              <img
+                src={welljobLogo}
+                alt="Welljob Solutions logo"
+                className="h-full w-full object-contain"
+                draggable="false"
+              />
+            </div>
+
+            <div className="min-w-0">
+              <p className="truncate text-sm font-extrabold tracking-wide text-slate-900 dark:text-white">
+                WELLJOB SOLUTIONS
+              </p>
+
+              <p className="truncate text-[9px] font-bold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                Human Resource Information System
+              </p>
+            </div>
           </div>
 
-          <span className="hidden text-xs font-medium text-gray-500 sm:block dark:text-gray-400">
-            HR Management System
-          </span>
+          <div className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/[0.06] dark:text-slate-200 sm:flex">
+            <span className="login-pulse h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_14px_rgba(52,211,153,0.85)]" />
+            Secure Access
+          </div>
         </div>
       </header>
 
-      <main className="relative flex flex-1 items-center justify-center overflow-hidden p-4 sm:p-6">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute h-[34rem] w-[34rem] rounded-full bg-gradient-to-r from-blue-200/50 to-indigo-200/50 blur-3xl dark:from-blue-600/20 dark:to-indigo-600/20"
-        />
-
-        <div className="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white/95 p-6 shadow-2xl backdrop-blur-xl sm:p-8 dark:border-slate-700/60 dark:bg-slate-900/95">
-          <div className="space-y-2 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 p-2 shadow-lg dark:from-blue-600 dark:to-indigo-700">
-              <img
-                src={logo}
-                alt=""
-                aria-hidden="true"
-                className="h-full w-full object-contain"
-              />
-            </div>
-
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-              Welcome Back
-            </h2>
-
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Enter your credentials to access the HR system.
-            </p>
-          </div>
-
-          <form
-            onSubmit={handleLogin}
-            className="mt-6 space-y-5"
-            noValidate
-          >
-            <div className="space-y-2">
-              <label
-                htmlFor="username"
-                className="block text-sm font-semibold text-gray-700 dark:text-gray-200"
-              >
-                Username
-              </label>
-
-              <input
-                id="username"
-                name="username"
-                type="text"
-                autoComplete="username"
-                required
-                disabled={isSubmitting}
-                value={username}
-                onChange={(event) => {
-                  setUsername(event.target.value);
-                  clearError();
-                }}
-                placeholder="Enter your username"
-                className="h-11 w-full rounded-xl border border-gray-300 bg-white px-4 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label
-                htmlFor="password"
-                className="block text-sm font-semibold text-gray-700 dark:text-gray-200"
-              >
-                Password
-              </label>
-
-              <div className="relative">
-                <input
-                  id="password"
-                  name="password"
-                  type={
-                    showPassword
-                      ? "text"
-                      : "password"
-                  }
-                  autoComplete="current-password"
-                  required
-                  disabled={isSubmitting}
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    clearError();
-                  }}
-                  onKeyUp={(event) =>
-                    setCapsLockOn(
-                      event.getModifierState("CapsLock")
-                    )
-                  }
-                  onKeyDown={(event) =>
-                    setCapsLockOn(
-                      event.getModifierState("CapsLock")
-                    )
-                  }
-                  onBlur={() => setCapsLockOn(false)}
-                  placeholder="Enter your password"
-                  className="h-11 w-full rounded-xl border border-gray-300 bg-white px-4 pr-12 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+      <main className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-4 sm:px-6 lg:overflow-hidden lg:px-8 lg:py-3">
+        <div className="mx-auto grid w-full max-w-[1160px] items-center gap-7 lg:grid-cols-[0.92fr_1.08fr] lg:gap-8 xl:gap-10">
+          <section className="login-brand-panel hidden lg:block">
+            <div className="max-w-lg">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-700 dark:border-cyan-400/20 dark:bg-cyan-950 dark:text-cyan-200">
+                <ShieldCheck
+                  size={14}
+                  aria-hidden="true"
                 />
+                Secure Workforce Access
+              </div>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowPassword(
-                      (current) => !current
-                    )
-                  }
-                  disabled={isSubmitting}
-                  aria-label={
-                    showPassword
-                      ? "Hide password"
-                      : "Show password"
-                  }
-                  aria-pressed={showPassword}
-                  className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
+              <h1 className="login-brand-title text-3xl font-extrabold leading-tight tracking-[-0.04em] text-slate-950 dark:text-white xl:text-4xl">
+                Welcome to
+                <span className="mt-1 block bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 bg-clip-text text-transparent">
+                  WELLJOB SOLUTIONS HRIS
+                </span>
+              </h1>
+
+              <p className="login-brand-copy mt-4 max-w-xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Sign in to continue managing workforce records, deployment activity,
+                incidents, compliance, and HR operations from one centralized system.
+              </p>
+
+              <div className="login-orbit-shell relative mt-5 flex h-[200px] w-[200px] items-center justify-center">
+                <div className="absolute inset-0 rounded-full bg-blue-500/10 blur-3xl" />
+
+                <div className="login-orbit-a absolute inset-0 rounded-full border border-cyan-400/25">
+                  <span className="absolute left-1/2 top-[-5px] h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-cyan-400 shadow-[0_0_18px_rgba(34,211,238,0.9)]" />
+                </div>
+
+                <div className="login-orbit-b absolute inset-7 rounded-full border border-violet-400/25">
+                  <span className="absolute bottom-[17%] right-[-4px] h-2 w-2 rounded-full bg-violet-400 shadow-[0_0_18px_rgba(167,139,250,0.9)]" />
+                </div>
+
+                <div className="relative flex h-24 w-36 items-center justify-center overflow-hidden rounded-[22px] border border-blue-300/30 bg-white p-3 shadow-xl dark:bg-slate-950 dark:shadow-[0_0_38px_rgba(59,130,246,0.18)]">
+                  <img
+                    src={welljobLogo}
+                    alt=""
+                    aria-hidden="true"
+                    className="h-full w-full object-contain"
+                    draggable="false"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                <LockKeyhole
+                  size={14}
+                  className="text-cyan-500 dark:text-cyan-300"
+                  aria-hidden="true"
+                />
+                Authorized WELLJOB personnel only
+              </div>
+            </div>
+          </section>
+
+          <section className="mx-auto w-full max-w-[390px]">
+            <div className="login-card overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_26px_70px_rgba(2,8,23,0.55)]">
+              <div className="login-card-head border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-600 dark:text-cyan-300">
+                      Secure Sign In
+                    </p>
+
+                    <h2 className="mt-1 text-xl font-extrabold text-slate-950 dark:text-white">
+                      Welcome Back
+                    </h2>
+
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Enter your WELLJOB account credentials.
+                    </p>
+                  </div>
+
+                  <div className="flex h-10 w-13 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-blue-200 bg-slate-50 p-1.5 dark:border-blue-400/20 dark:bg-slate-950">
+                    <img
+                      src={welljobLogo}
+                      alt=""
+                      aria-hidden="true"
+                      className="h-full w-full object-contain"
+                      draggable="false"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="login-card-body px-5 py-5">
+                <form
+                  onSubmit={handleLogin}
+                  className="login-form space-y-4"
+                  noValidate
                 >
-                  {showPassword ? (
-                    <EyeOff size={19} />
-                  ) : (
-                    <Eye size={19} />
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="username"
+                      className="block text-sm font-semibold text-slate-700 dark:text-slate-200"
+                    >
+                      Username
+                    </label>
+
+                    <input
+                      id="username"
+                      name="username"
+                      type="text"
+                      autoComplete="username"
+                      required
+                      disabled={isSubmitting}
+                      value={username}
+                      onChange={(event) => {
+                        setUsername(event.target.value);
+                        clearError();
+                      }}
+                      placeholder="Enter your username"
+                      className="h-10 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="password"
+                      className="block text-sm font-semibold text-slate-700 dark:text-slate-200"
+                    >
+                      Password
+                    </label>
+
+                    <div className="relative">
+                      <input
+                        id="password"
+                        name="password"
+                        type={
+                          showPassword
+                            ? "text"
+                            : "password"
+                        }
+                        autoComplete="current-password"
+                        required
+                        disabled={isSubmitting}
+                        value={password}
+                        onChange={(event) => {
+                          setPassword(event.target.value);
+                          clearError();
+                        }}
+                        onKeyUp={(event) =>
+                          setCapsLockOn(
+                            event.getModifierState("CapsLock")
+                          )
+                        }
+                        onKeyDown={(event) =>
+                          setCapsLockOn(
+                            event.getModifierState("CapsLock")
+                          )
+                        }
+                        onBlur={() => setCapsLockOn(false)}
+                        placeholder="Enter your password"
+                        className="h-10 w-full rounded-xl border border-slate-300 bg-white px-4 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowPassword(
+                            (current) => !current
+                          )
+                        }
+                        disabled={isSubmitting}
+                        aria-label={
+                          showPassword
+                            ? "Hide password"
+                            : "Show password"
+                        }
+                        aria-pressed={showPassword}
+                        className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+                      >
+                        {showPassword ? (
+                          <EyeOff size={19} />
+                        ) : (
+                          <Eye size={19} />
+                        )}
+                      </button>
+                    </div>
+
+                    {capsLockOn && (
+                      <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                        Caps Lock is on.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={openForgotPassword}
+                      disabled={isSubmitting}
+                      className="inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-cyan-700 transition hover:text-cyan-800 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 disabled:cursor-not-allowed disabled:opacity-60 dark:text-cyan-300 dark:hover:text-cyan-200"
+                    >
+                      <HelpCircle
+                        size={16}
+                        aria-hidden="true"
+                      />
+                      Forgot password?
+                    </button>
+                  </div>
+
+                  {error && (
+                    <div
+                      role="alert"
+                      aria-live="assertive"
+                      className="rounded-xl border border-red-200 bg-red-50 p-3 text-center text-sm font-medium text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300"
+                    >
+                      {error}
+                    </div>
                   )}
-                </button>
+
+                  <button
+                    type="submit"
+                    disabled={
+                      isSubmitting ||
+                      !username.trim() ||
+                      !password
+                    }
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 px-4 text-sm font-extrabold text-white shadow-lg shadow-blue-950/20 transition hover:-translate-y-0.5 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-4 focus:ring-cyan-500/20 disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-60"
+                  >
+                    {isSubmitting && (
+                      <LoaderCircle
+                        className="h-5 w-5 animate-spin"
+                        aria-hidden="true"
+                      />
+                    )}
+
+                    {isSubmitting
+                      ? "Signing in..."
+                      : "Sign In"}
+                  </button>
+                </form>
+
+                <div className="mt-5 flex items-center justify-center gap-2 border-t border-slate-100 pt-3 text-center dark:border-slate-800">
+                  <ShieldCheck
+                    size={14}
+                    className="text-emerald-500"
+                    aria-hidden="true"
+                  />
+
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Secure access powered by Welljob Solutions
+                  </p>
+                </div>
               </div>
-
-              {capsLockOn && (
-                <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                  Caps Lock is on.
-                </p>
-              )}
             </div>
-
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={openForgotPassword}
-                disabled={isSubmitting}
-                className="inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-indigo-600 transition hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:text-indigo-300 dark:hover:text-indigo-200"
-              >
-                <HelpCircle
-                  size={16}
-                  aria-hidden="true"
-                />
-
-                Forgot password?
-              </button>
-            </div>
-
-            {error && (
-              <div
-                role="alert"
-                aria-live="assertive"
-                className="rounded-xl border border-red-200 bg-red-50 p-3 text-center text-sm font-medium text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300"
-              >
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={
-                isSubmitting ||
-                !username.trim() ||
-                !password
-              }
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 font-semibold text-white shadow-lg transition hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSubmitting && (
-                <LoaderCircle
-                  className="h-5 w-5 animate-spin"
-                  aria-hidden="true"
-                />
-              )}
-
-              {isSubmitting
-                ? "Signing in..."
-                : "Sign In"}
-            </button>
-          </form>
-
-          <div className="mt-6 border-t border-gray-200 pt-4 text-center dark:border-slate-700/60">
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Secure login powered by Welljob Solutions
-            </p>
-          </div>
+          </section>
         </div>
 
         <Dialog
@@ -584,10 +731,9 @@ export default function Login() {
                 {recoveryMessage}
               </div>
 
-              <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
-                If you receive a reset link, check your inbox
-                and spam folder. Otherwise, contact Technical
-                IT Support or an authorized system
+              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                If you receive a reset link, check your inbox and spam folder.
+                Otherwise, contact Technical IT Support or an authorized system
                 administrator for recovery assistance.
               </p>
             </div>
@@ -596,10 +742,9 @@ export default function Login() {
               onSubmit={handleRequestRecovery}
               className="space-y-4"
             >
-              <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
-                Enter the email, username, and full name
-                registered to your WELLJOB account. Your
-                recovery email must already be verified.
+              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Enter the email, username, and full name registered to your
+                WELLJOB account. Your recovery email must already be verified.
               </p>
 
               <div className="space-y-2">
@@ -695,7 +840,7 @@ export default function Login() {
                   isRequestingRecovery ||
                   recoveryFormIncomplete
                 }
-                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 font-semibold text-white shadow-lg transition hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 px-4 font-semibold text-white shadow-lg transition hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-4 focus:ring-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isRequestingRecovery && (
                   <LoaderCircle
@@ -710,10 +855,9 @@ export default function Login() {
               </button>
 
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-                If your recovery email is not yet registered
-                and verified, contact Technical IT Support
-                or an authorized system administrator for
-                account recovery assistance.
+                If your recovery email is not yet registered and verified,
+                contact Technical IT Support or an authorized system
+                administrator for account recovery assistance.
               </div>
             </form>
           )}
@@ -727,11 +871,11 @@ export default function Login() {
               ? "Switch to light mode"
               : "Switch to dark mode"
           }
-          className="fixed bottom-6 right-6 inline-flex h-12 w-12 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-lg transition hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/25 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          className="fixed bottom-4 right-4 z-20 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-cyan-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
         >
           {darkMode ? (
             <Sun
-              className="h-5 w-5 text-yellow-500"
+              className="h-5 w-5 text-amber-400"
               aria-hidden="true"
             />
           ) : (

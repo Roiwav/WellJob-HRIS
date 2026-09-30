@@ -1,16 +1,24 @@
-import { useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import {
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import {
   FiAlertTriangle,
+  FiArrowLeft,
   FiCheck,
   FiCheckCircle,
   FiEye,
   FiEyeOff,
+  FiKey,
   FiLoader,
   FiLock,
-  FiLogOut,
+  FiShield,
   FiX,
 } from "react-icons/fi";
+
+import { useNavigate } from "react-router-dom";
 
 import Dialog from "../components/ui/Dialog";
 import { API_BASE } from "../config/api";
@@ -20,7 +28,7 @@ import authenticatedFetch from "../utils/authenticatedFetch";
 const PASSWORD_RULES = [
   {
     key: "length",
-    label: "At least 8 characters",
+    label: "8–128 characters",
     test: (value) =>
       value.length >= 8 &&
       value.length <= 128,
@@ -61,6 +69,17 @@ function clearStoredSession() {
   localStorage.removeItem("user");
 }
 
+function getDisplayName(user) {
+  return (
+    user?.name ||
+    user?.fullName ||
+    user?.fullname ||
+    user?.full_name ||
+    user?.username ||
+    "Your account"
+  );
+}
+
 export default function ChangePassword() {
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
@@ -68,14 +87,19 @@ export default function ChangePassword() {
 
   const [currentPassword, setCurrentPassword] =
     useState("");
+
   const [newPassword, setNewPassword] =
     useState("");
+
   const [confirmPassword, setConfirmPassword] =
     useState("");
+
   const [loading, setLoading] =
     useState(false);
+
   const [fieldErrors, setFieldErrors] =
     useState({});
+
   const [modal, setModal] =
     useState(INITIAL_MODAL);
 
@@ -96,6 +120,9 @@ export default function ChangePassword() {
   const passwordsMatch =
     confirmPassword.length > 0 &&
     newPassword === confirmPassword;
+
+  const displayName =
+    getDisplayName(user);
 
   const showModal = ({
     type = "error",
@@ -136,8 +163,12 @@ export default function ChangePassword() {
     }
   };
 
-  const handleLogout = () => {
-    finishLogout();
+  const handleBackToProfile = () => {
+    if (loading) {
+      return;
+    }
+
+    navigate("/profile-settings");
   };
 
   const validateFields = () => {
@@ -233,10 +264,12 @@ export default function ChangePassword() {
           `${API_BASE}/users/change-password`,
           {
             method: "PUT",
+
             headers: {
               "Content-Type":
                 "application/json",
             },
+
             body: JSON.stringify({
               currentPassword,
               newPassword,
@@ -281,19 +314,6 @@ export default function ChangePassword() {
         return;
       }
 
-      /*
-       * The backend increments token_version after a
-       * successful password change.
-       *
-       * Therefore the JWT used for this request is now
-       * intentionally invalid. Remove the persisted
-       * credentials immediately so the revoked token
-       * cannot be reused by later requests.
-       *
-       * React user state is kept temporarily so this
-       * success dialog remains visible. It is cleared
-       * when the user continues to the login page.
-       */
       clearStoredSession();
 
       setCurrentPassword("");
@@ -330,144 +350,286 @@ export default function ChangePassword() {
     modal.type === "success";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-100 px-4 py-8 dark:bg-slate-950">
-      <section className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl sm:p-8 dark:border-slate-700 dark:bg-slate-900">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700 dark:bg-indigo-600/20 dark:text-indigo-300">
-          <FiLock
-            size={26}
-            aria-hidden="true"
-          />
-        </div>
-
-        <h1 className="text-center text-2xl font-bold text-gray-900 dark:text-white">
-          Change Password
-        </h1>
-
-        <p className="mt-2 text-center text-sm leading-6 text-gray-600 dark:text-slate-400">
-          Create a secure password for your
-          account. After changing it, you will
-          need to sign in again.
-        </p>
-
-        <form
-          onSubmit={handleSubmit}
-          className="mt-6 space-y-5"
-          noValidate
+    <main className="min-h-screen bg-slate-100 px-4 py-6 dark:bg-slate-950 sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto w-full max-w-5xl">
+        <button
+          type="button"
+          onClick={handleBackToProfile}
+          disabled={loading}
+          className="mb-5 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-slate-600 transition hover:bg-white hover:text-indigo-700 hover:shadow-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-indigo-300"
         >
-          <PasswordField
-            id="current-password"
-            label="Current Password"
-            value={currentPassword}
-            onChange={updateField(
-              setCurrentPassword,
-              "currentPassword"
-            )}
-            autoComplete="current-password"
-            disabled={loading}
-            error={
-              fieldErrors.currentPassword
-            }
-          />
+          <FiArrowLeft aria-hidden="true" />
+          Back to Profile Settings
+        </button>
 
-          <div>
-            <PasswordField
-              id="new-password"
-              label="New Password"
-              value={newPassword}
-              onChange={updateField(
-                setNewPassword,
-                "newPassword"
-              )}
-              autoComplete="new-password"
-              disabled={loading}
-              error={fieldErrors.newPassword}
+        <div className="grid overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900 lg:grid-cols-[0.9fr_1.1fr]">
+          <aside className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-indigo-700 to-violet-700 p-6 text-white sm:p-8 lg:p-10">
+            <div
+              className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl"
+              aria-hidden="true"
             />
 
             <div
-              className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-slate-950/60"
-              aria-live="polite"
-            >
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Password requirements
+              className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-violet-300/10 blur-3xl"
+              aria-hidden="true"
+            />
+
+            <div className="relative">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 shadow-inner ring-1 ring-white/20">
+                <FiShield
+                  size={27}
+                  aria-hidden="true"
+                />
+              </div>
+
+              <p className="mt-6 text-xs font-extrabold uppercase tracking-[0.2em] text-indigo-100">
+                Account Security
               </p>
 
-              <ul className="grid gap-1.5">
-                {passwordChecks.map(
-                  (rule) => (
-                    <li
-                      key={rule.key}
-                      className={`flex items-center gap-2 text-xs font-medium ${
-                        rule.passed
-                          ? "text-emerald-700 dark:text-emerald-300"
-                          : "text-gray-500 dark:text-gray-400"
-                      }`}
-                    >
-                      {rule.passed ? (
-                        <FiCheck
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <FiX
-                          aria-hidden="true"
-                        />
-                      )}
+              <h1 className="mt-2 text-3xl font-black tracking-tight">
+                Protect your WellJob account
+              </h1>
 
-                      {rule.label}
-                    </li>
-                  )
-                )}
-              </ul>
+              <p className="mt-4 max-w-md text-sm leading-7 text-indigo-100">
+                Update your password using a combination that is strong,
+                unique, and not used on another account.
+              </p>
+
+              <div className="mt-8 rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15">
+                    <FiLock aria-hidden="true" />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-sm font-extrabold text-white">
+                      {displayName}
+                    </p>
+
+                    <p className="mt-1 text-xs leading-5 text-indigo-100">
+                      After a successful password change, your current
+                      session will end and you will sign in again with
+                      your new password.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                {[
+                  "Use a password you do not use elsewhere.",
+                  "Avoid names, birthdays, or easy-to-guess patterns.",
+                  "Keep your password private and never share it.",
+                ].map((tip) => (
+                  <div
+                    key={tip}
+                    className="flex items-start gap-2.5 text-sm leading-6 text-indigo-50"
+                  >
+                    <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-200">
+                      <FiCheck
+                        size={12}
+                        aria-hidden="true"
+                      />
+                    </span>
+
+                    <span>{tip}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          </aside>
 
-          <PasswordField
-            id="confirm-password"
-            label="Confirm New Password"
-            value={confirmPassword}
-            onChange={updateField(
-              setConfirmPassword,
-              "confirmPassword"
-            )}
-            autoComplete="new-password"
-            disabled={loading}
-            error={
-              fieldErrors.confirmPassword
-            }
-            successMessage={
-              passwordsMatch
-                ? "Passwords match."
-                : ""
-            }
-          />
+          <section className="p-6 sm:p-8 lg:p-10">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
+                <FiKey
+                  size={20}
+                  aria-hidden="true"
+                />
+              </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading && (
-              <FiLoader
-                className="animate-spin"
-                aria-hidden="true"
+              <div>
+                <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                  Change Password
+                </h2>
+
+                <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                  Confirm your current password, then create a new secure one.
+                </p>
+              </div>
+            </div>
+
+            <form
+              onSubmit={handleSubmit}
+              className="mt-7 space-y-5"
+              noValidate
+            >
+              <PasswordField
+                id="current-password"
+                label="Current Password"
+                value={currentPassword}
+                onChange={updateField(
+                  setCurrentPassword,
+                  "currentPassword"
+                )}
+                autoComplete="current-password"
+                disabled={loading}
+                error={
+                  fieldErrors.currentPassword
+                }
               />
-            )}
 
-            {loading
-              ? "Updating password..."
-              : "Change Password"}
-          </button>
+              <div>
+                <PasswordField
+                  id="new-password"
+                  label="New Password"
+                  value={newPassword}
+                  onChange={updateField(
+                    setNewPassword,
+                    "newPassword"
+                  )}
+                  autoComplete="new-password"
+                  disabled={loading}
+                  error={
+                    fieldErrors.newPassword
+                  }
+                />
 
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={loading}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-gray-300/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-gray-200 dark:hover:bg-white/5"
-          >
-            <FiLogOut aria-hidden="true" />
-            Return to Login
-          </button>
-        </form>
-      </section>
+                <div
+                  className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/60"
+                  aria-live="polite"
+                >
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                      Password requirements
+                    </p>
+
+                    {newPassword && (
+                      <span
+                        className={[
+                          "rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide",
+                          isStrongPassword
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                            : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+                        ].join(" ")}
+                      >
+                        {isStrongPassword
+                          ? "Ready"
+                          : "Incomplete"}
+                      </span>
+                    )}
+                  </div>
+
+                  <ul className="grid gap-2 sm:grid-cols-2">
+                    {passwordChecks.map(
+                      (rule) => (
+                        <li
+                          key={rule.key}
+                          className={[
+                            "flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors",
+                            rule.passed
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+                              : "text-slate-500 dark:text-slate-400",
+                          ].join(" ")}
+                        >
+                          <span
+                            className={[
+                              "flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
+                              rule.passed
+                                ? "bg-emerald-100 dark:bg-emerald-500/15"
+                                : "bg-slate-200 dark:bg-slate-800",
+                            ].join(" ")}
+                          >
+                            {rule.passed ? (
+                              <FiCheck
+                                size={12}
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <FiX
+                                size={11}
+                                aria-hidden="true"
+                              />
+                            )}
+                          </span>
+
+                          {rule.label}
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </div>
+              </div>
+
+              <PasswordField
+                id="confirm-password"
+                label="Confirm New Password"
+                value={confirmPassword}
+                onChange={updateField(
+                  setConfirmPassword,
+                  "confirmPassword"
+                )}
+                autoComplete="new-password"
+                disabled={loading}
+                error={
+                  fieldErrors.confirmPassword
+                }
+                successMessage={
+                  passwordsMatch
+                    ? "Passwords match."
+                    : ""
+                }
+              />
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+                <div className="flex items-start gap-3">
+                  <FiAlertTriangle
+                    className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300"
+                    aria-hidden="true"
+                  />
+
+                  <p className="text-xs leading-5 text-amber-800 dark:text-amber-200">
+                    For security, changing your password signs out this
+                    session. You will be asked to sign in again after the
+                    update succeeds.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-extrabold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? (
+                  <>
+                    <FiLoader
+                      className="animate-spin"
+                      aria-hidden="true"
+                    />
+                    Updating password...
+                  </>
+                ) : (
+                  <>
+                    <FiLock aria-hidden="true" />
+                    Update Password
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleBackToProfile}
+                disabled={loading}
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-300/40 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <FiArrowLeft aria-hidden="true" />
+                Cancel and Return to Profile Settings
+              </button>
+            </form>
+          </section>
+        </div>
+      </div>
 
       <Dialog
         open={modal.open}
@@ -493,25 +655,27 @@ export default function ChangePassword() {
             type="button"
             onClick={closeModal}
             disabled={loading}
-            className={`inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-bold text-white transition focus:outline-none focus:ring-4 disabled:opacity-60 ${
+            className={[
+              "inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-bold text-white transition focus:outline-none focus:ring-4 disabled:opacity-60",
               isSuccess
                 ? "bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500/30"
-                : "bg-red-600 hover:bg-red-700 focus:ring-red-500/30"
-            }`}
+                : "bg-red-600 hover:bg-red-700 focus:ring-red-500/30",
+            ].join(" ")}
           >
             {modal.redirectToLogin
-              ? "Go to Login"
+              ? "Sign In Again"
               : "Close"}
           </button>
         }
       >
         <div className="flex items-start gap-4">
           <div
-            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+            className={[
+              "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl",
               isSuccess
                 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                : "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300"
-            }`}
+                : "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+            ].join(" ")}
           >
             {isSuccess ? (
               <FiCheckCircle
@@ -526,7 +690,7 @@ export default function ChangePassword() {
             )}
           </div>
 
-          <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
             {modal.message}
           </p>
         </div>
@@ -545,17 +709,22 @@ function PasswordField({
   error,
   successMessage,
 }) {
-  const [showPassword, setShowPassword] =
-    useState(false);
+  const [
+    showPassword,
+    setShowPassword,
+  ] = useState(false);
 
-  const errorId = `${id}-error`;
-  const successId = `${id}-success`;
+  const errorId =
+    `${id}-error`;
+
+  const successId =
+    `${id}-success`;
 
   return (
     <div>
       <label
         htmlFor={id}
-        className="mb-2 block text-sm font-semibold text-gray-700 dark:text-slate-300"
+        className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300"
       >
         {label}
       </label>
@@ -574,9 +743,13 @@ function PasswordField({
           disabled={disabled}
           value={value}
           onChange={(event) =>
-            onChange(event.target.value)
+            onChange(
+              event.target.value
+            )
           }
-          aria-invalid={Boolean(error)}
+          aria-invalid={
+            Boolean(error)
+          }
           aria-describedby={
             error
               ? errorId
@@ -584,18 +757,22 @@ function PasswordField({
                 ? successId
                 : undefined
           }
-          className={`h-11 w-full rounded-xl border bg-white px-3 pr-12 text-gray-900 outline-none transition focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-800 dark:text-white ${
+          className={[
+            "h-12 w-full rounded-xl border bg-white px-3.5 pr-12 text-sm font-medium text-slate-900 outline-none transition focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-800 dark:text-white",
             error
               ? "border-red-500 focus:border-red-500 focus:ring-red-500/15"
-              : "border-gray-300 focus:border-indigo-500 focus:ring-indigo-500/15 dark:border-slate-600"
-          }`}
+              : successMessage
+                ? "border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/15 dark:border-emerald-700"
+                : "border-slate-300 focus:border-indigo-500 focus:ring-indigo-500/15 dark:border-slate-600",
+          ].join(" ")}
         />
 
         <button
           type="button"
           onClick={() =>
             setShowPassword(
-              (current) => !current
+              (current) =>
+                !current
             )
           }
           disabled={disabled}
@@ -604,8 +781,10 @@ function PasswordField({
               ? `Hide ${label}`
               : `Show ${label}`
           }
-          aria-pressed={showPassword}
-          className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+          aria-pressed={
+            showPassword
+          }
+          className="absolute right-1.5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
         >
           {showPassword ? (
             <FiEyeOff aria-hidden="true" />
@@ -619,7 +798,7 @@ function PasswordField({
         <p
           id={errorId}
           role="alert"
-          className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-300"
+          className="mt-1.5 text-xs font-semibold text-red-600 dark:text-red-300"
         >
           {error}
         </p>
@@ -629,8 +808,9 @@ function PasswordField({
         successMessage && (
           <p
             id={successId}
-            className="mt-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+            className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300"
           >
+            <FiCheckCircle aria-hidden="true" />
             {successMessage}
           </p>
         )}

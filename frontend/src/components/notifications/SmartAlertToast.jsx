@@ -12,94 +12,159 @@ import {
   FiZap,
 } from "react-icons/fi";
 
-function normalizeValue(value) {
-  return String(value || "")
+function normalizeValue(
+  value
+) {
+  return String(
+    value || ""
+  )
     .trim()
     .toLowerCase()
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ");
+    .replace(
+      /[_-]+/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    );
 }
 
-function formatRole(value) {
-  const role = String(value || "")
+function formatRole(
+  value
+) {
+  const role = String(
+    value || ""
+  )
     .trim()
     .toUpperCase()
-    .replace(/[\s-]+/g, "_");
+    .replace(
+      /[\s-]+/g,
+      "_"
+    );
 
   const labels = {
-    HR_MANAGER: "HR Manager",
-    HR_STAFF: "HR Staff",
-    SUPER_ADMIN: "Super Admin",
-    IT_SUPPORT: "IT Support",
+    HR_MANAGER:
+      "HR Manager",
+    HR_STAFF:
+      "HR Staff",
+    SUPER_ADMIN:
+      "Super Admin",
+    IT_SUPPORT:
+      "IT Support",
   };
 
-  return labels[role] || String(value || "").trim();
+  return (
+    labels[role] ||
+    String(
+      value || ""
+    ).trim()
+  );
 }
 
-function formatActorIdentity({ name, username, role }) {
-  const safeName = String(name || "").trim() || "Unknown User";
-  const safeUsername = String(username || "").trim();
-  const safeRole = formatRole(role);
+function formatActorIdentity({
+  name,
+  username,
+  role,
+}) {
+  const safeName =
+    String(
+      name || ""
+    ).trim() ||
+    "Unknown User";
+
+  const safeUsername =
+    String(
+      username || ""
+    ).trim();
+
+  const safeRole =
+    formatRole(role);
 
   const usernameText =
     safeUsername &&
-    safeUsername.toLowerCase() !== safeName.toLowerCase()
-      ? ` (@${safeUsername.replace(/^@/, "")})`
+    safeUsername.toLowerCase() !==
+      safeName.toLowerCase()
+      ? ` (@${safeUsername.replace(
+          /^@/,
+          ""
+        )})`
       : "";
 
-  const roleText = safeRole ? ` • ${safeRole}` : "";
+  const roleText =
+    safeRole
+      ? ` • ${safeRole}`
+      : "";
 
   return `${safeName}${usernameText}${roleText}`;
 }
 
-function getAlertEvent(alert) {
-  const status = normalizeValue(alert?.status);
-  const workflowAction = String(
-    alert?.workflowAction ||
-      alert?.lastActionType ||
-      alert?.last_action_type ||
-      ""
-  )
-    .trim()
-    .toUpperCase();
+function getAlertEvent(
+  alert
+) {
+  const status =
+    normalizeValue(
+      alert?.status
+    );
 
-  const reviewDecision = normalizeValue(
-    alert?.reviewDecision ||
-      alert?.review_decision
-  );
+  const workflowAction =
+    String(
+      alert?.workflowAction ||
+        alert?.lastActionType ||
+        alert?.last_action_type ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const reviewDecision =
+    normalizeValue(
+      alert?.reviewDecision ||
+        alert?.review_decision
+    );
 
   if (
-    workflowAction === "RETURN_INCIDENT" ||
-    reviewDecision === "returned" ||
-    reviewDecision === "rejected"
+    workflowAction ===
+      "RETURN_INCIDENT" ||
+    reviewDecision ===
+      "returned" ||
+    reviewDecision ===
+      "rejected"
   ) {
     return "RETURNED";
   }
 
   if (
-    workflowAction === "CLOSE_INCIDENT" ||
+    workflowAction ===
+      "CLOSE_INCIDENT" ||
     status === "closed"
   ) {
     return "CLOSED";
   }
 
   if (
-    workflowAction === "SUBMIT_RESOLUTION" ||
-    workflowAction === "SUBMIT_INVESTIGATION" ||
-    status === "for review"
+    workflowAction ===
+      "SUBMIT_RESOLUTION" ||
+    workflowAction ===
+      "SUBMIT_INVESTIGATION" ||
+    status ===
+      "for review"
   ) {
     return "FOR_REVIEW";
   }
 
   if (
-    workflowAction === "START_INVESTIGATION" ||
-    status === "investigating"
+    workflowAction ===
+      "START_INVESTIGATION" ||
+    status ===
+      "investigating"
   ) {
     return "INVESTIGATING";
   }
 
   if (
-    workflowAction === "CREATE_INCIDENT" ||
+    workflowAction ===
+      "CREATE_INCIDENT" ||
     status === "open"
   ) {
     return "REPORTED";
@@ -108,120 +173,130 @@ function getAlertEvent(alert) {
   return "GENERAL";
 }
 
-function getEventConfig(event, priority) {
+function getEventConfig(
+  event,
+  priority
+) {
   const configs = {
     REPORTED: {
-      eyebrow: "New Incident",
-      actorLabel: "Reported by",
+      eyebrow:
+        "New Incident",
+      actorLabel:
+        "Reported by",
       icon: FiInfo,
-      card:
-        "border-sky-400/35 bg-gradient-to-br from-sky-950/95 via-slate-950/95 to-slate-950/95 text-sky-100",
+      accent:
+        "text-sky-600 dark:text-sky-300",
       iconClass:
-        "bg-sky-400/15 text-sky-300 ring-1 ring-inset ring-sky-400/25",
-      actorClass:
-        "border border-sky-400/15 bg-sky-400/10",
-      accentClass:
-        "text-sky-300",
+        "bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300",
+      border:
+        "border-sky-200 dark:border-sky-500/30",
       buttonClass:
-        "bg-sky-400 text-slate-950 hover:bg-sky-300 focus:ring-sky-400/30",
+        "bg-sky-600 text-white hover:bg-sky-700",
     },
-
     INVESTIGATING: {
-      eyebrow: "Investigation Started",
-      actorLabel: "Investigation started by",
+      eyebrow:
+        "Investigation Started",
+      actorLabel:
+        "Investigation started by",
       icon: FiPlayCircle,
-      card:
-        "border-amber-400/35 bg-gradient-to-br from-amber-950/95 via-slate-950/95 to-slate-950/95 text-amber-100",
+      accent:
+        "text-amber-600 dark:text-amber-300",
       iconClass:
-        "bg-amber-400/15 text-amber-300 ring-1 ring-inset ring-amber-400/25",
-      actorClass:
-        "border border-amber-400/15 bg-amber-400/10",
-      accentClass:
-        "text-amber-300",
+        "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300",
+      border:
+        "border-amber-200 dark:border-amber-500/30",
       buttonClass:
-        "bg-amber-400 text-slate-950 hover:bg-amber-300 focus:ring-amber-400/30",
+        "bg-amber-500 text-slate-950 hover:bg-amber-400",
     },
-
     FOR_REVIEW: {
-      eyebrow: "Review Required",
-      actorLabel: "Submitted for review by",
+      eyebrow:
+        "Review Required",
+      actorLabel:
+        "Submitted for review by",
       icon: FiSend,
-      card:
-        "border-violet-400/35 bg-gradient-to-br from-violet-950/95 via-slate-950/95 to-slate-950/95 text-violet-100",
+      accent:
+        "text-violet-600 dark:text-violet-300",
       iconClass:
-        "bg-violet-400/15 text-violet-300 ring-1 ring-inset ring-violet-400/25",
-      actorClass:
-        "border border-violet-400/15 bg-violet-400/10",
-      accentClass:
-        "text-violet-300",
+        "bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300",
+      border:
+        "border-violet-200 dark:border-violet-500/30",
       buttonClass:
-        "bg-violet-400 text-slate-950 hover:bg-violet-300 focus:ring-violet-400/30",
+        "bg-violet-600 text-white hover:bg-violet-700",
     },
-
     RETURNED: {
-      eyebrow: "Correction Required",
-      actorLabel: "Returned by",
+      eyebrow:
+        "Correction Required",
+      actorLabel:
+        "Returned by",
       icon: FiRotateCcw,
-      card:
-        "border-orange-400/35 bg-gradient-to-br from-orange-950/95 via-slate-950/95 to-slate-950/95 text-orange-100",
+      accent:
+        "text-orange-600 dark:text-orange-300",
       iconClass:
-        "bg-orange-400/15 text-orange-300 ring-1 ring-inset ring-orange-400/25",
-      actorClass:
-        "border border-orange-400/15 bg-orange-400/10",
-      accentClass:
-        "text-orange-300",
+        "bg-orange-50 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300",
+      border:
+        "border-orange-200 dark:border-orange-500/30",
       buttonClass:
-        "bg-orange-400 text-slate-950 hover:bg-orange-300 focus:ring-orange-400/30",
+        "bg-orange-500 text-slate-950 hover:bg-orange-400",
     },
-
     CLOSED: {
-      eyebrow: "Approved and Closed",
-      actorLabel: "Approved by",
+      eyebrow:
+        "Approved and Closed",
+      actorLabel:
+        "Approved by",
       icon: FiCheckCircle,
-      card:
-        "border-emerald-400/35 bg-gradient-to-br from-emerald-950/95 via-slate-950/95 to-slate-950/95 text-emerald-100",
+      accent:
+        "text-emerald-600 dark:text-emerald-300",
       iconClass:
-        "bg-emerald-400/15 text-emerald-300 ring-1 ring-inset ring-emerald-400/25",
-      actorClass:
-        "border border-emerald-400/15 bg-emerald-400/10",
-      accentClass:
-        "text-emerald-300",
+        "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300",
+      border:
+        "border-emerald-200 dark:border-emerald-500/30",
       buttonClass:
-        "bg-emerald-400 text-slate-950 hover:bg-emerald-300 focus:ring-emerald-400/30",
+        "bg-emerald-600 text-white hover:bg-emerald-700",
     },
-
     GENERAL: {
       eyebrow:
-        priority === "High"
+        priority ===
+        "High"
           ? "Critical Alert"
-          : priority === "Medium"
-          ? "Major Alert"
-          : "Smart Alert",
-      actorLabel: "Related user",
+          : priority ===
+              "Medium"
+            ? "Major Alert"
+            : "Smart Alert",
+      actorLabel:
+        "Related user",
       icon:
-        priority === "High"
+        priority ===
+        "High"
           ? FiAlertTriangle
-          : priority === "Medium"
-          ? FiClock
-          : FiInfo,
-      card:
-        "border-slate-400/30 bg-gradient-to-br from-slate-900/95 via-slate-950/95 to-slate-950/95 text-slate-100",
+          : priority ===
+              "Medium"
+            ? FiClock
+            : FiInfo,
+      accent:
+        "text-slate-600 dark:text-slate-300",
       iconClass:
-        "bg-slate-400/15 text-slate-300 ring-1 ring-inset ring-slate-400/25",
-      actorClass:
-        "border border-slate-400/15 bg-slate-400/10",
-      accentClass:
-        "text-slate-300",
+        "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+      border:
+        "border-slate-200 dark:border-slate-700",
       buttonClass:
-        "bg-white text-slate-950 hover:bg-slate-200 focus:ring-white/30",
+        "bg-indigo-600 text-white hover:bg-indigo-700",
     },
   };
 
-  return configs[event] || configs.GENERAL;
+  return (
+    configs[event] ||
+    configs.GENERAL
+  );
 }
 
-function getActorDetails(alert, event) {
-  if (event === "CLOSED" || event === "RETURNED") {
+function getActorDetails(
+  alert,
+  event
+) {
+  if (
+    event === "CLOSED" ||
+    event === "RETURNED"
+  ) {
     return {
       name:
         alert.reviewedByName ||
@@ -238,7 +313,9 @@ function getActorDetails(alert, event) {
     };
   }
 
-  if (event === "FOR_REVIEW") {
+  if (
+    event === "FOR_REVIEW"
+  ) {
     return {
       name:
         alert.resolutionSubmittedByName ||
@@ -255,7 +332,9 @@ function getActorDetails(alert, event) {
     };
   }
 
-  if (event === "INVESTIGATING") {
+  if (
+    event === "INVESTIGATING"
+  ) {
     return {
       name:
         alert.investigationStartedByName ||
@@ -298,13 +377,25 @@ export default function SmartAlertToast({
     return null;
   }
 
-  const event = getAlertEvent(alert);
-  const config = getEventConfig(event, alert.priority);
-  const EventIcon = config.icon;
+  const event =
+    getAlertEvent(alert);
 
-  const actor = formatActorIdentity(
-    getActorDetails(alert, event)
-  );
+  const config =
+    getEventConfig(
+      event,
+      alert.priority
+    );
+
+  const EventIcon =
+    config.icon;
+
+  const actor =
+    formatActorIdentity(
+      getActorDetails(
+        alert,
+        event
+      )
+    );
 
   const recommendedAction =
     alert.recommendedAction ||
@@ -312,92 +403,118 @@ export default function SmartAlertToast({
 
   return (
     <div
-      className="pointer-events-none fixed right-4 top-20 z-[70] w-[calc(100vw-2rem)] max-w-md sm:right-5 sm:top-24"
+      className="pointer-events-none fixed right-4 top-20 z-[70] w-[calc(100vw-2rem)] max-w-sm sm:right-5 sm:top-24"
       aria-live="assertive"
       aria-atomic="true"
     >
       <div
         role="alert"
-        className={`pointer-events-auto max-h-[calc(100vh-7rem)] overflow-y-auto rounded-3xl border shadow-2xl backdrop-blur ${config.card}`}
+        className={`pointer-events-auto max-h-[calc(100vh-7rem)] overflow-y-auto rounded-2xl border bg-white shadow-2xl dark:bg-slate-900 ${config.border}`}
       >
-        <div className="flex items-start gap-3 p-4">
-          <div
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg ${config.iconClass}`}
-          >
-            <EventIcon aria-hidden="true" />
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p
-                  className={`text-xs font-black uppercase tracking-[0.12em] ${config.accentClass}`}
-                >
-                  {config.eyebrow}
-                </p>
-
-                <h3 className="mt-1 break-words text-sm font-black text-white">
-                  {alert.title || "Smart Alert"}
-                </h3>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => onDismiss?.(alert)}
-                className="shrink-0 rounded-xl p-1.5 text-white/65 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-4 focus:ring-white/10"
-                aria-label="Dismiss smart alert"
-              >
-                <FiX aria-hidden="true" />
-              </button>
+        <div className="p-4">
+          <div className="flex items-start gap-3">
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${config.iconClass}`}
+              aria-hidden="true"
+            >
+              <EventIcon />
             </div>
 
-            <p className="mt-2 break-words text-sm leading-6 text-white/80">
-              {alert.message ||
-                "A monitored record requires attention."}
-            </p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p
+                    className={`text-[10px] font-extrabold uppercase tracking-[0.12em] ${config.accent}`}
+                  >
+                    {
+                      config.eyebrow
+                    }
+                  </p>
 
-            <div
-              className={`mt-3 flex items-start gap-2 rounded-2xl p-3 text-xs leading-5 ${config.actorClass}`}
-            >
+                  <h3 className="mt-1 break-words text-sm font-extrabold text-slate-900 dark:text-white">
+                    {alert.title ||
+                      "Smart Alert"}
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    onDismiss?.(
+                      alert
+                    )
+                  }
+                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-slate-800 dark:hover:text-white"
+                  aria-label="Dismiss smart alert"
+                >
+                  <FiX
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+
+              <p className="mt-2 break-words text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {alert.message ||
+                  "A monitored record requires attention."}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-2">
+            <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs leading-5 dark:bg-slate-950/40">
               <FiUser
-                className={`mt-0.5 shrink-0 ${config.accentClass}`}
+                className={`mt-0.5 shrink-0 ${config.accent}`}
                 aria-hidden="true"
               />
 
               <div className="min-w-0">
-                <p className={`font-black ${config.accentClass}`}>
-                  {config.actorLabel}
+                <p
+                  className={`font-bold ${config.accent}`}
+                >
+                  {
+                    config.actorLabel
+                  }
                 </p>
 
-                <p className="mt-0.5 break-words font-bold text-white">
+                <p className="mt-0.5 break-words font-semibold text-slate-700 dark:text-slate-200">
                   {actor}
                 </p>
               </div>
             </div>
 
-            <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs font-semibold leading-5">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 dark:border-slate-700 dark:bg-slate-950/40">
               <p
-                className={`mb-1 flex items-center gap-2 font-black ${config.accentClass}`}
+                className={`mb-1 flex items-center gap-2 font-bold ${config.accent}`}
               >
-                <FiZap aria-hidden="true" />
+                <FiZap
+                  aria-hidden="true"
+                />
                 Recommended Action
               </p>
 
-              <p className="text-white/80">
-                {recommendedAction}
+              <p className="text-slate-600 dark:text-slate-300">
+                {
+                  recommendedAction
+                }
               </p>
             </div>
+          </div>
 
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={() => onView?.(alert)}
-                className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-black transition focus:outline-none focus:ring-4 ${config.buttonClass}`}
-              >
-                <FiEye aria-hidden="true" />
-                View
-              </button>
-            </div>
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() =>
+                onView?.(
+                  alert
+                )
+              }
+              className={`inline-flex min-h-9 items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${config.buttonClass}`}
+            >
+              <FiEye
+                aria-hidden="true"
+              />
+              View Details
+            </button>
           </div>
         </div>
       </div>

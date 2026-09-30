@@ -1,27 +1,29 @@
-import logo from "../assets/Logo.png";
 import { NavLink } from "react-router-dom";
-import { useMemo } from "react";
 import {
-  FiHome,
-  FiUsers,
-  FiMapPin,
-  FiBarChart2,
   FiAlertTriangle,
+  FiBarChart2,
   FiBell,
-  FiSettings,
-  FiSun,
-  FiMoon,
-  FiShield,
+  FiClipboard,
   FiFileText,
-  FiTool, // --- NEW: Icon for Maintenance ---
+  FiHome,
+  FiMapPin,
+  FiMoon,
+  FiSettings,
+  FiShield,
+  FiSun,
+  FiTool,
+  FiUsers,
 } from "react-icons/fi";
+
+import logo from "../assets/logo.png";
 import { sidebarItems } from "../config/sidebarItems";
+import { ROLES } from "../constants/roles";
 import { useAuth } from "../context/useAuth";
-import { ROLES } from "../constants/roles"; // --- NEW: Import ROLES ---
 
 const iconMap = {
   Dashboard: <FiHome />,
   Employees: <FiUsers />,
+  Attendance: <FiClipboard />,
   Deployments: <FiMapPin />,
   "KPI Reports": <FiBarChart2 />,
   Incidents: <FiAlertTriangle />,
@@ -35,20 +37,21 @@ const iconMap = {
 
 export default function Sidebar({ toggleTheme, darkMode }) {
   const { user } = useAuth();
+  const userRole = user?.role;
 
-  const filteredItems = useMemo(() => {
-    if (!user?.role) return [];
-    return sidebarItems.filter((item) => item.allowedRoles.includes(user.role));
-  }, [user]);
+  const filteredItems = userRole
+    ? sidebarItems.filter((item) =>
+        item.allowedRoles.includes(userRole)
+      )
+    : [];
 
   return (
     <aside
       className="
-        group/sidebar relative z-50 h-screen w-16 shrink-0
-        overflow-hidden border-r border-gray-200 bg-white
-        transition-[width] duration-200 ease-out hover:w-48
+        group/sidebar relative z-50 flex h-screen w-16 shrink-0
+        flex-col justify-between overflow-hidden border-r border-gray-200
+        bg-white transition-[width] duration-200 ease-out hover:w-48
         dark:border-white/10 dark:bg-slate-950
-        flex flex-col justify-between
       "
     >
       <div className="min-w-0">
@@ -63,18 +66,20 @@ export default function Sidebar({ toggleTheme, darkMode }) {
           <span
             className="
               pointer-events-none absolute -translate-x-2 whitespace-nowrap
-              text-lg font-semibold text-gray-900 opacity-0
-              transition-all duration-150 dark:text-white
-              group-hover/sidebar:relative group-hover/sidebar:translate-x-0
-              group-hover/sidebar:opacity-100
+              text-lg font-semibold text-gray-900 opacity-0 transition-all
+              duration-150 group-hover/sidebar:relative
+              group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100
+              dark:text-white
             "
           >
             HR System
           </span>
         </div>
 
-        <nav className="mt-5 flex flex-col gap-1">
-          {/* Default dynamically mapped items */}
+        <nav
+          className="mt-5 flex flex-col gap-1"
+          aria-label="Main navigation"
+        >
           {filteredItems.map((item) => (
             <SidebarItem
               key={item.path}
@@ -84,11 +89,10 @@ export default function Sidebar({ toggleTheme, darkMode }) {
             />
           ))}
 
-          {/* --- NEW: SYSTEM MAINTENANCE LINK (IT SUPPORT ONLY) --- */}
           {user?.role === ROLES.IT_SUPPORT && (
             <SidebarItem
               to="/system-maintenance"
-              icon={<FiTool className="text-red-500" />} // Gumamit tayo ng FiTool na may kulay red
+              icon={<FiTool className="text-red-500" />}
               label="System Maintenance"
             />
           )}
@@ -105,11 +109,17 @@ export default function Sidebar({ toggleTheme, darkMode }) {
             group-hover/sidebar:justify-start group-hover/sidebar:gap-3
             dark:hover:bg-white/10
           "
-          aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label={
+            darkMode
+              ? "Switch to light mode"
+              : "Switch to dark mode"
+          }
         >
           <span
             className={`shrink-0 text-xl ${
-              darkMode ? "text-yellow-400" : "text-slate-700 dark:text-gray-300"
+              darkMode
+                ? "text-yellow-400"
+                : "text-slate-700 dark:text-gray-300"
             }`}
           >
             {darkMode ? <FiSun /> : <FiMoon />}
@@ -118,10 +128,10 @@ export default function Sidebar({ toggleTheme, darkMode }) {
           <span
             className="
               pointer-events-none absolute -translate-x-2 whitespace-nowrap
-              text-sm font-medium text-gray-900 opacity-0
-              transition-all duration-150 dark:text-white
-              group-hover/sidebar:relative group-hover/sidebar:translate-x-0
-              group-hover/sidebar:opacity-100
+              text-sm font-medium text-gray-900 opacity-0 transition-all
+              duration-150 group-hover/sidebar:relative
+              group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100
+              dark:text-white
             "
           >
             {darkMode ? "Light Mode" : "Dark Mode"}
@@ -154,8 +164,7 @@ function SidebarItem({ to, icon, label }) {
 
       <span
         className="
-          pointer-events-none absolute 
-          -translate-x-2 whitespace-nowrap
+          pointer-events-none absolute -translate-x-2 whitespace-nowrap
           text-sm font-medium opacity-0 transition-all duration-150
           group-hover/sidebar:relative group-hover/sidebar:translate-x-0
           group-hover/sidebar:opacity-100

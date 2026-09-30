@@ -4,7 +4,6 @@ import {
   useMemo,
   useState,
 } from "react";
-
 import {
   FiBell,
   FiCheckCircle,
@@ -14,82 +13,65 @@ import {
   FiUserCheck,
   FiXCircle,
 } from "react-icons/fi";
-
 import {
   useNavigate,
 } from "react-router-dom";
-
 import NotificationTable from "../components/notifications/NotificationTable";
 import { useAuth } from "../context/useAuth";
 import useSmartNotifications from "../hooks/useSmartNotifications";
 import { API_BASE } from "../config/api";
-
 const INCIDENT_ALERT_ROLES = new Set([
   "SUPER_ADMIN",
   "HR_MANAGER",
   "HR_STAFF",
 ]);
-
 const PASSWORD_RESET_REVIEWER_ROLES = new Set([
   "SUPER_ADMIN",
   "IT_SUPPORT",
 ]);
-
 const ACTIVE_CASE_STATUSES = new Set([
   "Open",
   "Investigating",
   "For Review",
 ]);
-
 function getPageSubtitle(role) {
   if (role === "SUPER_ADMIN") {
     return "Review assigned incident alerts and authorized password-reset requests.";
   }
-
   if (role === "IT_SUPPORT") {
     return "Review password-reset requests assigned to authorized IT Support personnel.";
   }
-
   if (role === "HR_COORDINATOR") {
     return "View notifications available to your account.";
   }
-
   return "Smart incident alerts assigned to HR for monitoring, investigation, and intervention.";
 }
-
 function normalizeText(value) {
   return String(value || "")
     .trim()
     .toLowerCase();
 }
-
 function normalizeCaseStatus(status) {
   const normalized = normalizeText(status)
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ");
-
   if (normalized === "open") {
     return "Open";
   }
-
   if (normalized === "investigating") {
     return "Investigating";
   }
-
   if (
     normalized === "for review" ||
     normalized === "resolved"
   ) {
     return "For Review";
   }
-
   if (normalized === "closed") {
     return "Closed";
   }
-
   return "Open";
 }
-
 function getUniqueIncidentKey(alert, index) {
   return String(
     alert?.incidentId ||
@@ -100,13 +82,11 @@ function getUniqueIncidentKey(alert, index) {
       `alert-${index}`
   );
 }
-
 function isActiveCase(alert) {
   return ACTIVE_CASE_STATUSES.has(
     normalizeCaseStatus(alert?.status)
   );
 }
-
 function filterAlerts(
   alerts,
   activeFilter,
@@ -116,11 +96,9 @@ function filterAlerts(
   let filtered = Array.isArray(alerts)
     ? [...alerts]
     : [];
-
   if (activeFilter === "ALL") {
     filtered = filtered.filter(isActiveCase);
   }
-
   if (activeFilter === "UNREAD") {
     filtered = filtered.filter(
       (alert) =>
@@ -128,7 +106,6 @@ function filterAlerts(
         !alert?.isRead
     );
   }
-
   if (activeFilter === "HIGH") {
     filtered = filtered.filter(
       (alert) =>
@@ -136,7 +113,6 @@ function filterAlerts(
         alert?.priority === "High"
     );
   }
-
   if (activeFilter === "MEDIUM") {
     filtered = filtered.filter(
       (alert) =>
@@ -144,7 +120,6 @@ function filterAlerts(
         alert?.priority === "Medium"
     );
   }
-
   if (activeFilter === "LOW") {
     filtered = filtered.filter(
       (alert) =>
@@ -152,7 +127,6 @@ function filterAlerts(
         alert?.priority === "Low"
     );
   }
-
   if (caseStatusFilter !== "ALL") {
     filtered = filtered.filter(
       (alert) =>
@@ -160,10 +134,8 @@ function filterAlerts(
         caseStatusFilter
     );
   }
-
   if (search.trim()) {
     const keyword = normalizeText(search);
-
     filtered = filtered.filter((alert) =>
       [
         alert?.title,
@@ -180,58 +152,44 @@ function filterAlerts(
         .includes(keyword)
     );
   }
-
   return filtered;
 }
-
 function buildAlertCounts(alerts = []) {
   const safeAlerts = Array.isArray(alerts)
     ? alerts
     : [];
-
   const activeAlerts = safeAlerts.filter(
     isActiveCase
   );
-
   const uniqueActiveCases = new Set(
     activeAlerts.map(getUniqueIncidentKey)
   );
-
   return {
     active: uniqueActiveCases.size,
-
     unread: activeAlerts.filter(
       (alert) => !alert?.isRead
     ).length,
-
     high: activeAlerts.filter(
       (alert) => alert?.priority === "High"
     ).length,
-
     medium: activeAlerts.filter(
       (alert) => alert?.priority === "Medium"
     ).length,
-
     low: activeAlerts.filter(
       (alert) => alert?.priority === "Low"
     ).length,
   };
 }
-
 function formatRequestDate(value) {
   if (!value) {
     return "Not available";
   }
-
   const parsed = new Date(value);
-
   if (Number.isNaN(parsed.getTime())) {
     return "Not available";
   }
-
   return parsed.toLocaleString();
 }
-
 async function readJsonResponse(response) {
   try {
     return await response.json();
@@ -239,13 +197,11 @@ async function readJsonResponse(response) {
     return null;
   }
 }
-
 function getSessionToken() {
   return String(
     localStorage.getItem("token") || ""
   ).trim();
 }
-
 /*
  * PASSWORD RESET APPROVAL QUEUE
  *
@@ -255,31 +211,23 @@ function getSessionToken() {
  * The backend controls reviewer authorization,
  * request ownership, and reset-email delivery.
  */
-
 function PasswordResetRequestsSection() {
   const [requests, setRequests] = useState([]);
-
   const [isLoading, setIsLoading] =
     useState(true);
-
   const [isRefreshing, setIsRefreshing] =
     useState(false);
-
   const [isProcessing, setIsProcessing] =
     useState(false);
-
   const [
     confirmRejectId,
     setConfirmRejectId,
   ] = useState(null);
-
   const [error, setError] = useState("");
-
   const [
     successMessage,
     setSuccessMessage,
   ] = useState("");
-
   const loadRequests = useCallback(
     async ({ signal, initial = false } = {}) => {
       if (initial) {
@@ -287,18 +235,14 @@ function PasswordResetRequestsSection() {
       } else {
         setIsRefreshing(true);
       }
-
       setError("");
-
       try {
         const token = getSessionToken();
-
         if (!token) {
           throw new Error(
             "Your session is unavailable. Please sign in again."
           );
         }
-
         const response = await fetch(
           `${API_BASE}/auth/password-reset-requests`,
           {
@@ -310,30 +254,25 @@ function PasswordResetRequestsSection() {
             signal,
           }
         );
-
         const data = await readJsonResponse(
           response
         );
-
         if (!response.ok) {
           if (response.status === 401) {
             throw new Error(
               "Your session has expired. Please sign in again."
             );
           }
-
           if (response.status === 403) {
             throw new Error(
               "You are not authorized to review password-reset requests."
             );
           }
-
           throw new Error(
             data?.message ||
               "Unable to load password-reset requests."
           );
         }
-
         if (!signal?.aborted) {
           setRequests(
             Array.isArray(data?.requests)
@@ -348,7 +287,6 @@ function PasswordResetRequestsSection() {
         ) {
           return;
         }
-
         setError(
           requestError?.message ||
             "Unable to load password-reset requests."
@@ -362,20 +300,16 @@ function PasswordResetRequestsSection() {
     },
     []
   );
-
   useEffect(() => {
     const controller = new AbortController();
-
     loadRequests({
       signal: controller.signal,
       initial: true,
     });
-
     return () => {
       controller.abort();
     };
   }, [loadRequests]);
-
   const refreshRequests = async () => {
     if (
       isProcessing ||
@@ -384,10 +318,8 @@ function PasswordResetRequestsSection() {
     ) {
       return;
     }
-
     await loadRequests();
   };
-
   const submitDecision = async ({
     requestId,
     decision,
@@ -395,7 +327,6 @@ function PasswordResetRequestsSection() {
     if (isProcessing) {
       return;
     }
-
     if (
       !/^[1-9]\d*$/.test(
         String(requestId ?? "")
@@ -404,46 +335,37 @@ function PasswordResetRequestsSection() {
       setError(
         "Invalid password-reset request."
       );
-
       return;
     }
-
     if (
       !["approve", "reject"].includes(decision)
     ) {
       setError(
         "Invalid review decision."
       );
-
       return;
     }
-
     setIsProcessing(true);
     setError("");
     setSuccessMessage("");
-
     try {
       const token = getSessionToken();
-
       if (!token) {
         throw new Error(
           "Your session is unavailable. Please sign in again."
         );
       }
-
       const response = await fetch(
         `${API_BASE}/auth/password-reset-requests/${encodeURIComponent(
           String(requestId)
         )}/${decision}`,
         {
           method: "POST",
-
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
             Accept: "application/json",
           },
-
           /*
            * The backend no longer requires
            * verificationMethod or identityVerified.
@@ -451,45 +373,37 @@ function PasswordResetRequestsSection() {
           body: JSON.stringify({}),
         }
       );
-
       const data = await readJsonResponse(
         response
       );
-
       if (!response.ok) {
         if (response.status === 401) {
           throw new Error(
             "Your session has expired. Please sign in again."
           );
         }
-
         if (response.status === 403) {
           throw new Error(
             "You are not authorized to process this request."
           );
         }
-
         if (response.status === 409) {
           throw new Error(
             "This request is unavailable, expired, or already processed. Refresh the queue."
           );
         }
-
         throw new Error(
           data?.message ||
             "The request could not be processed. Refresh the queue to check its current status."
         );
       }
-
       setSuccessMessage(
         data?.message ||
           (decision === "approve"
             ? "Password-reset request approved."
             : "Password-reset request rejected.")
       );
-
       setConfirmRejectId(null);
-
       /*
        * The processed request should disappear
        * from the pending queue.
@@ -501,7 +415,6 @@ function PasswordResetRequestsSection() {
        * processed the decision, do not automatically
        * resend the approval.
        */
-
       setError(
         decisionError?.message ||
           "The request outcome could not be confirmed. Refresh the queue before trying again."
@@ -510,21 +423,18 @@ function PasswordResetRequestsSection() {
       setIsProcessing(false);
     }
   };
-
   return (
-    <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6 dark:border-white/10 dark:bg-slate-900">
+    <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
             <FiUserCheck aria-hidden="true" />
             Account recovery
           </div>
-
-          <h2 className="text-xl font-black text-gray-900 dark:text-white">
+          <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
             Pending Password Reset Requests
           </h2>
-
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+          <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
             Review each account-recovery request before
             approving or rejecting it. Approved requests
             generate a reset link sent only to the
@@ -532,7 +442,6 @@ function PasswordResetRequestsSection() {
             recovery email.
           </p>
         </div>
-
         <button
           type="button"
           onClick={refreshRequests}
@@ -541,7 +450,7 @@ function PasswordResetRequestsSection() {
             isRefreshing ||
             isProcessing
           }
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-gray-200 dark:hover:bg-slate-800"
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
         >
           <FiRefreshCw
             aria-hidden="true"
@@ -551,13 +460,11 @@ function PasswordResetRequestsSection() {
                 : ""
             }
           />
-
           {isRefreshing
             ? "Refreshing..."
             : "Refresh Requests"}
         </button>
       </div>
-
       {error && (
         <div
           role="alert"
@@ -566,7 +473,6 @@ function PasswordResetRequestsSection() {
           {error}
         </div>
       )}
-
       {successMessage && (
         <div
           role="status"
@@ -575,7 +481,6 @@ function PasswordResetRequestsSection() {
           {successMessage}
         </div>
       )}
-
       {isLoading ? (
         <div
           role="status"
@@ -590,11 +495,9 @@ function PasswordResetRequestsSection() {
             className="mx-auto text-emerald-600 dark:text-emerald-400"
             aria-hidden="true"
           />
-
           <p className="mt-3 font-bold text-gray-900 dark:text-white">
             No pending requests available
           </p>
-
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
             New eligible requests will appear here
             when available for your review.
@@ -607,18 +510,15 @@ function PasswordResetRequestsSection() {
             {requests.length === 1 ? "" : "s"} available
             for review
           </p>
-
           {requests.map((request) => {
             const requestId = String(request.id);
-
             const isConfirmingRejection =
               String(confirmRejectId) ===
               requestId;
-
             return (
               <article
                 key={requestId}
-                className="rounded-2xl border border-gray-200 p-4 sm:p-5 dark:border-slate-700"
+                className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/30"
               >
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 space-y-2">
@@ -626,24 +526,20 @@ function PasswordResetRequestsSection() {
                       <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                         PENDING
                       </span>
-
                       <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                         Request #{requestId}
                       </span>
                     </div>
-
                     <h3 className="break-words text-base font-bold text-gray-900 dark:text-white">
                       {request.fullName ||
                         "Account holder"}
                     </h3>
-
                     <p className="break-words text-sm text-gray-600 dark:text-gray-300">
                       Username:{" "}
                       <span className="font-semibold">
                         {request.username}
                       </span>
                     </p>
-
                     <p className="text-sm text-gray-600 dark:text-gray-300">
                       Role:{" "}
                       <span className="font-semibold">
@@ -652,17 +548,14 @@ function PasswordResetRequestsSection() {
                         ).replace(/_/g, " ")}
                       </span>
                     </p>
-
                     <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
                       <span className="inline-flex items-center gap-1.5">
                         <FiClock aria-hidden="true" />
-
                         Requested:{" "}
                         {formatRequestDate(
                           request.requestedAt
                         )}
                       </span>
-
                       <span>
                         Expires:{" "}
                         {formatRequestDate(
@@ -671,7 +564,6 @@ function PasswordResetRequestsSection() {
                       </span>
                     </div>
                   </div>
-
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <button
                       type="button"
@@ -685,19 +577,16 @@ function PasswordResetRequestsSection() {
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <FiCheckCircle aria-hidden="true" />
-
                       {isProcessing
                         ? "Processing..."
                         : "Approve"}
                     </button>
-
                     <button
                       type="button"
                       disabled={isProcessing}
                       onClick={() => {
                         setError("");
                         setSuccessMessage("");
-
                         setConfirmRejectId(
                           isConfirmingRejection
                             ? null
@@ -707,23 +596,19 @@ function PasswordResetRequestsSection() {
                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"
                     >
                       <FiXCircle aria-hidden="true" />
-
                       Reject
                     </button>
                   </div>
                 </div>
-
                 {isConfirmingRejection && (
                   <div className="mt-4 space-y-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-500/30 dark:bg-red-500/10">
                     <p className="text-sm font-semibold text-red-800 dark:text-red-200">
                       Reject this password-reset request?
                     </p>
-
                     <p className="text-xs leading-5 text-red-700 dark:text-red-300">
                       A rejected request will not generate
                       a password-reset email.
                     </p>
-
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -740,7 +625,6 @@ function PasswordResetRequestsSection() {
                           ? "Processing..."
                           : "Confirm Rejection"}
                       </button>
-
                       <button
                         type="button"
                         disabled={isProcessing}
@@ -759,7 +643,6 @@ function PasswordResetRequestsSection() {
           })}
         </div>
       )}
-
       <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
         Only one authorized reviewer can process each
         request. Requests may become unavailable when
@@ -769,7 +652,6 @@ function PasswordResetRequestsSection() {
     </section>
   );
 }
-
 /*
  * EXISTING SMART INCIDENT ALERTS
  *
@@ -779,18 +661,13 @@ function PasswordResetRequestsSection() {
  * Do not fetch incident alerts for IT Support
  * or HR Coordinator.
  */
-
 function IncidentAlertsSection({ user }) {
   const navigate = useNavigate();
-
   const [activeFilter, setActiveFilter] =
     useState("ALL");
-
   const [caseStatusFilter, setCaseStatusFilter] =
     useState("ALL");
-
   const [search, setSearch] = useState("");
-
   const {
     alerts,
     isLoading,
@@ -802,12 +679,10 @@ function IncidentAlertsSection({ user }) {
   } = useSmartNotifications(user, {
     pollInterval: 0,
   });
-
   const counts = useMemo(
     () => buildAlertCounts(alerts),
     [alerts]
   );
-
   const visibleAlerts = useMemo(
     () =>
       filterAlerts(
@@ -823,7 +698,6 @@ function IncidentAlertsSection({ user }) {
       search,
     ]
   );
-
   const handleRefresh = async () => {
     try {
       await refresh();
@@ -834,12 +708,10 @@ function IncidentAlertsSection({ user }) {
       );
     }
   };
-
   const handleViewAlert = async (alert) => {
     if (!alert) {
       return;
     }
-
     if (
       alert.route === "/incidents" &&
       alert.incidentId
@@ -855,7 +727,6 @@ function IncidentAlertsSection({ user }) {
           "/notifications"
       );
     }
-
     try {
       await markAlertAsRead(
         alert.alertKey
@@ -867,26 +738,23 @@ function IncidentAlertsSection({ user }) {
       );
     }
   };
-
   return (
-    <section className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="space-y-3">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-black text-gray-900 dark:text-white">
-            Smart Incident Alerts
+          <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+            Incident Alerts
           </h2>
-
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-            {getPageSubtitle(user?.role)}
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Monitor assigned incident notifications and case activity.
           </p>
         </div>
-
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={handleRefresh}
             disabled={isFetching}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <FiRefreshCw
               aria-hidden="true"
@@ -896,12 +764,10 @@ function IncidentAlertsSection({ user }) {
                   : ""
               }
             />
-
             {isFetching
               ? "Syncing..."
               : "Sync Alerts"}
           </button>
-
           <button
             type="button"
             onClick={markAllAsRead}
@@ -909,15 +775,13 @@ function IncidentAlertsSection({ user }) {
               alerts.length === 0 ||
               counts.unread === 0
             }
-            className="inline-flex items-center gap-2 rounded-xl border border-indigo-300 bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/40 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-slate-800"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             <FiCheckCircle aria-hidden="true" />
-
             Mark All Read
           </button>
         </div>
       </div>
-
       {error && (
         <div
           role="alert"
@@ -926,7 +790,6 @@ function IncidentAlertsSection({ user }) {
           {error}
         </div>
       )}
-
       {isLoading ? (
         <div
           role="status"
@@ -953,59 +816,46 @@ function IncidentAlertsSection({ user }) {
     </section>
   );
 }
-
 /*
  * NOTIFICATIONS PAGE
  */
-
 export default function Notifications() {
   const { user } = useAuth();
-
   const role = user?.role;
-
   const canViewIncidentAlerts =
     INCIDENT_ALERT_ROLES.has(role);
-
   const canReviewPasswordResets =
     PASSWORD_RESET_REVIEWER_ROLES.has(role);
-
   return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-700 text-white shadow-sm">
-        <div className="relative overflow-hidden px-6 py-7 sm:px-8">
-          <div className="relative z-10">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-white/90">
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-6">
+        <div className="flex items-start gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+            <FiBell size={20} aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
               <FiShield aria-hidden="true" />
-
               Account &amp; Incident Monitoring
             </div>
-
-            <h1 className="flex items-center gap-3 text-3xl font-black tracking-tight">
-              <span className="rounded-2xl bg-white/15 p-3">
-                <FiBell aria-hidden="true" />
-              </span>
-
-              Notifications Center
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+              Notifications
             </h1>
-
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/80">
+            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
               {getPageSubtitle(role)}
             </p>
           </div>
         </div>
       </section>
-
       {canReviewPasswordResets && (
         <PasswordResetRequestsSection />
       )}
-
       {canViewIncidentAlerts && (
         <IncidentAlertsSection user={user} />
       )}
-
       {!canReviewPasswordResets &&
         !canViewIncidentAlerts && (
-          <div className="rounded-2xl border border-gray-200 bg-white px-6 py-10 text-center text-sm text-gray-600 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-gray-300">
+          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
             No notifications are currently available
             on this page for your account.
           </div>

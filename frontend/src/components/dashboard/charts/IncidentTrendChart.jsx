@@ -1,7 +1,7 @@
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -10,8 +10,23 @@ import {
 
 import SharedTooltip from "../shared/SharedTooltip";
 
-const SELECTED_BAR_COLOR = "#ef4444";
-const COMPARISON_BAR_COLOR = "#94a3b8";
+const SELECTED_LINE_COLOR = "#ef4444";
+const COMPARISON_LINE_COLOR = "#94a3b8";
+const CHART_HEIGHT = 230;
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 function normalizeYears(years) {
   if (!Array.isArray(years)) {
@@ -27,7 +42,9 @@ function normalizeYears(years) {
             year !== undefined &&
             String(year).trim() !== ""
         )
-        .map((year) => String(year))
+        .map((year) =>
+          String(year)
+        )
     )
   );
 }
@@ -38,7 +55,18 @@ function normalizeChartData(data) {
     : [];
 }
 
-function getBarStyle(
+function getNumericValue(value) {
+  const numericValue =
+    Number(value);
+
+  return Number.isFinite(
+    numericValue
+  )
+    ? numericValue
+    : 0;
+}
+
+function getLineStyle(
   year,
   selectedYear
 ) {
@@ -47,17 +75,33 @@ function getBarStyle(
     String(selectedYear);
 
   return {
-    fill: isSelected
-      ? SELECTED_BAR_COLOR
-      : COMPARISON_BAR_COLOR,
-
-    fillOpacity: isSelected
-      ? 0.95
-      : 0.45,
-
-    radius: isSelected
-      ? [8, 8, 0, 0]
-      : [6, 6, 0, 0],
+    stroke: isSelected
+      ? SELECTED_LINE_COLOR
+      : COMPARISON_LINE_COLOR,
+    strokeWidth: isSelected
+      ? 3
+      : 2,
+    strokeOpacity: isSelected
+      ? 1
+      : 0.65,
+    strokeDasharray: isSelected
+      ? undefined
+      : "6 5",
+    dot: isSelected
+      ? {
+          r: 3.5,
+          strokeWidth: 2,
+        }
+      : {
+          r: 2.5,
+          strokeWidth: 1.5,
+        },
+    activeDot: {
+      r: isSelected
+        ? 5
+        : 4,
+      strokeWidth: 2,
+    },
   };
 }
 
@@ -65,70 +109,93 @@ function ComparisonLegend({
   years = [],
   selectedYear,
 }) {
-  if (years.length === 0) {
+  if (
+    years.length === 0
+  ) {
     return null;
   }
 
   return (
     <div
-      className="mb-4 flex flex-wrap items-center gap-2"
+      className="flex flex-wrap items-center gap-2"
       aria-label="Incident trend comparison years"
     >
-      {years.map((year) => {
-        const isSelected =
-          String(year) ===
-          String(selectedYear);
+      {years.map(
+        (year) => {
+          const isSelected =
+            String(year) ===
+            String(selectedYear);
 
-        const style = getBarStyle(
-          year,
-          selectedYear
-        );
+          const style =
+            getLineStyle(
+              year,
+              selectedYear
+            );
 
-        return (
-          <span
-            key={year}
-            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${
-              isSelected
-                ? "bg-red-50 text-red-700 dark:bg-red-500/20 dark:text-red-300"
-                : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-            }`}
-          >
+          return (
             <span
-              aria-hidden="true"
-              className="h-2.5 w-2.5 rounded-full"
-              style={{
-                backgroundColor:
-                  style.fill,
-                opacity:
-                  style.fillOpacity,
-              }}
-            />
+              key={year}
+              className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                isSelected
+                  ? "bg-red-50 text-red-700 dark:bg-red-500/20 dark:text-red-300"
+                  : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className="w-5 border-t-2"
+                style={{
+                  borderColor:
+                    style.stroke,
+                  borderTopStyle:
+                    isSelected
+                      ? "solid"
+                      : "dashed",
+                  opacity:
+                    style.strokeOpacity,
+                }}
+              />
 
-            <span>
-              {year}{" "}
-              {isSelected
-                ? "Selected Year"
-                : "Previous Year"}
+              <span>
+                {year}{" "}
+                {isSelected
+                  ? "Selected"
+                  : "Previous"}
+              </span>
             </span>
-          </span>
-        );
-      })}
+          );
+        }
+      )}
+    </div>
+  );
+}
+
+function SummaryChip({
+  label,
+  value,
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/40">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p className="mt-0.5 text-xs font-extrabold text-slate-800 dark:text-slate-100">
+        {value}
+      </p>
     </div>
   );
 }
 
 function EmptyChartState() {
   return (
-    <div className="flex h-[300px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center dark:border-slate-700 dark:bg-slate-950/40">
+    <div className="flex h-[230px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 text-center dark:border-slate-700 dark:bg-slate-950/40">
       <div>
         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          No incident trend data
+          No incident activity data
         </p>
 
         <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-          Incident records are not
-          available for the selected
-          reporting period.
+          No incident reports are available for the selected historical period.
         </p>
       </div>
     </div>
@@ -140,9 +207,13 @@ export default function IncidentTrendChart({
   comparisonData = [],
   years = [],
   selectedYear,
+  isCurrentYear = false,
+  currentMonth = 0,
 }) {
   const safeData =
-    normalizeChartData(data);
+    normalizeChartData(
+      data
+    );
 
   const safeComparisonData =
     normalizeChartData(
@@ -150,50 +221,162 @@ export default function IncidentTrendChart({
     );
 
   const safeYears =
-    normalizeYears(years);
+    normalizeYears(
+      years
+    );
 
   const hasComparison =
-    safeComparisonData.length > 0 &&
+    safeComparisonData.length >
+      0 &&
     safeYears.length > 0;
 
-  const chartData = hasComparison
-    ? safeComparisonData
-    : safeData;
+  const rawChartData =
+    hasComparison
+      ? safeComparisonData
+      : safeData;
+
+  const currentMonthLabel =
+    Number(currentMonth) >= 1 &&
+    Number(currentMonth) <= 12
+      ? MONTHS[
+          Number(currentMonth) -
+            1
+        ]
+      : "";
+
+  const chartData =
+    rawChartData.map(
+      (row) => ({
+        ...row,
+        displayLabel:
+          isCurrentYear &&
+          row?.label ===
+            currentMonthLabel
+            ? `${row.label}*`
+            : row?.label,
+      })
+    );
 
   const hasChartData =
     chartData.length > 0;
 
-  const chartDescription =
+  const selectedKey =
     hasComparison
-      ? "Compares monthly incident records between the selected year and the previous year."
-      : "Monthly recorded incident monitoring.";
+      ? String(
+          selectedYear
+        )
+      : "value";
+
+  const selectedValues =
+    chartData.map(
+      (row) =>
+        getNumericValue(
+          row?.[
+            selectedKey
+          ]
+        )
+    );
+
+  const totalReports =
+    selectedValues.reduce(
+      (
+        sum,
+        value
+      ) =>
+        sum + value,
+      0
+    );
+
+  const highestRow =
+    chartData.reduce(
+      (
+        highest,
+        row
+      ) => {
+        if (!highest) {
+          return row;
+        }
+
+        return getNumericValue(
+          row?.[
+            selectedKey
+          ]
+        ) >
+          getNumericValue(
+            highest?.[
+              selectedKey
+            ]
+          )
+          ? row
+          : highest;
+      },
+      null
+    );
+
+  const highestValue =
+    getNumericValue(
+      highestRow?.[
+        selectedKey
+      ]
+    );
 
   return (
     <section
       aria-labelledby="incident-trend-title"
-      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      className="h-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
     >
-      <div className="mb-5">
-        <h3
-          id="incident-trend-title"
-          className="text-lg font-semibold text-slate-900 dark:text-white"
-        >
-          Incident Trend
-        </h3>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <h3
+            id="incident-trend-title"
+            className="text-base font-bold text-slate-900 dark:text-white"
+          >
+            Incident Reports Trend
+          </h3>
 
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          {chartDescription}
-        </p>
+          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            Monthly incident-report movement compared with the previous available year.
+          </p>
+        </div>
+
+        <div className="grid shrink-0 grid-cols-2 gap-2">
+          <SummaryChip
+            label="Reports in Scope"
+            value={totalReports}
+          />
+
+          <SummaryChip
+            label="Highest Month"
+            value={
+              highestRow
+                ? `${highestRow.label} · ${highestValue}`
+                : "N/A"
+            }
+          />
+        </div>
       </div>
 
-      {hasComparison && (
-        <ComparisonLegend
-          years={safeYears}
-          selectedYear={
-            selectedYear
-          }
-        />
-      )}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        {hasComparison ? (
+          <ComparisonLegend
+            years={safeYears}
+            selectedYear={
+              selectedYear
+            }
+          />
+        ) : (
+          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+            Selected historical period
+          </span>
+        )}
+
+        {isCurrentYear &&
+          currentMonthLabel && (
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              * Current month is still in progress.
+            </span>
+          )}
+      </div>
 
       {!hasChartData ? (
         <EmptyChartState />
@@ -205,56 +388,59 @@ export default function IncidentTrendChart({
               ? `Monthly incident comparison for ${safeYears.join(
                   " and "
                 )}`
-              : "Monthly incident trend chart"
+              : "Monthly incident reports trend chart"
           }
-          className="h-[300px] w-full text-slate-400 dark:text-slate-500"
+          className="mt-2 h-[230px] w-full text-slate-400 dark:text-slate-500"
         >
           <ResponsiveContainer
             width="100%"
             height="100%"
             initialDimension={{
               width: 1,
-              height: 300,
+              height:
+                CHART_HEIGHT,
             }}
           >
-            <BarChart
-              data={chartData}
-              barGap={6}
-              barCategoryGap="30%"
+            <LineChart
+              data={
+                chartData
+              }
               margin={{
                 top: 8,
-                right: 12,
-                bottom: 4,
-                left: -8,
+                right: 8,
+                bottom: 0,
+                left: -10,
               }}
             >
               <CartesianGrid
                 stroke="currentColor"
                 strokeDasharray="3 3"
-                opacity={0.15}
+                opacity={0.1}
                 vertical={false}
               />
 
               <XAxis
-                dataKey="label"
+                dataKey="displayLabel"
                 tickLine={false}
                 axisLine={false}
                 tick={{
                   fill: "currentColor",
-                  fontSize: 12,
+                  fontSize: 11,
                 }}
-                minTickGap={12}
+                minTickGap={10}
               />
 
               <YAxis
-                allowDecimals={false}
+                allowDecimals={
+                  false
+                }
                 tickLine={false}
                 axisLine={false}
                 tick={{
                   fill: "currentColor",
-                  fontSize: 12,
+                  fontSize: 11,
                 }}
-                width={42}
+                width={40}
               />
 
               <Tooltip
@@ -267,47 +453,65 @@ export default function IncidentTrendChart({
                 safeYears.map(
                   (year) => {
                     const style =
-                      getBarStyle(
+                      getLineStyle(
                         year,
                         selectedYear
                       );
 
                     return (
-                      <Bar
+                      <Line
                         key={year}
-                        dataKey={year}
+                        type="monotone"
+                        dataKey={
+                          year
+                        }
                         name={`${year} Incidents`}
-                        fill={
-                          style.fill
+                        stroke={
+                          style.stroke
                         }
-                        fillOpacity={
-                          style.fillOpacity
+                        strokeWidth={
+                          style.strokeWidth
                         }
-                        radius={
-                          style.radius
+                        strokeOpacity={
+                          style.strokeOpacity
                         }
-                        maxBarSize={42}
+                        strokeDasharray={
+                          style.strokeDasharray
+                        }
+                        strokeLinecap="round"
+                        dot={
+                          style.dot
+                        }
+                        activeDot={
+                          style.activeDot
+                        }
+                        connectNulls
                       />
                     );
                   }
                 )
               ) : (
-                <Bar
+                <Line
+                  type="monotone"
                   dataKey="value"
                   name="Incidents"
-                  fill={
-                    SELECTED_BAR_COLOR
+                  stroke={
+                    SELECTED_LINE_COLOR
                   }
-                  radius={[
-                    8,
-                    8,
-                    0,
-                    0,
-                  ]}
-                  maxBarSize={48}
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                  dot={{
+                    r: 3.5,
+                    strokeWidth: 2,
+                  }}
+                  activeDot={{
+                    r: 5,
+                    strokeWidth: 2,
+                  }}
+                  connectNulls
                 />
               )}
-            </BarChart>
+            </LineChart>
           </ResponsiveContainer>
         </div>
       )}

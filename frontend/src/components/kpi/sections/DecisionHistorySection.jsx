@@ -3,7 +3,9 @@ import {
   useMemo,
   useState,
 } from "react";
+
 import {
+  FiArrowLeft,
   FiCheckCircle,
   FiClock,
   FiEdit3,
@@ -12,24 +14,15 @@ import {
   FiShield,
   FiTrash2,
   FiXCircle,
-  FiZap,
 } from "react-icons/fi";
 
 import Button from "../../ui/Button";
 import ConfirmDialog from "../../ui/ConfirmDialog";
 import EmptyState from "../../ui/EmptyState";
 import ErrorState from "../../ui/ErrorState";
-import FilterBar from "../../ui/FilterBar";
 import LoadingSkeleton from "../../ui/LoadingSkeleton";
 import SearchInput from "../../ui/SearchInput";
 import SuccessToast from "../../ui/SuccessToast";
-
-import {
-  DECISION_CONFIDENCE,
-  HR_ACTION_WORKFLOW,
-  getDecisionConfidenceClasses,
-  getSuggestedHRActionClasses,
-} from "../../../utils/kpi/kpiHelpers";
 
 import {
   useDeleteKPIDecisionMutation,
@@ -55,12 +48,8 @@ const DECISION_FILTER_OPTIONS = [
   },
 ];
 
-const HISTORY_PAGE_SIZE =
-  25;
-
-const SEARCH_DEBOUNCE_MS =
-  350;
-
+const HISTORY_PAGE_SIZE = 25;
+const SEARCH_DEBOUNCE_MS = 350;
 
 function formatEmployeeId(id) {
   return String(id || "-").replace(
@@ -85,7 +74,7 @@ function formatDateTime(value) {
   }
 
   return date.toLocaleString(
-    "en-US",
+    "en-PH",
     {
       year: "numeric",
       month: "short",
@@ -96,29 +85,16 @@ function formatDateTime(value) {
   );
 }
 
-function getInitials(name) {
-  return String(
-    name || "Employee"
-  )
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) =>
-      part[0]?.toUpperCase()
-    )
-    .join("");
-}
-
 function getDecisionTypeClasses(type) {
   switch (type) {
     case "Accepted":
       return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300";
 
     case "Modified":
-      return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300";
+      return "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-300";
 
     case "Rejected":
-      return "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300";
+      return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300";
 
     default:
       return "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300";
@@ -170,8 +146,8 @@ function StatusBadge({
   return (
     <span
       className={[
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1",
-        "text-[11px] font-extrabold",
+        "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1",
+        "text-[11px] font-semibold",
         className,
       ].join(" ")}
     >
@@ -180,53 +156,103 @@ function StatusBadge({
   );
 }
 
+function EmployeeNumberBadge({ value }) {
+  return (
+    <div
+      className="flex h-11 min-w-[48px] shrink-0 items-center justify-center rounded-2xl bg-indigo-50 px-3 text-xs font-bold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
+      title={`Employee number ${formatEmployeeId(value)}`}
+    >
+      {formatEmployeeId(value)}
+    </div>
+  );
+}
+
+function SummaryItem({
+  label,
+  value,
+  tone = "slate",
+}) {
+  const toneClass = {
+    slate:
+      "text-slate-800 dark:text-slate-100",
+    indigo:
+      "text-indigo-700 dark:text-indigo-300",
+    emerald:
+      "text-emerald-700 dark:text-emerald-300",
+    rose:
+      "text-rose-700 dark:text-rose-300",
+  }[tone];
+
+  return (
+    <div className="flex items-baseline gap-1.5 whitespace-nowrap">
+      <span className={`text-lg font-bold ${toneClass}`}>
+        {value}
+      </span>
+
+      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function HistoryField({
+  label,
+  value,
+  strong = false,
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+        {label}
+      </p>
+
+      <p
+        className={[
+          "mt-1.5 text-sm leading-5",
+          strong
+            ? "font-semibold text-slate-900 dark:text-white"
+            : "font-medium text-slate-700 dark:text-slate-200",
+        ].join(" ")}
+      >
+        {value || "-"}
+      </p>
+    </div>
+  );
+}
+
 function HistoryCard({
   record,
   onRequestDelete,
   isDeleting = false,
+  canDeleteDecisions = false,
 }) {
   const decisionType =
     record?.decisionType ||
     "Recorded";
 
-  const decisionConfidence =
-    record?.decisionConfidence ||
-    DECISION_CONFIDENCE.LOW;
-
-  const suggestedHRAction =
-    record?.suggestedHRAction ||
-    HR_ACTION_WORKFLOW.MONITOR;
+  const reviewBasis =
+    record?.correctiveActionBasis ||
+    record?.suggestedHRActionReason ||
+    record?.decisionConfidenceReason ||
+    record?.recommendationReason ||
+    "No review basis was recorded.";
 
   return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="flex min-w-0 items-start gap-4">
-          <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-extrabold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
-            aria-hidden="true"
-          >
-            {getInitials(
-              record?.employeeName
-            )}
-          </div>
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <EmployeeNumberBadge
+            value={record?.employeeId}
+          />
 
           <div className="min-w-0">
-            <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-              {record?.employeeName ||
-                "Unknown Employee"}
-            </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                {record?.employeeName ||
+                  "Unknown Employee"}
+              </h3>
 
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              ID:{" "}
-              {formatEmployeeId(
-                record?.employeeId
-              )}{" "}
-              •{" "}
-              {record?.company ||
-                "Unassigned"}
-            </p>
-
-            <div className="mt-3 flex flex-wrap gap-2">
               <StatusBadge
                 className={getDecisionTypeClasses(
                   decisionType
@@ -235,143 +261,118 @@ function HistoryCard({
                 <DecisionTypeIcon
                   type={decisionType}
                 />
-
                 {decisionType}
               </StatusBadge>
-
-              <StatusBadge
-                className={getDecisionConfidenceClasses(
-                  decisionConfidence
-                )}
-              >
-                <FiZap
-                  size={12}
-                  aria-hidden="true"
-                />
-
-                {decisionConfidence}
-              </StatusBadge>
-
-              <StatusBadge
-                className={getSuggestedHRActionClasses(
-                  suggestedHRAction
-                )}
-              >
-                <FiShield
-                  size={12}
-                  aria-hidden="true"
-                />
-
-                {suggestedHRAction}
-              </StatusBadge>
-
-              <StatusBadge className="border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
-                <FiClock
-                  size={12}
-                  aria-hidden="true"
-                />
-
-                {formatDateTime(
-                  record?.decidedAt
-                )}
-              </StatusBadge>
             </div>
+
+            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+              {record?.company ||
+                "Unassigned"}
+            </p>
+
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <FiClock
+                size={12}
+                aria-hidden="true"
+              />
+              Reviewed{" "}
+              {formatDateTime(
+                record?.decidedAt ||
+                  record?.createdAt
+              )}
+            </p>
           </div>
         </div>
 
-        <Button
-          type="button"
-          variant="danger"
-          size="sm"
-          leftIcon={
-            <FiTrash2
-              aria-hidden="true"
-            />
-          }
-          loading={isDeleting}
-          disabled={isDeleting}
-          title="Remove decision history record"
-          onClick={() =>
-            onRequestDelete(record)
-          }
-        >
-          Remove
-        </Button>
+        {canDeleteDecisions && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            leftIcon={
+              <FiTrash2
+                aria-hidden="true"
+              />
+            }
+            loading={isDeleting}
+            disabled={isDeleting}
+            title="Remove decision record"
+            onClick={() =>
+              onRequestDelete(record)
+            }
+          >
+            Remove
+          </Button>
+        )}
       </div>
 
-      <div className="mt-5 grid gap-3 xl:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            System Recommendation
+      <div className="mt-4 grid gap-4 border-t border-slate-200 pt-4 dark:border-slate-800 lg:grid-cols-[1fr_1fr_0.8fr]">
+        <HistoryField
+          label="Original Recommendation"
+          value={
+            record?.systemRecommendation
+          }
+        />
+
+        <HistoryField
+          label="Final HR Action"
+          value={record?.finalAction}
+          strong
+        />
+
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            Reviewed By
           </p>
 
-          <p className="text-sm font-bold leading-6 text-slate-800 dark:text-slate-200">
-            {record?.systemRecommendation ||
-              "-"}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Final HR Action
-          </p>
-
-          <p className="text-sm font-bold leading-6 text-slate-800 dark:text-slate-200">
-            {record?.finalAction ||
-              "-"}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Decided By
-          </p>
-
-          <p className="text-sm font-bold leading-6 text-slate-800 dark:text-slate-200">
+          <p className="mt-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             {record?.decidedBy ||
               "HR User"}
           </p>
 
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             {record?.decidedByRole ||
               "Authorized User"}
           </p>
         </div>
       </div>
 
-      <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/30">
-        <p className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          <FiFileText
-            aria-hidden="true"
-          />
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40">
+          <p className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <FiFileText
+              aria-hidden="true"
+            />
+            HR Notes
+          </p>
 
-          HR Notes
-        </p>
+          <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">
+            {record?.notes ||
+              "No HR notes were recorded."}
+          </p>
+        </div>
 
-        <p className="text-sm leading-7 text-slate-600 dark:text-slate-300">
-          {record?.notes ||
-            "No HR notes recorded."}
-        </p>
-      </div>
+        <div className="rounded-xl bg-indigo-50/70 p-3 dark:bg-indigo-950/20">
+          <p className="flex items-center gap-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+            <FiShield
+              aria-hidden="true"
+            />
+            Review Basis
+          </p>
 
-      <div className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-900/60 dark:bg-indigo-950/20">
-        <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
-          Decision Basis Snapshot
-        </p>
-
-        <p className="line-clamp-3 text-sm leading-7 text-indigo-700/90 dark:text-indigo-300/90">
-          {record?.correctiveActionBasis ||
-            record?.suggestedHRActionReason ||
-            record?.decisionConfidenceReason ||
-            record?.recommendationReason ||
-            "No decision basis snapshot available."}
-        </p>
+          <p className="mt-1.5 line-clamp-3 text-sm leading-6 text-indigo-800/90 dark:text-indigo-300/90">
+            {reviewBasis}
+          </p>
+        </div>
       </div>
     </article>
   );
 }
 
-export default function DecisionHistorySection() {
+export default function DecisionHistorySection({
+  onBackToRecommendations,
+  canDeleteDecisions = false,
+}) {
   const [
     search,
     setSearch,
@@ -512,7 +513,7 @@ export default function DecisionHistorySection() {
         ) {
           setRefreshError(
             result?.error?.message ||
-              "Failed to refresh decision history."
+              "Unable to refresh decision history."
           );
         }
       } catch (refreshRequestError) {
@@ -523,7 +524,7 @@ export default function DecisionHistorySection() {
 
         setRefreshError(
           refreshRequestError?.message ||
-            "Failed to refresh decision history."
+            "Unable to refresh decision history."
         );
       }
     };
@@ -586,7 +587,7 @@ export default function DecisionHistorySection() {
         setDeleteTarget(null);
 
         setSuccessMessage(
-          "The decision history record was removed successfully."
+          "The HR decision record was removed."
         );
       } catch (deleteError) {
         console.error(
@@ -599,190 +600,187 @@ export default function DecisionHistorySection() {
   return (
     <>
       <section
-        className="space-y-5"
+        className="space-y-4"
         aria-labelledby="decision-history-title"
         aria-busy={
           isFetching &&
           !isLoading
         }
       >
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <h2
                 id="decision-history-title"
-                className="flex items-center gap-2 text-xl font-extrabold text-slate-900 dark:text-white"
+                className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white"
               >
                 <FiClock
                   className="text-indigo-600 dark:text-indigo-300"
                   aria-hidden="true"
                 />
-
                 Decision History
               </h2>
 
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                Stores reviewed HR
-                decisions from the
-                Recommendation Review
-                queue for monitoring,
-                reference, and employee
-                case tracking.
+              <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">
+                Review completed HR decisions and the actions recorded for each employee.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
-              <div className="rounded-2xl bg-indigo-50 px-4 py-3 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:ring-indigo-800/70">
-                <p className="text-[11px] font-extrabold uppercase">
-                  Total
-                </p>
+            <div className="flex flex-wrap items-center justify-start gap-3 xl:justify-end">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                <SummaryItem
+                  label="total"
+                  value={summary.total}
+                  tone="indigo"
+                />
 
-                <p className="mt-1 text-xl font-extrabold">
-                  {summary.total}
-                </p>
-              </div>
+                <SummaryItem
+                  label="accepted"
+                  value={summary.accepted}
+                  tone="emerald"
+                />
 
-              <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-800/70">
-                <p className="text-[11px] font-extrabold uppercase">
-                  Accepted
-                </p>
+                <SummaryItem
+                  label="modified"
+                  value={summary.modified}
+                  tone="indigo"
+                />
 
-                <p className="mt-1 text-xl font-extrabold">
-                  {summary.accepted}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-amber-50 px-4 py-3 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800/70">
-                <p className="text-[11px] font-extrabold uppercase">
-                  Modified
-                </p>
-
-                <p className="mt-1 text-xl font-extrabold">
-                  {summary.modified}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-red-50 px-4 py-3 text-red-700 ring-1 ring-red-200 dark:bg-red-950/30 dark:text-red-300 dark:ring-red-800/70">
-                <p className="text-[11px] font-extrabold uppercase">
-                  Rejected
-                </p>
-
-                <p className="mt-1 text-xl font-extrabold">
-                  {summary.rejected}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5">
-            <FilterBar
-              resultCount={
-                Number(
-                  pagination.total ||
-                    0
-                )
-              }
-              resultLabel="decision record"
-              actions={
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={
-                      !hasActiveFilters
-                    }
-                    onClick={
-                      handleClearFilters
-                    }
-                  >
-                    Clear All
-                  </Button>
-
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    leftIcon={
-                      <FiRefreshCw
-                        className={
-                          isFetching
-                            ? "animate-spin"
-                            : ""
-                        }
-                        aria-hidden="true"
-                      />
-                    }
-                    loading={isFetching}
-                    disabled={isFetching}
-                    onClick={
-                      handleRefresh
-                    }
-                  >
-                    Refresh
-                  </Button>
-                </>
-              }
-            >
-              <div className="w-full sm:col-span-2 xl:w-[520px]">
-                <SearchInput
-                  label="Search decision history"
-                  hideLabel
-                  placeholder="Search employee, action, reviewer, notes, confidence, or risk..."
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(
-                      event.target.value
-                    );
-                    setPage(1);
-                  }}
-                  onClear={() => {
-                    setSearch("");
-                    setDebouncedSearch("");
-                    setPage(1);
-                  }}
+                <SummaryItem
+                  label="rejected"
+                  value={summary.rejected}
+                  tone="rose"
                 />
               </div>
 
-              <div className="w-full xl:w-[200px]">
-                <label
-                  htmlFor="decision-history-filter"
-                  className="sr-only"
-                >
-                  Filter by decision type
-                </label>
-
-                <select
-                  id="decision-history-filter"
-                  value={
-                    decisionFilter
-                  }
-                  onChange={(event) => {
-                    setDecisionFilter(
-                      event.target.value
-                    );
-                    setPage(1);
-                  }}
-                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
-                >
-                  {DECISION_FILTER_OPTIONS.map(
-                    (option) => (
-                      <option
-                        key={
-                          option.value
-                        }
-                        value={
-                          option.value
-                        }
-                      >
-                        {option.label}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
-            </FilterBar>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                leftIcon={
+                  <FiArrowLeft aria-hidden="true" />
+                }
+                onClick={
+                  onBackToRecommendations
+                }
+              >
+                Recommendation Review
+              </Button>
+            </div>
           </div>
+
+          <div className="mt-4 flex flex-col gap-2 lg:flex-row lg:items-end">
+            <div className="min-w-0 flex-1">
+              <label className="mb-1.5 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                Search
+              </label>
+
+              <SearchInput
+                label="Search decision history"
+                hideLabel
+                placeholder="Search employee, final action, reviewer, notes, or company..."
+                value={search}
+                onChange={(event) => {
+                  setSearch(
+                    event.target.value
+                  );
+                  setPage(1);
+                }}
+                onClear={() => {
+                  setSearch("");
+                  setDebouncedSearch("");
+                  setPage(1);
+                }}
+              />
+            </div>
+
+            <div className="w-full lg:w-[220px]">
+              <label
+                htmlFor="decision-history-filter"
+                className="mb-1.5 block text-[11px] font-semibold text-slate-500 dark:text-slate-400"
+              >
+                Decision Type
+              </label>
+
+              <select
+                id="decision-history-filter"
+                value={
+                  decisionFilter
+                }
+                onChange={(event) => {
+                  setDecisionFilter(
+                    event.target.value
+                  );
+                  setPage(1);
+                }}
+                className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              >
+                {DECISION_FILTER_OPTIONS.map(
+                  (option) => (
+                    <option
+                      key={
+                        option.value
+                      }
+                      value={
+                        option.value
+                      }
+                    >
+                      {option.label}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {Number(
+                  pagination.total || 0
+                )} record(s)
+              </span>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={
+                  !hasActiveFilters
+                }
+                onClick={
+                  handleClearFilters
+                }
+              >
+                Clear Filters
+              </Button>
+
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                leftIcon={
+                  <FiRefreshCw
+                    className={
+                      isFetching
+                        ? "animate-spin"
+                        : ""
+                    }
+                    aria-hidden="true"
+                  />
+                }
+                loading={isFetching}
+                disabled={isFetching}
+                onClick={
+                  handleRefresh
+                }
+              >
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          <p className="mt-3 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+            Summary counts show all recorded decisions. Search and filters affect the records listed below.
+          </p>
         </div>
 
         {pageError && (
@@ -811,7 +809,7 @@ export default function DecisionHistorySection() {
           />
         ) : history.length ===
           0 ? (
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <EmptyState
               icon={
                 hasActiveFilters
@@ -821,12 +819,12 @@ export default function DecisionHistorySection() {
               title={
                 hasActiveFilters
                   ? "No decision records matched"
-                  : "No decision history recorded yet"
+                  : "No HR decisions recorded yet"
               }
               description={
                 hasActiveFilters
-                  ? "No recorded HR decisions matched the current search and decision filter."
-                  : "Decisions will appear here after HR accepts, modifies, or rejects a recommendation from the Recommendation Review tab."
+                  ? "No completed HR decisions matched the current search and filter."
+                  : "Completed decisions will appear here after HR accepts, modifies, or rejects a recommendation in Recommendation Review."
               }
               secondaryActionLabel={
                 hasActiveFilters
@@ -841,7 +839,7 @@ export default function DecisionHistorySection() {
             />
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid gap-3">
             {history.map(
               (record) => {
                 const isDeletingRecord =
@@ -866,6 +864,9 @@ export default function DecisionHistorySection() {
                     onRequestDelete={
                       handleRequestDelete
                     }
+                    canDeleteDecisions={
+                      canDeleteDecisions
+                    }
                   />
                 );
               }
@@ -877,8 +878,8 @@ export default function DecisionHistorySection() {
           pagination.total ||
             0
         ) > 0 && (
-          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+          <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
               Page{" "}
               {pagination.page || page}{" "}
               of{" "}
@@ -886,8 +887,7 @@ export default function DecisionHistorySection() {
                 1}{" "}
               •{" "}
               {pagination.total || 0}{" "}
-              matching decision
-              record(s)
+              matching record(s)
             </p>
 
             <div className="flex gap-2">
@@ -950,22 +950,23 @@ export default function DecisionHistorySection() {
             <div
               role="status"
               aria-live="polite"
-              className="flex items-center justify-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400"
+              className="flex items-center justify-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400"
             >
               <FiRefreshCw
                 className="animate-spin"
                 aria-hidden="true"
               />
-
-              Updating decision
-              history...
+              Updating decision history...
             </div>
           )}
       </section>
 
       <ConfirmDialog
-        open={Boolean(deleteTarget)}
-        title="Remove Decision Record"
+        open={
+          canDeleteDecisions &&
+          Boolean(deleteTarget)
+        }
+        title="Remove HR Decision Record"
         tone="danger"
         confirmLabel="Remove Record"
         cancelLabel="Cancel"
@@ -986,31 +987,26 @@ export default function DecisionHistorySection() {
         }
       >
         <p>
-          Are you sure you want to
-          remove the decision record
-          for{" "}
-          <strong className="font-bold text-slate-900 dark:text-white">
+          Remove the recorded HR decision for{" "}
+          <strong className="font-semibold text-slate-900 dark:text-white">
             {deleteTarget?.employeeName ||
               "this employee"}
           </strong>
           ?
         </p>
 
-        <p className="mt-2 font-semibold text-red-600 dark:text-red-300">
-          This action removes the
-          recorded HR decision from
-          Decision History and cannot
-          be undone.
+        <p className="mt-2 text-sm font-medium text-rose-600 dark:text-rose-300">
+          This is permanent. If the employee still meets the review conditions, the recommendation may appear again in Recommendation Review.
         </p>
 
         {deleteDecisionMutation.isError && (
           <p
             role="alert"
-            className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300"
+            className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300"
           >
             {deleteDecisionMutation
               .error?.message ||
-              "Failed to remove the decision record."}
+              "The HR decision record could not be removed."}
           </p>
         )}
       </ConfirmDialog>

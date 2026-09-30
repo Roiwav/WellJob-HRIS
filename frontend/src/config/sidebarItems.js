@@ -10,7 +10,6 @@ export const sidebarItems = [
       ROLES.HR_STAFF,
     ],
   },
-
   {
     title: "Employees",
     path: "/employees",
@@ -21,7 +20,13 @@ export const sidebarItems = [
       ROLES.HR_COORDINATOR,
     ],
   },
-
+  {
+    title: "Attendance",
+    path: "/attendance",
+    allowedRoles: [
+      ROLES.HR_COORDINATOR,
+    ],
+  },
   {
     title: "Deployments",
     path: "/deployments",
@@ -32,7 +37,6 @@ export const sidebarItems = [
       ROLES.HR_COORDINATOR,
     ],
   },
-
   {
     title: "Incidents",
     path: "/incidents",
@@ -43,7 +47,6 @@ export const sidebarItems = [
       ROLES.HR_COORDINATOR,
     ],
   },
-
   {
     title: "KPI Reports",
     path: "/kpi",
@@ -53,7 +56,6 @@ export const sidebarItems = [
       ROLES.HR_STAFF,
     ],
   },
-
   {
     title: "Notifications",
     path: "/notifications",
@@ -64,7 +66,6 @@ export const sidebarItems = [
       ROLES.IT_SUPPORT,
     ],
   },
-
   {
     title: "User Management",
     path: "/settings",
@@ -72,7 +73,6 @@ export const sidebarItems = [
       ROLES.IT_SUPPORT,
     ],
   },
-
   {
     title: "Super Admin Portal",
     path: "/super-admin",
@@ -80,7 +80,6 @@ export const sidebarItems = [
       ROLES.SUPER_ADMIN,
     ],
   },
-
   {
     title: "System Configuration",
     path: "/system-configuration",
@@ -89,7 +88,6 @@ export const sidebarItems = [
       ROLES.HR_MANAGER,
     ],
   },
-
   {
     title: "Technical Audit",
     path: "/technical-audit-logs",
@@ -97,7 +95,6 @@ export const sidebarItems = [
       ROLES.IT_SUPPORT,
     ],
   },
-
   {
     title: "Operational Audit",
     path: "/operational-audit-logs",

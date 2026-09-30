@@ -1,21 +1,17 @@
+import axios from "axios";
 import {
   FiAlertTriangle,
   FiInfo,
   FiUser,
 } from "react-icons/fi";
-
 import useEmployeeForm from "../../hooks/employees/useEmployeeForm";
 import {
+  EMPLOYEE_API_URL,
+  buildEmployeeFormData,
   getEmployeeApiError,
 } from "../../utils/employees/employeeFormHelpers";
-
-import {
-  saveEmployeeWithDirectUploads,
-} from "../../utils/employees/employeeDirectUpload";
-
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
-
 import EmployeeDocumentsSection from "./EmployeeDocumentsSection";
 import EmployeeFormFields from "./EmployeeFormFields";
 import EmployeeReviewDialog from "./EmployeeReviewDialog";
@@ -27,7 +23,6 @@ import {
   DOCUMENT_OPTIONS,
   toProperName,
 } from "./employeeConstants";
-
 export default function AddEmployeeModal({
   onClose,
   generatedId = "",
@@ -41,13 +36,11 @@ export default function AddEmployeeModal({
     showDocuments,
     duplicateConfirmed,
     duplicateEmployee,
-
     companyOptions,
     positionOptions,
     isLoadingCompanies,
     isLoadingPositions,
     deploymentOptionsError,
-
     dragTargetDocument,
     completedDocuments,
     completion,
@@ -55,11 +48,9 @@ export default function AddEmployeeModal({
     remainingDocuments,
     isSaving,
     saveError,
-
     setIsSaving,
     setSaveError,
     setShowReview,
-
     handleChange,
     handleNameBlur,
     handleDuplicateConfirmChange,
@@ -77,7 +68,6 @@ export default function AddEmployeeModal({
     employeeId: generatedId,
     employees,
   });
-
   const handleClose = () => {
     if (
       isSaving ||
@@ -85,38 +75,35 @@ export default function AddEmployeeModal({
     ) {
       return;
     }
-
     onClose?.();
   };
-
   const handleConfirmSave =
     async () => {
       if (isSaving) {
         return;
       }
-
       try {
         setIsSaving(
           true
         );
-
         setSaveError(
           ""
         );
-
+        const requestData =
+          buildEmployeeFormData(
+            formData
+          );
         const employeeName =
           toProperName(
             formData.name
           );
-
-        await saveEmployeeWithDirectUploads({
-          formData,
-        });
-
+        await axios.post(
+          EMPLOYEE_API_URL,
+          requestData
+        );
         setShowReview(
           false
         );
-
         if (
           typeof onSaveSuccess ===
           "function"
@@ -132,7 +119,6 @@ export default function AddEmployeeModal({
           "SAVE EMPLOYEE ERROR:",
           error
         );
-
         setSaveError(
           getEmployeeApiError(
             error,
@@ -145,7 +131,6 @@ export default function AddEmployeeModal({
         );
       }
     };
-
   return (
     <>
       <Dialog
@@ -175,21 +160,19 @@ export default function AddEmployeeModal({
         className="border-white/10"
       >
         <div className="flex h-full min-h-0 w-full overflow-hidden">
-          <aside className="hidden w-80 shrink-0 overflow-y-auto border-r border-white/10 bg-gradient-to-b from-indigo-700 via-blue-700 to-slate-950 p-7 text-white lg:block">
+          <aside className="hidden w-80 shrink-0 overflow-y-auto border-r border-white/5 bg-gradient-to-b from-indigo-950 via-slate-900 to-slate-950 p-7 text-white lg:block">
             <div className="flex min-h-full flex-col">
               <div>
-                <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
+                <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/10">
                   <FiUser
                     size={26}
                     aria-hidden="true"
                   />
                 </div>
-
                 <h2 className="text-2xl font-extrabold">
                   New Employee
                 </h2>
-
-                <p className="mt-3 text-sm leading-6 text-white/75">
+                <p className="mt-3 text-sm leading-6 text-white/70">
                   Register employee
                   information, verify
                   duplicate names, and
@@ -197,19 +180,16 @@ export default function AddEmployeeModal({
                   documents.
                 </p>
               </div>
-
-              <div className="mt-8 rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
-                <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-white/75">
+              <div className="mt-8 rounded-2xl bg-white/[0.07] p-4 ring-1 ring-white/10">
+                <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-white/65">
                   <span>
                     Completion
                   </span>
-
                   <span>
                     {completion}%
                   </span>
                 </div>
-
-                <div className="h-2 overflow-hidden rounded-full bg-white/15">
+                <div className="h-2 overflow-hidden rounded-full bg-white/10">
                   <div
                     className="h-full rounded-full bg-white transition-all duration-300"
                     style={{
@@ -218,10 +198,9 @@ export default function AddEmployeeModal({
                     }}
                   />
                 </div>
-
                 {remainingDocuments >
                   0 && (
-                  <p className="mt-3 text-xs text-white/70">
+                  <p className="mt-3 text-xs text-white/60">
                     {
                       remainingDocuments
                     }{" "}
@@ -234,25 +213,21 @@ export default function AddEmployeeModal({
                   </p>
                 )}
               </div>
-
               <div className="mt-5 space-y-3 text-sm">
-                <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
+                <div className="rounded-2xl bg-white/[0.07] p-4 ring-1 ring-white/10">
                   <p className="font-bold">
                     Employee ID
                   </p>
-
-                  <p className="mt-1 text-white/75">
+                  <p className="mt-1 text-white/65">
                     {generatedId ||
                       "-"}
                   </p>
                 </div>
-
-                <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15">
+                <div className="rounded-2xl bg-white/[0.07] p-4 ring-1 ring-white/10">
                   <p className="font-bold">
                     Complete Documents
                   </p>
-
-                  <p className="mt-1 text-white/75">
+                  <p className="mt-1 text-white/65">
                     {
                       completedDocuments.length
                     }
@@ -265,7 +240,6 @@ export default function AddEmployeeModal({
               </div>
             </div>
           </aside>
-
           <section className="flex min-w-0 flex-1 flex-col">
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-5 sm:px-6 dark:border-white/10 dark:bg-slate-900">
               <div className="min-w-0">
@@ -276,7 +250,6 @@ export default function AddEmployeeModal({
                     />
                     Create Mode
                   </StatusPill>
-
                   {duplicateEmployee && (
                     <StatusPill
                       tone={
@@ -288,25 +261,21 @@ export default function AddEmployeeModal({
                       <FiAlertTriangle
                         aria-hidden="true"
                       />
-
                       {duplicateConfirmed
                         ? "Duplicate Verified"
                         : "Possible Duplicate"}
                     </StatusPill>
                   )}
                 </div>
-
                 <h2 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">
                   Add Employee Record
                 </h2>
-
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   Complete the employee
                   information and review
                   it before saving.
                 </p>
               </div>
-
               <Button
                 variant="secondary"
                 disabled={
@@ -319,7 +288,6 @@ export default function AddEmployeeModal({
                 Close
               </Button>
             </header>
-
             <form
               onSubmit={
                 handleSubmit
@@ -376,7 +344,6 @@ export default function AddEmployeeModal({
                         }
                       />
                     </main>
-
                     <aside className="min-w-0 space-y-4">
                       <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
                         <div className="mb-4 flex items-center gap-3">
@@ -385,19 +352,16 @@ export default function AddEmployeeModal({
                               aria-hidden="true"
                             />
                           </div>
-
                           <div>
                             <h3 className="font-extrabold text-gray-900 dark:text-white">
                               Record Summary
                             </h3>
-
                             <p className="text-xs text-gray-500 dark:text-gray-400">
                               Live preview
                               before review.
                             </p>
                           </div>
                         </div>
-
                         <div className="space-y-3 text-sm">
                           <SummaryRow
                             label="Employee ID"
@@ -406,7 +370,6 @@ export default function AddEmployeeModal({
                               "-"
                             }
                           />
-
                           <SummaryRow
                             label="Full Name"
                             value={
@@ -416,14 +379,12 @@ export default function AddEmployeeModal({
                               "-"
                             }
                           />
-
                           <SummaryRow
                             label="Status"
                             value={
                               formData.status
                             }
                           />
-
                           <SummaryRow
                             label="Company"
                             value={
@@ -434,7 +395,6 @@ export default function AddEmployeeModal({
                                 : "Not Assigned"
                             }
                           />
-
                           <SummaryRow
                             label="Position"
                             value={
@@ -445,7 +405,6 @@ export default function AddEmployeeModal({
                                 : "Not Assigned"
                             }
                           />
-
                           <SummaryRow
                             label="Start Date"
                             value={
@@ -456,14 +415,12 @@ export default function AddEmployeeModal({
                                 : "Not Applicable"
                             }
                           />
-
                           <SummaryRow
                             label="Documents"
                             value={`${completedDocuments.length}/${DOCUMENT_OPTIONS.length}`}
                           />
                         </div>
                       </div>
-
                       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                         <div className="mb-1 flex items-center gap-2 font-extrabold">
                           <FiAlertTriangle
@@ -471,7 +428,6 @@ export default function AddEmployeeModal({
                           />
                           HRIS Reminder
                         </div>
-
                         <p className="leading-5">
                           Verify possible
                           duplicate names
@@ -482,7 +438,6 @@ export default function AddEmployeeModal({
                       </div>
                     </aside>
                   </div>
-
                   <EmployeeDocumentsSection
                     documents={
                       formData.documents
@@ -526,7 +481,6 @@ export default function AddEmployeeModal({
                   />
                 </div>
               </div>
-
               <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:justify-end sm:px-6 dark:border-white/10 dark:bg-slate-900">
                 <Button
                   variant="secondary"
@@ -539,7 +493,6 @@ export default function AddEmployeeModal({
                 >
                   Cancel
                 </Button>
-
                 <Button
                   type="submit"
                   disabled={
@@ -553,7 +506,6 @@ export default function AddEmployeeModal({
           </section>
         </div>
       </Dialog>
-
       <EmployeeReviewDialog
         open={
           showReview

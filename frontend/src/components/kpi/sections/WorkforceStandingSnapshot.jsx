@@ -1,278 +1,115 @@
 import {
   FiAlertTriangle,
+  FiArrowRight,
   FiCheckCircle,
-  FiShield,
   FiTarget,
   FiUsers,
   FiZap,
 } from "react-icons/fi";
 
-const STANDING_METRIC_TONES = {
-  emerald: {
-    card:
-      "border-emerald-500/20 bg-emerald-500/[0.08]",
-    text: "text-emerald-300",
-    icon:
-      "bg-emerald-500/10 text-emerald-300",
-  },
-
-  amber: {
-    card:
-      "border-amber-500/20 bg-amber-500/[0.08]",
-    text: "text-amber-300",
-    icon:
-      "bg-amber-500/10 text-amber-300",
-  },
-
-  red: {
-    card:
-      "border-red-500/20 bg-red-500/[0.08]",
-    text: "text-red-300",
-    icon:
-      "bg-red-500/10 text-red-300",
-  },
-
-  indigo: {
-    card:
-      "border-indigo-500/20 bg-indigo-500/[0.08]",
-    text: "text-indigo-300",
-    icon:
-      "bg-indigo-500/10 text-indigo-300",
-  },
-
-  slate: {
-    card:
-      "border-slate-800 bg-slate-950/30",
-    text: "text-slate-200",
-    icon:
-      "bg-slate-800 text-slate-300",
-  },
-};
-
 function formatEmployeeId(id) {
-  return String(id || "-").replace(
-    /^KPI-/i,
-    ""
-  );
+  return String(id || "-").replace(/^KPI-/i, "");
 }
 
-function getInitials(name) {
-  return String(
-    name || "Employee"
-  )
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) =>
-      part[0]?.toUpperCase()
-    )
-    .join("");
-}
 
-function getPriorityEmployees(
-  employees = []
-) {
-  const safeEmployees =
-    Array.isArray(employees)
-      ? employees
-      : [];
+function getPriorityEmployees(employees = []) {
+  const safeEmployees = Array.isArray(employees) ? employees : [];
 
   return [...safeEmployees]
     .filter((employee) => {
       return (
-        employee?.riskLevel ===
-          "High Risk" ||
-        employee?.riskLevel ===
-          "Repeat" ||
-        Number(
-          employee?.criticalIncidentCount ||
-            0
-        ) > 0 ||
-        Number(
-          employee?.violationCount ||
-            0
-        ) >= 3
+        employee?.riskLevel === "High Risk" ||
+        employee?.riskLevel === "Repeat" ||
+        Number(employee?.criticalIncidentCount || 0) > 0 ||
+        Number(employee?.violationCount || 0) >= 3
       );
     })
-    .sort(
-      (
-        firstEmployee,
-        secondEmployee
-      ) => {
-        const severityDifference =
-          Number(
-            secondEmployee?.severityScore ||
-              0
-          ) -
-          Number(
-            firstEmployee?.severityScore ||
-              0
-          );
+    .sort((firstEmployee, secondEmployee) => {
+      const severityDifference =
+        Number(secondEmployee?.severityScore || 0) -
+        Number(firstEmployee?.severityScore || 0);
 
-        if (
-          severityDifference !== 0
-        ) {
-          return severityDifference;
-        }
-
-        return (
-          Number(
-            secondEmployee?.violationCount ||
-              0
-          ) -
-          Number(
-            firstEmployee?.violationCount ||
-              0
-          )
-        );
+      if (severityDifference !== 0) {
+        return severityDifference;
       }
-    )
+
+      return (
+        Number(secondEmployee?.violationCount || 0) -
+        Number(firstEmployee?.violationCount || 0)
+      );
+    })
     .slice(0, 3);
 }
 
-function getPriorityEmployeeStyle(
-  employee
-) {
+function getPriorityEmployeeStyle(employee) {
   const isHighRisk =
-    employee?.riskLevel ===
-      "High Risk" ||
-    Number(
-      employee?.criticalIncidentCount ||
-        0
-    ) > 0;
+    employee?.riskLevel === "High Risk" ||
+    Number(employee?.criticalIncidentCount || 0) > 0;
 
-  if (isHighRisk) {
-    return {
-      avatar:
-        "bg-red-500/10 text-red-300",
-
-      badge:
-        "border-red-500/30 bg-red-500/10 text-red-300",
-    };
-  }
-
-  return {
-    avatar:
-      "bg-amber-500/10 text-amber-300",
-
-    badge:
-      "border-amber-500/30 bg-amber-500/10 text-amber-300",
-  };
+  return isHighRisk
+    ? {
+        avatar:
+          "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300",
+        badge:
+          "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300",
+      }
+    : {
+        avatar:
+          "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+        badge:
+          "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+      };
 }
 
-function StandingMetric({
-  icon,
-  label,
-  value,
-  helper,
-  tone = "slate",
-}) {
-  const style =
-    STANDING_METRIC_TONES[tone] ||
-    STANDING_METRIC_TONES.slate;
+function PriorityEmployeeRow({ employee }) {
+  const style = getPriorityEmployeeStyle(employee);
 
   return (
-    <article
-      className={`rounded-2xl border px-4 py-3 ${style.card}`}
-    >
-      <div className="flex items-center justify-between gap-3">
+    <div className="grid gap-3 border-b border-slate-200 py-3 last:border-b-0 dark:border-slate-800 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className="flex h-11 min-w-[48px] shrink-0 items-center justify-center rounded-2xl bg-indigo-50 px-3 text-xs font-black text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
+          title={`Employee number ${formatEmployeeId(employee?.id)}`}
+        >
+          {formatEmployeeId(employee?.id)}
+        </div>
+
         <div className="min-w-0">
-          <p className="truncate text-[10px] font-black uppercase tracking-wide text-slate-400">
-            {label}
-          </p>
-
-          <p
-            className={`mt-1 text-2xl font-black leading-none ${style.text}`}
-          >
-            {value}
-          </p>
-        </div>
-
-        <div
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm ${style.icon}`}
-          aria-hidden="true"
-        >
-          {icon}
-        </div>
-      </div>
-
-      <p className="mt-2 truncate text-[11px] font-semibold text-slate-400">
-        {helper}
-      </p>
-    </article>
-  );
-}
-
-function PriorityEmployeeRow({
-  employee,
-}) {
-  const priorityStyle =
-    getPriorityEmployeeStyle(
-      employee
-    );
-
-  return (
-    <article className="rounded-2xl border border-slate-800 bg-slate-950/35 px-4 py-3">
-      <div className="flex items-center gap-3">
-        <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-black ${priorityStyle.avatar}`}
-          aria-hidden="true"
-        >
-          {getInitials(
-            employee?.name
-          )}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black text-white">
-                {employee?.name ||
-                  "Unknown Employee"}
-              </p>
-
-              <p className="mt-0.5 truncate text-xs text-slate-500">
-                ID:{" "}
-                {formatEmployeeId(
-                  employee?.id
-                )}{" "}
-                •{" "}
-                {employee?.company ||
-                  "Unassigned"}
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-black text-slate-900 dark:text-white">
+              {employee?.name || "Unknown Employee"}
+            </p>
 
             <span
-              className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black ${priorityStyle.badge}`}
+              className={`rounded-full px-2 py-0.5 text-[9px] font-black ${style.badge}`}
             >
-              {employee?.riskLevel ||
-                "For Review"}
+              {employee?.riskLevel || "For Review"}
             </span>
           </div>
 
-          <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-slate-300">
-            <span className="rounded-lg bg-slate-900 px-2.5 py-1">
-              Vio.{" "}
-              {Number(
-                employee?.violationCount
-              ) || 0}
-            </span>
-
-            <span className="rounded-lg bg-slate-900 px-2.5 py-1">
-              Severity{" "}
-              {Number(
-                employee?.severityScore
-              ) || 0}
-            </span>
-
-            <span className="rounded-lg bg-slate-900 px-2.5 py-1">
-              {employee?.suggestedHRAction ||
-                "Review"}
-            </span>
-          </div>
+          <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+            {employee?.company || "Unassigned"}
+          </p>
         </div>
       </div>
-    </article>
+
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-12 text-[10px] font-bold text-slate-600 dark:text-slate-300 md:justify-end md:pl-0">
+        <span>{Number(employee?.violationCount) || 0} violation(s)</span>
+        <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
+          •
+        </span>
+        <span>Severity {Number(employee?.severityScore) || 0}</span>
+        <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
+          •
+        </span>
+        <span
+          className="max-w-[220px] truncate text-indigo-600 dark:text-indigo-300"
+          title={employee?.suggestedHRAction || "Review"}
+        >
+          {employee?.suggestedHRAction || "Review"}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -282,243 +119,160 @@ export default function WorkforceStandingSnapshot({
   goodStandingEmployees = 0,
   highRiskEmployees = 0,
   pendingRecommendationCount = 0,
+  onOpenIntelligence,
+  onOpenReview,
 }) {
-  const priorityEmployees =
-    getPriorityEmployees(
-      employees
-    );
+  const priorityEmployees = getPriorityEmployees(employees);
 
-  const safeTotalEmployees =
-    Math.max(
-      0,
-      Number(
-        totalEmployees || 0
-      )
-    );
-
-  const safeGoodStandingEmployees =
-    Math.max(
-      0,
-      Number(
-        goodStandingEmployees || 0
-      )
-    );
-
-  const safeHighRiskEmployees =
-    Math.max(
-      0,
-      Number(
-        highRiskEmployees || 0
-      )
-    );
-
-  const safePendingRecommendationCount =
-    Math.max(
-      0,
-      Number(
-        pendingRecommendationCount ||
-          0
-      )
-    );
+  const safeTotalEmployees = Math.max(0, Number(totalEmployees || 0));
+  const safeGoodStandingEmployees = Math.max(
+    0,
+    Number(goodStandingEmployees || 0)
+  );
+  const safeHighRiskEmployees = Math.max(
+    0,
+    Number(highRiskEmployees || 0)
+  );
+  const safePendingRecommendationCount = Math.max(
+    0,
+    Number(pendingRecommendationCount || 0)
+  );
 
   const stablePercentage =
     safeTotalEmployees > 0
       ? Math.round(
-          (safeGoodStandingEmployees /
-            safeTotalEmployees) *
-            100
-        )
-      : 0;
-
-  const reviewPercentage =
-    safeTotalEmployees > 0
-      ? Math.round(
-          (safePendingRecommendationCount /
-            safeTotalEmployees) *
-            100
+          (safeGoodStandingEmployees / safeTotalEmployees) * 100
         )
       : 0;
 
   return (
-    <section
-      className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm"
-      aria-labelledby="employee-standing-title"
-    >
-      <div className="mb-4 flex flex-col gap-1">
-        <h2
-          id="employee-standing-title"
-          className="flex items-center gap-2 text-base font-black text-white"
-        >
-          <FiUsers
-            className="text-indigo-300"
-            aria-hidden="true"
-          />
+    <section aria-labelledby="workforce-focus-title">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2
+            id="workforce-focus-title"
+            className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white"
+          >
+            <FiUsers
+              className="text-indigo-600 dark:text-indigo-300"
+              aria-hidden="true"
+            />
+            HR Focus
+          </h2>
+          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+            Employees and recommendations that need attention.
+          </p>
+        </div>
 
-          Employee Standing Overview
-        </h2>
-
-        <p className="text-xs leading-5 text-slate-400">
-          Summary of employee standing,
-          pending HR review, and priority
-          cases.
-        </p>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold sm:mt-0">
+          <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+            <FiCheckCircle aria-hidden="true" />
+            {stablePercentage}% good standing
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-rose-700 dark:text-rose-300">
+            <FiAlertTriangle aria-hidden="true" />
+            {safeHighRiskEmployees} high risk
+          </span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StandingMetric
-          icon={
-            <FiCheckCircle
-              aria-hidden="true"
-            />
-          }
-          label="Good Standing"
-          value={
-            safeGoodStandingEmployees
-          }
-          helper={`${stablePercentage}% stable records`}
-          tone="emerald"
-        />
-
-        <StandingMetric
-          icon={
-            <FiTarget
-              aria-hidden="true"
-            />
-          }
-          label="Needs Review"
-          value={
-            safePendingRecommendationCount
-          }
-          helper={`${reviewPercentage}% pending validation`}
-          tone="amber"
-        />
-
-        <StandingMetric
-          icon={
-            <FiAlertTriangle
-              aria-hidden="true"
-            />
-          }
-          label="High Risk"
-          value={
-            safeHighRiskEmployees
-          }
-          helper="Priority monitoring cases"
-          tone="red"
-        />
-
-        <StandingMetric
-          icon={
-            <FiShield
-              aria-hidden="true"
-            />
-          }
-          label="Monitored"
-          value={
-            safeTotalEmployees
-          }
-          helper="Active KPI records"
-          tone="indigo"
-        />
-      </div>
-
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="flex items-center gap-2 text-sm font-black text-white">
+      <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2.5 dark:border-slate-800">
+            <div>
+              <h3 className="flex items-center gap-2 text-xs font-black text-slate-900 dark:text-white">
                 <FiZap
-                  className="text-red-300"
+                  className="text-rose-600 dark:text-rose-300"
                   aria-hidden="true"
                 />
-
                 Priority Attention
               </h3>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Top employees requiring
-                immediate HR checking.
+              <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                Top employees based on current risk and incident severity.
               </p>
             </div>
 
-            <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[10px] font-black text-slate-300">
-              Top{" "}
-              {
-                priorityEmployees.length
-              }
-            </span>
+            <button
+              type="button"
+              onClick={onOpenIntelligence}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-black text-indigo-600 transition hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
+            >
+              View all
+              <FiArrowRight aria-hidden="true" />
+            </button>
           </div>
 
-          {priorityEmployees.length ===
-          0 ? (
-            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-300">
-              <p className="text-sm font-black">
-                No priority attention
-                detected.
-              </p>
-
-              <p className="mt-1 text-xs leading-5 opacity-80">
-                Current records do not
-                show high-risk employee
-                cases.
-              </p>
+          {priorityEmployees.length === 0 ? (
+            <div className="flex items-center gap-3 py-5 text-sm text-emerald-700 dark:text-emerald-300">
+              <FiCheckCircle aria-hidden="true" />
+              <span className="font-bold">No priority cases detected.</span>
             </div>
           ) : (
-            <div className="space-y-2.5">
-              {priorityEmployees.map(
-                (employee) => (
-                  <PriorityEmployeeRow
-                    key={
-                      employee?.id ||
-                      employee?.employeeId ||
-                      employee?.name
-                    }
-                    employee={
-                      employee
-                    }
-                  />
-                )
-              )}
+            <div>
+              {priorityEmployees.map((employee) => (
+                <PriorityEmployeeRow
+                  key={
+                    employee?.id ||
+                    employee?.employeeId ||
+                    employee?.name
+                  }
+                  employee={employee}
+                />
+              ))}
             </div>
           )}
         </div>
 
-        <aside className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
-          <h3 className="flex items-center gap-2 text-sm font-black text-white">
-            <FiCheckCircle
-              className="text-emerald-300"
-              aria-hidden="true"
-            />
+        <aside className="flex flex-col rounded-xl bg-slate-50 p-4 dark:bg-slate-950/40">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[0.11em] text-slate-500 dark:text-slate-400">
+                Review Queue
+              </p>
+              <p className="mt-1 text-3xl font-black leading-none text-amber-600 dark:text-amber-300">
+                {safePendingRecommendationCount}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                recommendation(s) waiting for HR validation
+              </p>
+            </div>
 
-            Stable Workforce
-          </h3>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+              <FiTarget aria-hidden="true" />
+            </div>
+          </div>
 
-          <div className="mt-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4">
-            <p className="text-3xl font-black text-emerald-300">
-              {
-                safeGoodStandingEmployees
-              }
-            </p>
+          <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                Good standing
+              </span>
+              <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">
+                {safeGoodStandingEmployees}
+              </span>
+            </div>
 
-            <p className="mt-2 text-xs font-bold leading-5 text-emerald-200">
-              employees have no recorded
-              negative KPI pattern.
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+              <div
+                className="h-full rounded-full bg-emerald-500"
+                style={{ width: `${Math.min(100, stablePercentage)}%` }}
+              />
+            </div>
+
+            <p className="mt-2 text-[10px] leading-4 text-slate-500 dark:text-slate-400">
+              {safeGoodStandingEmployees} of {safeTotalEmployees} active KPI
+              records currently meet the good-standing criteria.
             </p>
           </div>
 
-          <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950/35 p-4">
-            <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">
-              Interpretation
-            </p>
-
-            <p className="mt-2 text-xs leading-5 text-slate-400">
-              Detailed employee records
-              are available in Employee
-              Intelligence. Pending
-              validation is handled in
-              Recommendation Review.
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={onOpenReview}
+            className="mt-4 inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-black text-white transition hover:bg-indigo-500 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/25"
+          >
+            Open Review Queue
+            <FiArrowRight aria-hidden="true" />
+          </button>
         </aside>
       </div>
     </section>

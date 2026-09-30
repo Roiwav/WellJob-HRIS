@@ -1,12 +1,6 @@
-import {
-  useEffect,
-  useState,
-} from "react";
+import { useEffect, useState } from "react";
 
-const API_BASE_URL = String(
-  import.meta.env.VITE_API_URL ||
-    "http://localhost:5000"
-).replace(/\/+$/, "");
+import { API_BASE } from "../../config/api";
 
 /*
  * ==================================================
@@ -21,6 +15,7 @@ const API_BASE_URL = String(
  * cannot be attached that way.
  *
  * This component:
+ * - Uses the centralized WELLJOB API configuration
  * - Fetches the avatar with the current JWT
  * - Displays an image using a temporary object URL
  * - Shows initials when no image is available
@@ -63,17 +58,14 @@ export default function AuthenticatedAvatar({
    * while a replacement image is being loaded.
    */
 
-  const [avatarState, setAvatarState] =
-    useState({
-      key: null,
-      url: null,
-    });
+  const [avatarState, setAvatarState] = useState({
+    key: null,
+    url: null,
+  });
 
-  const [brokenImageKey, setBrokenImageKey] =
-    useState(null);
+  const [brokenImageKey, setBrokenImageKey] = useState(null);
 
-  const userId =
-    user?.id ?? null;
+  const userId = user?.id ?? null;
 
   const avatarFilename =
     user?.avatarFilename ??
@@ -98,36 +90,29 @@ export default function AuthenticatedAvatar({
       return undefined;
     }
 
-    const token =
-      localStorage.getItem("token");
+    const token = localStorage.getItem("token");
 
     if (!token) {
       return undefined;
     }
 
-    const controller =
-      new AbortController();
+    const controller = new AbortController();
 
     let objectUrl = null;
 
     async function loadAvatar() {
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/users/${encodeURIComponent(
+          `${API_BASE}/users/${encodeURIComponent(
             String(userId)
           )}/avatar`,
           {
             method: "GET",
-
             headers: {
-              Authorization:
-                `Bearer ${token}`,
+              Authorization: `Bearer ${token}`,
             },
-
             cache: "no-store",
-
-            signal:
-              controller.signal,
+            signal: controller.signal,
           }
         );
 
@@ -141,32 +126,20 @@ export default function AuthenticatedAvatar({
          */
 
         const contentType = String(
-          response.headers.get(
-            "content-type"
-          ) || ""
+          response.headers.get("content-type") || ""
         ).toLowerCase();
 
-        if (
-          !contentType.startsWith(
-            "image/webp"
-          )
-        ) {
+        if (!contentType.startsWith("image/webp")) {
           return;
         }
 
-        const imageBlob =
-          await response.blob();
+        const imageBlob = await response.blob();
 
-        if (
-          controller.signal.aborted
-        ) {
+        if (controller.signal.aborted) {
           return;
         }
 
-        objectUrl =
-          URL.createObjectURL(
-            imageBlob
-          );
+        objectUrl = URL.createObjectURL(imageBlob);
 
         /*
          * The user may have switched conversations
@@ -174,15 +147,9 @@ export default function AuthenticatedAvatar({
          * the request was running.
          */
 
-        if (
-          controller.signal.aborted
-        ) {
-          URL.revokeObjectURL(
-            objectUrl
-          );
-
+        if (controller.signal.aborted) {
+          URL.revokeObjectURL(objectUrl);
           objectUrl = null;
-
           return;
         }
 
@@ -191,10 +158,7 @@ export default function AuthenticatedAvatar({
           url: objectUrl,
         });
       } catch (error) {
-        if (
-          error?.name !==
-          "AbortError"
-        ) {
+        if (error?.name !== "AbortError") {
           console.error(
             "Unable to load chat avatar:",
             error
@@ -209,15 +173,10 @@ export default function AuthenticatedAvatar({
       controller.abort();
 
       if (objectUrl) {
-        URL.revokeObjectURL(
-          objectUrl
-        );
+        URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [
-    avatarKey,
-    userId,
-  ]);
+  }, [avatarKey, userId]);
 
   /*
    * ==================================================
@@ -243,9 +202,7 @@ export default function AuthenticatedAvatar({
         alt=""
         className={`${sizeClass} shrink-0 rounded-full object-cover`}
         onError={() => {
-          setBrokenImageKey(
-            avatarKey
-          );
+          setBrokenImageKey(avatarKey);
         }}
       />
     );

@@ -2,44 +2,32 @@ const EXPIRABLE_DOCUMENTS = [
   "Barangay Clearance",
   "NBI/Police Clearance",
 ];
-
 function normalizeText(value) {
   return String(value || "")
     .trim()
     .toLowerCase();
 }
-
 function normalizeDate(value) {
   if (!value) return "";
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return "";
   }
-
   const year = date.getFullYear();
-
   const month = String(
     date.getMonth() + 1
   ).padStart(2, "0");
-
   const day = String(
     date.getDate()
   ).padStart(2, "0");
-
   return `${year}-${month}-${day}`;
 }
-
 function formatDate(value) {
   if (!value) return "-";
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return "-";
   }
-
   return date.toLocaleDateString(
     "en-PH",
     {
@@ -49,7 +37,6 @@ function formatDate(value) {
     }
   );
 }
-
 function isActiveIncident(status) {
   return [
     "open",
@@ -58,18 +45,15 @@ function isActiveIncident(status) {
     "for_review",
   ].includes(normalizeText(status));
 }
-
 function isDeployed(employee) {
   const status = normalizeText(
     employee?.status
   );
-
   return (
     status === "deployed" ||
     status === "active deployed"
   );
 }
-
 function getIncidentDate(incident) {
   return (
     incident?.reportedAt ||
@@ -82,7 +66,6 @@ function getIncidentDate(incident) {
     ""
   );
 }
-
 function getEmployeeDate(employee) {
   return (
     employee?.contractStart ||
@@ -92,28 +75,23 @@ function getEmployeeDate(employee) {
     ""
   );
 }
-
 function getCurrentPeriod({
   selectedYear,
   selectedMonth,
 }) {
   const now = new Date();
-
   const currentYear =
     selectedYear ||
     String(now.getFullYear());
-
   const currentMonth =
     Number(selectedMonth) > 0
       ? Number(selectedMonth)
       : now.getMonth() + 1;
-
   return {
     year: Number(currentYear),
     month: currentMonth,
   };
 }
-
 function getPreviousPeriod(period) {
   if (period.month === 1) {
     return {
@@ -121,32 +99,26 @@ function getPreviousPeriod(period) {
       month: 12,
     };
   }
-
   return {
     year: period.year,
     month: period.month - 1,
   };
 }
-
 function isInPeriod(value, period) {
   const normalized =
     normalizeDate(value);
-
   if (!normalized) {
     return false;
   }
-
   const [year, month] =
     normalized
       .split("-")
       .map(Number);
-
   return (
     year === period.year &&
     month === period.month
   );
 }
-
 function isInSelectedRange(
   value,
   selectedYear,
@@ -154,45 +126,35 @@ function isInSelectedRange(
 ) {
   const normalized =
     normalizeDate(value);
-
   if (!normalized) {
     return false;
   }
-
   const [year, month] =
     normalized
       .split("-")
       .map(Number);
-
   if (
     String(year) !==
     String(selectedYear)
   ) {
     return false;
   }
-
   if (
     Number(selectedMonth) > 0 &&
     month !== Number(selectedMonth)
   ) {
     return false;
   }
-
   return true;
 }
-
 function getCaseAgeInDays(value) {
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return 0;
   }
-
   const today = new Date();
-
   today.setHours(0, 0, 0, 0);
   date.setHours(0, 0, 0, 0);
-
   return Math.max(
     0,
     Math.floor(
@@ -202,7 +164,6 @@ function getCaseAgeInDays(value) {
     )
   );
 }
-
 function getDocumentExpiration(doc) {
   return (
     doc?.expirationDate ||
@@ -212,7 +173,6 @@ function getDocumentExpiration(doc) {
     ""
   );
 }
-
 function getDocumentName(doc) {
   return (
     doc?.name ||
@@ -221,63 +181,50 @@ function getDocumentName(doc) {
     "Document"
   );
 }
-
 function isExpirableDocument(doc) {
   return EXPIRABLE_DOCUMENTS.includes(
     getDocumentName(doc)
   );
 }
-
 function getDaysBeforeExpiration(
   value
 ) {
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return null;
   }
-
   const today = new Date();
-
   today.setHours(0, 0, 0, 0);
   date.setHours(0, 0, 0, 0);
-
   return Math.ceil(
     (date.getTime() -
       today.getTime()) /
       (1000 * 60 * 60 * 24)
   );
 }
-
 function getExpiringDocumentRows(
   employees = []
 ) {
   const rows = [];
-
   employees.forEach((employee) => {
     const docs = Array.isArray(
       employee.documents
     )
       ? employee.documents
       : [];
-
     docs.forEach((doc) => {
       if (!isExpirableDocument(doc)) {
         return;
       }
-
       const expirationDate =
         getDocumentExpiration(doc);
-
       const daysLeft =
         getDaysBeforeExpiration(
           expirationDate
         );
-
       if (daysLeft === null) {
         return;
       }
-
       if (
         daysLeft >= 0 &&
         daysLeft <= 30
@@ -286,61 +233,49 @@ function getExpiringDocumentRows(
           employee:
             employee.name ||
             "Unknown Employee",
-
           employeeId:
             employee.employeeId ||
             employee.id ||
             "-",
-
           company:
             employee.company ||
             "Unassigned",
-
           document:
             getDocumentName(doc),
-
           expirationDate:
             formatDate(
               expirationDate
             ),
-
           daysLeft: `${daysLeft} day${
             daysLeft === 1 ? "" : "s"
           }`,
-
           status:
             daysLeft <= 7
               ? "Urgent"
               : "Expiring Soon",
-
           rawDaysLeft: daysLeft,
         });
       }
     });
   });
-
   return rows.sort(
     (a, b) =>
       a.rawDaysLeft -
       b.rawDaysLeft
   );
 }
-
 function buildComplianceBreakdown(
   expiringRows = []
 ) {
   const map = {};
-
   expiringRows.forEach((row) => {
     map[row.document] =
       (map[row.document] || 0) + 1;
   });
-
   return Object.entries(map)
     .map(([document, count]) => ({
       document,
       count,
-
       recommendation:
         count >= 10
           ? "Prioritize batch renewal follow-up."
@@ -350,17 +285,14 @@ function buildComplianceBreakdown(
       (a, b) => b.count - a.count
     );
 }
-
 function buildRiskSites(
   incidents = []
 ) {
   const map = {};
-
   incidents.forEach((incident) => {
     const company =
       incident.company ||
       "Unassigned";
-
     if (!map[company]) {
       map[company] = {
         company,
@@ -371,7 +303,6 @@ function buildRiskSites(
         minor: 0,
       };
     }
-
     map[company].total += 1;
 
     if (
@@ -380,23 +311,22 @@ function buildRiskSites(
       )
     ) {
       map[company].active += 1;
-    }
 
-    if (
-      incident.severity ===
-      "Critical"
-    ) {
-      map[company].critical += 1;
-    } else if (
-      incident.severity ===
-      "Major"
-    ) {
-      map[company].major += 1;
-    } else {
-      map[company].minor += 1;
+      if (
+        incident.severity ===
+        "Critical"
+      ) {
+        map[company].critical += 1;
+      } else if (
+        incident.severity ===
+        "Major"
+      ) {
+        map[company].major += 1;
+      } else {
+        map[company].minor += 1;
+      }
     }
   });
-
   return Object.values(map)
     .filter(
       (site) =>
@@ -405,16 +335,14 @@ function buildRiskSites(
     )
     .map((site) => ({
       ...site,
-
       riskScore:
         site.critical * 5 +
         site.major * 3 +
         site.minor,
-
       recommendation:
         site.critical > 0
           ? "Coordinate with client site and prioritize management review."
-          : site.total >= 5
+          : site.active >= 5
             ? "Conduct site coordination and reinforce HR monitoring."
             : "Continue regular site monitoring.",
     }))
@@ -425,7 +353,6 @@ function buildRiskSites(
         b.total - a.total
     );
 }
-
 function buildPositiveSignals({
   employees,
   incidents,
@@ -433,21 +360,18 @@ function buildPositiveSignals({
   expiringRows,
 }) {
   const signals = [];
-
   const activeIncidents =
     incidents.filter((incident) =>
       isActiveIncident(
         incident.status
       )
     );
-
   const criticalIncidents =
     incidents.filter(
       (incident) =>
         incident.severity ===
         "Critical"
     );
-
   const activeIncidentRate =
     employees.length > 0
       ? Math.round(
@@ -456,7 +380,6 @@ function buildPositiveSignals({
             100
         )
       : 0;
-
   if (
     utilizationRate >= 85 &&
     activeIncidentRate <= 5
@@ -464,14 +387,11 @@ function buildPositiveSignals({
     signals.push({
       title:
         "Strong deployment utilization",
-
       basis: `${utilizationRate}% utilization with controlled incident rate.`,
-
       recommendation:
         "Maintain current deployment planning and prepare backup manpower pool.",
     });
   }
-
   if (
     criticalIncidents.length ===
       0 &&
@@ -480,15 +400,12 @@ function buildPositiveSignals({
     signals.push({
       title:
         "No critical incident pattern",
-
       basis:
         "No critical incidents detected in the selected reporting scope.",
-
       recommendation:
         "Continue current monitoring and recognize teams maintaining discipline.",
     });
   }
-
   if (
     expiringRows.length === 0 &&
     employees.length > 0
@@ -496,49 +413,39 @@ function buildPositiveSignals({
     signals.push({
       title:
         "Good compliance standing",
-
       basis:
         "No compliance document is expiring within 30 days.",
-
       recommendation:
         "Maintain document monitoring process as standard renewal practice.",
     });
   }
-
   const deployedByCompany = {};
-
   employees.forEach(
     (employee) => {
       if (!isDeployed(employee)) {
         return;
       }
-
       const company =
         employee.company ||
         "Unassigned";
-
       deployedByCompany[company] =
         (deployedByCompany[
           company
         ] || 0) + 1;
     }
   );
-
   const incidentsByCompany = {};
-
   incidents.forEach(
     (incident) => {
       const company =
         incident.company ||
         "Unassigned";
-
       incidentsByCompany[company] =
         (incidentsByCompany[
           company
         ] || 0) + 1;
     }
   );
-
   const stableSite =
     Object.entries(
       deployedByCompany
@@ -550,7 +457,6 @@ function buildPositiveSignals({
         ]) => ({
           company,
           deployed,
-
           incidents:
             incidentsByCompany[
               company
@@ -569,21 +475,16 @@ function buildPositiveSignals({
           b.deployed -
           a.deployed
       )[0];
-
   if (stableSite) {
     signals.push({
       title: `Stable client site: ${stableSite.company}`,
-
       basis: `${stableSite.deployed} deployed employee(s) with ${stableSite.incidents} incident record(s).`,
-
       recommendation:
         "Document effective site practices and replicate them to other client sites.",
     });
   }
-
   return signals;
 }
-
 function makeTrend(
   current,
   previous,
@@ -591,10 +492,8 @@ function makeTrend(
 ) {
   const currentValue =
     Number(current) || 0;
-
   const previousValue =
     Number(previous) || 0;
-
   if (
     previousValue === 0 &&
     currentValue === 0
@@ -605,29 +504,24 @@ function makeTrend(
       tone: "neutral",
     };
   }
-
   if (previousValue === 0) {
     return {
       label: "New activity",
       direction: "up",
-
       tone: badWhenUp
         ? "bad"
         : "good",
     };
   }
-
   const diff =
     currentValue -
     previousValue;
-
   const percent = Math.abs(
     Math.round(
       (diff / previousValue) *
         100
     )
   );
-
   if (diff === 0) {
     return {
       label: "No change",
@@ -635,18 +529,14 @@ function makeTrend(
       tone: "neutral",
     };
   }
-
   const isUp = diff > 0;
-
   return {
     label: `${
       isUp ? "↑" : "↓"
     } ${percent}% vs last month`,
-
     direction: isUp
       ? "up"
       : "down",
-
     tone: badWhenUp
       ? isUp
         ? "bad"
@@ -656,7 +546,6 @@ function makeTrend(
         : "bad",
   };
 }
-
 function buildMoM({
   employees,
   incidents,
@@ -675,7 +564,6 @@ function buildMoM({
           currentPeriod
         )
     );
-
   const previousEmployeeRecords =
     employees.filter(
       (employee) =>
@@ -686,7 +574,6 @@ function buildMoM({
           previousPeriod
         )
     );
-
   const currentDeployed =
     employees.filter(
       (employee) =>
@@ -698,7 +585,6 @@ function buildMoM({
           currentPeriod
         )
     );
-
   const previousDeployed =
     employees.filter(
       (employee) =>
@@ -710,7 +596,6 @@ function buildMoM({
           previousPeriod
         )
     );
-
   const currentIncidents =
     incidents.filter(
       (incident) =>
@@ -721,7 +606,6 @@ function buildMoM({
           currentPeriod
         )
     );
-
   const previousIncidents =
     incidents.filter(
       (incident) =>
@@ -732,7 +616,6 @@ function buildMoM({
           previousPeriod
         )
     );
-
   const currentActiveIncidents =
     currentIncidents.filter(
       (incident) =>
@@ -740,7 +623,6 @@ function buildMoM({
           incident.status
         )
     );
-
   const previousActiveIncidents =
     previousIncidents.filter(
       (incident) =>
@@ -748,36 +630,29 @@ function buildMoM({
           incident.status
         )
     );
-
   return {
     total: makeTrend(
       currentEmployeeRecords.length,
       previousEmployeeRecords.length
     ),
-
     deployed: makeTrend(
       currentDeployed.length,
       previousDeployed.length
     ),
-
     available: {
       label: `${
         Number(kpis.available) || 0
       } floating`,
-
       direction: "flat",
       tone: "neutral",
     },
-
     utilizationRate: {
       label: `${
         Number(
           utilizationRate
         ) || 0
       }% current`,
-
       direction: "flat",
-
       tone:
         utilizationRate >= 80
           ? "good"
@@ -785,28 +660,24 @@ function buildMoM({
             ? "bad"
             : "neutral",
     },
-
     activeIncidents:
       makeTrend(
         currentActiveIncidents.length,
         previousActiveIncidents.length,
         true
       ),
-
     expiringDocs: {
       label: `${
         Number(
           kpis.expiringDocs
         ) || 0
       } due soon`,
-
       direction:
         Number(
           kpis.expiringDocs
         ) > 0
           ? "up"
           : "flat",
-
       tone:
         Number(
           kpis.expiringDocs
@@ -816,7 +687,6 @@ function buildMoM({
     },
   };
 }
-
 function buildWorkforceHealth({
   employees,
   selectedIncidents,
@@ -833,7 +703,7 @@ function buildWorkforceHealth({
     );
 
   const criticalIncidents =
-    selectedIncidents.filter(
+    activeIncidents.filter(
       (incident) =>
         incident.severity ===
         "Critical"
@@ -841,26 +711,32 @@ function buildWorkforceHealth({
 
   const activeIncidentRate =
     employees.length > 0
-      ? Math.round(
-          (activeIncidents.length /
-            employees.length) *
+      ? Number(
+          (
+            (activeIncidents.length /
+              employees.length) *
             100
+          ).toFixed(1)
         )
       : 0;
 
   let score = 100;
   const reasons = [];
-
+  const scoreFactors = [];
   if (
     criticalIncidents.length > 0
   ) {
     score -= 25;
 
     reasons.push(
-      `${criticalIncidents.length} critical incident case(s) detected`
+      `${criticalIncidents.length} active critical incident case(s) detected`
     );
-  }
 
+    scoreFactors.push({
+      label: "active critical cases",
+      deduction: 25,
+    });
+  }
   if (
     activeIncidentRate >= 10
   ) {
@@ -869,18 +745,26 @@ function buildWorkforceHealth({
     reasons.push(
       `${activeIncidentRate}% active incident rate`
     );
-  }
 
+    scoreFactors.push({
+      label: "high active-case rate",
+      deduction: 25,
+    });
+  }
   if (
     overdueCases.length > 0
   ) {
     score -= 15;
 
     reasons.push(
-      `${overdueCases.length} case(s) older than 30 days`
+      `${overdueCases.length} active case(s) older than 30 days`
     );
-  }
 
+    scoreFactors.push({
+      label: "30+ day active cases",
+      deduction: 15,
+    });
+  }
   if (
     expiringRows.length >= 10
   ) {
@@ -889,8 +773,12 @@ function buildWorkforceHealth({
     reasons.push(
       `${expiringRows.length} expiring compliance document(s)`
     );
-  }
 
+    scoreFactors.push({
+      label: "expiring documents",
+      deduction: 15,
+    });
+  }
   if (
     utilizationRate < 60 &&
     employees.length > 0
@@ -900,115 +788,114 @@ function buildWorkforceHealth({
     reasons.push(
       `Low deployment utilization at ${utilizationRate}%`
     );
-  }
 
+    scoreFactors.push({
+      label: "low utilization",
+      deduction: 10,
+    });
+  }
   score = Math.max(
     0,
     Math.min(100, score)
   );
 
+  const scoreExplanation =
+    scoreFactors.length > 0
+      ? `100 baseline - ${scoreFactors
+          .map(
+            (factor) =>
+              `${factor.deduction} ${factor.label}`
+          )
+          .join(" - ")} = ${score}`
+      : "100 baseline with no triggered deductions.";
+
   if (score >= 85) {
     return {
       score,
+      scoreFactors,
+      scoreExplanation,
       level: "Good",
-
       title:
         "Workforce health is good",
-
       summary:
         "Current workforce indicators show stable utilization, compliance, and incident monitoring.",
-
       reasons:
         reasons.length
           ? reasons
           : [
               "No major workforce risk detected",
             ],
-
       tone: "emerald",
     };
   }
-
   if (score >= 70) {
     return {
       score,
+      scoreFactors,
+      scoreExplanation,
       level: "Stable",
-
       title:
         "Workforce health is stable",
-
       summary:
         "Overall status is manageable, but selected indicators should remain under regular HR monitoring.",
-
       reasons,
       tone: "blue",
     };
   }
-
   if (score >= 50) {
     return {
       score,
+      scoreFactors,
+      scoreExplanation,
       level:
         "Needs Attention",
-
       title:
         "Workforce health needs attention",
-
       summary:
         "Several operational indicators require preventive action and follow-up.",
-
       reasons,
       tone: "amber",
     };
   }
-
   return {
     score,
+    scoreFactors,
+    scoreExplanation,
     level: "Critical",
-
     title:
       "Workforce health is critical",
-
     summary:
       "High-risk workforce indicators require immediate HR and management review.",
-
     reasons,
     tone: "red",
   };
 }
-
 /*
  * ==================================================
  * PREDICTIVE ENGINE — RUN-RATE MODEL
  * ==================================================
  */
-
 function getIncidentsLastNDays(
   incidents,
   days
 ) {
   const today = new Date();
-
   today.setHours(
     23,
     59,
     59,
     999
   );
-
   const pastDate = new Date();
-
   pastDate.setDate(
     today.getDate() - days
   );
-
   pastDate.setHours(
     0,
     0,
     0,
     0
   );
-
   return incidents.filter(
     (incident) => {
       const date = new Date(
@@ -1016,7 +903,6 @@ function getIncidentsLastNDays(
           incident
         )
       );
-
       return (
         date >= pastDate &&
         date <= today
@@ -1024,7 +910,6 @@ function getIncidentsLastNDays(
     }
   );
 }
-
 function generateCategoryForecast(
   incidents,
   range,
@@ -1035,7 +920,6 @@ function generateCategoryForecast(
       totalEmployees,
       1
     );
-
   const minimumToShow =
     range === "weekly"
       ? Math.max(
@@ -1060,7 +944,6 @@ function generateCategoryForecast(
                 employeeCount
             )
           );
-
   const counts = {
     c1: 0,
     c2: 0,
@@ -1071,7 +954,6 @@ function generateCategoryForecast(
     c7: 0,
     c8: 0,
   };
-
   incidents.forEach(
     (incident) => {
       const violation =
@@ -1080,7 +962,6 @@ function generateCategoryForecast(
           incident.violationType ||
           ""
         ).toLowerCase();
-
       if (
         violation.includes(
           "awol"
@@ -1249,9 +1130,7 @@ function generateCategoryForecast(
       }
     }
   );
-
   const predictions = [];
-
   const addPrediction = (
     id,
     category,
@@ -1270,30 +1149,25 @@ function generateCategoryForecast(
     ) {
       return;
     }
-
     const currentPercentage =
       (
         (count /
           employeeCount) *
         100
       ).toFixed(2);
-
     let projectedCount = 0;
     let projectionText = "";
-
     if (range === "weekly") {
       projectedCount =
         Math.ceil(
           count * (30 / 7)
         );
-
       const projectedPercentage =
         (
           (projectedCount /
             employeeCount) *
           100
         ).toFixed(2);
-
       projectionText =
         `Forecast: Expected to hit ~${projectedCount} cases (${projectedPercentage}%) in the next 30 days if current weekly velocity continues.`;
     } else if (
@@ -1301,55 +1175,44 @@ function generateCategoryForecast(
     ) {
       projectedCount =
         Math.ceil(count * 3);
-
       const projectedPercentage =
         (
           (projectedCount /
             employeeCount) *
           100
         ).toFixed(2);
-
       projectionText =
         `Forecast: On track to reach ~${projectedCount} cases (${projectedPercentage}%) by the end of the quarter.`;
     } else {
       projectedCount = count;
-
       const projectedPercentage =
         (
           (projectedCount /
             employeeCount) *
           100
         ).toFixed(2);
-
       projectionText =
         `Forecast: Expected to sustain ~${projectedCount} cases (${projectedPercentage}%) annually if current systemic policies remain unchanged.`;
     }
-
     let action =
       weeklyAction;
-
     if (range === "monthly") {
       action = monthlyAction;
     }
-
     if (range === "yearly") {
       action = yearlyAction;
     }
-
     predictions.push({
       id,
       category,
       title,
       count,
-
       percentage:
         `${currentPercentage}%`,
-
       action:
         `${projectionText} ${action}`,
     });
   };
-
   addPrediction(
     "c1",
     "I. ABSENCES AND TARDINESS",
@@ -1359,7 +1222,6 @@ function generateCategoryForecast(
     "Review deployment schedules and shift viability.",
     "Consider revisiting leave credits or attendance incentive programs."
   );
-
   addPrediction(
     "c2",
     "II. DISORDERLY CONDUCT",
@@ -1369,7 +1231,6 @@ function generateCategoryForecast(
     "Initiate site-wide Code of Conduct re-orientation.",
     "Persistent conduct issues may affect company culture. Review site engagement programs."
   );
-
   addPrediction(
     "c3",
     "III. INSUBORDINATION",
@@ -1379,7 +1240,6 @@ function generateCategoryForecast(
     "Review supervisor effectiveness and site command chain.",
     "Sustained insubordination suggests gaps in site leadership. Conduct supervisor training."
   );
-
   addPrediction(
     "c4",
     "IV. NEGLECT OF DUTY",
@@ -1389,7 +1249,6 @@ function generateCategoryForecast(
     "Re-assess workload or site placement for habitual cases.",
     "Review hiring standards and long-term engagement programs."
   );
-
   addPrediction(
     "c5",
     "V. BETRAYAL OF TRUST",
@@ -1400,7 +1259,6 @@ function generateCategoryForecast(
     "Enforce stricter background checks and regular site audits.",
     true
   );
-
   addPrediction(
     "c6",
     "VI. HEALTH & SAFETY",
@@ -1410,7 +1268,6 @@ function generateCategoryForecast(
     "Schedule mandatory safety refresher training for the team.",
     "Implement strict zero-tolerance safety campaigns."
   );
-
   addPrediction(
     "c7",
     "VII. SEXUAL HARASSMENT",
@@ -1421,7 +1278,6 @@ function generateCategoryForecast(
     "Implement company-wide SAFE spaces and awareness program.",
     true
   );
-
   addPrediction(
     "c8",
     "VIII. HABITUAL VIOLATIONS",
@@ -1431,13 +1287,11 @@ function generateCategoryForecast(
     "Systematic review of employee disciplinary history required.",
     "Consistent repeat offenses indicate a need to review current disciplinary actions."
   );
-
   return predictions.sort(
     (a, b) =>
       b.count - a.count
   );
 }
-
 function buildRowsForIncidents(
   incidents = []
 ) {
@@ -1445,36 +1299,29 @@ function buildRowsForIncidents(
     (incident) => ({
       id:
         incident.id || "-",
-
       employee:
         incident.employee ||
         incident.employeeName ||
         "Unknown Employee",
-
       company:
         incident.company ||
         "Unassigned",
-
       violation:
         incident.violation ||
         incident.violationType ||
         incident.violation_type ||
         "No violation type",
-
       severity:
         incident.severity ||
         "Minor",
-
       status:
         incident.status ||
         "Open",
-
       date: formatDate(
         getIncidentDate(
           incident
         )
       ),
-
       age: `${getCaseAgeInDays(
         getIncidentDate(
           incident
@@ -1483,18 +1330,15 @@ function buildRowsForIncidents(
     })
   );
 }
-
 function buildUtilizationRows(
   employees = []
 ) {
   const map = {};
-
   employees.forEach(
     (employee) => {
       const company =
         employee.company ||
         "Unassigned";
-
       if (!map[company]) {
         map[company] = {
           company,
@@ -1503,9 +1347,7 @@ function buildUtilizationRows(
           total: 0,
         };
       }
-
       map[company].total += 1;
-
       if (
         isDeployed(employee)
       ) {
@@ -1515,11 +1357,9 @@ function buildUtilizationRows(
       }
     }
   );
-
   return Object.values(map)
     .map((row) => ({
       ...row,
-
       utilization:
         row.total > 0
           ? `${Math.round(
@@ -1534,7 +1374,6 @@ function buildUtilizationRows(
         b.total - a.total
     );
 }
-
 export function buildDashboardInsights({
   employees = [],
   incidents = [],
@@ -1548,12 +1387,10 @@ export function buildDashboardInsights({
       selectedYear,
       selectedMonth,
     });
-
   const previousPeriod =
     getPreviousPeriod(
       currentPeriod
     );
-
   const selectedIncidents =
     incidents.filter(
       (incident) =>
@@ -1567,13 +1404,12 @@ export function buildDashboardInsights({
     );
 
   const activeIncidents =
-    selectedIncidents.filter(
+    incidents.filter(
       (incident) =>
         isActiveIncident(
           incident.status
         )
     );
-
   const overdueCases =
     activeIncidents.filter(
       (incident) =>
@@ -1583,7 +1419,6 @@ export function buildDashboardInsights({
           )
         ) > 30
     );
-
   const caseAging = {
     zeroToSeven:
       activeIncidents.filter(
@@ -1594,7 +1429,6 @@ export function buildDashboardInsights({
             )
           ) <= 7
       ).length,
-
     eightToThirty:
       activeIncidents.filter(
         (incident) => {
@@ -1604,56 +1438,48 @@ export function buildDashboardInsights({
                 incident
               )
             );
-
           return (
             age >= 8 &&
             age <= 30
           );
         }
       ).length,
-
     overThirty:
       overdueCases.length,
-
     recommendation:
       overdueCases.length > 0
         ? "Prioritize HR case review for cases older than 30 days."
         : "Current case aging is within normal monitoring range.",
   };
-
   const expiringRows =
     getExpiringDocumentRows(
       employees
     );
-
   const complianceBreakdown =
     buildComplianceBreakdown(
       expiringRows
     );
-
   const riskSites =
     buildRiskSites(
-      selectedIncidents
+      incidents
     );
-
   const positiveSignals =
     buildPositiveSignals({
       employees,
       incidents:
-        selectedIncidents,
+        activeIncidents,
       utilizationRate,
       expiringRows,
     });
-
   const health =
     buildWorkforceHealth({
       employees,
-      selectedIncidents,
+      selectedIncidents:
+        incidents,
       utilizationRate,
       expiringRows,
       overdueCases,
     });
-
   const mom = buildMoM({
     employees,
     incidents,
@@ -1662,28 +1488,23 @@ export function buildDashboardInsights({
     kpis,
     utilizationRate,
   });
-
   const totalEmployees =
     employees.length;
-
   const incidentsLast7Days =
     getIncidentsLastNDays(
       incidents,
       7
     );
-
   const incidentsLast30Days =
     getIncidentsLastNDays(
       incidents,
       30
     );
-
   const incidentsLast365Days =
     getIncidentsLastNDays(
       incidents,
       365
     );
-
   const predictions = {
     weekly:
       generateCategoryForecast(
@@ -1691,41 +1512,38 @@ export function buildDashboardInsights({
         "weekly",
         totalEmployees
       ),
-
     monthly:
       generateCategoryForecast(
         incidentsLast30Days,
         "monthly",
         totalEmployees
       ),
-
     yearly:
       generateCategoryForecast(
         incidentsLast365Days,
         "yearly",
         totalEmployees
       ),
-
     totalEmployees,
   };
-
   return {
     health,
     mom,
+    reportScope: {
+      incidentCount:
+        selectedIncidents.length,
+    },
     riskSites,
     caseAging,
     complianceBreakdown,
     positiveSignals,
     predictions,
-
     drilldowns: {
       utilizationRate: {
         title:
           "Deployment Utilization Details",
-
         description:
           "Company-level deployment and availability distribution.",
-
         columns: [
           {
             key: "company",
@@ -1749,20 +1567,16 @@ export function buildDashboardInsights({
               "Utilization",
           },
         ],
-
         rows:
           buildUtilizationRows(
             employees
           ),
       },
-
       expiringDocuments: {
         title:
           "Expiring Compliance Documents",
-
         description:
           "Employee compliance documents due within 30 days.",
-
         columns: [
           {
             key: "employeeId",
@@ -1797,17 +1611,13 @@ export function buildDashboardInsights({
             label: "Status",
           },
         ],
-
         rows: expiringRows,
       },
-
       riskSites: {
         title:
           "Top Risk Client Sites",
-
         description:
-          "Client companies with the highest incident concentration in the selected report scope.",
-
+          "Client companies with the highest current unresolved incident exposure, with total incident history retained for context.",
         columns: [
           {
             key: "company",
@@ -1841,17 +1651,13 @@ export function buildDashboardInsights({
               "Recommendation",
           },
         ],
-
         rows: riskSites,
       },
-
       overdueCases: {
         title:
           "Overdue Case Aging",
-
         description:
           "Active cases that are older than 30 days.",
-
         columns: [
           {
             key: "id",
@@ -1885,20 +1691,16 @@ export function buildDashboardInsights({
             label: "Age",
           },
         ],
-
         rows:
           buildRowsForIncidents(
             overdueCases
           ),
       },
-
       complianceBreakdown: {
         title:
           "Compliance Breakdown",
-
         description:
           "Document types with upcoming expiration concerns.",
-
         columns: [
           {
             key: "document",
@@ -1917,18 +1719,14 @@ export function buildDashboardInsights({
               "Recommended Action",
           },
         ],
-
         rows:
           complianceBreakdown,
       },
-
       positiveSignals: {
         title:
           "Positive Performance Signals",
-
         description:
           "Workforce practices worth maintaining, recognizing, or replicating.",
-
         columns: [
           {
             key: "title",
@@ -1946,7 +1744,6 @@ export function buildDashboardInsights({
               "Recommendation",
           },
         ],
-
         rows:
           positiveSignals,
       },

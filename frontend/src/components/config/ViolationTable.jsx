@@ -3,8 +3,6 @@ import {
   FiTrash2,
 } from "react-icons/fi";
 
-import { formatPolicyDescriptionAsPlainText } from "../../utils/policyDescription";
-
 const severityStyle = {
   Minor:
     "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/20 dark:text-emerald-300",
@@ -109,7 +107,7 @@ function getSafeDescriptionText(value) {
     rawValue
       .replace(/<\s*br\s*\/?\s*>/gi, "\n")
       .replace(
-        /<\s*\/\s*(p|div|li|ul|ol)\s*>/gi,
+        /<\s*\/?\s*(p|div|li|ul|ol)\s*>/gi,
         "\n"
       )
       .replace(
@@ -119,10 +117,12 @@ function getSafeDescriptionText(value) {
 
   if (typeof DOMParser !== "undefined") {
     const parser = new DOMParser();
-    const document = parser.parseFromString(
-      withReadableBreaks,
-      "text/html"
-    );
+
+    const document =
+      parser.parseFromString(
+        withReadableBreaks,
+        "text/html"
+      );
 
     return String(
       document.body.textContent || ""
@@ -145,71 +145,80 @@ export default function ViolationTable({
 }) {
   if (!rules.length) {
     return (
-      <div className="rounded-3xl border border-gray-200 bg-white p-10 text-center shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-white/10 dark:bg-slate-900 sm:p-10">
         <p className="font-bold text-gray-700 dark:text-gray-200">
           No violation rules found
         </p>
 
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Adjust the search term or severity filter to display matching policy
-          rules.
+          Adjust the search term or severity filter to display matching
+          policy rules.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {rules.map((group) => (
         <section
           key={group.category}
-          className="overflow-hidden rounded-3xl border border-gray-300 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900"
+          className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900"
         >
-          <div className="flex flex-col gap-2 border-b border-gray-300 bg-gray-100 px-5 py-4 dark:border-white/10 dark:bg-slate-800 sm:flex-row sm:items-center sm:justify-between">
-            <h3 className="text-sm font-extrabold uppercase tracking-wide text-gray-900 dark:text-white">
-              {group.category}
-            </h3>
+          <div className="flex flex-col gap-2 border-b border-gray-200 bg-gray-50 px-4 py-3.5 dark:border-white/10 dark:bg-slate-800/70 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-extrabold text-gray-900 dark:text-white">
+                {group.category}
+              </h3>
 
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-              {group.rows.length} rule(s)
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                Code of Conduct policy category
+              </p>
+            </div>
+
+            <span className="inline-flex w-fit shrink-0 items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-600 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-gray-300">
+              {group.rows.length}{" "}
+              {group.rows.length === 1
+                ? "rule"
+                : "rules"}
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
-              <thead className="bg-white dark:bg-slate-900">
+          <div className="max-h-[520px] overflow-auto">
+            <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
+              <thead>
                 <tr>
                   <th
                     scope="col"
-                    className="border-b border-r border-gray-200 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:text-gray-300"
+                    className="sticky top-0 z-20 w-[120px] border-b border-r border-gray-200 bg-gray-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300"
                   >
                     Section
                   </th>
 
                   <th
                     scope="col"
-                    className="border-b border-r border-gray-200 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:text-gray-300"
+                    className="sticky top-0 z-20 min-w-[280px] border-b border-r border-gray-200 bg-gray-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300"
                   >
                     Violation
                   </th>
 
                   <th
                     scope="col"
-                    className="border-b border-r border-gray-200 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:text-gray-300"
+                    className="sticky top-0 z-20 w-[210px] border-b border-r border-gray-200 bg-gray-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300"
                   >
                     Penalty Level
                   </th>
 
                   <th
                     scope="col"
-                    className="border-b border-r border-gray-200 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:text-gray-300"
+                    className="sticky top-0 z-20 min-w-[260px] border-b border-r border-gray-200 bg-gray-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300"
                   >
-                    Penalties
+                    Penalties / Actions
                   </th>
 
                   <th
                     scope="col"
-                    className="border-b border-gray-200 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:text-gray-300"
+                    className="sticky top-0 z-20 w-[130px] border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300"
                   >
                     Severity
                   </th>
@@ -217,7 +226,7 @@ export default function ViolationTable({
                   {canEdit && (
                     <th
                       scope="col"
-                      className="border-b border-l border-gray-200 px-4 py-3 text-center text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:text-gray-300"
+                      className="sticky top-0 z-20 w-[120px] border-b border-l border-gray-200 bg-gray-50 px-4 py-3 text-center text-xs font-extrabold uppercase tracking-wide text-gray-600 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300"
                     >
                       Actions
                     </th>
@@ -226,127 +235,167 @@ export default function ViolationTable({
               </thead>
 
               <tbody>
-                {group.rows.map((item, index) => (
-                  <tr
-                    key={
-                      item.id ||
-                      `${group.category}-${index}`
-                    }
-                    className="align-top transition hover:bg-gray-50 dark:hover:bg-slate-800/60"
-                  >
-                    <td className="border-b border-r border-gray-200 px-4 py-4 font-semibold text-gray-700 dark:border-white/10 dark:text-gray-200">
-                      {item.section || "Not Set"}
-                    </td>
+                {group.rows.map((item, index) => {
+                  const severities =
+                    normalizeSeverity(
+                      item.severity
+                    );
 
-                    <td className="border-b border-r border-gray-200 px-4 py-4 dark:border-white/10">
-                      <p className="font-bold text-gray-900 dark:text-white">
-                        {item.violation || "Unnamed violation"}
-                      </p>
+                  const description =
+                    getSafeDescriptionText(
+                      item.description
+                    );
 
-                      <p className="mt-2 whitespace-pre-line text-xs leading-5 text-gray-500 dark:text-gray-400">
-                        {getSafeDescriptionText(
-                          item.description
+                  return (
+                    <tr
+                      key={
+                        item.id ||
+                        `${group.category}-${index}`
+                      }
+                      className="align-top transition-colors hover:bg-gray-50/80 dark:hover:bg-slate-800/50"
+                    >
+                      <td className="border-b border-r border-gray-200 px-4 py-4 font-semibold text-gray-700 dark:border-white/10 dark:text-gray-200">
+                        {item.section ||
+                          "Not Set"}
+                      </td>
+
+                      <td className="border-b border-r border-gray-200 px-4 py-4 dark:border-white/10">
+                        <p className="font-bold leading-5 text-gray-900 dark:text-white">
+                          {item.violation ||
+                            "Unnamed violation"}
+                        </p>
+
+                        {description && (
+                          <p className="mt-1.5 whitespace-pre-line text-xs leading-5 text-gray-500 dark:text-gray-400">
+                            {description}
+                          </p>
                         )}
-                      </p>
-                    </td>
+                      </td>
 
-                    <td className="border-b border-r border-gray-200 px-4 py-4 dark:border-white/10">
-                      <span
-                        className={[
-                          "inline-flex rounded-full border px-3 py-1 text-xs font-bold",
-                          penaltyLevelStyle[item.penaltyLevel] ||
-                            "border-gray-200 bg-gray-100 text-gray-700 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300",
-                        ].join(" ")}
-                      >
-                        {item.penaltyLevel || "Not Set"}
-                      </span>
-                    </td>
-
-                    <td className="border-b border-r border-gray-200 px-4 py-4 text-xs text-gray-700 dark:border-white/10 dark:text-gray-300">
-                      {(item.penalties || []).length > 0 ? (
-                        <ul className="space-y-2">
-                          {item.penalties.map(
-                            (penalty, penaltyIndex) => (
-                              <li
-                                key={`${item.id || index}-penalty-${penaltyIndex}`}
-                                className="flex gap-2"
-                              >
-                                <span
-                                  aria-hidden="true"
-                                  className="text-indigo-500"
-                                >
-                                  •
-                                </span>
-
-                                <span>
-                                  {formatPenalty(
-                                    penalty,
-                                    penaltyIndex
-                                  )}
-                                </span>
-                              </li>
-                            )
-                          )}
-                        </ul>
-                      ) : (
-                        <span className="text-gray-400">
-                          No penalties configured
+                      <td className="border-b border-r border-gray-200 px-4 py-4 dark:border-white/10">
+                        <span
+                          className={[
+                            "inline-flex max-w-full rounded-lg border px-2.5 py-1 text-xs font-bold leading-5",
+                            penaltyLevelStyle[
+                              item.penaltyLevel
+                            ] ||
+                              "border-gray-200 bg-gray-100 text-gray-700 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300",
+                          ].join(" ")}
+                        >
+                          {item.penaltyLevel ||
+                            "Not Set"}
                         </span>
-                      )}
-                    </td>
+                      </td>
 
-                    <td className="border-b border-gray-200 px-4 py-4 dark:border-white/10">
-                      <div className="flex flex-wrap gap-2">
-                        {normalizeSeverity(item.severity).length > 0 ? (
-                          normalizeSeverity(item.severity).map(
-                            (severity) => (
-                              <span
-                                key={severity}
-                                className={[
-                                  "inline-flex rounded-full border px-3 py-1 text-xs font-bold",
-                                  severityStyle[severity] ||
-                                    "border-gray-200 bg-gray-100 text-gray-700 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300",
-                                ].join(" ")}
-                              >
-                                {severity}
-                              </span>
-                            )
-                          )
+                      <td className="border-b border-r border-gray-200 px-4 py-4 text-xs leading-5 text-gray-700 dark:border-white/10 dark:text-gray-300">
+                        {(item.penalties || [])
+                          .length > 0 ? (
+                          <ul className="space-y-2">
+                            {item.penalties.map(
+                              (
+                                penalty,
+                                penaltyIndex
+                              ) => (
+                                <li
+                                  key={`${item.id || index}-penalty-${penaltyIndex}`}
+                                  className="flex items-start gap-2"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    className="mt-px shrink-0 font-bold text-indigo-500 dark:text-indigo-400"
+                                  >
+                                    •
+                                  </span>
+
+                                  <span className="min-w-0">
+                                    {formatPenalty(
+                                      penalty,
+                                      penaltyIndex
+                                    )}
+                                  </span>
+                                </li>
+                              )
+                            )}
+                          </ul>
                         ) : (
-                          <span className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300">
-                            Not Set
+                          <span className="text-gray-400 dark:text-gray-500">
+                            No penalties configured
                           </span>
                         )}
-                      </div>
-                    </td>
+                      </td>
 
-                    {canEdit && (
-                      <td className="border-b border-l border-gray-200 px-4 py-4 dark:border-white/10">
-                        <div className="flex justify-center gap-2">
-                          <button
-                            type="button"
-                            title="Edit violation rule"
-                            aria-label={`Edit ${item.violation}`}
-                            onClick={() => onEdit?.(item.id)}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 transition hover:bg-indigo-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
-                          >
-                            <FiEdit3 aria-hidden="true" />
-                          </button>
-
-                          <button
-                            type="button"
-                            title="Remove violation rule"
-                            aria-label={`Remove ${item.violation}`}
-                            onClick={() => onDelete?.(item.id)}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20"
-                          >
-                            <FiTrash2 aria-hidden="true" />
-                          </button>
+                      <td className="border-b border-gray-200 px-4 py-4 dark:border-white/10">
+                        <div className="flex flex-wrap gap-2">
+                          {severities.length >
+                          0 ? (
+                            severities.map(
+                              (severity) => (
+                                <span
+                                  key={
+                                    severity
+                                  }
+                                  className={[
+                                    "inline-flex rounded-full border px-2.5 py-1 text-xs font-bold",
+                                    severityStyle[
+                                      severity
+                                    ] ||
+                                      "border-gray-200 bg-gray-100 text-gray-700 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300",
+                                  ].join(
+                                    " "
+                                  )}
+                                >
+                                  {severity}
+                                </span>
+                              )
+                            )
+                          ) : (
+                            <span className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300">
+                              Not Set
+                            </span>
+                          )}
                         </div>
                       </td>
-                    )}
-                  </tr>
-                ))}
+
+                      {canEdit && (
+                        <td className="border-b border-l border-gray-200 px-4 py-4 dark:border-white/10">
+                          <div className="flex justify-center gap-2">
+                            <button
+                              type="button"
+                              title="Edit violation rule"
+                              aria-label={`Edit ${item.violation}`}
+                              onClick={() =>
+                                onEdit?.(
+                                  item.id
+                                )
+                              }
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 transition hover:bg-indigo-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                            >
+                              <FiEdit3
+                                aria-hidden="true"
+                              />
+                            </button>
+
+                            <button
+                              type="button"
+                              title="Remove violation rule"
+                              aria-label={`Remove ${item.violation}`}
+                              onClick={() =>
+                                onDelete?.(
+                                  item.id
+                                )
+                              }
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20"
+                            >
+                              <FiTrash2
+                                aria-hidden="true"
+                              />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

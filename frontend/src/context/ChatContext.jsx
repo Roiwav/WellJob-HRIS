@@ -155,8 +155,10 @@ export function ChatProvider({ children }) {
   const snapshotReadyRef =
     useRef(false);
 
-  activeSessionRef.current =
-    sessionKey;
+  useEffect(() => {
+    activeSessionRef.current =
+      sessionKey;
+  }, [sessionKey]);
 
   const refreshUnread =
     useCallback(
@@ -395,24 +397,56 @@ export function ChatProvider({ children }) {
     snapshotReadyRef.current =
       false;
 
-    setToast(null);
+    let active =
+      true;
+
+    const resetTimer =
+      window.setTimeout(
+        () => {
+          if (!active) {
+            return;
+          }
+
+          setToast(null);
+
+          if (
+            !isAuthenticated ||
+            !sessionKey
+          ) {
+            setUnreadCount(0);
+          }
+        },
+        0
+      );
 
     if (
       !isAuthenticated ||
       !sessionKey
     ) {
-      setUnreadCount(0);
+      return () => {
+        active =
+          false;
 
-      return undefined;
+        window.clearTimeout(
+          resetTimer
+        );
+      };
     }
 
-    let active =
-      true;
+    const initialPollTimer =
+      window.setTimeout(
+        () => {
+          if (!active) {
+            return;
+          }
 
-    void pollNotificationState({
-      allowToast:
-        false,
-    });
+          void pollNotificationState({
+            allowToast:
+              false,
+          });
+        },
+        0
+      );
 
     const interval =
       window.setInterval(
@@ -450,6 +484,14 @@ export function ChatProvider({ children }) {
     return () => {
       active =
         false;
+
+      window.clearTimeout(
+        resetTimer
+      );
+
+      window.clearTimeout(
+        initialPollTimer
+      );
 
       window.clearInterval(
         interval
@@ -584,6 +626,9 @@ export function ChatProvider({ children }) {
   );
 }
 
+// ChatProvider and useChat intentionally share this module
+// so existing imports remain stable throughout the HRIS.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useChat() {
   const context =
     useContext(

@@ -259,7 +259,7 @@ function createCriterionId(factorId) {
 function normalizeRatingScale(ratingScale) {
   if (!Array.isArray(ratingScale)) {
     throw new Error(
-      "The server returned an invalid performance rating scale."
+      "The performance rating scale could not be loaded correctly."
     );
   }
 
@@ -279,7 +279,7 @@ function normalizeCriteria(
 ) {
   if (!Array.isArray(criteria)) {
     throw new Error(
-      `The server returned an invalid evaluation criteria list for ${factorId}.`
+      `The evaluation criteria for ${factorId} could not be loaded correctly.`
     );
   }
 
@@ -301,7 +301,7 @@ function normalizeCriteria(
 function normalizeFactors(factors) {
   if (!Array.isArray(factors)) {
     throw new Error(
-      "The server returned an invalid KPI factor list."
+      "The performance factors could not be loaded correctly."
     );
   }
 
@@ -332,7 +332,7 @@ function normalizeConfiguration(value) {
     Array.isArray(value)
   ) {
     throw new Error(
-      "The server returned an invalid performance evaluation configuration."
+      "The performance evaluation settings could not be loaded correctly."
     );
   }
 
@@ -341,7 +341,7 @@ function normalizeConfiguration(value) {
     !Array.isArray(value.kpiFactors)
   ) {
     throw new Error(
-      "The server returned an incomplete performance evaluation configuration."
+      "Some performance evaluation information is missing. Please try again or contact IT Support."
     );
   }
 
@@ -407,7 +407,7 @@ async function requestJson(url, options = {}) {
   } catch (error) {
     if (error?.name === "AbortError") {
       throw new Error(
-        "The server took too long to respond. Check that the backend server and database are running, then try again."
+        "The request took too long. Please try again. If the problem continues, contact IT Support."
       );
     }
 
@@ -419,13 +419,13 @@ async function requestJson(url, options = {}) {
 
 function formatDateTime(value) {
   if (!value) {
-    return "Not yet modified";
+    return "No changes saved yet";
   }
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "Unknown date";
+    return "Date unavailable";
   }
 
   return date.toLocaleString("en-PH", {
@@ -772,7 +772,7 @@ export default function KPIThresholdsTab({
           serverValidationErrors.length > 0
         ) {
           throw new Error(
-            "The saved performance evaluation policy is invalid. Contact an authorized administrator before making further changes."
+            "The saved performance evaluation settings need attention. Please contact an authorized administrator before making changes."
           );
         }
 
@@ -798,7 +798,7 @@ export default function KPIThresholdsTab({
 
         setLoadError(
           error?.message ||
-            "Unable to load the performance evaluation policy."
+            "Unable to load the performance evaluation settings. Please try again."
         );
       } finally {
         setIsLoading(false);
@@ -1311,7 +1311,7 @@ export default function KPIThresholdsTab({
           setIsEditing(false);
 
           setSuccessMessage(
-            "Performance evaluation policy was updated successfully."
+            "Performance evaluation settings were updated successfully."
           );
 
           window.dispatchEvent(
@@ -1338,7 +1338,7 @@ export default function KPIThresholdsTab({
 
           setValidationErrors([
             error?.message ||
-              "The performance evaluation policy could not be saved. Please try again.",
+              "The performance evaluation settings could not be saved. Please try again.",
           ]);
 
           setShowReviewDialog(false);
@@ -1387,13 +1387,12 @@ export default function KPIThresholdsTab({
 
           <div>
             <h2 className="font-extrabold text-gray-900 dark:text-white">
-              Loading Performance Evaluation Policy
+              Loading Performance Evaluation
             </h2>
 
             <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              Retrieving the organization-wide rating
-              scale and KPI evaluation factors from
-              the server.
+              Preparing the rating scale, performance factors,
+              and evaluation criteria...
             </p>
           </div>
         </div>
@@ -1416,7 +1415,7 @@ export default function KPIThresholdsTab({
 
           <div className="min-w-0 flex-1">
             <h2 className="font-extrabold">
-              Unable to Load Performance Evaluation Policy
+              Unable to Load Performance Evaluation
             </h2>
 
             <p className="mt-1 text-sm leading-6">
@@ -1459,11 +1458,11 @@ export default function KPIThresholdsTab({
 
             <div>
               <h3 className="font-extrabold">
-                Policy validation failed
+                Some information needs attention
               </h3>
 
               <p className="mt-1 text-sm">
-                Correct the following items before
+                Please check the following before
                 reviewing and saving:
               </p>
 
@@ -1496,19 +1495,18 @@ export default function KPIThresholdsTab({
 
               <div>
                 <h2 className="text-xl font-extrabold text-white">
-                  Performance Evaluation Policy
+                  Performance Evaluation
                 </h2>
 
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-emerald-100">
-                  Configure how employee performance
-                  scores are interpreted and how much
-                  each KPI factor contributes to the
-                  final evaluation score.
+                  Manage the rating guide, performance factors,
+                  weights, and criteria used when HR reviews
+                  employee performance.
                 </p>
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white ring-1 ring-white/20">
-                    Performance Evaluation Setup
+                    Evaluation Guide
                   </span>
 
                   <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white ring-1 ring-white/20">
@@ -1517,9 +1515,9 @@ export default function KPIThresholdsTab({
 
                   <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white ring-1 ring-white/20">
                     {isEditing
-                      ? "Editing Mode"
+                      ? "Currently Editing"
                       : canEdit
-                        ? "Editable"
+                        ? "Ready to Manage"
                         : "View Only"}
                   </span>
                 </div>
@@ -1541,7 +1539,7 @@ export default function KPIThresholdsTab({
                       )
                     }
                   >
-                    Load Defaults
+                    Restore Standard Setup
                   </Button>
 
                   <Button
@@ -1551,7 +1549,7 @@ export default function KPIThresholdsTab({
                       handleStartEditing
                     }
                   >
-                    Edit Policy
+                    Edit Evaluation
                   </Button>
                 </>
               )}
@@ -1601,14 +1599,13 @@ export default function KPIThresholdsTab({
 
               <div>
                 <h3 className="text-sm font-extrabold">
-                  About this setup
+                  How this is used
                 </h3>
 
                 <p className="mt-1 text-sm leading-6">
-                  Use this page to manage the rating
-                  scale, KPI weights, and evaluation
-                  criteria used by HR when reviewing
-                  employee performance.
+                  Use this page to manage how performance scores
+                  are grouped, how much each performance factor
+                  contributes, and what HR considers during evaluation.
                 </p>
               </div>
             </div>
@@ -1625,9 +1622,9 @@ export default function KPIThresholdsTab({
               </h3>
 
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Every possible final score from 0% to
-                100% must belong to exactly one rating
-                range.
+                Set the rating that applies to each final score
+                from 0% to 100%. The ranges must cover the
+                full scale without overlapping.
               </p>
             </div>
 
@@ -1639,8 +1636,8 @@ export default function KPIThresholdsTab({
               )}
 
               {isEditing
-                ? "Editing Enabled"
-                : "Protected Policy"}
+                ? "Changes Enabled"
+                : "Changes Locked"}
             </div>
           </div>
 
@@ -1753,14 +1750,14 @@ export default function KPIThresholdsTab({
 
                       <label className="block">
                         <span className="mb-1.5 block text-xs font-bold">
-                          Policy / Action Notes
+                          Guidance / Action Notes
                         </span>
 
                         <textarea
                           value={
                             item.frequency
                           }
-                          placeholder="Optional policy or action notes..."
+                          placeholder="Optional guidance or action notes..."
                           onChange={(event) =>
                             handleRatingChange(
                               item.id,
@@ -1812,14 +1809,13 @@ export default function KPIThresholdsTab({
           <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-sm font-extrabold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-                KPI Evaluation Factors & Weights
+                Performance Factors & Weights
               </h3>
 
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Each weight represents that factor’s
-                contribution to the final employee
-                performance score. Combined weights
-                must equal 100%.
+                Each weight shows how much a performance factor
+                contributes to the employee’s final score.
+                All weights combined must equal 100%.
               </p>
             </div>
 
@@ -1847,7 +1843,7 @@ export default function KPIThresholdsTab({
                       <div className="grid gap-4 lg:grid-cols-[1fr_160px]">
                         <label className="block">
                           <span className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-200">
-                            KPI Factor Name
+                            Performance Factor
                           </span>
 
                           <input
@@ -2032,11 +2028,9 @@ export default function KPIThresholdsTab({
 
                           {item.criteria.length === 0 && (
                             <div className="rounded-2xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-slate-700 dark:text-gray-400">
-                              No evaluation criteria
-                              configured for this factor.
+                              No evaluation criteria added yet.
                               Add at least one criterion
-                              before reviewing and saving
-                              the policy.
+                              before reviewing and saving.
                             </div>
                           )}
                         </div>
@@ -2116,18 +2110,17 @@ export default function KPIThresholdsTab({
 
               <div>
                 <p className="text-sm font-semibold leading-6">
-                  Performance evaluation settings
+                  Performance evaluation guide
                 </p>
 
                 <p className="mt-1 text-xs leading-5">
-                  These settings apply to the
-                  organization’s employee performance
-                  evaluation process.
+                  These settings guide how HR reviews and scores
+                  employee performance.
                 </p>
 
                 <p className="mt-2 text-xs leading-5">
-                  Incident and disciplinary evaluations
-                  are handled separately.
+                  Incident and disciplinary reviews remain separate
+                  from performance evaluation.
                 </p>
 
                 <p className="mt-3 text-xs font-semibold">
@@ -2155,8 +2148,8 @@ export default function KPIThresholdsTab({
             setShowReviewDialog(false);
           }
         }}
-        title="Review Performance Evaluation Policy"
-        description="Verify the rating ranges, KPI factor weights, and evaluation criteria before applying this organization-wide policy."
+        title="Review Performance Evaluation"
+        description="Review the rating ranges, performance factor weights, and evaluation criteria before saving your changes."
         tone="default"
         size="xl"
         preventClose={isSaving}
@@ -2191,7 +2184,7 @@ export default function KPIThresholdsTab({
         <div className="space-y-6">
           <section>
             <h3 className="text-sm font-extrabold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-              Rating Scale Review
+              Rating Scale
             </h3>
 
             <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -2226,7 +2219,7 @@ export default function KPIThresholdsTab({
           <section>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-extrabold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-                KPI Factor Review
+                Performance Factors
               </h3>
 
               <span
@@ -2311,11 +2304,10 @@ export default function KPIThresholdsTab({
               />
 
               <p>
-                Saving updates the organization-wide
-                performance evaluation policy. It does
-                not create or modify an individual
-                employee evaluation and does not change
-                the separate incident-based DSS rules.
+                Saving will update the guide used for future
+                performance evaluations. It will not create or
+                change an individual employee evaluation, and
+                incident or disciplinary rules will remain unchanged.
               </p>
             </div>
           </div>
@@ -2324,7 +2316,7 @@ export default function KPIThresholdsTab({
 
       <ConfirmDialog
         open={showDiscardDialog}
-        title="Discard Performance Evaluation Changes?"
+        title="Discard Your Changes?"
         tone="warning"
         confirmLabel="Discard Changes"
         cancelLabel="Continue Editing"
@@ -2346,9 +2338,9 @@ export default function KPIThresholdsTab({
 
       <ConfirmDialog
         open={showRestoreDialog}
-        title="Load Default Performance Evaluation Policy?"
+        title="Load Default Performance Evaluation?"
         tone="warning"
-        confirmLabel="Load Defaults"
+        confirmLabel="Restore Standard Setup"
         cancelLabel="Cancel"
         loading={false}
         closeOnBackdrop={!isSaving}
@@ -2360,19 +2352,19 @@ export default function KPIThresholdsTab({
         }
       >
         <p>
-          The original company rating scale, KPI
-          factors, weights, and evaluation criteria
-          will be loaded into editing mode.
+          The standard rating scale, performance factors,
+          weights, and evaluation criteria will be prepared
+          for review.
         </p>
 
         <p className="mt-2 font-semibold">
-          Nothing will be changed in the organization
-          database until you review and save.
+          Your current saved setup will remain unchanged
+          until you review and save the standard setup.
         </p>
       </ConfirmDialog>
 
       <SuccessToast
-        title="Performance evaluation policy updated"
+        title="Performance evaluation updated"
         message={successMessage}
         duration={4000}
         onClose={() =>
