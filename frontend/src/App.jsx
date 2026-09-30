@@ -1,4 +1,4 @@
-import React, {
+import {
   Suspense,
   lazy,
   useEffect,
@@ -14,83 +14,19 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
+
 import MainLayout from "./layout/MainLayout";
-// Route-level code splitting.
-// Each page is downloaded only when its route is visited.
-const Dashboard = lazy(() =>
-  import("./pages/Dashboard")
-);
-const Employees = lazy(() =>
-  import("./pages/Employees")
-);
-const Attendance = lazy(() =>
-  import("./pages/Attendance")
-);
-const ArchivedEmployees = lazy(() =>
-  import("./pages/ArchivedEmployees")
-);
-const Deployments = lazy(() =>
-  import("./pages/Deployments")
-);
-const Incidents = lazy(() =>
-  import("./pages/Incidents")
-);
-const KPIReports = lazy(() =>
-  import("./pages/KPIReports")
-);
-const Login = lazy(() =>
-  import("./pages/Login")
-);
-const Notifications = lazy(() =>
-  import("./pages/Notifications")
-);
-const Settings = lazy(() =>
-  import("./pages/Settings")
-);
-const SuperAdminPortal = lazy(() =>
-  import("./pages/SuperAdminPortal")
-);
-const ChangePassword = lazy(() =>
-  import("./pages/ChangePassword")
-);
-const ResetPassword = lazy(() =>
-  import("./pages/ResetPassword")
-);
-const VerifyEmail = lazy(() =>
-  import("./pages/VerifyEmail")
-);
-const SystemConfiguration = lazy(() =>
-  import("./pages/SystemConfiguration")
-);
-const SystemMaintenance = lazy(() =>
-  import("./pages/SystemMaintenance")
-);
-const ProfileSettings = lazy(() =>
-  import("./pages/ProfileSettings")
-);
-// Audit pages
-const TechnicalAuditLogs = lazy(() =>
-  import("./pages/TechnicalAuditLogs")
-);
-const OperationalAuditLogs = lazy(() =>
-  import("./pages/OperationalAuditLogs")
-);
-// NEW: Messenger page
-const Messenger = lazy(() =>
-  import("./pages/Messenger")
-);
-// Authentication
+import StandbyExperience from "./components/standby/StandbyExperience";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
 import {
   AuthProvider,
 } from "./context/AuthContext";
 import {
   useAuth,
 } from "./context/useAuth";
-// NEW: Messenger context
 import {
   ChatProvider,
 } from "./context/ChatContext";
-import ProtectedRoute from "./components/auth/ProtectedRoute";
 import {
   ROLES,
 } from "./constants/roles";
@@ -98,6 +34,30 @@ import {
   AUTH_SESSION_INVALID_EVENT,
   MAINTENANCE_MODE_DETECTED_EVENT,
 } from "./utils/authenticatedFetch";
+
+// Route-level code splitting.
+// Each page is downloaded only when its route is visited.
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Employees = lazy(() => import("./pages/Employees"));
+const Attendance = lazy(() => import("./pages/Attendance"));
+const ArchivedEmployees = lazy(() => import("./pages/ArchivedEmployees"));
+const Deployments = lazy(() => import("./pages/Deployments"));
+const Incidents = lazy(() => import("./pages/Incidents"));
+const KPIReports = lazy(() => import("./pages/KPIReports"));
+const Login = lazy(() => import("./pages/Login"));
+const Notifications = lazy(() => import("./pages/Notifications"));
+const Settings = lazy(() => import("./pages/Settings"));
+const SuperAdminPortal = lazy(() => import("./pages/SuperAdminPortal"));
+const ChangePassword = lazy(() => import("./pages/ChangePassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const VerifyEmail = lazy(() => import("./pages/VerifyEmail"));
+const SystemConfiguration = lazy(() => import("./pages/SystemConfiguration"));
+const SystemMaintenance = lazy(() => import("./pages/SystemMaintenance"));
+const ProfileSettings = lazy(() => import("./pages/ProfileSettings"));
+const TechnicalAuditLogs = lazy(() => import("./pages/TechnicalAuditLogs"));
+const OperationalAuditLogs = lazy(() => import("./pages/OperationalAuditLogs"));
+const Messenger = lazy(() => import("./pages/Messenger"));
+
 const AUTHENTICATED_ROLES = [
   ROLES.SUPER_ADMIN,
   ROLES.HR_MANAGER,
@@ -105,6 +65,7 @@ const AUTHENTICATED_ROLES = [
   ROLES.HR_COORDINATOR,
   ROLES.IT_SUPPORT,
 ];
+
 /*
  * Existing HR modules that remain available only
  * to internal Welljob HR users.
@@ -119,10 +80,12 @@ const HR_MODULE_ROLES = [
   ROLES.HR_MANAGER,
   ROLES.HR_STAFF,
 ];
+
 const NOTIFICATION_ROLES = [
   ...HR_MODULE_ROLES,
   ROLES.IT_SUPPORT,
 ];
+
 /*
  * Operational records visible to HR Coordinator.
  *
@@ -136,32 +99,30 @@ const WORKFORCE_RECORD_ROLES = [
   ROLES.HR_STAFF,
   ROLES.HR_COORDINATOR,
 ];
+
 const ATTENDANCE_ROLES = [
   ROLES.HR_COORDINATOR,
 ];
+
 const SYSTEM_CONFIGURATION_ROLES = [
   ROLES.SUPER_ADMIN,
   ROLES.HR_MANAGER,
 ];
-const queryClient =
-  new QueryClient({
-    defaultOptions: {
-      queries: {
-        staleTime:
-          30 * 1000,
-        refetchOnWindowFocus:
-          true,
-        refetchOnReconnect:
-          true,
-        retry:
-          1,
-      },
-      mutations: {
-        retry:
-          0,
-      },
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      retry: 1,
     },
-  });
+    mutations: {
+      retry: 0,
+    },
+  },
+});
+
 /*
  * Axios JWT transport.
  *
@@ -171,133 +132,98 @@ const queryClient =
  */
 axios.interceptors.request.use(
   (config) => {
-    const token =
-      String(
-        localStorage.getItem(
-          "token"
-        ) || ""
-      ).trim();
+    const token = String(
+      localStorage.getItem("token") || ""
+    ).trim();
+
     if (token) {
-      config.headers =
-        config.headers || {};
-      config.headers.Authorization =
-        `Bearer ${token}`;
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
   },
-  (error) =>
-    Promise.reject(
-      error
-    )
+  (error) => Promise.reject(error)
 );
-function getAxiosResponseMessage(
-  error
-) {
-  const responseData =
-    error?.response?.data;
-  if (
-    typeof responseData ===
-    "string"
-  ) {
+
+function getAxiosResponseMessage(error) {
+  const responseData = error?.response?.data;
+
+  if (typeof responseData === "string") {
     return responseData.trim();
   }
+
   return String(
     responseData?.error ||
       responseData?.message ||
       ""
   ).trim();
 }
-function getAxiosAuthorizationHeader(
-  error
-) {
-  const headers =
-    error?.config?.headers;
+
+function getAxiosAuthorizationHeader(error) {
+  const headers = error?.config?.headers;
+
   if (!headers) {
     return "";
   }
-  if (
-    typeof headers.get ===
-    "function"
-  ) {
+
+  if (typeof headers.get === "function") {
     return String(
-      headers.get(
-        "Authorization"
-      ) ||
-        headers.get(
-          "authorization"
-        ) ||
+      headers.get("Authorization") ||
+        headers.get("authorization") ||
         ""
     ).trim();
   }
+
   return String(
     headers.Authorization ||
       headers.authorization ||
       ""
   ).trim();
 }
-function isAuthenticatedAxiosRequest(
-  error
-) {
-  return getAxiosAuthorizationHeader(
-    error
-  )
+
+function isAuthenticatedAxiosRequest(error) {
+  return getAxiosAuthorizationHeader(error)
     .toLowerCase()
-    .startsWith(
-      "bearer "
-    );
+    .startsWith("bearer ");
 }
-function isAxiosMaintenanceError(
-  error
-) {
-  if (
-    error?.response?.status !==
-    503
-  ) {
+
+function isAxiosMaintenanceError(error) {
+  if (error?.response?.status !== 503) {
     return false;
   }
-  return getAxiosResponseMessage(
-    error
-  )
+
+  return getAxiosResponseMessage(error)
     .toLowerCase()
-    .includes(
-      "maintenance"
-    );
+    .includes("maintenance");
 }
-function isAxiosSessionInvalidError(
-  error
-) {
+
+function isAxiosSessionInvalidError(error) {
   return (
-    error?.response?.status ===
-      401 &&
-    isAuthenticatedAxiosRequest(
-      error
-    )
+    error?.response?.status === 401 &&
+    isAuthenticatedAxiosRequest(error)
   );
 }
-function dispatchSessionInvalidEvent(
-  error
-) {
+
+function dispatchSessionInvalidEvent(error) {
   window.dispatchEvent(
     new CustomEvent(
       AUTH_SESSION_INVALID_EVENT,
       {
         detail: {
           status:
-            error?.response
-              ?.status ||
+            error?.response?.status ||
             401,
           message:
-            getAxiosResponseMessage(
-              error
-            ) ||
+            getAxiosResponseMessage(error) ||
             "Authentication session is no longer valid.",
-          detectedAt:
-            Date.now(),
+          detectedAt: Date.now(),
         },
       }
     )
   );
 }
+
 function RouteLoadingFallback() {
   return (
     <div
@@ -310,6 +236,7 @@ function RouteLoadingFallback() {
           className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-indigo-600 dark:border-white/10 dark:border-t-indigo-400"
           aria-hidden="true"
         />
+
         <p className="mt-3 text-sm font-semibold text-gray-600 dark:text-gray-300">
           Loading...
         </p>
@@ -317,32 +244,32 @@ function RouteLoadingFallback() {
     </div>
   );
 }
+
 function LazyRoute({ children }) {
   return (
     <Suspense
-      fallback={
-        <RouteLoadingFallback />
-      }
+      fallback={<RouteLoadingFallback />}
     >
       {children}
     </Suspense>
   );
 }
+
 function MaintenanceScreen() {
   const [
     isChecking,
     setIsChecking,
   ] = useState(false);
-  const handleCheckSystemStatus =
-    () => {
-      if (isChecking) {
-        return;
-      }
-      setIsChecking(
-        true
-      );
-      window.location.reload();
-    };
+
+  const handleCheckSystemStatus = () => {
+    if (isChecking) {
+      return;
+    }
+
+    setIsChecking(true);
+    window.location.reload();
+  };
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
       <section className="w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl">
@@ -354,83 +281,56 @@ function MaintenanceScreen() {
             >
               🛠
             </div>
+
             <div>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-amber-300">
-                Temporary
-                Service Notice
+                Temporary Service Notice
               </p>
+
               <h1 className="mt-1 text-2xl font-black text-white sm:text-3xl">
-                System Under
-                Maintenance
+                System Under Maintenance
               </h1>
             </div>
           </div>
         </div>
+
         <div className="space-y-6 px-6 py-7 sm:px-8 sm:py-8">
           <div>
             <p className="text-base leading-7 text-slate-300">
-              The Welljob HRIS
-              is temporarily
-              unavailable while
-              authorized IT
-              Support performs
-              system
-              maintenance.
+              The Welljob HRIS is temporarily unavailable while authorized
+              IT Support performs system maintenance.
             </p>
+
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Normal HR
-              operations are
-              temporarily
-              restricted to
-              protect system
-              data while
-              technical
-              maintenance,
-              validation, or
-              recovery
-              activities are
-              being completed.
+              Normal HR operations are temporarily restricted to protect
+              system data while technical maintenance, validation, or
+              recovery activities are being completed.
             </p>
           </div>
+
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5">
             <p className="font-bold text-amber-200">
-              What should I
-              do?
+              What should I do?
             </p>
+
             <p className="mt-2 text-sm leading-6 text-amber-100/80">
-              Please wait
-              until IT Support
-              completes the
-              maintenance
-              activity. Use
-              the button below
-              to check whether
-              normal system
-              access has
-              already been
-              restored.
+              Please wait until IT Support completes the maintenance
+              activity. Use the button below to check whether normal system
+              access has already been restored.
             </p>
           </div>
+
           <div className="flex flex-col-reverse gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs leading-5 text-slate-500">
-              Your account and
-              existing HR
-              records are not
-              modified by this
-              maintenance
-              notice.
+              Your account and existing HR records are not modified by this
+              maintenance notice.
             </p>
+
             <button
               type="button"
-              disabled={
-                isChecking
-              }
-              aria-busy={
-                isChecking
-              }
-              onClick={
-                handleCheckSystemStatus
-              }
+              disabled={isChecking}
+              aria-busy={isChecking}
+              onClick={handleCheckSystemStatus}
               className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-extrabold text-white transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:cursor-wait disabled:opacity-70"
             >
               {isChecking
@@ -443,15 +343,18 @@ function MaintenanceScreen() {
     </main>
   );
 }
+
 function ApplicationContent({
   isMaintenance,
 }) {
   const {
     user,
   } = useAuth();
+
   const isITSupport =
     user?.role ===
     ROLES.IT_SUPPORT;
+
   /*
    * During maintenance, normal authenticated HR
    * screens are unmounted for non-IT users.
@@ -461,10 +364,9 @@ function ApplicationContent({
     user &&
     !isITSupport
   ) {
-    return (
-      <MaintenanceScreen />
-    );
+    return <MaintenanceScreen />;
   }
+
   /*
    * Messenger context is mounted inside
    * AuthProvider and the existing Router.
@@ -485,6 +387,7 @@ function ApplicationContent({
             </LazyRoute>
           }
         />
+
         {/* Public recovery links from email */}
         <Route
           path="/reset-password"
@@ -494,6 +397,7 @@ function ApplicationContent({
             </LazyRoute>
           }
         />
+
         <Route
           path="/verify-email"
           element={
@@ -502,6 +406,7 @@ function ApplicationContent({
             </LazyRoute>
           }
         />
+
         {/* All authenticated users */}
         <Route
           element={
@@ -524,17 +429,14 @@ function ApplicationContent({
               </LazyRoute>
             }
           />
+
           {/*
            * Protected application shell.
            *
            * Navbar, Sidebar, and global widgets
            * mount only after authentication succeeds.
            */}
-          <Route
-            element={
-              <MainLayout />
-            }
-          >
+          <Route element={<MainLayout />}>
             {/* Profile & Account Settings */}
             <Route
               path="/profile-settings"
@@ -544,6 +446,7 @@ function ApplicationContent({
                 </LazyRoute>
               }
             />
+
             {/* Dashboard */}
             <Route
               element={
@@ -563,6 +466,7 @@ function ApplicationContent({
                 }
               />
             </Route>
+
             {/* HR Coordinator Attendance & Workforce Monitoring */}
             <Route
               element={
@@ -582,6 +486,7 @@ function ApplicationContent({
                 }
               />
             </Route>
+
             {/* Employee, Deployment, and Incident records */}
             <Route
               element={
@@ -600,6 +505,7 @@ function ApplicationContent({
                   </LazyRoute>
                 }
               />
+
               <Route
                 path="/deployments"
                 element={
@@ -608,6 +514,7 @@ function ApplicationContent({
                   </LazyRoute>
                 }
               />
+
               <Route
                 path="/incidents"
                 element={
@@ -617,6 +524,7 @@ function ApplicationContent({
                 }
               />
             </Route>
+
             {/*
              * NEW: Messenger
              *
@@ -634,6 +542,7 @@ function ApplicationContent({
                 </LazyRoute>
               }
             />
+
             {/* Notifications: HR incident alerts and authorized recovery reviews */}
             <Route
               element={
@@ -653,6 +562,7 @@ function ApplicationContent({
                 }
               />
             </Route>
+
             {/* HR Manager employee archive */}
             <Route
               element={
@@ -672,6 +582,7 @@ function ApplicationContent({
                 }
               />
             </Route>
+
             {/* KPI */}
             <Route
               element={
@@ -691,6 +602,7 @@ function ApplicationContent({
                 }
               />
             </Route>
+
             {/* System Configuration */}
             <Route
               element={
@@ -708,9 +620,9 @@ function ApplicationContent({
                     <SystemConfiguration />
                   </LazyRoute>
                 }
-              >
-              </Route>
+              />
             </Route>
+
             {/* IT Support */}
             <Route
               element={
@@ -729,6 +641,7 @@ function ApplicationContent({
                   </LazyRoute>
                 }
               />
+
               <Route
                 path="/system-maintenance"
                 element={
@@ -737,6 +650,7 @@ function ApplicationContent({
                   </LazyRoute>
                 }
               />
+
               <Route
                 path="/technical-audit-logs"
                 element={
@@ -746,6 +660,7 @@ function ApplicationContent({
                 }
               />
             </Route>
+
             {/* Super Admin */}
             <Route
               element={
@@ -764,6 +679,7 @@ function ApplicationContent({
                   </LazyRoute>
                 }
               />
+
               <Route
                 path="/operational-audit-logs"
                 element={
@@ -775,6 +691,7 @@ function ApplicationContent({
             </Route>
           </Route>
         </Route>
+
         {/* Fallback */}
         <Route
           path="*"
@@ -789,22 +706,23 @@ function ApplicationContent({
     </ChatProvider>
   );
 }
+
 function App() {
   const [
     isMaintenance,
     setIsMaintenance,
   ] = useState(false);
+
   useEffect(() => {
-    const handleFetchMaintenance =
-      () => {
-        setIsMaintenance(
-          true
-        );
-      };
+    const handleFetchMaintenance = () => {
+      setIsMaintenance(true);
+    };
+
     window.addEventListener(
       MAINTENANCE_MODE_DETECTED_EVENT,
       handleFetchMaintenance
     );
+
     /*
      * Axios response handling is aligned with
      * authenticatedFetch:
@@ -819,18 +737,16 @@ function App() {
      */
     const responseInterceptor =
       axios.interceptors.response.use(
-        (response) =>
-          response,
+        (response) => response,
         (error) => {
           if (
             isAxiosMaintenanceError(
               error
             )
           ) {
-            setIsMaintenance(
-              true
-            );
+            setIsMaintenance(true);
           }
+
           if (
             isAxiosSessionInvalidError(
               error
@@ -840,26 +756,26 @@ function App() {
               error
             );
           }
-          return Promise.reject(
-            error
-          );
+
+          return Promise.reject(error);
         }
       );
+
     return () => {
       window.removeEventListener(
         MAINTENANCE_MODE_DETECTED_EVENT,
         handleFetchMaintenance
       );
+
       axios.interceptors.response.eject(
         responseInterceptor
       );
     };
   }, []);
+
   return (
     <QueryClientProvider
-      client={
-        queryClient
-      }
+      client={queryClient}
     >
       <AuthProvider>
         <ApplicationContent
@@ -867,8 +783,19 @@ function App() {
             isMaintenance
           }
         />
+
+        {!isMaintenance && (
+          <StandbyExperience
+            idleTimeoutMs={
+              3 * 60 * 1000
+            }
+            introDurationMs={3400}
+            showIntroOncePerSession
+          />
+        )}
       </AuthProvider>
     </QueryClientProvider>
   );
 }
+
 export default App;
