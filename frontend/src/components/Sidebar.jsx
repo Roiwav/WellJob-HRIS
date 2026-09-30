@@ -15,7 +15,7 @@ import {
   FiUsers,
 } from "react-icons/fi";
 
-import logo from "../assets/logo.png";
+import logo from "../assets/Logo.png";
 import { sidebarItems } from "../config/sidebarItems";
 import { ROLES } from "../constants/roles";
 import { useAuth } from "../context/useAuth";
