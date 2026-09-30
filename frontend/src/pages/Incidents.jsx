@@ -9,19 +9,18 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
+  FiAlertTriangle,
   FiPlus,
   FiRefreshCw,
 } from "react-icons/fi";
-
 import RoleGuard from "../components/auth/RoleGuard";
 import Button from "../components/ui/Button";
+import PageHeader from "../components/ui/PageHeader";
 import ErrorState from "../components/ui/ErrorState";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
-
 import authenticatedFetch from "../utils/authenticatedFetch";
 import { API_BASE } from "../config/api";
-
 import AddIncidentModal from "../components/incidents/modals/AddIncidentModal";
 import ViewIncidentModal from "../components/incidents/modals/ViewIncidentModal";
 import ConfirmStartInvestigationModal from "../components/incidents/modals/ConfirmStartInvestigationModal";
@@ -29,42 +28,32 @@ import ResolutionModal from "../components/incidents/modals/ResolutionModal";
 import ReviewCaseModal from "../components/incidents/modals/ReviewCaseModal";
 import IncidentTable from "../components/incidents/table/IncidentTable";
 import { NoticeModal } from "../components/incidents/shared/ModalUI";
-
 import {
   getUserIdentity,
   normalizeStatus,
   normalizeIncidentWithRules,
 } from "../utils/incidents/incidentHelpers";
-
 import {
   normalizeEvidenceFiles,
 } from "../utils/incidents/evidenceFiles";
-
 const INCIDENT_API_URL =
   `${API_BASE}/incidents`;
-
 const DATA_EVENT_SOURCE =
   "incidents-page";
-
 const REQUEST_TIMEOUT_MS =
   15000;
-
 const PASSIVE_REFRESH_DEBOUNCE_MS =
   150;
-
 const INCIDENT_SEARCH_DEBOUNCE_MS =
   300;
-
 const INCIDENT_PAGE_SIZE =
   25;
-
 const EMPTY_CASE_COUNTS = {
   ALL: 0,
   ACTIVE: 0,
   FOR_REVIEW: 0,
   CLOSED: 0,
 };
-
 const DEFAULT_PAGINATION = {
   page: 1,
   pageSize:
@@ -74,7 +63,6 @@ const DEFAULT_PAGINATION = {
   hasPreviousPage: false,
   hasNextPage: false,
 };
-
 const INCIDENT_PAGE_DATA_DOMAINS =
   new Set([
     "incident",
@@ -85,7 +73,6 @@ const INCIDENT_PAGE_DATA_DOMAINS =
     "deployments",
     "dashboard",
   ]);
-
 function emitDataUpdated(
   action = "INCIDENTS_UPDATED"
 ) {
@@ -96,12 +83,9 @@ function emitDataUpdated(
         detail: {
           source:
             DATA_EVENT_SOURCE,
-
           domain:
             "incidents",
-
           action,
-
           at:
             Date.now(),
         },
@@ -109,7 +93,6 @@ function emitDataUpdated(
     )
   );
 }
-
 function normalizeDataDomain(
   value
 ) {
@@ -119,7 +102,6 @@ function normalizeDataDomain(
     .trim()
     .toLowerCase();
 }
-
 function shouldRefreshForDataUpdated(
   event
 ) {
@@ -127,28 +109,23 @@ function shouldRefreshForDataUpdated(
     normalizeDataDomain(
       event?.detail?.domain
     );
-
   if (!domain) {
     return true;
   }
-
   return (
     INCIDENT_PAGE_DATA_DOMAINS.has(
       domain
     )
   );
 }
-
 function formatIncidentCode(
   id
 ) {
   if (!id) {
     return "-";
   }
-
   const value =
     String(id);
-
   if (
     value.startsWith(
       "INC-"
@@ -156,10 +133,8 @@ function formatIncidentCode(
   ) {
     return value;
   }
-
   const numeric =
     Number(value);
-
   if (
     Number.isNaN(
       numeric
@@ -167,7 +142,6 @@ function formatIncidentCode(
   ) {
     return value;
   }
-
   return `INC-${String(
     numeric
   ).padStart(
@@ -175,7 +149,6 @@ function formatIncidentCode(
     "0"
   )}`;
 }
-
 function normalizeIncidentLookupId(
   value
 ) {
@@ -183,16 +156,13 @@ function normalizeIncidentLookupId(
     String(
       value || ""
     ).trim();
-
   if (!raw) {
     return "";
   }
-
   const incidentCodeMatch =
     raw.match(
       /^INC-(\d+)$/i
     );
-
   if (
     incidentCodeMatch
   ) {
@@ -202,10 +172,8 @@ function normalizeIncidentLookupId(
       )
     );
   }
-
   return raw;
 }
-
 function normalizeRole(
   value
 ) {
@@ -219,7 +187,6 @@ function normalizeRole(
         /[\s-]+/g,
         "_"
       );
-
   if (
     [
       "SUPERADMIN",
@@ -231,7 +198,6 @@ function normalizeRole(
   ) {
     return "SUPER_ADMIN";
   }
-
   if (
     [
       "HRMANAGER",
@@ -242,7 +208,6 @@ function normalizeRole(
   ) {
     return "HR_MANAGER";
   }
-
   if (
     [
       "HRSTAFF",
@@ -253,7 +218,6 @@ function normalizeRole(
   ) {
     return "HR_STAFF";
   }
-
   if (
     [
       "HRCOORDINATOR",
@@ -264,10 +228,8 @@ function normalizeRole(
   ) {
     return "HR_COORDINATOR";
   }
-
   return role;
 }
-
 function normalizeTimelineEvent(
   event = {}
 ) {
@@ -277,7 +239,6 @@ function normalizeTimelineEvent(
     event.date ||
     new Date()
       .toISOString();
-
   return {
     id:
       event.id ||
@@ -286,116 +247,93 @@ function normalizeTimelineEvent(
         event.action_type ||
         "event"
       }-${createdAt}`,
-
     incidentId:
       event.incidentId ||
       event.incident_id ||
       "",
-
     incident_id:
       event.incident_id ||
       event.incidentId ||
       "",
-
     actionType:
       event.actionType ||
       event.action_type ||
       "",
-
     action_type:
       event.action_type ||
       event.actionType ||
       "",
-
     title:
       event.title ||
       "Timeline Event",
-
     description:
       event.description ||
       "",
-
     createdById:
       event.createdById ||
       event.created_by_id ||
       "",
-
     created_by_id:
       event.created_by_id ||
       event.createdById ||
       "",
-
     createdByUsername:
       event.createdByUsername ||
       event.created_by_username ||
       "",
-
     created_by_username:
       event.created_by_username ||
       event.createdByUsername ||
       "",
-
     createdByName:
       event.createdByName ||
       event.created_by_name ||
       "System",
-
     created_by_name:
       event.created_by_name ||
       event.createdByName ||
       "System",
-
     createdByRole:
       event.createdByRole ||
       event.created_by_role ||
       "",
-
     created_by_role:
       event.created_by_role ||
       event.createdByRole ||
       "",
-
     createdAt,
-
     created_at:
       createdAt,
   };
 }
-
 function normalizeBackendIncident(
   incident = {}
 ) {
   const incidentId =
     incident.id;
-
   const reportedBy =
     incident.reportedByName ||
     incident.reported_by_name ||
     incident.reportedBy ||
     incident.reported_by ||
     "Unknown";
-
   const investigationStartedAt =
     incident.investigationStartedAt ||
     incident.investigation_started_at ||
     null;
-
   const resolutionSubmittedAt =
     incident.resolutionSubmittedAt ||
     incident.resolution_submitted_at ||
     null;
-
   const reviewedAt =
     incident.reviewedAt ||
     incident.reviewed_at ||
     null;
-
   const policySanction =
     incident.policySanction ||
     incident.policy_sanction ||
     incident.sanction ||
     "";
-
   const actionTaken =
     incident.actionTaken ||
     incident.action_taken ||
@@ -404,7 +342,6 @@ function normalizeBackendIncident(
     incident.resolution
       ?.action_taken ||
     "";
-
   const timelineEvents =
     Array.isArray(
       incident.timelineEvents
@@ -425,64 +362,52 @@ function normalizeBackendIncident(
               normalizeTimelineEvent
             )
           : [];
-
   const investigation =
     investigationStartedAt
       ? {
           startedAt:
             investigationStartedAt,
-
           startedById:
             incident.investigationStartedById ||
             incident.investigation_started_by_id ||
             "",
-
           startedByName:
             incident.investigationStartedByName ||
             incident.investigation_started_by_name ||
             "",
-
           startedByUsername:
             incident.investigationStartedByUsername ||
             incident.investigation_started_by_username ||
             "",
         }
       : null;
-
   const resolution =
     resolutionSubmittedAt
       ? {
           submittedAt:
             resolutionSubmittedAt,
-
           submittedById:
             incident.resolutionSubmittedById ||
             incident.resolution_submitted_by_id ||
             "",
-
           submittedByName:
             incident.resolutionSubmittedByName ||
             incident.resolution_submitted_by_name ||
             "",
-
           submittedByUsername:
             incident.resolutionSubmittedByUsername ||
             incident.resolution_submitted_by_username ||
             "",
-
           actionTaken,
-
           remarks:
             incident.resolutionNotes ||
             incident.resolution_notes ||
             incident.resolution
               ?.remarks ||
             "",
-
           proofFiles:
             normalizeEvidenceFiles({
               incidentId,
-
               proofFiles:
                 incident.proofFiles ||
                 incident.proof_files ||
@@ -495,96 +420,78 @@ function normalizeBackendIncident(
             }),
         }
       : null;
-
   const review =
     reviewedAt ||
     incident.reviewDecision ||
     incident.review_decision
       ? {
           reviewedAt,
-
           reviewedById:
             incident.reviewedById ||
             incident.reviewed_by_id ||
             "",
-
           reviewedByName:
             incident.reviewedByName ||
             incident.reviewed_by_name ||
             "",
-
           reviewedByUsername:
             incident.reviewedByUsername ||
             incident.reviewed_by_username ||
             "",
-
           decision:
             incident.reviewDecision ||
             incident.review_decision ||
             "",
-
           comments:
             incident.reviewComments ||
             incident.review_comments ||
             "",
         }
       : null;
-
   return {
     ...incident,
-
     id:
       incidentId,
-
     displayId:
       formatIncidentCode(
         incidentId
       ),
-
     employeeId:
       incident.employeeId ||
       incident.employee_id ||
       incident.employee_id_fk ||
       "",
-
     employee:
       incident.employee ||
       incident.employeeName ||
       incident.employee_name ||
       "Unknown Employee",
-
     employeeName:
       incident.employeeName ||
       incident.employee ||
       incident.employee_name ||
       "Unknown Employee",
-
     company:
       incident.company ||
       "",
-
     violation:
       incident.violation ||
       incident.violationType ||
       incident.violation_type ||
       "No violation type",
-
     violationType:
       incident.violationType ||
       incident.violation ||
       incident.violation_type ||
       "No violation type",
-
     severity:
       incident.severity ||
       "Minor",
-
     status:
       normalizeStatus(
         incident.status ||
           "Open"
       ),
-
     date:
       incident.date ||
       incident.incidentDate ||
@@ -593,7 +500,6 @@ function normalizeBackendIncident(
       incident.created_at ||
       new Date()
         .toISOString(),
-
     incidentDate:
       incident.incidentDate ||
       incident.date ||
@@ -602,7 +508,6 @@ function normalizeBackendIncident(
       incident.created_at ||
       new Date()
         .toISOString(),
-
     reportedAt:
       incident.reportedAt ||
       incident.reported_at ||
@@ -611,126 +516,91 @@ function normalizeBackendIncident(
       incident.date ||
       new Date()
         .toISOString(),
-
     reportedBy,
-
     reportedByName:
       reportedBy,
-
     investigation,
-
     resolution,
-
     review,
-
     investigationStartedAt,
-
     investigation_started_at:
       investigationStartedAt,
-
     investigationStartedByName:
       investigation
         ?.startedByName ||
       "",
-
     investigation_started_by_name:
       investigation
         ?.startedByName ||
       "",
-
     resolutionSubmittedAt,
-
     resolution_submitted_at:
       resolutionSubmittedAt,
-
     resolutionSubmittedByName:
       resolution
         ?.submittedByName ||
       "",
-
     resolution_submitted_by_name:
       resolution
         ?.submittedByName ||
       "",
-
     reviewedAt,
-
     reviewed_at:
       reviewedAt,
-
     reviewedByName:
       review
         ?.reviewedByName ||
       "",
-
     reviewed_by_name:
       review
         ?.reviewedByName ||
       "",
-
     reviewDecision:
       review?.decision ||
       "",
-
     review_decision:
       review?.decision ||
       "",
-
     reviewComments:
       review?.comments ||
       "",
-
     review_comments:
       review?.comments ||
       "",
-
     location:
       incident.location ||
       "",
-
     description:
       incident.description ||
       "",
-
     policySanction,
-
     policy_sanction:
       policySanction,
-
     sanction:
       policySanction,
-
     actionTaken,
-
     action_taken:
       actionTaken,
-
     recommendation:
       incident.recommendation ||
       "",
-
     resolutionNotes:
       incident.resolutionNotes ||
       incident.resolution_notes ||
       "",
-
     smartAlerts:
       Array.isArray(
         incident.smartAlerts
       )
         ? incident.smartAlerts
         : [],
-
     timelineEvents,
-
     timeline_events:
       timelineEvents,
-
     timeline:
       timelineEvents,
   };
 }
-
 function buildIncidentList(
   rawIncidents = []
 ) {
@@ -738,7 +608,6 @@ function buildIncidentList(
     rawIncidents.map(
       normalizeBackendIncident
     );
-
   return normalized.map(
     (incident) =>
       normalizeIncidentWithRules(
@@ -747,7 +616,6 @@ function buildIncidentList(
       )
   );
 }
-
 function buildCaseCounts(
   incidents = []
 ) {
@@ -760,10 +628,8 @@ function buildCaseCounts(
         normalizeStatus(
           incident.status
         );
-
       counts.ALL +=
         1;
-
       if (
         [
           "Open",
@@ -775,7 +641,6 @@ function buildCaseCounts(
         counts.ACTIVE +=
           1;
       }
-
       if (
         status ===
         "For Review"
@@ -783,7 +648,6 @@ function buildCaseCounts(
         counts.FOR_REVIEW +=
           1;
       }
-
       if (
         status ===
         "Closed"
@@ -791,7 +655,6 @@ function buildCaseCounts(
         counts.CLOSED +=
           1;
       }
-
       return counts;
     },
     {
@@ -799,7 +662,6 @@ function buildCaseCounts(
     }
   );
 }
-
 function normalizeCaseCounts(
   value,
   fallbackIncidents = []
@@ -813,7 +675,6 @@ function normalizeCaseCounts(
       fallbackIncidents
     );
   }
-
   return {
     ALL:
       Number(
@@ -821,14 +682,12 @@ function normalizeCaseCounts(
         value.all ??
         0
       ) || 0,
-
     ACTIVE:
       Number(
         value.ACTIVE ??
         value.active ??
         0
       ) || 0,
-
     FOR_REVIEW:
       Number(
         value.FOR_REVIEW ??
@@ -836,7 +695,6 @@ function normalizeCaseCounts(
         value.for_review ??
         0
       ) || 0,
-
     CLOSED:
       Number(
         value.CLOSED ??
@@ -845,7 +703,6 @@ function normalizeCaseCounts(
       ) || 0,
   };
 }
-
 function normalizePagination(
   value,
   fallbackTotal = 0
@@ -857,12 +714,10 @@ function normalizePagination(
   ) {
     return {
       ...DEFAULT_PAGINATION,
-
       total:
         fallbackTotal,
     };
   }
-
   const page =
     Math.max(
       1,
@@ -870,7 +725,6 @@ function normalizePagination(
         value.page
       ) || 1
     );
-
   const pageSize =
     Math.max(
       1,
@@ -880,7 +734,6 @@ function normalizePagination(
       ) ||
         INCIDENT_PAGE_SIZE
     );
-
   const total =
     Math.max(
       0,
@@ -888,7 +741,6 @@ function normalizePagination(
         value.total
       ) || 0
     );
-
   const totalPages =
     Math.max(
       1,
@@ -902,23 +754,17 @@ function normalizePagination(
         ) ||
         1
     );
-
   return {
     page,
-
     pageSize,
-
     total,
-
     totalPages,
-
     hasPreviousPage:
       Boolean(
         value.hasPreviousPage ??
         value.has_previous_page ??
         page > 1
       ),
-
     hasNextPage:
       Boolean(
         value.hasNextPage ??
@@ -927,14 +773,12 @@ function normalizePagination(
       ),
   };
 }
-
 async function requestJson(
   url,
   options = {}
 ) {
   const controller =
     new AbortController();
-
   const timeoutId =
     window.setTimeout(
       () => {
@@ -942,34 +786,28 @@ async function requestJson(
       },
       REQUEST_TIMEOUT_MS
     );
-
   try {
     const response =
       await authenticatedFetch(
         url,
         {
           ...options,
-
           signal:
             controller.signal,
-
           headers: {
             Accept:
               "application/json",
-
             ...(options.headers ||
               {}),
           },
         }
       );
-
     const data =
       await response
         .json()
         .catch(
           () => null
         );
-
     if (
       !response.ok
     ) {
@@ -979,7 +817,6 @@ async function requestJson(
           `Request failed with status ${response.status}`
       );
     }
-
     return data;
   } catch (error) {
     if (
@@ -990,7 +827,6 @@ async function requestJson(
         "The server took too long to respond. Check that the backend server and database are running, then try again."
       );
     }
-
     throw error;
   } finally {
     window.clearTimeout(
@@ -998,47 +834,37 @@ async function requestJson(
     );
   }
 }
-
 export default function Incidents() {
   const {
     user,
   } = useAuth();
-
   const currentUser =
     getUserIdentity(
       user
     );
-
   const currentRole =
     normalizeRole(
       user?.role ||
       currentUser?.role
     );
-
   const isSuperAdmin =
     currentRole ===
     "SUPER_ADMIN";
-
   const isHrManager =
     currentRole ===
     "HR_MANAGER";
-
   const isHrStaff =
     currentRole ===
     "HR_STAFF";
-
   const isHrCoordinator =
     currentRole ===
     "HR_COORDINATOR";
-
   const canInvestigate =
     isHrManager ||
     isHrStaff;
-
   const isAuthorizedReviewer =
     isSuperAdmin ||
     isHrManager;
-
   const actorFullName =
     user?.full_name ||
     user?.fullName ||
@@ -1049,28 +875,23 @@ export default function Incidents() {
     currentUser?.name ||
     user?.username ||
     "Unknown User";
-
   const location =
     useLocation();
-
   const navigate =
     useNavigate();
-
   const isMountedRef =
     useRef(true);
-
   const fetchRequestIdRef =
     useRef(0);
-
   const activePageRequestsRef =
     useRef(0);
-
+  const hasCompletedInitialLoadRef =
+    useRef(false);
   const [
     incidents,
     setIncidents,
   ] =
     useState([]);
-
   const [
     incidentCaseCounts,
     setIncidentCaseCounts,
@@ -1078,13 +899,11 @@ export default function Incidents() {
     useState({
       ...EMPTY_CASE_COUNTS,
     });
-
   const [
     currentPage,
     setCurrentPage,
   ] =
     useState(1);
-
   const [
     pagination,
     setPagination,
@@ -1092,67 +911,61 @@ export default function Incidents() {
     useState({
       ...DEFAULT_PAGINATION,
     });
-
   const [
     isLoading,
     setIsLoading,
   ] =
     useState(true);
-
   const [
     isRefreshing,
     setIsRefreshing,
   ] =
     useState(false);
-
   const [
     fetchError,
     setFetchError,
   ] =
     useState("");
-
   const [
     openAddModal,
     setOpenAddModal,
   ] =
     useState(false);
-
   const [
     selectedIncident,
     setSelectedIncident,
   ] =
     useState(null);
-
   const [
     startReviewIncident,
     setStartReviewIncident,
   ] =
     useState(null);
-
   const [
     confirmStartIncident,
     setConfirmStartIncident,
   ] =
     useState(null);
-
   const [
     resolutionIncident,
     setResolutionIncident,
   ] =
     useState(null);
-
   const [
     reviewIncident,
     setReviewIncident,
   ] =
     useState(null);
-
   const [
     search,
     setSearch,
   ] =
     useState("");
-
+  const [
+    debouncedSearch,
+    setDebouncedSearch,
+  ] =
+    useState("");
   const [
     caseTab,
     setCaseTab,
@@ -1162,7 +975,6 @@ export default function Incidents() {
         ? "FOR_REVIEW"
         : "ACTIVE"
     );
-
   const [
     severityFilter,
     setSeverityFilter,
@@ -1170,13 +982,18 @@ export default function Incidents() {
     useState(
       "ALL"
     );
-
+  const [
+    caseStatusFilter,
+    setCaseStatusFilter,
+  ] =
+    useState(
+      "ALL"
+    );
   const [
     notice,
     setNotice,
   ] =
     useState(null);
-
   const showNotice =
     useCallback(
       (
@@ -1189,7 +1006,6 @@ export default function Incidents() {
         ) {
           return;
         }
-
         setNotice({
           type,
           title,
@@ -1198,7 +1014,6 @@ export default function Incidents() {
       },
       []
     );
-
   const fetchPageData =
     useCallback(
       async ({
@@ -1206,18 +1021,16 @@ export default function Incidents() {
         showError = true,
         showRefreshing = false,
         passive = false,
-
         page =
           currentPage,
-
         searchValue =
-          search,
-
+          debouncedSearch,
         caseTabValue =
           caseTab,
-
         severityValue =
           severityFilter,
+        caseStatusValue =
+          caseStatusFilter,
       } = {}) => {
         if (
           passive &&
@@ -1227,18 +1040,14 @@ export default function Incidents() {
         ) {
           return false;
         }
-
         const requestId =
           fetchRequestIdRef
             .current +
           1;
-
         fetchRequestIdRef.current =
           requestId;
-
         activePageRequestsRef.current +=
           1;
-
         try {
           if (
             !silent &&
@@ -1249,7 +1058,6 @@ export default function Incidents() {
               true
             );
           }
-
           if (
             showRefreshing &&
             isMountedRef.current
@@ -1258,7 +1066,6 @@ export default function Incidents() {
               true
             );
           }
-
           if (
             showError &&
             isMountedRef.current
@@ -1267,15 +1074,12 @@ export default function Incidents() {
               ""
             );
           }
-
           const params =
             new URLSearchParams();
-
           params.set(
             "view",
             "summary"
           );
-
           params.set(
             "page",
             String(
@@ -1286,20 +1090,17 @@ export default function Incidents() {
               )
             )
           );
-
           params.set(
             "pageSize",
             String(
               INCIDENT_PAGE_SIZE
             )
           );
-
           const trimmedSearch =
             String(
               searchValue ||
               ""
             ).trim();
-
           if (
             trimmedSearch
           ) {
@@ -1308,7 +1109,6 @@ export default function Incidents() {
               trimmedSearch
             );
           }
-
           const normalizedCaseTab =
             String(
               caseTabValue ||
@@ -1316,7 +1116,6 @@ export default function Incidents() {
             )
               .trim()
               .toUpperCase();
-
           if (
             normalizedCaseTab &&
             normalizedCaseTab !==
@@ -1327,13 +1126,11 @@ export default function Incidents() {
               normalizedCaseTab
             );
           }
-
           const normalizedSeverity =
             String(
               severityValue ||
               "ALL"
             ).trim();
-
           if (
             normalizedSeverity &&
             normalizedSeverity.toUpperCase() !==
@@ -1345,11 +1142,34 @@ export default function Incidents() {
             );
           }
 
+          const normalizedCaseStatus =
+            normalizeStatus(
+              caseStatusValue ||
+              ""
+            );
+
+          if (
+            normalizedCaseTab ===
+              "ALL" &&
+            String(
+              caseStatusValue ||
+              ""
+            )
+              .trim()
+              .toUpperCase() !==
+              "ALL" &&
+            normalizedCaseStatus
+          ) {
+            params.set(
+              "status",
+              normalizedCaseStatus
+            );
+          }
+
           const incidentData =
             await requestJson(
               `${INCIDENT_API_URL}?${params.toString()}`
             );
-
           if (
             !isMountedRef.current ||
             requestId !==
@@ -1357,7 +1177,6 @@ export default function Incidents() {
           ) {
             return false;
           }
-
           const rawIncidents =
             Array.isArray(
               incidentData
@@ -1370,12 +1189,10 @@ export default function Incidents() {
                 ? incidentData
                     .incidents
                 : [];
-
           const backendIncidents =
             buildIncidentList(
               rawIncidents
             );
-
           const nextPagination =
             normalizePagination(
               Array.isArray(
@@ -1386,7 +1203,6 @@ export default function Incidents() {
                     ?.pagination,
               backendIncidents.length
             );
-
           const nextCaseCounts =
             normalizeCaseCounts(
               Array.isArray(
@@ -1397,19 +1213,15 @@ export default function Incidents() {
                     ?.caseCounts,
               backendIncidents
             );
-
           setIncidents(
             backendIncidents
           );
-
           setPagination(
             nextPagination
           );
-
           setIncidentCaseCounts(
             nextCaseCounts
           );
-
           setCurrentPage(
             (
               previousPage
@@ -1419,14 +1231,12 @@ export default function Incidents() {
                 ? previousPage
                 : nextPagination.page
           );
-
           return true;
         } catch (error) {
           console.error(
             "Fetch incident page data error:",
             error
           );
-
           if (
             showError &&
             isMountedRef.current &&
@@ -1438,7 +1248,6 @@ export default function Incidents() {
               "Unable to load incident records."
             );
           }
-
           return false;
         } finally {
           activePageRequestsRef.current =
@@ -1448,7 +1257,6 @@ export default function Incidents() {
                 .current -
                 1
             );
-
           if (
             isMountedRef.current &&
             requestId ===
@@ -1461,7 +1269,6 @@ export default function Incidents() {
                 false
               );
             }
-
             if (
               showRefreshing
             ) {
@@ -1473,13 +1280,13 @@ export default function Incidents() {
         }
       },
       [
+        caseStatusFilter,
         caseTab,
         currentPage,
-        search,
+        debouncedSearch,
         severityFilter,
       ]
     );
-
   const loadIncidentDetails =
     useCallback(
       async (
@@ -1492,26 +1299,21 @@ export default function Incidents() {
             "Incident ID is unavailable."
           );
         }
-
         const incidentData =
           await requestJson(
             `${INCIDENT_API_URL}/${incident.id}`
           );
-
         const normalizedIncident =
           normalizeBackendIncident(
             incidentData || {}
           );
-
         const employeeId =
           normalizedIncident
             .employeeId;
-
         let historyContext =
           [
             normalizedIncident,
           ];
-
         if (
           employeeId
         ) {
@@ -1522,7 +1324,6 @@ export default function Incidents() {
                   employeeId
                 )}`
               );
-
             if (
               Array.isArray(
                 employeeHistory
@@ -1542,7 +1343,6 @@ export default function Incidents() {
             );
           }
         }
-
         return normalizeIncidentWithRules(
           normalizedIncident,
           historyContext
@@ -1550,7 +1350,6 @@ export default function Incidents() {
       },
       []
     );
-
   const openIncidentAction =
     useCallback(
       async (
@@ -1562,38 +1361,30 @@ export default function Incidents() {
             await loadIncidentDetails(
               incident
             );
-
           if (
             !isMountedRef.current
           ) {
             return false;
           }
-
           const currentStatus =
             normalizeStatus(
               fullIncident.status
             );
-
           setSelectedIncident(
             null
           );
-
           setStartReviewIncident(
             null
           );
-
           setConfirmStartIncident(
             null
           );
-
           setResolutionIncident(
             null
           );
-
           setReviewIncident(
             null
           );
-
           if (
             requestedAction ===
               "review" &&
@@ -1604,11 +1395,9 @@ export default function Incidents() {
             setCaseTab(
               "FOR_REVIEW"
             );
-
             setCurrentPage(
               1
             );
-
             setReviewIncident(
               fullIncident
             );
@@ -1622,11 +1411,9 @@ export default function Incidents() {
             setCaseTab(
               "ACTIVE"
             );
-
             setCurrentPage(
               1
             );
-
             setResolutionIncident(
               fullIncident
             );
@@ -1640,11 +1427,9 @@ export default function Incidents() {
             setCaseTab(
               "ACTIVE"
             );
-
             setCurrentPage(
               1
             );
-
             setStartReviewIncident(
               fullIncident
             );
@@ -1653,21 +1438,18 @@ export default function Incidents() {
               fullIncident
             );
           }
-
           return true;
         } catch (error) {
           console.error(
             "Load incident detail error:",
             error
           );
-
           showNotice(
             "error",
             "Unable to Open Incident",
             error?.message ||
               "The complete incident record could not be loaded."
           );
-
           return false;
         }
       },
@@ -1678,7 +1460,6 @@ export default function Incidents() {
         showNotice,
       ]
     );
-
   const handleViewIncident =
     useCallback(
       (
@@ -1692,7 +1473,6 @@ export default function Incidents() {
         openIncidentAction,
       ]
     );
-
   const handleStartReviewIncident =
     useCallback(
       (
@@ -1706,7 +1486,6 @@ export default function Incidents() {
         openIncidentAction,
       ]
     );
-
   const handleResolveIncident =
     useCallback(
       (
@@ -1720,7 +1499,6 @@ export default function Incidents() {
         openIncidentAction,
       ]
     );
-
   const handleReviewIncident =
     useCallback(
       (
@@ -1734,40 +1512,36 @@ export default function Incidents() {
         openIncidentAction,
       ]
     );
-
   useEffect(
     () => {
       isMountedRef.current =
         true;
-
       return () => {
         isMountedRef.current =
           false;
-
         fetchRequestIdRef.current +=
           1;
       };
     },
     []
   );
-
   useEffect(
     () => {
-      const delay =
+      const trimmedSearch =
         String(
           search || ""
-        ).trim()
-          ? INCIDENT_SEARCH_DEBOUNCE_MS
-          : 0;
-
+        ).trim();
       const timerId =
         window.setTimeout(
           () => {
-            fetchPageData();
+            setDebouncedSearch(
+              trimmedSearch
+            );
           },
-          delay
+          trimmedSearch
+            ? INCIDENT_SEARCH_DEBOUNCE_MS
+            : 0
         );
-
       return () => {
         window.clearTimeout(
           timerId
@@ -1775,16 +1549,40 @@ export default function Incidents() {
       };
     },
     [
-      fetchPageData,
       search,
     ]
   );
-
+  useEffect(
+    () => {
+      let cancelled =
+        false;
+      const shouldBlockPage =
+        !hasCompletedInitialLoadRef.current;
+      void fetchPageData({
+        silent:
+          !shouldBlockPage,
+      }).finally(() => {
+        if (
+          !cancelled &&
+          isMountedRef.current
+        ) {
+          hasCompletedInitialLoadRef.current =
+            true;
+        }
+      });
+      return () => {
+        cancelled =
+          true;
+      };
+    },
+    [
+      fetchPageData,
+    ]
+  );
   useEffect(
     () => {
       let refreshTimer =
         null;
-
       const refreshSilently =
         () => {
           if (
@@ -1794,17 +1592,14 @@ export default function Incidents() {
               refreshTimer
             );
           }
-
           refreshTimer =
             setTimeout(
               () => {
                 fetchPageData({
                   silent:
                     true,
-
                   showError:
                     false,
-
                   passive:
                     true,
                 });
@@ -1812,7 +1607,6 @@ export default function Incidents() {
               PASSIVE_REFRESH_DEBOUNCE_MS
             );
         };
-
       const handleDataUpdated =
         (
           event
@@ -1824,7 +1618,6 @@ export default function Incidents() {
           ) {
             return;
           }
-
           if (
             !shouldRefreshForDataUpdated(
               event
@@ -1832,15 +1625,12 @@ export default function Incidents() {
           ) {
             return;
           }
-
           refreshSilently();
         };
-
       window.addEventListener(
         "dataUpdated",
         handleDataUpdated
       );
-
       return () => {
         if (
           refreshTimer
@@ -1849,7 +1639,6 @@ export default function Incidents() {
             refreshTimer
           );
         }
-
         window.removeEventListener(
           "dataUpdated",
           handleDataUpdated
@@ -1860,7 +1649,6 @@ export default function Incidents() {
       fetchPageData,
     ]
   );
-
   useEffect(
     () => {
       if (
@@ -1869,16 +1657,13 @@ export default function Incidents() {
       ) {
         return undefined;
       }
-
       let cancelled =
         false;
-
       const targetId =
         normalizeIncidentLookupId(
           location.state
             .incidentId
         );
-
       const requestedAction =
         String(
           location.state
@@ -1887,7 +1672,6 @@ export default function Incidents() {
         )
           .trim()
           .toLowerCase();
-
       if (
         !targetId
       ) {
@@ -1896,22 +1680,18 @@ export default function Incidents() {
           {
             replace:
               true,
-
             state:
               {},
           }
         );
-
         return undefined;
       }
-
       const openRequestedIncident =
         async () => {
           await openIncidentAction(
             {
               id:
                 targetId,
-
               displayId:
                 formatIncidentCode(
                   targetId
@@ -1919,27 +1699,22 @@ export default function Incidents() {
             },
             requestedAction
           );
-
           if (
             cancelled
           ) {
             return;
           }
-
           navigate(
             location.pathname,
             {
               replace:
                 true,
-
               state:
                 {},
             }
           );
         };
-
       openRequestedIncident();
-
       return () => {
         cancelled =
           true;
@@ -1952,7 +1727,6 @@ export default function Incidents() {
       openIncidentAction,
     ]
   );
-
   const syncModalIncident =
     useCallback(
       (
@@ -1971,7 +1745,6 @@ export default function Incidents() {
                 ) {
                   return current;
                 }
-
                 return (
                   String(
                     current.id
@@ -1985,30 +1758,24 @@ export default function Incidents() {
               }
             );
           };
-
         updateIfSelected(
           setSelectedIncident
         );
-
         updateIfSelected(
           setStartReviewIncident
         );
-
         updateIfSelected(
           setConfirmStartIncident
         );
-
         updateIfSelected(
           setResolutionIncident
         );
-
         updateIfSelected(
           setReviewIncident
         );
       },
       []
     );
-
   const updateIncidentState =
     useCallback(
       (
@@ -2032,7 +1799,6 @@ export default function Incidents() {
                     ? updatedIncident
                     : incident
               );
-
             return nextRaw.map(
               (
                 incident
@@ -2044,7 +1810,6 @@ export default function Incidents() {
             );
           }
         );
-
         syncModalIncident(
           updatedIncident
         );
@@ -2053,7 +1818,6 @@ export default function Incidents() {
         syncModalIncident,
       ]
     );
-
   const patchIncidentStatus =
     useCallback(
       async ({
@@ -2072,20 +1836,17 @@ export default function Incidents() {
           )
             .trim()
             .toUpperCase();
-
         const investigatorActions =
           new Set([
             "START_INVESTIGATION",
             "SUBMIT_RESOLUTION",
             "SUBMIT_INVESTIGATION",
           ]);
-
         const reviewerActions =
           new Set([
             "CLOSE_INCIDENT",
             "RETURN_INCIDENT",
           ]);
-
         if (
           investigatorActions.has(
             workflowAction
@@ -2097,10 +1858,8 @@ export default function Incidents() {
             "Investigation Access Required",
             "Only HR Manager or HR Staff accounts can investigate incidents or submit investigation proof."
           );
-
           return false;
         }
-
         if (
           reviewerActions.has(
             workflowAction
@@ -2112,10 +1871,8 @@ export default function Incidents() {
             "Review Access Required",
             "Only HR Manager or Super Admin accounts can review submitted incident cases."
           );
-
           return false;
         }
-
         if (
           normalizeStatus(
             incident.status
@@ -2127,10 +1884,8 @@ export default function Incidents() {
             "Case Already Closed",
             "This case is already closed and can no longer be modified."
           );
-
           return false;
         }
-
         try {
           const response =
             await requestJson(
@@ -2138,7 +1893,6 @@ export default function Incidents() {
               {
                 method:
                   "PATCH",
-
                 ...(formData
                   ? {
                       body:
@@ -2149,25 +1903,19 @@ export default function Incidents() {
                         "Content-Type":
                           "application/json",
                       },
-
                       body:
                         JSON.stringify(
                           {
                             ...payload,
-
                             workflowAction:
                               payload.workflowAction,
-
                             userId:
                               user?.userId ||
                               user?.id,
-
                             username:
                               user?.username,
-
                             fullName:
                               actorFullName,
-
                             role:
                               user?.role,
                           }
@@ -2175,7 +1923,6 @@ export default function Incidents() {
                     }),
               }
             );
-
           const backendUpdatedIncident =
             response?.incident
               ? normalizeIncidentWithRules(
@@ -2185,43 +1932,35 @@ export default function Incidents() {
                   incidents
                 )
               : updatedIncident;
-
           updateIncidentState(
             backendUpdatedIncident
           );
-
           await fetchPageData({
             silent:
               true,
-
             showError:
               false,
           });
-
           emitDataUpdated(
             auditAction
           );
-
           showNotice(
             "success",
             successTitle,
             successMessage
           );
-
           return true;
         } catch (error) {
           console.error(
             "Patch incident status error:",
             error
           );
-
           showNotice(
             "error",
             "Update Failed",
             error.message ||
               "Unable to update this incident."
           );
-
           return false;
         }
       },
@@ -2239,7 +1978,6 @@ export default function Incidents() {
         user?.username,
       ]
     );
-
   const handleAddIncident =
     async (
       newIncident
@@ -2249,7 +1987,6 @@ export default function Incidents() {
       ) {
         return false;
       }
-
       /*
        * Do not recompute repeat-offense severity from
        * the paginated Incident page.
@@ -2261,15 +1998,12 @@ export default function Incidents() {
        */
       const normalizedIncident = {
         ...newIncident,
-
         company:
           newIncident.company ||
           "",
-
         status:
           "Open",
       };
-
       try {
         const response =
           await requestJson(
@@ -2277,129 +2011,95 @@ export default function Incidents() {
             {
               method:
                 "POST",
-
               headers: {
                 "Content-Type":
                   "application/json",
               },
-
               body:
                 JSON.stringify({
                   employeeId:
                     normalizedIncident.employeeId,
-
                   employee:
                     normalizedIncident.employee,
-
                   employeeName:
                     normalizedIncident.employee,
-
                   company:
                     normalizedIncident.company,
-
                   violation:
                     normalizedIncident.violation,
-
                   violationType:
                     normalizedIncident.violation,
-
                   violationSection:
                     normalizedIncident.violationSection ||
                     "",
-
                   violationCategory:
                     normalizedIncident.violationCategory ||
                     "",
-
                   severity:
                     normalizedIncident.severity,
-
                   status:
                     "Open",
-
                   date:
                     normalizedIncident.date,
-
                   incidentDate:
                     normalizedIncident.date,
-
                   location:
                     normalizedIncident.location ||
                     "",
-
                   description:
                     normalizedIncident.description ||
                     "",
-
                   reportedBy:
                     actorFullName,
-
                   policySanction:
                     normalizedIncident.sanction ||
                     "",
-
                   recommendation:
                     normalizedIncident.recommendation ||
                     "",
-
                   resolutionNotes:
                     "",
-
                   duplicateVerified:
                     Boolean(
                       normalizedIncident.duplicateVerified
                     ),
-
                   duplicateVerificationNote:
                     normalizedIncident.duplicateVerificationNote ||
                     "",
-
                   userId:
                     user?.userId ||
                     user?.id,
-
                   username:
                     user?.username,
-
                   fullName:
                     actorFullName,
-
                   role:
                     user?.role,
                 }),
             }
           );
-
         setOpenAddModal(
           false
         );
-
         setCaseTab(
           "ACTIVE"
         );
-
         setCurrentPage(
           1
         );
-
         await fetchPageData({
           silent:
             true,
-
           showError:
             false,
-
           page:
             1,
-
           caseTabValue:
             "ACTIVE",
         });
-
         emitDataUpdated(
           "CREATE_INCIDENT"
         );
-
         showNotice(
           "success",
           "Incident Report Saved",
@@ -2408,25 +2108,21 @@ export default function Incidents() {
             response?.incidentId
           )} has been saved to the system.`
         );
-
         return true;
       } catch (error) {
         console.error(
           "Create incident error:",
           error
         );
-
         showNotice(
           "error",
           "Save Failed",
           error.message ||
             "Unable to save incident report."
         );
-
         return false;
       }
     };
-
   const handleConfirmStartInvestigation =
     async (
       incident
@@ -2437,80 +2133,61 @@ export default function Incidents() {
       ) {
         return false;
       }
-
       const updatedIncident =
         normalizeIncidentWithRules(
           {
             ...incident,
-
             status:
               "Investigating",
-
             investigation: {
               startedAt:
                 new Date()
                   .toISOString(),
-
               startedById:
                 currentUser.id,
-
               startedByName:
                 actorFullName,
-
               startedByUsername:
                 currentUser.username,
-
               startedByRole:
                 currentUser.role,
             },
           },
           incidents
         );
-
       const success =
         await patchIncidentStatus({
           incident,
-
           updatedIncident,
-
           payload: {
             status:
               "Investigating",
-
             workflowAction:
               "START_INVESTIGATION",
-
             resolutionNotes:
               "Investigation started.",
           },
-
           auditAction:
             "START_INVESTIGATION",
-
           successTitle:
             "Investigation Started",
-
           successMessage:
             `Incident ${formatIncidentCode(
               incident.id
             )} is now marked as Investigating.`,
         });
-
       if (
         success
       ) {
         setConfirmStartIncident(
           null
         );
-
         setStartReviewIncident(
           null
         );
       }
-
       return success;
     };
-
   const handleSubmitResolution =
     async (
       incident,
@@ -2521,7 +2198,6 @@ export default function Incidents() {
       ) {
         return false;
       }
-
       const proofFiles =
         Array.isArray(
           resolutionData
@@ -2530,7 +2206,6 @@ export default function Incidents() {
           ? resolutionData
               .proofFiles
           : [];
-
       const validFiles =
         proofFiles.filter(
           (
@@ -2540,60 +2215,49 @@ export default function Incidents() {
               File &&
             !item?.error
         );
-
       const formData =
         new FormData();
-
       formData.append(
         "status",
         "For Review"
       );
-
       formData.append(
         "workflowAction",
         "SUBMIT_RESOLUTION"
       );
-
       formData.append(
         "actionTaken",
         resolutionData.actionTaken
       );
-
       formData.append(
         "resolutionNotes",
         resolutionData.remarks
       );
-
       formData.append(
         "recommendation",
         incident.recommendation ||
           ""
       );
-
       formData.append(
         "userId",
         user?.userId ||
           user?.id ||
           ""
       );
-
       formData.append(
         "username",
         user?.username ||
           ""
       );
-
       formData.append(
         "fullName",
         actorFullName
       );
-
       formData.append(
         "role",
         user?.role ||
           ""
       );
-
       validFiles.forEach(
         (
           item
@@ -2604,91 +2268,66 @@ export default function Incidents() {
             item.name
           )
       );
-
       const updatedIncident =
         normalizeIncidentWithRules(
           {
             ...incident,
-
             status:
               "For Review",
-
             resolution: {
               submittedAt:
                 new Date()
                   .toISOString(),
-
               submittedById:
                 currentUser.id,
-
               submittedByName:
                 actorFullName,
-
               submittedByUsername:
                 currentUser.username,
-
               submittedByRole:
                 currentUser.role,
-
               actionTaken:
                 resolutionData.actionTaken,
-
               remarks:
                 resolutionData.remarks,
-
               proofFiles,
             },
-
             actionTaken:
               resolutionData.actionTaken,
-
             action_taken:
               resolutionData.actionTaken,
-
             resolutionNotes:
               resolutionData.remarks,
           },
           incidents
         );
-
       const success =
         await patchIncidentStatus({
           incident,
-
           updatedIncident,
-
           payload: {
             status:
               "For Review",
-
             workflowAction:
               "SUBMIT_RESOLUTION",
-
             actionTaken:
               resolutionData.actionTaken,
-
             resolutionNotes:
               resolutionData.remarks,
-
             recommendation:
               incident.recommendation ||
               "",
           },
-
           formData,
-
           auditAction:
             "SUBMIT_RESOLUTION",
-
           successTitle:
             "Submitted for Review",
-
           successMessage:
             `Proof for incident ${formatIncidentCode(
               incident.id
             )} has been submitted for authorized review.`,
         });
-
       if (
         success
       ) {
@@ -2696,10 +2335,8 @@ export default function Incidents() {
           null
         );
       }
-
       return success;
     };
-
   const handleApproveCase =
     async (
       incident
@@ -2713,10 +2350,8 @@ export default function Incidents() {
           "Review Access Required",
           "Only an HR Manager or Super Admin can approve and close submitted cases."
         );
-
         return false;
       }
-
       if (
         normalizeStatus(
           incident.status
@@ -2728,100 +2363,76 @@ export default function Incidents() {
           "Case Not Ready for Review",
           "Only cases currently marked For Review can be approved and closed."
         );
-
         return false;
       }
-
       const updatedIncident =
         normalizeIncidentWithRules(
           {
             ...incident,
-
             status:
               "Closed",
-
             review: {
               reviewedAt:
                 new Date()
                   .toISOString(),
-
               reviewedById:
                 currentUser.id,
-
               reviewedByName:
                 actorFullName,
-
               reviewedByUsername:
                 currentUser.username,
-
               reviewedByRole:
                 currentUser.role,
-
               decision:
                 "Approved",
-
               comments:
                 "Proof reviewed and approved.",
             },
           },
           incidents
         );
-
       const success =
         await patchIncidentStatus({
           incident,
-
           updatedIncident,
-
           payload: {
             status:
               "Closed",
-
             workflowAction:
               "CLOSE_INCIDENT",
-
             resolutionNotes:
               incident.resolutionNotes ||
               incident.resolution
                 ?.remarks ||
               "Proof reviewed and approved.",
-
             recommendation:
               incident.recommendation ||
               "",
           },
-
           auditAction:
             "CLOSE_INCIDENT",
-
           successTitle:
             "Case Approved",
-
           successMessage:
             `Incident ${formatIncidentCode(
               incident.id
             )} has been approved and closed successfully.`,
         });
-
       if (
         success
       ) {
         setReviewIncident(
           null
         );
-
         setCaseTab(
           "CLOSED"
         );
-
         setCurrentPage(
           1
         );
       }
-
       return success;
     };
-
   const handleRejectCase =
     async (
       incident,
@@ -2836,10 +2447,8 @@ export default function Incidents() {
           "Review Access Required",
           "Only an HR Manager or Super Admin can return submitted cases for correction."
         );
-
         return false;
       }
-
       if (
         normalizeStatus(
           incident.status
@@ -2851,96 +2460,72 @@ export default function Incidents() {
           "Case Not Ready for Review",
           "Only cases currently marked For Review can be returned for correction."
         );
-
         return false;
       }
-
       const updatedIncident =
         normalizeIncidentWithRules(
           {
             ...incident,
-
             status:
               "Investigating",
-
             review: {
               reviewedAt:
                 new Date()
                   .toISOString(),
-
               reviewedById:
                 currentUser.id,
-
               reviewedByName:
                 actorFullName,
-
               reviewedByUsername:
                 currentUser.username,
-
               reviewedByRole:
                 currentUser.role,
-
               decision:
                 "Rejected",
-
               comments,
             },
           },
           incidents
         );
-
       const success =
         await patchIncidentStatus({
           incident,
-
           updatedIncident,
-
           payload: {
             status:
               "Investigating",
-
             workflowAction:
               "RETURN_INCIDENT",
-
             resolutionNotes:
               comments,
-
             recommendation:
               incident.recommendation ||
               "",
           },
-
           auditAction:
             "RETURN_INCIDENT",
-
           successTitle:
             "Case Returned",
-
           successMessage:
             `Incident ${formatIncidentCode(
               incident.id
             )} has been returned for correction.`,
         });
-
       if (
         success
       ) {
         setReviewIncident(
           null
         );
-
         setCaseTab(
           "ACTIVE"
         );
-
         setCurrentPage(
           1
         );
       }
-
       return success;
     };
-
   const handleRefresh =
     useCallback(
       async () => {
@@ -2949,14 +2534,11 @@ export default function Incidents() {
         ) {
           return;
         }
-
         await fetchPageData({
           silent:
             true,
-
           showError:
             true,
-
           showRefreshing:
             true,
         });
@@ -2966,7 +2548,6 @@ export default function Incidents() {
         isRefreshing,
       ]
     );
-
   const handleSearchChange =
     useCallback(
       (
@@ -2975,14 +2556,12 @@ export default function Incidents() {
         setSearch(
           value
         );
-
         setCurrentPage(
           1
         );
       },
       []
     );
-
   const handleCaseTabChange =
     useCallback(
       (
@@ -2992,13 +2571,21 @@ export default function Incidents() {
           value
         );
 
+        if (
+          value !==
+          "ALL"
+        ) {
+          setCaseStatusFilter(
+            "ALL"
+          );
+        }
+
         setCurrentPage(
           1
         );
       },
       []
     );
-
   const handleSeverityFilterChange =
     useCallback(
       (
@@ -3007,7 +2594,21 @@ export default function Incidents() {
         setSeverityFilter(
           value
         );
+        setCurrentPage(
+          1
+        );
+      },
+      []
+    );
 
+  const handleCaseStatusFilterChange =
+    useCallback(
+      (
+        value
+      ) => {
+        setCaseStatusFilter(
+          value
+        );
         setCurrentPage(
           1
         );
@@ -3021,36 +2622,39 @@ export default function Incidents() {
         setSearch(
           ""
         );
-
+        setDebouncedSearch(
+          ""
+        );
         setCurrentPage(
           1
         );
       },
       []
     );
-
   const handleClearIncidentFilters =
     useCallback(
       () => {
         setSearch(
           ""
         );
-
+        setDebouncedSearch(
+          ""
+        );
         setSeverityFilter(
           "ALL"
         );
-
+        setCaseStatusFilter(
+          "ALL"
+        );
         setCaseTab(
           "ALL"
         );
-
         setCurrentPage(
           1
         );
       },
       []
     );
-
   const handlePreviousPage =
     useCallback(
       () => {
@@ -3061,7 +2665,6 @@ export default function Incidents() {
         ) {
           return;
         }
-
         setCurrentPage(
           (
             page
@@ -3078,7 +2681,6 @@ export default function Incidents() {
         isRefreshing,
       ]
     );
-
   const handleNextPage =
     useCallback(
       () => {
@@ -3090,7 +2692,6 @@ export default function Incidents() {
         ) {
           return;
         }
-
         setCurrentPage(
           (
             page
@@ -3109,7 +2710,6 @@ export default function Incidents() {
         pagination.totalPages,
       ]
     );
-
   const firstVisibleRecord =
     pagination.total ===
       0
@@ -3120,7 +2720,6 @@ export default function Incidents() {
         ) *
           pagination.pageSize +
         1;
-
   const lastVisibleRecord =
     pagination.total ===
       0
@@ -3130,83 +2729,70 @@ export default function Incidents() {
             pagination.pageSize,
           pagination.total
         );
-
+  const pageDescription =
+    isHrCoordinator
+      ? "Report and review incident records for your assigned client company. Investigation and case review remain role-restricted."
+      : isAuthorizedReviewer
+        ? "Monitor incident cases, review submitted resolution proof, and maintain complete case history."
+        : "Report incidents, manage investigations, and submit resolution proof for authorized review.";
   return (
-    <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Incident Reports
-          </h1>
-
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {isHrCoordinator
-              ? "View and report incidents for your assigned client company. Investigation and case review are handled by authorized HR users."
-              : isAuthorizedReviewer
-                ? "Manage incident investigations and review submitted proof when authorized."
-                : "Review reported cases, start investigations, and submit proof for review."}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            leftIcon={
-              <FiRefreshCw
-                aria-hidden="true"
-                className={
-                  isRefreshing
-                    ? "animate-spin"
-                    : ""
-                }
-              />
-            }
-            loading={
-              isRefreshing
-            }
-            disabled={
-              isLoading ||
-              isRefreshing
-            }
-            onClick={
-              handleRefresh
-            }
-          >
-            Refresh
-          </Button>
-
-          {!isSuperAdmin && (
-            <RoleGuard
-              permission={
-                PERMISSIONS.CAN_ADD_INCIDENT
+    <main className="min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
+      <PageHeader
+        eyebrow="Case Management"
+        title="Incident Reports"
+        description={pageDescription}
+        icon={<FiAlertTriangle size={22} />}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              leftIcon={
+                <FiRefreshCw
+                  aria-hidden="true"
+                  className={
+                    isRefreshing
+                      ? "animate-spin"
+                      : ""
+                  }
+                />
               }
+              loading={isRefreshing}
+              disabled={
+                isLoading ||
+                isRefreshing
+              }
+              onClick={handleRefresh}
             >
-              <Button
-                type="button"
-                variant="danger"
-                leftIcon={
-                  <FiPlus
-                    aria-hidden="true"
-                  />
-                }
-                disabled={
-                  isLoading ||
-                  isRefreshing
-                }
-                onClick={() =>
-                  setOpenAddModal(
-                    true
-                  )
+              Refresh
+            </Button>
+            {!isSuperAdmin && (
+              <RoleGuard
+                permission={
+                  PERMISSIONS.CAN_ADD_INCIDENT
                 }
               >
-                Add Incident Report
-              </Button>
-            </RoleGuard>
-          )}
-        </div>
-      </div>
-
+                <Button
+                  type="button"
+                  variant="primary"
+                  leftIcon={
+                    <FiPlus aria-hidden="true" />
+                  }
+                  disabled={
+                    isLoading ||
+                    isRefreshing
+                  }
+                  onClick={() =>
+                    setOpenAddModal(true)
+                  }
+                >
+                  Add Incident Report
+                </Button>
+              </RoleGuard>
+            )}
+          </>
+        }
+      />
       {fetchError && (
         <ErrorState
           compact
@@ -3220,7 +2806,6 @@ export default function Incidents() {
           }
         />
       )}
-
       <div className="min-w-0">
         <IncidentTable
           isLoading={
@@ -3262,6 +2847,12 @@ export default function Incidents() {
           onSeverityFilterChange={
             handleSeverityFilterChange
           }
+          caseStatusFilter={
+            caseStatusFilter
+          }
+          onCaseStatusFilterChange={
+            handleCaseStatusFilterChange
+          }
           isSuperAdmin={
             isSuperAdmin
           }
@@ -3293,83 +2884,54 @@ export default function Incidents() {
               : undefined
           }
         />
-
-        {pagination.totalPages >
-          1 && (
-          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+        {pagination.totalPages > 1 && (
+          <section className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               Showing{" "}
-              <span className="font-semibold text-gray-700 dark:text-gray-200">
-                {
-                  firstVisibleRecord
-                }
-                -
-                {
-                  lastVisibleRecord
-                }
+              <span className="font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+                {firstVisibleRecord}-{lastVisibleRecord}
               </span>{" "}
               of{" "}
-              <span className="font-semibold text-gray-700 dark:text-gray-200">
-                {
-                  pagination.total
-                }
+              <span className="font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+                {pagination.total}
               </span>{" "}
-              matching incident
-              {pagination.total ===
-              1
-                ? ""
-                : "s"}
-              .
+              matching incident{" "}
+              {pagination.total === 1 ? "record" : "records"}
             </p>
-
             <div className="flex flex-wrap items-center gap-2">
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 disabled={
                   isLoading ||
                   isRefreshing ||
-                  !pagination
-                    .hasPreviousPage
+                  !pagination.hasPreviousPage
                 }
-                onClick={
-                  handlePreviousPage
-                }
-                className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-slate-800"
+                onClick={handlePreviousPage}
               >
                 Previous
-              </button>
-
-              <span className="min-w-[110px] text-center text-sm font-semibold text-gray-700 dark:text-gray-200">
-                Page{" "}
-                {
-                  pagination.page
-                }{" "}
-                of{" "}
-                {
-                  pagination.totalPages
-                }
+              </Button>
+              <span className="min-w-[110px] text-center text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Page {pagination.page} of {pagination.totalPages}
               </span>
-
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 disabled={
                   isLoading ||
                   isRefreshing ||
-                  !pagination
-                    .hasNextPage
+                  !pagination.hasNextPage
                 }
-                onClick={
-                  handleNextPage
-                }
-                className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-slate-800"
+                onClick={handleNextPage}
               >
                 Next
-              </button>
+              </Button>
             </div>
-          </div>
+          </section>
         )}
       </div>
-
       {selectedIncident && (
         <ViewIncidentModal
           incident={
@@ -3382,7 +2944,6 @@ export default function Incidents() {
           }
         />
       )}
-
       {canInvestigate && startReviewIncident && (
         <ViewIncidentModal
           incident={
@@ -3399,7 +2960,6 @@ export default function Incidents() {
           }
         />
       )}
-
       {canInvestigate && confirmStartIncident && (
         <ConfirmStartInvestigationModal
           incident={
@@ -3418,7 +2978,6 @@ export default function Incidents() {
           }
         />
       )}
-
       {canInvestigate && resolutionIncident && (
         <ResolutionModal
           incident={
@@ -3437,7 +2996,6 @@ export default function Incidents() {
           }
         />
       )}
-
       {isAuthorizedReviewer && reviewIncident && (
         <ReviewCaseModal
           incident={
@@ -3459,7 +3017,6 @@ export default function Incidents() {
           }
         />
       )}
-
       <AddIncidentModal
         isOpen={
           openAddModal
@@ -3476,7 +3033,6 @@ export default function Incidents() {
           incidents
         }
       />
-
       {notice && (
         <NoticeModal
           type={
@@ -3495,6 +3051,6 @@ export default function Incidents() {
           }
         />
       )}
-    </div>
+    </main>
   );
 }
