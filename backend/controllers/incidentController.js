@@ -10,6 +10,10 @@ const {
 } = require("../utils/fileReferenceService");
 
 const {
+  evaluateIndependentIncidentReview,
+} = require("../utils/incidentReviewPolicy");
+
+const {
   ViolationPolicyError,
   getViolationRulesConfiguration,
   resolveViolationRule,
@@ -4227,6 +4231,27 @@ exports.updateIncidentStatus =
           rejectLockedWorkflow(
             409,
             "Only a case marked For Review can be approved or returned."
+          );
+        }
+
+        const reviewPolicy =
+          evaluateIndependentIncidentReview({
+            reviewerUserId:
+              actor.userId,
+
+            investigationStartedById:
+              existingIncident
+                .investigation_started_by_id,
+
+            resolutionSubmittedById:
+              existingIncident
+                .resolution_submitted_by_id,
+          });
+
+        if (!reviewPolicy.allowed) {
+          rejectLockedWorkflow(
+            reviewPolicy.statusCode,
+            reviewPolicy.message
           );
         }
 
