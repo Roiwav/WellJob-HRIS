@@ -1,0 +1,7 @@
+.env
+.env.local
+.env.*.local
+private_chat_uploads/
+scripts/migrateChatAttachmentsToSupabase.cjs
+private_chat_uploads
+private_chat_uploads/**
