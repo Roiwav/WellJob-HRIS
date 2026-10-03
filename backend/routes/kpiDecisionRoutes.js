@@ -5,7 +5,7 @@ const router = express.Router();
 const {
   getKpiDecisionHistory,
   createKpiDecision,
-  deleteKpiDecision,
+  getKpiEvaluation,
 } = require("../controllers/kpiDecisionController");
 
 const {
@@ -27,6 +27,17 @@ router.get(
   getKpiDecisionHistory
 );
 
+router.get(
+  "/kpi/evaluation/:employeeId",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN",
+    "HR_MANAGER",
+    "HR_STAFF"
+  ),
+  getKpiEvaluation
+);
+
 router.post(
   "/kpi/decision-history",
   verifyToken,
@@ -36,13 +47,11 @@ router.post(
   createKpiDecision
 );
 
-router.delete(
-  "/kpi/decision-history/:id",
-  verifyToken,
-  authorizeRoles(
-    "HR_MANAGER"
-  ),
-  deleteKpiDecision
-);
+/*
+ * KPI decision history is intentionally append-only.
+ *
+ * Completed HR decisions are immutable audit records.
+ * There is no normal DELETE endpoint.
+ */
 
 module.exports = router;

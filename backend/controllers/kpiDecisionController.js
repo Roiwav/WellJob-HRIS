@@ -174,6 +174,9 @@ function toCamelCaseRecord(
     id:
       row.id,
 
+    decisionId:
+      row.id,
+
     employeeId:
       row.employee_id,
 
@@ -1676,6 +1679,186 @@ function hasSnapshotMismatch({
   );
 }
 
+/*
+ * ==================================================
+ * BE-06 ? SERVER-AUTHORITATIVE KPI EVALUATION
+ * ==================================================
+ *
+ * Read-only endpoint used for verification,
+ * reconciliation, and future integrations.
+ *
+ * All KPI/DSS inputs are recomputed from the
+ * authoritative employee + incident records.
+ */
+
+exports.getKpiEvaluation =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const employeeId =
+        parsePositiveInteger(
+          req.params
+            ?.employeeId
+        );
+
+      if (
+        !employeeId
+      ) {
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            error:
+              "Invalid employee ID.",
+          });
+      }
+
+
+      const employee =
+        await getTrustedEmployee(
+          employeeId
+        );
+
+
+      if (
+        !employee
+      ) {
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            error:
+              "Employee not found.",
+          });
+      }
+
+
+      if (
+        Number(
+          employee.archived
+        ) === 1
+      ) {
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            error:
+              "Archived employees are excluded from KPI evaluation.",
+          });
+      }
+
+
+      const incidents =
+        await getTrustedIncidents(
+          employee.id
+        );
+
+
+      const snapshot =
+        buildTrustedDecisionSnapshot(
+          incidents
+        );
+
+
+      return res.json({
+        success:
+          true,
+
+        employee: {
+          id:
+            employee.id,
+
+          employeeId:
+            employee.id,
+
+          name:
+            cleanValue(
+              employee.name,
+              "Unknown Employee"
+            ),
+
+          company:
+            cleanValue(
+              employee.company,
+              "Unassigned"
+            ),
+        },
+
+        evaluation: {
+          ...snapshot,
+        },
+
+        rules: {
+          model:
+            "RULE_BASED",
+
+          severityWeights: {
+            Minor:
+              SEVERITY_WEIGHTS[
+                SEVERITY_LABELS.MINOR
+              ],
+
+            Major:
+              SEVERITY_WEIGHTS[
+                SEVERITY_LABELS.MAJOR
+              ],
+
+            Critical:
+              SEVERITY_WEIGHTS[
+                SEVERITY_LABELS.CRITICAL
+              ],
+          },
+
+          kpiThresholds: {
+            criticalConcernMinimumSeverityScore:
+              8,
+
+            needsImprovementMinimumSeverityScore:
+              4,
+
+            minorConcernMinimumViolationCount:
+              1,
+          },
+        },
+
+        source: {
+          incidentCount:
+            incidents.length,
+        },
+
+        evaluatedAt:
+          new Date()
+            .toISOString(),
+      });
+    } catch (
+      error
+    ) {
+      console.error(
+        "GET KPI EVALUATION ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          error:
+            "Failed to evaluate employee KPI.",
+        });
+    }
+  };
+
+
 exports.getKpiDecisionHistory =
   async (
     req,
@@ -2892,278 +3075,6 @@ exports.createKpiDecision =
 
           message:
             "The KPI decision could not be recorded.",
-        });
-    } finally {
-      if (
-        connection
-      ) {
-        connection.release();
-      }
-    }
-  };
-
-exports.deleteKpiDecision =
-  async (
-    req,
-    res
-  ) => {
-    let connection =
-      null;
-
-    let transactionStarted =
-      false;
-
-    let transactionCommitted =
-      false;
-
-    try {
-      const actor =
-        getTrustedActor(
-          req
-        );
-
-      if (
-        !actor
-      ) {
-        return res
-          .status(
-            401
-          )
-          .json({
-            success:
-              false,
-
-            error:
-              "Authentication required.",
-
-            message:
-              "A verified authenticated user is required to remove a KPI decision record.",
-          });
-      }
-
-      const id =
-        parsePositiveInteger(
-          req.params.id
-        );
-
-      if (
-        !id
-      ) {
-        return res
-          .status(
-            400
-          )
-          .json({
-            success:
-              false,
-
-            error:
-              "Invalid decision history record ID.",
-          });
-      }
-
-      connection =
-        await db
-          .promise()
-          .getConnection();
-
-      await connection
-        .beginTransaction();
-
-      transactionStarted =
-        true;
-
-      /*
-       * Lock the exact history row before deletion.
-       *
-       * The audit description therefore reflects the same
-       * authoritative row being deleted.
-       */
-      const [existingRows] =
-        await connection.query(
-          `
-          SELECT
-            id,
-            employee_id,
-            employee_name,
-            decision_type,
-            final_action
-          FROM kpi_decision_history
-          WHERE id = ?
-          LIMIT 1
-          FOR UPDATE
-          `,
-          [
-            id,
-          ]
-        );
-
-      const existingRecord =
-        existingRows[0];
-
-      if (
-        !existingRecord
-      ) {
-        await connection
-          .rollback();
-
-        transactionStarted =
-          false;
-
-        return res
-          .status(
-            404
-          )
-          .json({
-            success:
-              false,
-
-            error:
-              "Decision history record not found.",
-          });
-      }
-
-      const [result] =
-        await connection.query(
-          `
-          DELETE FROM kpi_decision_history
-          WHERE id = ?
-          `,
-          [
-            id,
-          ]
-        );
-
-      if (
-        result.affectedRows ===
-        0
-      ) {
-        await connection
-          .rollback();
-
-        transactionStarted =
-          false;
-
-        return res
-          .status(
-            404
-          )
-          .json({
-            success:
-              false,
-
-            error:
-              "Decision history record not found.",
-          });
-      }
-
-      /*
-       * Delete + audit are committed as one atomic unit.
-       *
-       * If the audit INSERT fails, the deleted history
-       * record is restored by rollback.
-       */
-      await logAudit(
-        {
-          userId:
-            actor.id,
-
-          username:
-            actor.username,
-
-          role:
-            actor.role,
-
-          category:
-            AUDIT_CATEGORY.OPERATIONAL,
-
-          action:
-            "DELETE_KPI_DECISION",
-
-          description:
-            `Removed KPI decision history record ${id} for ${cleanValue(
-              existingRecord.employee_name,
-              "Unknown Employee"
-            )} (Employee ID ${cleanValue(
-              existingRecord.employee_id,
-              "Unknown"
-            )}). Decision type: ${cleanValue(
-              existingRecord.decision_type,
-              "Recorded"
-            )}; final HR action: ${cleanValue(
-              existingRecord.final_action,
-              "Unknown"
-            )}.`,
-
-          fullName:
-            actor.fullName,
-        },
-        {
-          connection,
-
-          throwOnError:
-            true,
-        }
-      );
-
-      await connection
-        .commit();
-
-      transactionCommitted =
-        true;
-
-      transactionStarted =
-        false;
-
-      return res.json({
-        success:
-          true,
-
-        message:
-          "KPI decision history record removed.",
-      });
-    } catch (
-      error
-    ) {
-      if (
-        connection &&
-        transactionStarted &&
-        !transactionCommitted
-      ) {
-        try {
-          await connection
-            .rollback();
-
-          transactionStarted =
-            false;
-        } catch (
-          rollbackError
-        ) {
-          console.error(
-            "DELETE KPI DECISION ROLLBACK ERROR:",
-            rollbackError
-          );
-        }
-      }
-
-      console.error(
-        "DELETE KPI DECISION ERROR:",
-        error
-      );
-
-      return res
-        .status(
-          500
-        )
-        .json({
-          success:
-            false,
-
-          error:
-            "Failed to delete KPI decision history record.",
-
-          message:
-            "The KPI decision history record could not be removed.",
         });
     } finally {
       if (

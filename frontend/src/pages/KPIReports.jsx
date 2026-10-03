@@ -830,7 +830,7 @@ export default function KPIReports() {
             (reviewView === "history" ? (
               <DecisionHistorySection
                 canDeleteDecisions={
-                  isHRManager
+                  false
                 }
                 onBackToRecommendations={() =>
                   setReviewView("pending")
