@@ -66,7 +66,17 @@ function requireHrCoordinator(
   return next();
 }
 
+/*
+ * Attendance authorization must be scoped only to
+ * Attendance endpoints.
+ *
+ * This router is mounted at /api together with other
+ * application routers. A router-wide auth middleware
+ * would intercept sibling APIs such as /api/chat
+ * before their own authorization middleware runs.
+ */
 router.use(
+  "/attendance",
   verifyToken,
   requireHrCoordinator
 );
