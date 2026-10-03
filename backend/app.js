@@ -1,4 +1,4 @@
-﻿const path = require("path");
+const path = require("path");
 
 /*
  * ==================================================
@@ -430,6 +430,7 @@ app.use(
   "/api",
   dashboardRoutes
 );
+app.use("/api", require("./routes/attendanceRoutes"));
 
 
 /*
