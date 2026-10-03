@@ -1,5 +1,16 @@
 const db = require("../config/db");
 
+const {
+  WORKFORCE_SCOPE_KEY,
+  buildCurrentWorkforceStatusSql,
+} = require("../utils/workforceScope");
+
+
+const KPI_WORKFORCE_STATUS_SQL =
+  buildCurrentWorkforceStatusSql(
+    "e.status"
+  );
+
 function mapKpiEmployee(row) {
   return {
     id: row.id,
@@ -82,7 +93,9 @@ exports.getKpiData = async (
               e.company,
               e.status
             FROM employees AS e
-            WHERE e.archived = 0
+            WHERE
+              e.archived = 0
+              AND ${KPI_WORKFORCE_STATUS_SQL}
             ORDER BY
               e.id ASC
           `),
@@ -127,7 +140,9 @@ exports.getKpiData = async (
             INNER JOIN employees AS e
               ON e.id = i.employee_id
 
-            WHERE e.archived = 0
+            WHERE
+              e.archived = 0
+              AND ${KPI_WORKFORCE_STATUS_SQL}
 
             ORDER BY
               i.created_at DESC,
@@ -159,6 +174,12 @@ exports.getKpiData = async (
         new Date().toISOString(),
 
       meta: {
+        workforceScopeKey:
+          WORKFORCE_SCOPE_KEY,
+
+        activeWorkforceRows:
+          employeesRaw.length,
+
         employeeRows:
           employeesRaw.length,
 

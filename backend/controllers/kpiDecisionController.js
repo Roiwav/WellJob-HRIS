@@ -5,6 +5,11 @@ const {
   AUDIT_CATEGORY,
 } = require("../utils/auditLogger");
 
+const {
+  WORKFORCE_SCOPE_KEY,
+  isCurrentWorkforceStatus,
+} = require("../utils/workforceScope");
+
 const KPI_LEVELS = {
   GOOD_STANDING: "Good Standing",
   MINOR_CONCERN: "Minor Concern",
@@ -1445,7 +1450,8 @@ async function getTrustedEmployee(
         id,
         name,
         company,
-        archived
+        archived,
+        status
       FROM employees
       WHERE id = ?
       LIMIT 1
@@ -1756,6 +1762,26 @@ exports.getKpiEvaluation =
       }
 
 
+      if (
+        !isCurrentWorkforceStatus(
+          employee.status
+        )
+      ) {
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            error:
+              "Employee is outside the current KPI workforce scope.",
+
+            workforceScopeKey:
+              WORKFORCE_SCOPE_KEY,
+          });
+      }
+
+
       const incidents =
         await getTrustedIncidents(
           employee.id
@@ -1832,6 +1858,11 @@ exports.getKpiEvaluation =
         source: {
           incidentCount:
             incidents.length,
+        },
+
+        workforceScope: {
+          key:
+            WORKFORCE_SCOPE_KEY,
         },
 
         evaluatedAt:
@@ -2720,6 +2751,35 @@ exports.createKpiDecision =
               "Restore the employee before recording a new KPI decision.",
           });
       }
+
+      if (
+        !isCurrentWorkforceStatus(
+          trustedEmployee.status
+        )
+      ) {
+        await connection
+          .rollback();
+
+        transactionStarted =
+          false;
+
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            error:
+              "Employee is outside the current KPI workforce scope.",
+
+            message:
+              "Only employees in the current active-workforce denominator can receive a new KPI decision.",
+
+            workforceScopeKey:
+              WORKFORCE_SCOPE_KEY,
+          });
+      }
+
 
       /*
        * Lock the current incident rows used by the

@@ -1,42 +1,17 @@
 const db = require("../config/db");
 
+const {
+  WORKFORCE_SCOPE_KEY,
+  normalizeStatusText,
+  isDeployedStatus,
+  isFloatingStatus,
+  isCurrentWorkforceStatus,
+} = require("../utils/workforceScope");
+
 const EXPIRABLE_DOCUMENTS = [
   "Barangay Clearance",
   "NBI/Police Clearance",
 ];
-
-function normalizeText(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
-}
-
-function isDeployedStatus(status) {
-  const value = normalizeText(status);
-
-  return (
-    value === "deployed" ||
-    value === "active deployed"
-  );
-}
-
-function isFloatingStatus(status) {
-  const value = normalizeText(status);
-
-  return [
-    "floating / standby",
-    "floating/standby",
-    "floating",
-    "standby",
-  ].includes(value);
-}
-
-function isCurrentWorkforceStatus(status) {
-  return (
-    isDeployedStatus(status) ||
-    isFloatingStatus(status)
-  );
-}
 
 function isActiveIncidentStatus(status) {
   return [
@@ -44,7 +19,11 @@ function isActiveIncidentStatus(status) {
     "investigating",
     "for review",
     "for_review",
-  ].includes(normalizeText(status));
+  ].includes(
+    normalizeStatusText(
+      status
+    )
+  );
 }
 
 function mapEmployees(
@@ -335,6 +314,12 @@ exports.getDashboardOverview = async (
       incidents,
       deploymentTrend,
       meta: {
+        workforceScopeKey:
+          WORKFORCE_SCOPE_KEY,
+
+        activeWorkforceRows:
+          kpis.total,
+
         generatedAt:
           new Date().toISOString(),
         employeeRows:
