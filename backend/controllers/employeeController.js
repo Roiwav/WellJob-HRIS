@@ -3843,37 +3843,197 @@ exports.archiveEmployee = async (
   req,
   res
 ) => {
+  const {
+    id,
+  } = req.params;
+
+  const actor =
+    getActor(req);
+
+  let connection = null;
+
+  let transactionStarted =
+    false;
+
+  let transactionCommitted =
+    false;
+
   try {
-    const { id } =
-      req.params;
+    connection =
+      await db
+        .promise()
+        .getConnection();
 
-    const actor =
-      getActor(req);
+    await connection
+      .beginTransaction();
 
-    const employeeName =
-      await getEmployeeNameById(
-        id
-      );
+    transactionStarted =
+      true;
+
 
     /*
-     * Do not report success for a
-     * nonexistent employee.
+     * Lock the employee first.
+     *
+     * Employee mutations and deployment lifecycle
+     * operations use the same canonical employee row,
+     * preventing an archive decision from being based
+     * on stale state.
      */
-    if (!employeeName) {
-      return res.status(404).json({
-        error:
-          "Employee not found.",
-      });
+    const [
+      employeeRows,
+    ] =
+      await connection.query(
+        `
+        SELECT
+          id,
+          name,
+          status,
+          archived
+        FROM employees
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    if (
+      employeeRows.length === 0
+    ) {
+      await connection
+        .rollback();
+
+      transactionStarted =
+        false;
+
+      return res
+        .status(404)
+        .json({
+          error:
+            "Employee not found.",
+        });
     }
 
-    await db.promise().query(
-      `
-      UPDATE employees
-      SET archived = 1
-      WHERE id = ?
-      `,
-      [id]
-    );
+
+    const employee =
+      employeeRows[0];
+
+    const employeeName =
+      employee.name ||
+      "Unknown Employee";
+
+
+    if (
+      Number(
+        employee.archived ||
+        0
+      ) === 1
+    ) {
+      await connection
+        .rollback();
+
+      transactionStarted =
+        false;
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "Employee is already archived.",
+        });
+    }
+
+
+    /*
+     * An employee with an Active deployment cannot
+     * be archived.
+     *
+     * HR must first use the End Assignment / Contract
+     * workflow so deployment history receives a real
+     * end date, reason, status, and audit trail.
+     */
+    const [
+      activeAssignments,
+    ] =
+      await connection.query(
+        `
+        SELECT
+          id
+        FROM deployment_assignments
+        WHERE employee_id = ?
+          AND status = 'Active'
+        ORDER BY
+          start_date DESC,
+          id DESC
+        LIMIT 2
+        FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    if (
+      activeAssignments.length > 0
+    ) {
+      await connection
+        .rollback();
+
+      transactionStarted =
+        false;
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "End the employee's active deployment before archiving the employee record.",
+        });
+    }
+
+
+    const [
+      archiveResult,
+    ] =
+      await connection.query(
+        `
+        UPDATE employees
+        SET archived = 1
+        WHERE id = ?
+          AND archived = 0
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    if (
+      Number(
+        archiveResult.affectedRows ||
+        0
+      ) !== 1
+    ) {
+      throw new Error(
+        "Employee archive state changed before the operation could be completed."
+      );
+    }
+
+
+    await connection
+      .commit();
+
+    transactionCommitted =
+      true;
+
+
+    connection.release();
+
+    connection = null;
+
 
     await logAudit({
       userId:
@@ -3898,6 +4058,7 @@ exports.archiveEmployee = async (
         `${actor.fullName} archived employee record for ${employeeName}.`,
     });
 
+
     return res.json({
       success: true,
 
@@ -3905,15 +4066,41 @@ exports.archiveEmployee = async (
         "Employee archived successfully.",
     });
   } catch (err) {
+    if (
+      connection &&
+      transactionStarted &&
+      !transactionCommitted
+    ) {
+      try {
+        await connection
+          .rollback();
+      } catch (
+        rollbackError
+      ) {
+        console.error(
+          "ARCHIVE EMPLOYEE ROLLBACK ERROR:",
+          rollbackError
+        );
+      }
+    }
+
+
     console.error(
       "ARCHIVE EMPLOYEE ERROR:",
       err
     );
 
-    return res.status(500).json({
-      error:
-        "Archive employee error",
-    });
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Archive employee error",
+      });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
   }
 };
 
@@ -3926,37 +4113,140 @@ exports.restoreEmployee = async (
   req,
   res
 ) => {
+  const {
+    id,
+  } = req.params;
+
+  const actor =
+    getActor(req);
+
+  let connection = null;
+
+  let transactionStarted =
+    false;
+
+  let transactionCommitted =
+    false;
+
   try {
-    const { id } =
-      req.params;
+    connection =
+      await db
+        .promise()
+        .getConnection();
 
-    const actor =
-      getActor(req);
+    await connection
+      .beginTransaction();
 
-    const employeeName =
-      await getEmployeeNameById(
-        id
+    transactionStarted =
+      true;
+
+
+    const [
+      employeeRows,
+    ] =
+      await connection.query(
+        `
+        SELECT
+          id,
+          name,
+          archived
+        FROM employees
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [
+          id,
+        ]
       );
 
-    /*
-     * Do not report success for a
-     * nonexistent employee.
-     */
-    if (!employeeName) {
-      return res.status(404).json({
-        error:
-          "Employee not found.",
-      });
+
+    if (
+      employeeRows.length === 0
+    ) {
+      await connection
+        .rollback();
+
+      transactionStarted =
+        false;
+
+      return res
+        .status(404)
+        .json({
+          error:
+            "Employee not found.",
+        });
     }
 
-    await db.promise().query(
-      `
-      UPDATE employees
-      SET archived = 0
-      WHERE id = ?
-      `,
-      [id]
-    );
+
+    const employee =
+      employeeRows[0];
+
+    const employeeName =
+      employee.name ||
+      "Unknown Employee";
+
+
+    if (
+      Number(
+        employee.archived ||
+        0
+      ) !== 1
+    ) {
+      await connection
+        .rollback();
+
+      transactionStarted =
+        false;
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "Employee is not archived.",
+        });
+    }
+
+
+    const [
+      restoreResult,
+    ] =
+      await connection.query(
+        `
+        UPDATE employees
+        SET archived = 0
+        WHERE id = ?
+          AND archived = 1
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    if (
+      Number(
+        restoreResult.affectedRows ||
+        0
+      ) !== 1
+    ) {
+      throw new Error(
+        "Employee restore state changed before the operation could be completed."
+      );
+    }
+
+
+    await connection
+      .commit();
+
+    transactionCommitted =
+      true;
+
+
+    connection.release();
+
+    connection = null;
+
 
     await logAudit({
       userId:
@@ -3981,6 +4271,7 @@ exports.restoreEmployee = async (
         `${actor.fullName} restored employee record for ${employeeName}.`,
     });
 
+
     return res.json({
       success: true,
 
@@ -3988,15 +4279,41 @@ exports.restoreEmployee = async (
         "Employee restored successfully.",
     });
   } catch (err) {
+    if (
+      connection &&
+      transactionStarted &&
+      !transactionCommitted
+    ) {
+      try {
+        await connection
+          .rollback();
+      } catch (
+        rollbackError
+      ) {
+        console.error(
+          "RESTORE EMPLOYEE ROLLBACK ERROR:",
+          rollbackError
+        );
+      }
+    }
+
+
     console.error(
       "RESTORE EMPLOYEE ERROR:",
       err
     );
 
-    return res.status(500).json({
-      error:
-        "Restore employee error",
-    });
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Restore employee error",
+      });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
   }
 };
 
@@ -4072,33 +4389,128 @@ exports.deleteEmployee = async (
       true;
 
     /*
-     * Resolve employee name using the same
-     * transaction connection.
+     * Resolve and lock the authoritative employee row.
      *
-     * Existing behavior is preserved:
-     * if no row exists, audit description uses
-     * "Unknown Employee".
+     * Permanent deletion is only available from the
+     * archive workflow. A normal active employee can
+     * never be deleted directly through the API.
      */
     const [
       employeeRows,
     ] =
       await connection.query(
         `
-        SELECT name
+        SELECT
+          id,
+          name,
+          archived
         FROM employees
         WHERE id = ?
         LIMIT 1
+        FOR UPDATE
         `,
         [
           id,
         ]
       );
 
+
+    if (
+      employeeRows.length === 0
+    ) {
+      await connection
+        .rollback();
+
+      transactionStarted =
+        false;
+
+      return res
+        .status(404)
+        .json({
+          error:
+            "Employee not found.",
+        });
+    }
+
+
+    const employee =
+      employeeRows[0];
+
     const employeeName =
-      employeeRows[
-        0
-      ]?.name ||
+      employee.name ||
       "Unknown Employee";
+
+
+    if (
+      Number(
+        employee.archived ||
+        0
+      ) !== 1
+    ) {
+      await connection
+        .rollback();
+
+      transactionStarted =
+        false;
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "Only archived employee records can be permanently deleted.",
+        });
+    }
+
+
+    /*
+     * Defense against historical/inconsistent data.
+     *
+     * A legacy archived employee may still contain an
+     * Active deployment assignment from older behavior.
+     *
+     * Never erase that deployment history implicitly.
+     * The employee must first be restored and the
+     * deployment ended through the normal workflow.
+     */
+    const [
+      activeAssignments,
+    ] =
+      await connection.query(
+        `
+        SELECT
+          id
+        FROM deployment_assignments
+        WHERE employee_id = ?
+          AND status = 'Active'
+        ORDER BY
+          start_date DESC,
+          id DESC
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    if (
+      activeAssignments.length > 0
+    ) {
+      await connection
+        .rollback();
+
+      transactionStarted =
+        false;
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "This archived employee still has an active deployment. Restore the employee and end the deployment before permanent deletion.",
+        });
+    }
+
 
     /*
      * Capture every physical-file reference that
@@ -4190,15 +4602,32 @@ exports.deleteEmployee = async (
       ]
     );
 
-    await connection.query(
-      `
-      DELETE FROM employees
-      WHERE id = ?
-      `,
-      [
-        id,
-      ]
-    );
+    const [
+      employeeDeleteResult,
+    ] =
+      await connection.query(
+        `
+        DELETE FROM employees
+        WHERE id = ?
+          AND archived = 1
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    if (
+      Number(
+        employeeDeleteResult.affectedRows ||
+        0
+      ) !== 1
+    ) {
+      throw new Error(
+        "Employee deletion state changed before the operation could be completed."
+      );
+    }
+
 
     /*
      * At this point all related transactional DB
