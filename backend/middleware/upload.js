@@ -1,4 +1,4 @@
-﻿const crypto = require("crypto");
+const crypto = require("crypto");
 const multer = require("multer");
 const path = require("path");
 
@@ -66,6 +66,8 @@ const FILE_TYPE_CONFIG = {
     allowedExtensions: [
       ".jpg",
       ".jpeg",
+      ".jfif",
+      ".jpe",
     ],
 
     signatureMatches(

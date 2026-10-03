@@ -1,4 +1,4 @@
-﻿const crypto = require("crypto");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 
@@ -145,6 +145,8 @@ const FILE_TYPE_CONFIG =
         new Set([
           ".jpg",
           ".jpeg",
+          ".jfif",
+          ".jpe",
         ]),
 
       signatureMatches(

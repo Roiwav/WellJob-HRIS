@@ -4,9 +4,46 @@ import authenticatedFetch from "../authenticatedFetch";
 export const EVIDENCE_ALLOWED_TYPES = [
   "image/jpeg",
   "image/png",
-  "image/webp",
   "application/pdf",
 ];
+
+const EVIDENCE_ALLOWED_EXTENSIONS = {
+  "image/jpeg": new Set([
+    ".jpg",
+    ".jpeg",
+    ".jfif",
+    ".jpe",
+  ]),
+
+  "image/png": new Set([
+    ".png",
+  ]),
+
+  "application/pdf": new Set([
+    ".pdf",
+  ]),
+};
+
+function getEvidenceFileExtension(
+  fileName
+) {
+  const normalizedName =
+    String(
+      fileName || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const dotIndex =
+    normalizedName
+      .lastIndexOf(".");
+
+  return dotIndex >= 0
+    ? normalizedName.slice(
+        dotIndex
+      )
+    : "";
+}
 
 export const EVIDENCE_MAX_SIZE =
   5 * 1024 * 1024;
@@ -135,9 +172,31 @@ export function formatFileSize(
 export function createEvidenceItem(
   file
 ) {
+  const normalizedType =
+    String(
+      file?.type || ""
+    )
+      .trim()
+      .toLowerCase();
+
   const typeAllowed =
     EVIDENCE_ALLOWED_TYPES.includes(
-      file.type
+      normalizedType
+    );
+
+  const extension =
+    getEvidenceFileExtension(
+      file?.name
+    );
+
+  const extensionAllowed =
+    typeAllowed &&
+    Boolean(
+      EVIDENCE_ALLOWED_EXTENSIONS[
+        normalizedType
+      ]?.has(
+        extension
+      )
     );
 
   const sizeAllowed =
@@ -147,10 +206,12 @@ export function createEvidenceItem(
 
   const error =
     !typeAllowed
-      ? "Only JPG, PNG, WEBP, and PDF files are allowed."
-      : !sizeAllowed
-        ? "File must be larger than 0 bytes and no more than 5 MB."
-        : "";
+      ? "Only JPG, JPEG, JFIF, JPE, PNG, and PDF files are allowed."
+      : !extensionAllowed
+        ? "The file extension does not match the selected file type."
+        : !sizeAllowed
+          ? "File must be larger than 0 bytes and no more than 5 MB."
+          : "";
 
   return {
     id:
@@ -162,7 +223,7 @@ export function createEvidenceItem(
       file.name,
 
     type:
-      file.type,
+      normalizedType,
 
     size:
       file.size,

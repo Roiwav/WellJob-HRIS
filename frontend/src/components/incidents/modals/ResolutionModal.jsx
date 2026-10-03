@@ -787,7 +787,7 @@ export default function ResolutionModal({
               id="resolution-proof-files"
               type="file"
               multiple
-              accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf"
+              accept=".png,.jpg,.jpeg,.jfif,.jpe,.pdf,image/png,image/jpeg,application/pdf"
               onChange={
                 handleFileChange
               }
