@@ -235,7 +235,10 @@ async function createAuthorizationBatch(
       ) =>
         validateClientUploadMetadata(
           file,
-          index
+          index,
+          {
+            uploadType,
+          }
         )
     );
 
@@ -261,7 +264,10 @@ async function createAuthorizationBatch(
       objectPath,
     } =
       createStoredUploadIdentity(
-        file
+        file,
+        {
+          uploadType,
+        }
       );
 
     const authorization =
@@ -753,6 +759,230 @@ exports.createIncidentWorkflowEvidenceUploadAuthorizations =
         res,
         error,
         "INCIDENT WORKFLOW EVIDENCE UPLOAD AUTHORIZATION"
+      );
+    }
+  };
+
+
+
+/*
+ * ==================================================
+ * ATTENDANCE CLIENT-EVIDENCE AUTHORIZATION
+ * ==================================================
+ *
+ * HR Coordinator only at the route layer.
+ *
+ * One PNG/JPEG image.
+ * 10 MB Attendance-only limit.
+ * Descriptor is bound to:
+ *
+ * - authenticated user
+ * - token version
+ * - attendance date
+ * - assigned company
+ */
+
+function normalizeAttendanceDate(
+  value
+) {
+  const raw =
+    String(
+      value || ""
+    ).trim();
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})$/
+      .exec(
+        raw
+      );
+
+  if (!match) {
+    return null;
+  }
+
+  const year =
+    Number(
+      match[1]
+    );
+
+  const month =
+    Number(
+      match[2]
+    );
+
+  const day =
+    Number(
+      match[3]
+    );
+
+  const probe =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  if (
+    probe.getUTCFullYear() !==
+      year ||
+    probe.getUTCMonth() !==
+      month - 1 ||
+    probe.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return raw;
+}
+
+
+function getManilaToday() {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Manila",
+
+        year:
+          "numeric",
+
+        month:
+          "2-digit",
+
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      new Date()
+    );
+
+  const values =
+    Object.fromEntries(
+      parts.map(
+        (part) => [
+          part.type,
+          part.value,
+        ]
+      )
+    );
+
+  return (
+    `${values.year}-${values.month}-${values.day}`
+  );
+}
+
+
+exports.createAttendanceEvidenceUploadAuthorizations =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const attendanceDate =
+        normalizeAttendanceDate(
+          req.body?.attendanceDate ??
+          req.body?.attendance_date ??
+          req.body?.date
+        );
+
+      if (!attendanceDate) {
+        throw new UploadAuthorizationError(
+          "A valid attendance date in YYYY-MM-DD format is required.",
+          {
+            code:
+              "INVALID_ATTENDANCE_DATE",
+          }
+        );
+      }
+
+      if (
+        attendanceDate >
+        getManilaToday()
+      ) {
+        throw new UploadAuthorizationError(
+          "Future attendance dates are not allowed.",
+          {
+            code:
+              "FUTURE_ATTENDANCE_DATE",
+          }
+        );
+      }
+
+      const company =
+        String(
+          req.user
+            ?.assignedCompany ??
+          req.user
+            ?.assigned_company ??
+          ""
+        ).trim();
+
+      if (!company) {
+        throw new UploadAuthorizationError(
+          "Your HR Coordinator account does not have an assigned company.",
+          {
+            statusCode:
+              403,
+
+            code:
+              "ATTENDANCE_COMPANY_REQUIRED",
+          }
+        );
+      }
+
+      const uploadType =
+        DIRECT_UPLOAD_TYPES
+          .ATTENDANCE_EVIDENCE;
+
+      const purpose =
+        DIRECT_UPLOAD_PURPOSES
+          .ATTENDANCE_SAVE;
+
+      const context = {
+        attendanceDate,
+        company,
+      };
+
+      const uploads =
+        await createAuthorizationBatch(
+          req.body?.files,
+          {
+            maxFiles:
+              1,
+
+            actor:
+              req.user,
+
+            uploadType,
+
+            purpose,
+
+            context,
+          }
+        );
+
+      return res.json({
+        success:
+          true,
+
+        uploadType,
+        purpose,
+        context,
+
+        descriptorExpiresIn:
+          DESCRIPTOR_TTL_SECONDS,
+
+        uploads,
+      });
+    } catch (error) {
+      return sendControllerError(
+        res,
+        error,
+        "ATTENDANCE EVIDENCE UPLOAD AUTHORIZATION"
       );
     }
   };

@@ -14,8 +14,19 @@ const {
   getAttendanceHistory,
   getAttendanceHistoryDetail,
   getAttendancePerformance,
+  getAttendanceEvidence,
 } =
   require("../controllers/attendanceController");
+
+const {
+  createAttendanceEvidenceUploadAuthorizations,
+} =
+  require("../controllers/storageUploadController");
+
+const {
+  finalizeAttendanceEvidenceDirectUpload,
+} =
+  require("../middleware/directUploadFinalizeMiddleware");
 
 const router =
   express.Router();
@@ -59,6 +70,11 @@ router.use(
   requireHrCoordinator
 );
 
+router.post(
+  "/attendance/upload-authorizations",
+  createAttendanceEvidenceUploadAuthorizations
+);
+
 router.get(
   "/attendance",
   getAttendanceByDate
@@ -67,6 +83,11 @@ router.get(
 router.get(
   "/attendance/history",
   getAttendanceHistory
+);
+
+router.get(
+  "/attendance/history/:id/evidence",
+  getAttendanceEvidence
 );
 
 router.get(
@@ -81,6 +102,7 @@ router.get(
 
 router.post(
   "/attendance",
+  finalizeAttendanceEvidenceDirectUpload,
   saveAttendance
 );
 

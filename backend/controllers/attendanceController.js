@@ -3,6 +3,10 @@
 const db = require("../config/db");
 
 const {
+  createSignedDownloadUrl,
+} = require("../services/storageService");
+
+const {
   logAudit,
   AUDIT_CATEGORY,
 } = require("../utils/auditLogger");
@@ -742,14 +746,45 @@ exports.saveAttendance =
           });
       }
 
-      /*
-       * Secure-by-default:
-       * client source remains blocked until the
-       * private Supabase evidence finalizer is wired.
-       */
+      const finalizedFiles =
+        Array.isArray(
+          req.files
+        )
+          ? req.files
+          : [];
+
+      let evidenceFile =
+        null;
+
       if (
         source ===
         "client"
+      ) {
+        if (
+          finalizedFiles.length !==
+            1 ||
+          finalizedFiles[0]
+            ?.fieldname !==
+            "attendanceEvidence"
+        ) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+
+              code:
+                "CLIENT_EVIDENCE_REQUIRED",
+
+              error:
+                "A verified client attendance image is required before saving client-provided attendance.",
+            });
+        }
+
+        evidenceFile =
+          finalizedFiles[0];
+      } else if (
+        finalizedFiles.length >
+        0
       ) {
         return res
           .status(400)
@@ -757,10 +792,10 @@ exports.saveAttendance =
             success: false,
 
             code:
-              "CLIENT_EVIDENCE_REQUIRED",
+              "UNEXPECTED_ATTENDANCE_EVIDENCE",
 
             error:
-              "Client-provided attendance requires verified private evidence.",
+              "Attendance evidence may only be attached when the source is client.",
           });
       }
 
@@ -1003,6 +1038,75 @@ exports.saveAttendance =
         });
       }
 
+      if (evidenceFile) {
+        const objectPath =
+          String(
+            evidenceFile.storagePath ||
+            evidenceFile.path ||
+            ""
+          ).trim();
+
+        const originalName =
+          String(
+            evidenceFile.originalname ||
+            ""
+          ).trim();
+
+        const mimeType =
+          String(
+            evidenceFile.mimetype ||
+            ""
+          ).trim();
+
+        const fileSize =
+          Number(
+            evidenceFile.size
+          );
+
+        if (
+          !objectPath ||
+          !originalName ||
+          !mimeType ||
+          !Number.isSafeInteger(
+            fileSize
+          ) ||
+          fileSize <= 0
+        ) {
+          const error =
+            new Error(
+              "Verified attendance evidence metadata is incomplete."
+            );
+
+          error.statusCode =
+            400;
+
+          throw error;
+        }
+
+        await connection.query(
+          `
+          INSERT INTO attendance_evidence
+          (
+            batch_id,
+            object_path,
+            original_name,
+            mime_type,
+            file_size,
+            uploaded_by_user_id
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
+          `,
+          [
+            batchId,
+            objectPath,
+            originalName,
+            mimeType,
+            fileSize,
+            actor.userId,
+          ]
+        );
+      }
+
       await logAudit(
         {
           userId:
@@ -1035,6 +1139,15 @@ exports.saveAttendance =
       await connection
         .commit();
 
+      if (
+        evidenceFile &&
+        typeof req
+          .claimAttendanceEvidenceFile ===
+          "function"
+      ) {
+        req.claimAttendanceEvidenceFile();
+      }
+
       return res
         .status(201)
         .json({
@@ -1054,7 +1167,9 @@ exports.saveAttendance =
             source,
 
             hasEvidence:
-              false,
+              Boolean(
+                evidenceFile
+              ),
 
             summary:
               summarize(
@@ -1865,6 +1980,138 @@ exports.getAttendancePerformance =
         res,
         error,
         "GET ATTENDANCE PERFORMANCE"
+      );
+    }
+  };
+
+
+exports.getAttendanceEvidence =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const actor =
+        getActor(req);
+
+      const batchId =
+        positiveInteger(
+          req.params?.id
+        );
+
+      if (!batchId) {
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            error:
+              "Invalid attendance record ID.",
+          });
+      }
+
+      const [
+        rows,
+      ] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              evidence.object_path,
+              evidence.original_name,
+              evidence.mime_type,
+              evidence.file_size,
+              evidence.created_at
+
+            FROM attendance_evidence AS evidence
+
+            INNER JOIN attendance_batches AS batch
+              ON batch.id =
+                evidence.batch_id
+
+            WHERE
+              batch.id =
+                ?
+
+              AND LOWER(
+                TRIM(
+                  batch.company
+                )
+              ) =
+              LOWER(
+                TRIM(?)
+              )
+
+            LIMIT 1
+            `,
+            [
+              batchId,
+              actor.company,
+            ]
+          );
+
+      if (
+        rows.length ===
+        0
+      ) {
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            error:
+              "Attendance evidence was not found.",
+          });
+      }
+
+      const evidence =
+        rows[0];
+
+      const signed =
+        await createSignedDownloadUrl(
+          evidence.object_path,
+          {
+            expiresIn:
+              60,
+          }
+        );
+
+      return res.json({
+        success:
+          true,
+
+        evidence: {
+          batchId,
+
+          originalName:
+            evidence.original_name,
+
+          mimeType:
+            evidence.mime_type,
+
+          fileSize:
+            Number(
+              evidence.file_size
+            ),
+
+          createdAt:
+            evidence.created_at,
+
+          signedUrl:
+            signed.signedUrl,
+
+          expiresIn:
+            signed.expiresIn,
+        },
+      });
+    } catch (error) {
+      return sendError(
+        res,
+        error,
+        "GET ATTENDANCE EVIDENCE"
       );
     }
   };

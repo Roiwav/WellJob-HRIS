@@ -22,6 +22,9 @@ const MAX_EMPLOYEE_DOCUMENTS =
 const MAX_INCIDENT_EVIDENCE_FILES =
   10;
 
+const MAX_ATTENDANCE_EVIDENCE_FILES =
+  1;
+
 
 /*
  * ==================================================
@@ -311,6 +314,67 @@ function registerDirectIncidentCleanupBoundary(
 
 /*
  * ==================================================
+ * ATTENDANCE REQUEST CLEANUP BOUNDARY
+ * ==================================================
+ */
+
+function registerDirectAttendanceCleanupBoundary(
+  req,
+  res,
+  files
+) {
+  let ownershipClaimed =
+    false;
+
+  let cleanupStarted =
+    false;
+
+  req.claimAttendanceEvidenceFile =
+    () => {
+      ownershipClaimed =
+        true;
+    };
+
+  const cleanupIfUnclaimed =
+    () => {
+      if (
+        ownershipClaimed ||
+        cleanupStarted
+      ) {
+        return;
+      }
+
+      cleanupStarted =
+        true;
+
+      cleanupExistingFiles(
+        files
+      ).catch(
+        (
+          error
+        ) => {
+          console.error(
+            "DIRECT ATTENDANCE CLEANUP ERROR:",
+            error
+          );
+        }
+      );
+    };
+
+  res.once(
+    "finish",
+    cleanupIfUnclaimed
+  );
+
+  res.once(
+    "close",
+    cleanupIfUnclaimed
+  );
+}
+
+
+/*
+ * ==================================================
  * GENERIC FINALIZER
  * ==================================================
  */
@@ -331,6 +395,9 @@ async function finalizeDirectUploads(
     resolveFieldname,
 
     incidentCleanup =
+      false,
+
+    attendanceCleanup =
       false,
 
     allowDuplicateFieldNames =
@@ -570,6 +637,16 @@ async function finalizeDirectUploads(
       incidentCleanup
     ) {
       registerDirectIncidentCleanupBoundary(
+        req,
+        res,
+        pseudoFiles
+      );
+    }
+
+    if (
+      attendanceCleanup
+    ) {
+      registerDirectAttendanceCleanupBoundary(
         req,
         res,
         pseudoFiles
@@ -927,10 +1004,152 @@ function finalizeIncidentWorkflowDirectUploads(
 }
 
 
+function normalizeAttendanceDate(
+  value
+) {
+  const raw =
+    String(
+      value || ""
+    ).trim();
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})$/
+      .exec(
+        raw
+      );
+
+  if (!match) {
+    return null;
+  }
+
+  const year =
+    Number(
+      match[1]
+    );
+
+  const month =
+    Number(
+      match[2]
+    );
+
+  const day =
+    Number(
+      match[3]
+    );
+
+  const probe =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  if (
+    probe.getUTCFullYear() !==
+      year ||
+    probe.getUTCMonth() !==
+      month - 1 ||
+    probe.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return raw;
+}
+
+
+/*
+ * ==================================================
+ * ATTENDANCE CLIENT EVIDENCE
+ * ==================================================
+ */
+
+function finalizeAttendanceEvidenceDirectUpload(
+  req,
+  res,
+  next
+) {
+  const attendanceDate =
+    normalizeAttendanceDate(
+      req.body?.attendanceDate ??
+      req.body?.attendance_date ??
+      req.body?.date
+    );
+
+  if (!attendanceDate) {
+    return res
+      .status(400)
+      .json({
+        error:
+          "A valid attendance date in YYYY-MM-DD format is required.",
+
+        code:
+          "INVALID_ATTENDANCE_DATE",
+      });
+  }
+
+  const company =
+    String(
+      req.user
+        ?.assignedCompany ??
+      req.user
+        ?.assigned_company ??
+      ""
+    ).trim();
+
+  if (!company) {
+    return res
+      .status(403)
+      .json({
+        error:
+          "Your HR Coordinator account does not have an assigned company.",
+
+        code:
+          "ATTENDANCE_COMPANY_REQUIRED",
+      });
+  }
+
+  return finalizeDirectUploads(
+    req,
+    res,
+    next,
+    {
+      maxFiles:
+        MAX_ATTENDANCE_EVIDENCE_FILES,
+
+      expectedUploadType:
+        DIRECT_UPLOAD_TYPES
+          .ATTENDANCE_EVIDENCE,
+
+      expectedPurpose:
+        DIRECT_UPLOAD_PURPOSES
+          .ATTENDANCE_SAVE,
+
+      expectedContext: {
+        attendanceDate,
+        company,
+      },
+
+      resolveFieldname() {
+        return "attendanceEvidence";
+      },
+
+      attendanceCleanup:
+        true,
+    }
+  );
+}
+
+
 module.exports = {
   finalizeEmployeeCreateDirectUploads,
   finalizeEmployeeUpdateDirectUploads,
 
   finalizeIncidentCreateDirectUploads,
   finalizeIncidentWorkflowDirectUploads,
+
+  finalizeAttendanceEvidenceDirectUpload,
 };

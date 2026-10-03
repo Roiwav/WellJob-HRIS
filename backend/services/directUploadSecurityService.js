@@ -47,8 +47,14 @@ const {
 const MAX_FILE_SIZE =
   5 * 1024 * 1024;
 
+const MAX_ATTENDANCE_EVIDENCE_FILE_SIZE =
+  10 * 1024 * 1024;
+
 const STORAGE_PREFIX =
   "documents/employees/";
+
+const ATTENDANCE_STORAGE_PREFIX =
+  "documents/attendance/";
 
 const DESCRIPTOR_VERSION =
   1;
@@ -72,6 +78,9 @@ const DIRECT_UPLOAD_TYPES =
 
     INCIDENT_EVIDENCE:
       "incident_evidence",
+
+    ATTENDANCE_EVIDENCE:
+      "attendance_evidence",
   });
 
 const DIRECT_UPLOAD_PURPOSES =
@@ -87,6 +96,9 @@ const DIRECT_UPLOAD_PURPOSES =
 
     INCIDENT_WORKFLOW:
       "incident_workflow",
+
+    ATTENDANCE_SAVE:
+      "attendance_save",
   });
 
 const VALID_UPLOAD_TYPES =
@@ -188,6 +200,48 @@ const FILE_TYPE_CONFIG =
       },
     },
   });
+
+
+function getUploadPolicy(
+  uploadType
+) {
+  if (
+    uploadType ===
+    DIRECT_UPLOAD_TYPES
+      .ATTENDANCE_EVIDENCE
+  ) {
+    return {
+      maxFileSize:
+        MAX_ATTENDANCE_EVIDENCE_FILE_SIZE,
+
+      maxFileSizeLabel:
+        "10 MB",
+
+      storagePrefix:
+        ATTENDANCE_STORAGE_PREFIX,
+
+      allowedMimeTypes:
+        new Set([
+          "image/png",
+          "image/jpeg",
+        ]),
+    };
+  }
+
+  return {
+    maxFileSize:
+      MAX_FILE_SIZE,
+
+    maxFileSizeLabel:
+      "5 MB",
+
+    storagePrefix:
+      STORAGE_PREFIX,
+
+    allowedMimeTypes:
+      null,
+  };
+}
 
 
 class DirectUploadError
@@ -359,7 +413,11 @@ function normalizeWorkflowAction(
 
 function validateClientUploadMetadata(
   file,
-  index = 0
+  index = 0,
+  {
+    uploadType =
+      null,
+  } = {}
 ) {
   if (
     !file ||
@@ -377,6 +435,11 @@ function validateClientUploadMetadata(
       }
     );
   }
+
+  const uploadPolicy =
+    getUploadPolicy(
+      uploadType
+    );
 
   const originalName =
     normalizeOriginalName(
@@ -417,6 +480,27 @@ function validateClientUploadMetadata(
 
         code:
           "UNSUPPORTED_FILE_TYPE",
+      }
+    );
+  }
+
+  if (
+    uploadPolicy
+      .allowedMimeTypes &&
+    !uploadPolicy
+      .allowedMimeTypes
+      .has(
+        mimeType
+      )
+  ) {
+    throw new DirectUploadError(
+      "Attendance evidence must be a PNG or JPEG image.",
+      {
+        statusCode:
+          415,
+
+        code:
+          "UNSUPPORTED_ATTENDANCE_EVIDENCE_TYPE",
       }
     );
   }
@@ -470,10 +554,11 @@ function validateClientUploadMetadata(
 
   if (
     size >
-    MAX_FILE_SIZE
+    uploadPolicy
+      .maxFileSize
   ) {
     throw new DirectUploadError(
-      "Each protected upload must be no larger than 5 MB.",
+      `Each protected upload must be no larger than ${uploadPolicy.maxFileSizeLabel}.`,
       {
         statusCode:
           413,
@@ -503,8 +588,17 @@ function validateClientUploadMetadata(
  */
 
 function createStoredUploadIdentity(
-  metadata
+  metadata,
+  {
+    uploadType =
+      null,
+  } = {}
 ) {
+  const uploadPolicy =
+    getUploadPolicy(
+      uploadType
+    );
+
   const storedFilename =
     `${Date.now()}-` +
     `${crypto.randomUUID()}` +
@@ -512,7 +606,7 @@ function createStoredUploadIdentity(
 
   const objectPath =
     normalizeObjectPath(
-      `${STORAGE_PREFIX}${storedFilename}`
+      `${uploadPolicy.storagePrefix}${storedFilename}`
     );
 
   return {
@@ -562,6 +656,83 @@ function normalizeTrustedActor(
     actorUserId,
     tokenVersion,
   };
+}
+
+
+function normalizeAttendanceDate(
+  value
+) {
+  const raw =
+    String(
+      value || ""
+    ).trim();
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})$/
+      .exec(
+        raw
+      );
+
+  if (!match) {
+    return null;
+  }
+
+  const year =
+    Number(
+      match[1]
+    );
+
+  const month =
+    Number(
+      match[2]
+    );
+
+  const day =
+    Number(
+      match[3]
+    );
+
+  const probe =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  if (
+    probe.getUTCFullYear() !==
+      year ||
+    probe.getUTCMonth() !==
+      month - 1 ||
+    probe.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return raw;
+}
+
+
+function normalizeAttendanceCompany(
+  value
+) {
+  const company =
+    String(
+      value || ""
+    ).trim();
+
+  if (
+    !company ||
+    company.length >
+      255
+  ) {
+    return null;
+  }
+
+  return company;
 }
 
 
@@ -680,6 +851,64 @@ function normalizeDescriptorContext(
       workflowAction;
   }
 
+  if (
+    context.attendanceDate !==
+      undefined &&
+    context.attendanceDate !==
+      null &&
+    String(
+      context.attendanceDate
+    ).trim() !==
+      ""
+  ) {
+    const attendanceDate =
+      normalizeAttendanceDate(
+        context.attendanceDate
+      );
+
+    if (!attendanceDate) {
+      throw new DirectUploadError(
+        "Invalid attendance upload date.",
+        {
+          code:
+            "INVALID_ATTENDANCE_UPLOAD_DATE",
+        }
+      );
+    }
+
+    normalized.attendanceDate =
+      attendanceDate;
+  }
+
+  if (
+    context.company !==
+      undefined &&
+    context.company !==
+      null &&
+    String(
+      context.company
+    ).trim() !==
+      ""
+  ) {
+    const company =
+      normalizeAttendanceCompany(
+        context.company
+      );
+
+    if (!company) {
+      throw new DirectUploadError(
+        "Invalid attendance company context.",
+        {
+          code:
+            "INVALID_ATTENDANCE_COMPANY_CONTEXT",
+        }
+      );
+    }
+
+    normalized.company =
+      company;
+  }
+
   return normalized;
 }
 
@@ -703,7 +932,9 @@ function assertPurposeContext(
     if (
       context.employeeId ||
       context.incidentId ||
-      context.workflowAction
+      context.workflowAction ||
+      context.attendanceDate ||
+      context.company
     ) {
       throw new DirectUploadError(
         "Employee-create document authorization contains invalid context.",
@@ -728,7 +959,9 @@ function assertPurposeContext(
     if (
       !context.employeeId ||
       context.incidentId ||
-      context.workflowAction
+      context.workflowAction ||
+      context.attendanceDate ||
+      context.company
     ) {
       throw new DirectUploadError(
         "Employee-update document authorization requires the target employee ID.",
@@ -753,7 +986,9 @@ function assertPurposeContext(
     if (
       !context.employeeId ||
       context.incidentId ||
-      context.workflowAction
+      context.workflowAction ||
+      context.attendanceDate ||
+      context.company
     ) {
       throw new DirectUploadError(
         "Incident-create evidence authorization requires the target employee ID.",
@@ -778,13 +1013,42 @@ function assertPurposeContext(
     if (
       !context.incidentId ||
       !context.workflowAction ||
-      context.employeeId
+      context.employeeId ||
+      context.attendanceDate ||
+      context.company
     ) {
       throw new DirectUploadError(
         "Incident-workflow evidence authorization requires an incident ID and proof-submission workflow action.",
         {
           code:
             "INVALID_INCIDENT_WORKFLOW_CONTEXT",
+        }
+      );
+    }
+
+    return;
+  }
+
+  if (
+    uploadType ===
+      DIRECT_UPLOAD_TYPES
+        .ATTENDANCE_EVIDENCE &&
+    purpose ===
+      DIRECT_UPLOAD_PURPOSES
+        .ATTENDANCE_SAVE
+  ) {
+    if (
+      !context.attendanceDate ||
+      !context.company ||
+      context.employeeId ||
+      context.incidentId ||
+      context.workflowAction
+    ) {
+      throw new DirectUploadError(
+        "Attendance evidence authorization requires an attendance date and assigned company.",
+        {
+          code:
+            "INVALID_ATTENDANCE_UPLOAD_CONTEXT",
         }
       );
     }
@@ -907,10 +1171,19 @@ function createDirectUploadDescriptor({
     );
   }
 
+  const uploadPolicy =
+    getUploadPolicy(
+      normalizedUploadType
+    );
+
   const validatedMetadata =
     validateClientUploadMetadata(
       metadata,
-      0
+      0,
+      {
+        uploadType:
+          normalizedUploadType,
+      }
     );
 
   const normalizedContext =
@@ -931,7 +1204,8 @@ function createDirectUploadDescriptor({
 
   if (
     !normalizedObjectPath.startsWith(
-      STORAGE_PREFIX
+      uploadPolicy
+        .storagePrefix
     )
   ) {
     throw new DirectUploadError(
@@ -1266,6 +1540,11 @@ function verifyDirectUploadDescriptor(
     }
   }
 
+  const uploadPolicy =
+    getUploadPolicy(
+      payload.uploadType
+    );
+
   const metadata =
     validateClientUploadMetadata(
       {
@@ -1278,7 +1557,11 @@ function verifyDirectUploadDescriptor(
         size:
           payload.size,
       },
-      0
+      0,
+      {
+        uploadType:
+          payload.uploadType,
+      }
     );
 
   const objectPath =
@@ -1288,7 +1571,8 @@ function verifyDirectUploadDescriptor(
 
   if (
     !objectPath.startsWith(
-      STORAGE_PREFIX
+      uploadPolicy
+        .storagePrefix
     )
   ) {
     throw new DirectUploadError(
@@ -1420,6 +1704,12 @@ async function verifyStoredDirectUpload(
     );
   }
 
+  const uploadPolicy =
+    getUploadPolicy(
+      verifiedDescriptor
+        .uploadType
+    );
+
   const objectPath =
     normalizeObjectPath(
       verifiedDescriptor
@@ -1462,7 +1752,8 @@ async function verifyStoredDirectUpload(
     ) ||
     expectedSize <= 0 ||
     expectedSize >
-      MAX_FILE_SIZE
+      uploadPolicy
+        .maxFileSize
   ) {
     throw new DirectUploadError(
       "The authorized file size is invalid.",
@@ -1513,10 +1804,11 @@ async function verifyStoredDirectUpload(
 
   if (
     buffer.length >
-    MAX_FILE_SIZE
+    uploadPolicy
+      .maxFileSize
   ) {
     throw new DirectUploadError(
-      "The uploaded file exceeds the 5 MB limit.",
+      `The uploaded file exceeds the ${uploadPolicy.maxFileSizeLabel} limit.`,
       {
         statusCode:
           413,
