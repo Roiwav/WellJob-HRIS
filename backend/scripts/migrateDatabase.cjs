@@ -231,6 +231,383 @@ const MIGRATIONS = [
     isApplied: async (connection) =>
       accountCredentialsDeliverySchemaIsApplied(connection),
   },
+
+  /*
+   * ==================================================
+   * ATTENDANCE TRACKING - MIGRATION #14
+   * ==================================================
+   */
+  {
+    name: "add_attendance_tracking.sql",
+
+    isApplied: async (connection) => {
+      const tableChecks =
+        await Promise.all([
+          tableExists(
+            connection,
+            "attendance_batches"
+          ),
+
+          tableExists(
+            connection,
+            "attendance_entries"
+          ),
+
+          tableExists(
+            connection,
+            "attendance_evidence"
+          ),
+        ]);
+
+      if (
+        tableChecks.some(
+          (exists) => !exists
+        )
+      ) {
+        return false;
+      }
+
+      const columnChecks =
+        await Promise.all([
+          columnExists(
+            connection,
+            "attendance_batches",
+            "company"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_batches",
+            "attendance_date"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_batches",
+            "source"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_batches",
+            "created_by_user_id"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_entries",
+            "batch_id"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_entries",
+            "employee_id"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_entries",
+            "deployment_assignment_id"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_entries",
+            "attendance_status"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_entries",
+            "note"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_evidence",
+            "batch_id"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_evidence",
+            "object_path"
+          ),
+
+          columnExists(
+            connection,
+            "attendance_evidence",
+            "uploaded_by_user_id"
+          ),
+        ]);
+
+      if (
+        columnChecks.some(
+          (exists) => !exists
+        )
+      ) {
+        return false;
+      }
+
+      const enumChecks =
+        await Promise.all([
+          enumColumnExactlyMatches(
+            connection,
+            "attendance_batches",
+            "source",
+            [
+              "coordinator",
+              "client",
+            ]
+          ),
+
+          enumColumnExactlyMatches(
+            connection,
+            "attendance_entries",
+            "attendance_status",
+            [
+              "Unmarked",
+              "Present",
+              "Late",
+              "Absent",
+              "On Leave",
+              "Rest Day",
+            ]
+          ),
+        ]);
+
+      if (
+        enumChecks.some(
+          (matches) => !matches
+        )
+      ) {
+        return false;
+      }
+
+      const indexChecks =
+        await Promise.all([
+          uniqueIndexExists(
+            connection,
+            "attendance_batches",
+            "uq_attendance_batches_company_date"
+          ),
+
+          uniqueIndexExists(
+            connection,
+            "attendance_entries",
+            "uq_attendance_entries_batch_employee"
+          ),
+
+          uniqueIndexExists(
+            connection,
+            "attendance_evidence",
+            "uq_attendance_evidence_batch"
+          ),
+
+          indexExists(
+            connection,
+            "attendance_entries",
+            "idx_attendance_entries_employee_batch"
+          ),
+
+          indexExists(
+            connection,
+            "attendance_entries",
+            "idx_attendance_entries_deployment"
+          ),
+
+          indexExists(
+            connection,
+            "attendance_entries",
+            "idx_attendance_entries_status"
+          ),
+
+          indexExists(
+            connection,
+            "attendance_batches",
+            "idx_attendance_batches_created_by"
+          ),
+
+          indexExists(
+            connection,
+            "attendance_evidence",
+            "idx_attendance_evidence_uploader"
+          ),
+        ]);
+
+      if (
+        indexChecks.some(
+          (exists) => !exists
+        )
+      ) {
+        return false;
+      }
+
+      const foreignKeyChecks =
+        await Promise.all([
+          foreignKeyExists(
+            connection,
+            {
+              tableName:
+                "attendance_batches",
+
+              constraintName:
+                "fk_attendance_batches_created_by",
+
+              columnName:
+                "created_by_user_id",
+
+              referencedTableName:
+                "users",
+
+              referencedColumnName:
+                "id",
+
+              updateRule:
+                "RESTRICT",
+
+              deleteRule:
+                "RESTRICT",
+            }
+          ),
+
+          foreignKeyExists(
+            connection,
+            {
+              tableName:
+                "attendance_entries",
+
+              constraintName:
+                "fk_attendance_entries_batch",
+
+              columnName:
+                "batch_id",
+
+              referencedTableName:
+                "attendance_batches",
+
+              referencedColumnName:
+                "id",
+
+              updateRule:
+                "RESTRICT",
+
+              deleteRule:
+                "CASCADE",
+            }
+          ),
+
+          foreignKeyExists(
+            connection,
+            {
+              tableName:
+                "attendance_entries",
+
+              constraintName:
+                "fk_attendance_entries_employee",
+
+              columnName:
+                "employee_id",
+
+              referencedTableName:
+                "employees",
+
+              referencedColumnName:
+                "id",
+
+              updateRule:
+                "RESTRICT",
+
+              deleteRule:
+                "RESTRICT",
+            }
+          ),
+
+          foreignKeyExists(
+            connection,
+            {
+              tableName:
+                "attendance_entries",
+
+              constraintName:
+                "fk_attendance_entries_deployment",
+
+              columnName:
+                "deployment_assignment_id",
+
+              referencedTableName:
+                "deployment_assignments",
+
+              referencedColumnName:
+                "id",
+
+              updateRule:
+                "RESTRICT",
+
+              deleteRule:
+                "RESTRICT",
+            }
+          ),
+
+          foreignKeyExists(
+            connection,
+            {
+              tableName:
+                "attendance_evidence",
+
+              constraintName:
+                "fk_attendance_evidence_batch",
+
+              columnName:
+                "batch_id",
+
+              referencedTableName:
+                "attendance_batches",
+
+              referencedColumnName:
+                "id",
+
+              updateRule:
+                "RESTRICT",
+
+              deleteRule:
+                "CASCADE",
+            }
+          ),
+
+          foreignKeyExists(
+            connection,
+            {
+              tableName:
+                "attendance_evidence",
+
+              constraintName:
+                "fk_attendance_evidence_uploader",
+
+              columnName:
+                "uploaded_by_user_id",
+
+              referencedTableName:
+                "users",
+
+              referencedColumnName:
+                "id",
+
+              updateRule:
+                "RESTRICT",
+
+              deleteRule:
+                "RESTRICT",
+            }
+          ),
+        ]);
+
+      return foreignKeyChecks.every(
+        Boolean
+      );
+    },
+  },
 ];
 
 function requiredEnv(
@@ -751,6 +1128,62 @@ async function enumColumnContains(
     `'${String(enumValue)}'`
   );
 }
+
+async function enumColumnExactlyMatches(
+  connection,
+  tableName,
+  columnName,
+  expectedValues
+) {
+  if (
+    !Array.isArray(
+      expectedValues
+    ) ||
+    expectedValues.length === 0
+  ) {
+    return false;
+  }
+
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COLUMN_TYPE AS column_type
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+      LIMIT 1
+      `,
+      [
+        tableName,
+        columnName,
+      ]
+    );
+
+  if (
+    rows.length === 0
+  ) {
+    return false;
+  }
+
+  const actual =
+    String(
+      rows[0]?.column_type ||
+        ""
+    ).trim();
+
+  const expected =
+    `enum(${expectedValues
+      .map(
+        (value) =>
+          `'${String(value)}'`
+      )
+      .join(",")})`;
+
+  return actual === expected;
+}
+
 
 async function indexExists(
   connection,

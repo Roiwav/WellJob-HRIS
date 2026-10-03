@@ -48,6 +48,9 @@ const REQUIRED_APPLICATION_TABLES = [
   "client_companies",
   "company_positions",
   "password_reset_requests",
+  "attendance_batches",
+  "attendance_entries",
+  "attendance_evidence",
 ];
 
 const REQUIRED_SYSTEM_TABLES = [
@@ -68,6 +71,7 @@ const EXPECTED_MIGRATIONS = [
   "add_user_email_password_reset.sql",
   "add_password_reset_approval_requests.sql",
   "add_account_credentials_delivery_status.sql",
+  "add_attendance_tracking.sql",
 ];
 
 function requiredEnv(

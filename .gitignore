@@ -43,6 +43,9 @@ backend/documents/
 *.sql.gz
 *.dump
 
+# Repository-owned schema and migration SQL must remain versioned.
+!backend/database/*.sql
+
 # ============================================================
 # SSL CERTIFICATES AND PRIVATE KEYS
 # ============================================================
