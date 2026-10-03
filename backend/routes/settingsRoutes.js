@@ -1105,6 +1105,83 @@ router.patch(
               assignedCoordinatorCount,
           });
         }
+
+
+        /*
+         * Configuration integrity:
+         *
+         * A company remains operationally required while
+         * any employee has an Active deployment there.
+         *
+         * Historical Completed / Cancelled deployments do
+         * not block deactivation because their company
+         * value is an immutable deployment snapshot.
+         */
+        const [
+          activeDeploymentRows,
+        ] =
+          await db.promise().query(
+            `
+            SELECT
+              COUNT(*) AS count
+
+            FROM deployment_assignments
+
+            WHERE
+              LOWER(
+                TRIM(
+                  COALESCE(
+                    status,
+                    ''
+                  )
+                )
+              ) = 'active'
+
+              AND
+              (
+                CONVERT(
+                  TRIM(
+                    COALESCE(
+                      company,
+                      ''
+                    )
+                  )
+                  USING utf8mb4
+                ) COLLATE utf8mb4_unicode_ci
+              ) =
+              (
+                CONVERT(
+                  TRIM(?)
+                  USING utf8mb4
+                ) COLLATE utf8mb4_unicode_ci
+              )
+            `,
+            [
+              existingCompany.company_name,
+            ]
+          );
+
+
+        const activeDeploymentCount =
+          Number(
+            activeDeploymentRows[
+              0
+            ]?.count ||
+            0
+          );
+
+
+        if (
+          activeDeploymentCount >
+          0
+        ) {
+          return res.status(409).json({
+            success: false,
+            error:
+              "This company cannot be deactivated while it has active employee deployments. End or transfer those deployments first.",
+            activeDeploymentCount,
+          });
+        }
       }
 
       if (previousStatus !== isActive) {
@@ -1462,6 +1539,108 @@ router.patch(
             "This position cannot be reactivated while its client company is inactive. Reactivate the company first.",
         });
       }
+
+
+      /*
+       * Configuration integrity:
+       *
+       * Do not remove a position from future operational
+       * choices while an Active deployment is still using
+       * that exact company-position pair.
+       *
+       * Completed / Cancelled deployment history remains
+       * unaffected and does not block deactivation.
+       */
+      if (
+        !isActive
+      ) {
+        const [
+          activeDeploymentRows,
+        ] =
+          await db.promise().query(
+            `
+            SELECT
+              COUNT(*) AS count
+
+            FROM deployment_assignments
+
+            WHERE
+              LOWER(
+                TRIM(
+                  COALESCE(
+                    status,
+                    ''
+                  )
+                )
+              ) = 'active'
+
+              AND
+              (
+                CONVERT(
+                  TRIM(
+                    COALESCE(
+                      company,
+                      ''
+                    )
+                  )
+                  USING utf8mb4
+                ) COLLATE utf8mb4_unicode_ci
+              ) =
+              (
+                CONVERT(
+                  TRIM(?)
+                  USING utf8mb4
+                ) COLLATE utf8mb4_unicode_ci
+              )
+
+              AND
+              (
+                CONVERT(
+                  TRIM(
+                    COALESCE(
+                      position,
+                      ''
+                    )
+                  )
+                  USING utf8mb4
+                ) COLLATE utf8mb4_unicode_ci
+              ) =
+              (
+                CONVERT(
+                  TRIM(?)
+                  USING utf8mb4
+                ) COLLATE utf8mb4_unicode_ci
+              )
+            `,
+            [
+              existingPosition.company_name,
+              existingPosition.position_name,
+            ]
+          );
+
+
+        const activeDeploymentCount =
+          Number(
+            activeDeploymentRows[
+              0
+            ]?.count ||
+            0
+          );
+
+
+        if (
+          activeDeploymentCount >
+          0
+        ) {
+          return res.status(409).json({
+            success: false,
+            error:
+              "This position cannot be deactivated while it is used by active employee deployments. End or transfer those deployments first.",
+            activeDeploymentCount,
+          });
+        }
+      }
+
 
       const previousStatus = Boolean(
         Number(existingPosition.is_active)

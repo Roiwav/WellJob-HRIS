@@ -256,3 +256,905 @@ test(
     }
   }
 );
+
+test(
+  "Reject company deactivation when an Active deployment exists",
+  async () => {
+    const TEST_COMPANY_ID =
+      900002;
+
+    const TEST_COMPANY_NAME =
+      "AUTOMATED ACTIVE DEPLOYMENT COMPANY";
+
+    let databaseReadCount =
+      0;
+
+    let databaseWriteCount =
+      0;
+
+    let auditCallCount =
+      0;
+
+
+    const mockCompany = {
+      id:
+        TEST_COMPANY_ID,
+
+      company_name:
+        TEST_COMPANY_NAME,
+
+      is_active:
+        1,
+
+      created_at:
+        null,
+
+      updated_at:
+        null,
+    };
+
+
+    const mockDb = {
+      promise() {
+        return {
+          async query(
+            sql,
+            parameters = []
+          ) {
+            if (
+              /\b(INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|TRUNCATE)\b/i.test(
+                sql
+              )
+            ) {
+              databaseWriteCount +=
+                1;
+
+              throw new Error(
+                "TEST FAILURE: A database write was attempted."
+              );
+            }
+
+
+            databaseReadCount +=
+              1;
+
+
+            if (
+              sql.includes(
+                "FROM client_companies"
+              )
+            ) {
+              assert.deepEqual(
+                parameters,
+                [
+                  TEST_COMPANY_ID,
+                ]
+              );
+
+              return [
+                [
+                  {
+                    ...mockCompany,
+                  },
+                ],
+              ];
+            }
+
+
+            if (
+              sql.includes(
+                "FROM users"
+              )
+            ) {
+              assert.match(
+                sql,
+                /HR_COORDINATOR/
+              );
+
+              assert.deepEqual(
+                parameters,
+                [
+                  TEST_COMPANY_NAME,
+                ]
+              );
+
+              return [
+                [
+                  {
+                    count:
+                      0,
+                  },
+                ],
+              ];
+            }
+
+
+            if (
+              sql.includes(
+                "FROM deployment_assignments"
+              )
+            ) {
+              assert.match(
+                sql,
+                /status/i
+              );
+
+              assert.match(
+                sql,
+                /company/i
+              );
+
+              assert.deepEqual(
+                parameters,
+                [
+                  TEST_COMPANY_NAME,
+                ]
+              );
+
+              return [
+                [
+                  {
+                    count:
+                      1,
+                  },
+                ],
+              ];
+            }
+
+
+            throw new Error(
+              "Unexpected database query in isolated company Active-deployment test."
+            );
+          },
+        };
+      },
+    };
+
+
+    const settingsRoutePath =
+      path.resolve(
+        __dirname,
+        "../routes/settingsRoutes.js"
+      );
+
+
+    const mockModules =
+      new Map([
+        [
+          "../config/db",
+          mockDb,
+        ],
+
+        [
+          "../utils/auditLogger",
+          {
+            AUDIT_CATEGORY: {
+              OPERATIONAL:
+                "OPERATIONAL",
+
+              TECHNICAL:
+                "TECHNICAL",
+            },
+
+            async logAudit() {
+              auditCallCount +=
+                1;
+            },
+          },
+        ],
+
+        [
+          "../utils/violationPolicyService",
+          {},
+        ],
+
+        [
+          "../utils/performanceEvaluationService",
+          {},
+        ],
+
+        [
+          "../middleware/authMiddleware",
+          {
+            verifyToken(
+              req,
+              res,
+              next
+            ) {
+              req.user = {
+                userId:
+                  1,
+
+                username:
+                  "isolated-test-super-admin",
+
+                role:
+                  "SUPER_ADMIN",
+              };
+
+              next();
+            },
+          },
+        ],
+
+        [
+          "../middleware/roleMiddleware",
+          {
+            authorizeRoles(
+              ...allowedRoles
+            ) {
+              return (
+                req,
+                res,
+                next
+              ) => {
+                if (
+                  !allowedRoles.includes(
+                    req.user?.role
+                  )
+                ) {
+                  return res
+                    .status(403)
+                    .json({
+                      success:
+                        false,
+
+                      error:
+                        "Forbidden",
+                    });
+                }
+
+                next();
+              };
+            },
+          },
+        ],
+      ]);
+
+
+    delete require.cache[
+      settingsRoutePath
+    ];
+
+
+    const originalLoad =
+      Module._load;
+
+    let settingsRouter;
+
+
+    try {
+      Module._load =
+        function patchedModuleLoad(
+          request,
+          parent,
+          isMain
+        ) {
+          if (
+            parent?.filename ===
+              settingsRoutePath &&
+            mockModules.has(
+              request
+            )
+          ) {
+            return mockModules.get(
+              request
+            );
+          }
+
+
+          return originalLoad.call(
+            this,
+            request,
+            parent,
+            isMain
+          );
+        };
+
+
+      settingsRouter =
+        require(
+          settingsRoutePath
+        );
+    }
+    finally {
+      Module._load =
+        originalLoad;
+    }
+
+
+    const app =
+      express();
+
+    app.use(
+      express.json()
+    );
+
+    app.use(
+      "/api",
+      settingsRouter
+    );
+
+
+    const server =
+      http.createServer(
+        app
+      );
+
+
+    try {
+      await new Promise(
+        (
+          resolve,
+          reject
+        ) => {
+          server.once(
+            "error",
+            reject
+          );
+
+          server.listen(
+            0,
+            "127.0.0.1",
+            resolve
+          );
+        }
+      );
+
+
+      const address =
+        server.address();
+
+      assert.ok(
+        address &&
+        typeof address !==
+          "string"
+      );
+
+
+      const response =
+        await fetch(
+          `http://127.0.0.1:${address.port}/api/settings/client-companies/${TEST_COMPANY_ID}/status`,
+          {
+            method:
+              "PATCH",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                isActive:
+                  false,
+              }),
+          }
+        );
+
+
+      const body =
+        await response.json();
+
+
+      assert.equal(
+        response.status,
+        409
+      );
+
+      assert.equal(
+        body.success,
+        false
+      );
+
+      assert.match(
+        body.error,
+        /active employee deployments/i
+      );
+
+      assert.equal(
+        body.activeDeploymentCount,
+        1
+      );
+
+      assert.equal(
+        databaseReadCount,
+        3
+      );
+
+      assert.equal(
+        databaseWriteCount,
+        0
+      );
+
+      assert.equal(
+        auditCallCount,
+        0
+      );
+
+      assert.equal(
+        mockCompany.is_active,
+        1
+      );
+    }
+    finally {
+      delete require.cache[
+        settingsRoutePath
+      ];
+
+      if (
+        server.listening
+      ) {
+        await new Promise(
+          (
+            resolve,
+            reject
+          ) => {
+            server.close(
+              (error) => {
+                if (
+                  error
+                ) {
+                  reject(
+                    error
+                  );
+                }
+                else {
+                  resolve();
+                }
+              }
+            );
+          }
+        );
+      }
+    }
+  }
+);
+
+
+test(
+  "Reject position deactivation when an Active deployment uses it",
+  async () => {
+    const TEST_POSITION_ID =
+      910001;
+
+    const TEST_COMPANY_ID =
+      910002;
+
+    const TEST_COMPANY_NAME =
+      "AUTOMATED POSITION COMPANY";
+
+    const TEST_POSITION_NAME =
+      "AUTOMATED ACTIVE POSITION";
+
+    let databaseReadCount =
+      0;
+
+    let databaseWriteCount =
+      0;
+
+    let auditCallCount =
+      0;
+
+
+    const mockPosition = {
+      id:
+        TEST_POSITION_ID,
+
+      company_id:
+        TEST_COMPANY_ID,
+
+      position_name:
+        TEST_POSITION_NAME,
+
+      is_active:
+        1,
+
+      created_at:
+        null,
+
+      updated_at:
+        null,
+
+      company_name:
+        TEST_COMPANY_NAME,
+
+      company_is_active:
+        1,
+    };
+
+
+    const mockDb = {
+      promise() {
+        return {
+          async query(
+            sql,
+            parameters = []
+          ) {
+            if (
+              /\b(INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|TRUNCATE)\b/i.test(
+                sql
+              )
+            ) {
+              databaseWriteCount +=
+                1;
+
+              throw new Error(
+                "TEST FAILURE: A database write was attempted."
+              );
+            }
+
+
+            databaseReadCount +=
+              1;
+
+
+            if (
+              sql.includes(
+                "FROM company_positions AS cp"
+              )
+            ) {
+              assert.deepEqual(
+                parameters,
+                [
+                  TEST_POSITION_ID,
+                ]
+              );
+
+              return [
+                [
+                  {
+                    ...mockPosition,
+                  },
+                ],
+              ];
+            }
+
+
+            if (
+              sql.includes(
+                "FROM deployment_assignments"
+              )
+            ) {
+              assert.match(
+                sql,
+                /status/i
+              );
+
+              assert.match(
+                sql,
+                /company/i
+              );
+
+              assert.match(
+                sql,
+                /position/i
+              );
+
+              assert.deepEqual(
+                parameters,
+                [
+                  TEST_COMPANY_NAME,
+                  TEST_POSITION_NAME,
+                ]
+              );
+
+              return [
+                [
+                  {
+                    count:
+                      1,
+                  },
+                ],
+              ];
+            }
+
+
+            throw new Error(
+              "Unexpected database query in isolated position Active-deployment test."
+            );
+          },
+        };
+      },
+    };
+
+
+    const settingsRoutePath =
+      path.resolve(
+        __dirname,
+        "../routes/settingsRoutes.js"
+      );
+
+
+    const mockModules =
+      new Map([
+        [
+          "../config/db",
+          mockDb,
+        ],
+
+        [
+          "../utils/auditLogger",
+          {
+            AUDIT_CATEGORY: {
+              OPERATIONAL:
+                "OPERATIONAL",
+
+              TECHNICAL:
+                "TECHNICAL",
+            },
+
+            async logAudit() {
+              auditCallCount +=
+                1;
+            },
+          },
+        ],
+
+        [
+          "../utils/violationPolicyService",
+          {},
+        ],
+
+        [
+          "../utils/performanceEvaluationService",
+          {},
+        ],
+
+        [
+          "../middleware/authMiddleware",
+          {
+            verifyToken(
+              req,
+              res,
+              next
+            ) {
+              req.user = {
+                userId:
+                  1,
+
+                username:
+                  "isolated-test-super-admin",
+
+                role:
+                  "SUPER_ADMIN",
+              };
+
+              next();
+            },
+          },
+        ],
+
+        [
+          "../middleware/roleMiddleware",
+          {
+            authorizeRoles(
+              ...allowedRoles
+            ) {
+              return (
+                req,
+                res,
+                next
+              ) => {
+                if (
+                  !allowedRoles.includes(
+                    req.user?.role
+                  )
+                ) {
+                  return res
+                    .status(403)
+                    .json({
+                      success:
+                        false,
+
+                      error:
+                        "Forbidden",
+                    });
+                }
+
+                next();
+              };
+            },
+          },
+        ],
+      ]);
+
+
+    delete require.cache[
+      settingsRoutePath
+    ];
+
+
+    const originalLoad =
+      Module._load;
+
+    let settingsRouter;
+
+
+    try {
+      Module._load =
+        function patchedModuleLoad(
+          request,
+          parent,
+          isMain
+        ) {
+          if (
+            parent?.filename ===
+              settingsRoutePath &&
+            mockModules.has(
+              request
+            )
+          ) {
+            return mockModules.get(
+              request
+            );
+          }
+
+
+          return originalLoad.call(
+            this,
+            request,
+            parent,
+            isMain
+          );
+        };
+
+
+      settingsRouter =
+        require(
+          settingsRoutePath
+        );
+    }
+    finally {
+      Module._load =
+        originalLoad;
+    }
+
+
+    const app =
+      express();
+
+    app.use(
+      express.json()
+    );
+
+    app.use(
+      "/api",
+      settingsRouter
+    );
+
+
+    const server =
+      http.createServer(
+        app
+      );
+
+
+    try {
+      await new Promise(
+        (
+          resolve,
+          reject
+        ) => {
+          server.once(
+            "error",
+            reject
+          );
+
+          server.listen(
+            0,
+            "127.0.0.1",
+            resolve
+          );
+        }
+      );
+
+
+      const address =
+        server.address();
+
+      assert.ok(
+        address &&
+        typeof address !==
+          "string"
+      );
+
+
+      const response =
+        await fetch(
+          `http://127.0.0.1:${address.port}/api/settings/company-positions/${TEST_POSITION_ID}/status`,
+          {
+            method:
+              "PATCH",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                isActive:
+                  false,
+              }),
+          }
+        );
+
+
+      const body =
+        await response.json();
+
+
+      assert.equal(
+        response.status,
+        409
+      );
+
+      assert.equal(
+        body.success,
+        false
+      );
+
+      assert.match(
+        body.error,
+        /active employee deployments/i
+      );
+
+      assert.equal(
+        body.activeDeploymentCount,
+        1
+      );
+
+      assert.equal(
+        databaseReadCount,
+        2
+      );
+
+      assert.equal(
+        databaseWriteCount,
+        0
+      );
+
+      assert.equal(
+        auditCallCount,
+        0
+      );
+
+      assert.equal(
+        mockPosition.is_active,
+        1
+      );
+    }
+    finally {
+      delete require.cache[
+        settingsRoutePath
+      ];
+
+      if (
+        server.listening
+      ) {
+        await new Promise(
+          (
+            resolve,
+            reject
+          ) => {
+            server.close(
+              (error) => {
+                if (
+                  error
+                ) {
+                  reject(
+                    error
+                  );
+                }
+                else {
+                  resolve();
+                }
+              }
+            );
+          }
+        );
+      }
+    }
+  }
+);
