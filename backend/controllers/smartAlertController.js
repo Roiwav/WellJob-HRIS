@@ -177,13 +177,22 @@ function cleanAlertKey(value) {
  * name, etc. are intentionally ignored.
  */
 function getUserKey(req) {
-  const user =
-    req?.user || {};
+  const databaseUserId =
+    Number(
+      req?.user?.id
+    );
 
-  return cleanValue(
-    user.id ??
-      user.userId ??
-      user.username
+  if (
+    !Number.isSafeInteger(
+      databaseUserId
+    ) ||
+    databaseUserId <= 0
+  ) {
+    return "";
+  }
+
+  return String(
+    databaseUserId
   );
 }
 
@@ -272,54 +281,27 @@ function getCurrentUserAliases(
 }
 
 /*
- * Used only for backwards-compatible lookup of
- * existing read/dismiss state.
+ * SECURITY:
  *
- * Every key here is derived from the JWT user
- * or that user's trusted database profile.
+ * Smart-alert read/dismiss state belongs strictly to
+ * the authenticated database account.
+ *
+ * Only canonical users.id is used as smart_alert_states
+ * user_key. Historical name/username aliases remain
+ * available only for incident-recipient resolution and
+ * never for state ownership.
  */
 function getTrustedStateUserKeys(
-  req,
-  userNameMap = new Map()
+  req
 ) {
-  const trustedValues =
-    getTrustedIdentityValues(req);
+  const userKey =
+    getUserKey(req);
 
-  const keys =
-    new Set(
-      trustedValues
-        .map(cleanValue)
-        .filter(Boolean)
-    );
-
-  trustedValues.forEach(
-    (value) => {
-      const profile =
-        userNameMap.get(
-          normalizeIdentity(
-            value
-          )
-        );
-
-      if (!profile) {
-        return;
-      }
-
-      [
-        profile.name,
-        profile.username,
+  return userKey
+    ? [
+        userKey,
       ]
-        .map(cleanValue)
-        .filter(Boolean)
-        .forEach(
-          (key) => {
-            keys.add(key);
-          }
-        );
-    }
-  );
-
-  return Array.from(keys);
+    : [];
 }
 
 function addAlias(
@@ -2535,6 +2517,53 @@ async function upsertAlertState({
     );
 }
 
+/*
+ * SECURITY:
+ *
+ * Rebuild the current user's alert set from
+ * authoritative backend data before any read/dismiss
+ * state mutation.
+ *
+ * An alertKey sent by the browser identifies an alert;
+ * it never grants authority to mutate that alert.
+ */
+async function getVisibleAlertKeySetForRequest(
+  req,
+  role
+) {
+  const {
+    employees,
+    incidents,
+    userNameMap,
+  } =
+    await fetchBaseData();
+
+  const currentUserAliases =
+    getCurrentUserAliases(
+      req,
+      userNameMap
+    );
+
+  const alerts =
+    buildSmartAlerts({
+      employees,
+      incidents,
+      role,
+      currentUserAliases,
+    });
+
+  return new Set(
+    alerts
+      .map(
+        (alert) =>
+          cleanAlertKey(
+            alert?.alertKey
+          )
+      )
+      .filter(Boolean)
+  );
+}
+
 exports.getSmartAlerts =
   async (
     req,
@@ -2590,8 +2619,7 @@ exports.getSmartAlerts =
 
       const trustedStateUserKeys =
         getTrustedStateUserKeys(
-          req,
-          userNameMap
+          req
         );
 
       const stateMap =
@@ -2744,6 +2772,27 @@ exports.markSmartAlertRead =
           });
       }
 
+      const visibleAlertKeys =
+        await getVisibleAlertKeySetForRequest(
+          req,
+          role
+        );
+
+      if (
+        !visibleAlertKeys.has(
+          alertKey
+        )
+      ) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            error:
+              "Alert not found.",
+          });
+      }
+
       await upsertAlertState({
         userKey,
         role,
@@ -2837,6 +2886,27 @@ exports.dismissSmartAlert =
           });
       }
 
+      const visibleAlertKeys =
+        await getVisibleAlertKeySetForRequest(
+          req,
+          role
+        );
+
+      if (
+        !visibleAlertKeys.has(
+          alertKey
+        )
+      ) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            error:
+              "Alert not found.",
+          });
+      }
+
       await upsertAlertState({
         userKey,
         role,
@@ -2912,22 +2982,15 @@ exports.markAllSmartAlertsRead =
           });
       }
 
-      const submittedAlertKeys =
-        Array.isArray(
-          req?.body?.alertKeys
-        )
-          ? req.body.alertKeys
-          : [];
+      const visibleAlertKeys =
+        await getVisibleAlertKeySetForRequest(
+          req,
+          role
+        );
 
       const alertKeys =
         Array.from(
-          new Set(
-            submittedAlertKeys
-              .map(
-                cleanAlertKey
-              )
-              .filter(Boolean)
-          )
+          visibleAlertKeys
         );
 
       if (
