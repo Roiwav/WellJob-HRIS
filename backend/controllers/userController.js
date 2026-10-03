@@ -155,7 +155,7 @@ function toAuditActor(user) {
   const username = String(user?.username || "").trim();
 
   return {
-    userId: user?.user_id ?? user?.id,
+    userId: user?.id ?? null,
     username,
     fullName:
       String(user?.full_name || "").trim() ||
@@ -1656,8 +1656,7 @@ exports.changePassword =
       }
 
       await logAudit({
-        userId:
-          user.user_id,
+        userId: user.id,
 
         username:
           user.username,

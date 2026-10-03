@@ -331,7 +331,7 @@ exports.login = async (req, res) => {
       );
 
       await logAudit({
-        userId: "-",
+        userId: null,
 
         username,
 
@@ -377,7 +377,7 @@ exports.login = async (req, res) => {
 
     if (!match) {
       await logAudit({
-        userId: user.user_id,
+        userId: user.id,
 
         username: user.username,
 
@@ -414,7 +414,7 @@ exports.login = async (req, res) => {
       )
     ) {
       await logAudit({
-        userId: user.user_id,
+        userId: user.id,
 
         username: user.username,
 
@@ -506,7 +506,7 @@ exports.login = async (req, res) => {
      */
 
     await logAudit({
-      userId: user.user_id,
+      userId: user.id,
 
       username: user.username,
 

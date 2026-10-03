@@ -22,6 +22,62 @@ function cleanValue(value) {
 }
 
 /*
+ * CANONICAL AUDIT ACTOR ID
+ *
+ * audit_logs.user_id represents users.id:
+ * the database primary key used by authentication
+ * and authorization.
+ *
+ * WELLJOB business identifiers such as users.user_id
+ * must never be written into this field.
+ *
+ * Unauthenticated events, such as an unknown username
+ * login attempt, legitimately have no canonical actor
+ * and therefore use NULL.
+ */
+function normalizeCanonicalAuditUserId(
+  value
+) {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return null;
+  }
+
+  const normalized =
+    String(
+      value
+    ).trim();
+
+  if (
+    !/^\d+$/.test(
+      normalized
+    )
+  ) {
+    return null;
+  }
+
+  const numericValue =
+    Number(
+      normalized
+    );
+
+  if (
+    !Number.isSafeInteger(
+      numericValue
+    ) ||
+    numericValue <= 0
+  ) {
+    return null;
+  }
+
+  return String(
+    numericValue
+  );
+}
+
+/*
  * AUDIT LOGGER
  *
  * Default behavior remains backward-compatible:
@@ -57,8 +113,8 @@ async function logAudit(
 
   try {
     const userId =
-      cleanValue(
-        data.userId ||
+      normalizeCanonicalAuditUserId(
+        data.userId ??
         data.user_id
       );
 
