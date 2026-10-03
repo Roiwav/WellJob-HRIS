@@ -19,6 +19,7 @@ const STATUS = {
 const INVESTIGATOR_ROLES = new Set([
   "HR_MANAGER",
   "HR_STAFF",
+  "HR_COORDINATOR",
 ]);
 
 const REVIEWER_ROLES = new Set([

@@ -33,6 +33,10 @@ const {
   authorizeRoles,
 } = require("../middleware/roleMiddleware");
 
+const {
+  authorizeIncidentWorkflowScope,
+} = require("../middleware/incidentWorkflowScopeMiddleware");
+
 const upload = require("../middleware/upload");
 
 const {
@@ -290,8 +294,10 @@ router.post(
   verifyToken,
   authorizeRoles(
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
+  authorizeIncidentWorkflowScope,
   createIncidentWorkflowEvidenceUploadAuthorizations
 );
 
@@ -351,8 +357,10 @@ router.patch(
   authorizeRoles(
     "SUPER_ADMIN",
     "HR_MANAGER",
-    "HR_STAFF"
+    "HR_STAFF",
+    "HR_COORDINATOR"
   ),
+  authorizeIncidentWorkflowScope,
   upload.incidentEvidence,
   finalizeIncidentWorkflowDirectUploads,
   allowWorkflowEvidenceOnlyForSubmission,

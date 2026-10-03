@@ -35,6 +35,7 @@ const INVESTIGATOR_ROLES =
   new Set([
     "HR_MANAGER",
     "HR_STAFF",
+    "HR_COORDINATOR",
   ]);
 
 const REVIEWER_ROLES =
@@ -4109,7 +4110,7 @@ exports.updateIncidentStatus =
         ) {
           rejectLockedWorkflow(
             403,
-            "Only an HR Manager or HR Staff user can start an investigation."
+            "Only an HR Manager, HR Staff, or HR Coordinator user can start an investigation."
           );
         }
 
@@ -4144,7 +4145,7 @@ exports.updateIncidentStatus =
         ) {
           rejectLockedWorkflow(
             403,
-            "Only an HR Manager or HR Staff user can submit investigation proof."
+            "Only an HR Manager, HR Staff, or HR Coordinator user can submit investigation proof."
           );
         }
 

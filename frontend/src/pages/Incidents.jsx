@@ -861,7 +861,8 @@ export default function Incidents() {
     "HR_COORDINATOR";
   const canInvestigate =
     isHrManager ||
-    isHrStaff;
+    isHrStaff ||
+    isHrCoordinator;
   const isAuthorizedReviewer =
     isSuperAdmin ||
     isHrManager;
@@ -1856,7 +1857,7 @@ export default function Incidents() {
           showNotice(
             "error",
             "Investigation Access Required",
-            "Only HR Manager or HR Staff accounts can investigate incidents or submit investigation proof."
+            "Only HR Manager, HR Staff, or HR Coordinator accounts can investigate incidents or submit investigation proof."
           );
           return false;
         }
