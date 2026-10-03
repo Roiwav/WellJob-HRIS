@@ -25,6 +25,7 @@ import { EMPLOYEE_API_URL } from "../utils/employees/employeeFormHelpers";
 import {
   getAttendanceByDate,
   getAttendanceEvidence,
+  getEmployeeAttendanceHistory,
   getAttendanceHistory,
   getAttendanceHistoryDetail,
   getAttendancePerformance,
@@ -394,6 +395,10 @@ export default function Attendance() {
   const [performanceData, setPerformanceData] = useState(null);
   const [performanceLoading, setPerformanceLoading] = useState(false);
   const [performanceError, setPerformanceError] = useState("");
+
+  const [employeeHistory, setEmployeeHistory] = useState(null);
+  const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
+  const [employeeHistoryError, setEmployeeHistoryError] = useState("");
   useEffect(() => {
     setDraftReady(false);
     try {
@@ -1496,6 +1501,56 @@ export default function Attendance() {
       }
     };
 
+  const handleEmployeeAttendanceHistory =
+    async (
+      employeeId
+    ) => {
+      if (
+        employeeHistory?.employee
+          ?.employeeId ===
+        employeeId
+      ) {
+        setEmployeeHistory(null);
+        setEmployeeHistoryError("");
+        return;
+      }
+
+      try {
+        setEmployeeHistoryLoading(true);
+        setEmployeeHistoryError("");
+
+        const data =
+          await getEmployeeAttendanceHistory(
+            employeeId,
+            {
+              limit:
+                365,
+            }
+          );
+
+        setEmployeeHistory(
+          data
+        );
+      } catch (error) {
+        console.error(
+          "Load employee Attendance history error:",
+          error
+        );
+
+        setEmployeeHistory(null);
+
+        setEmployeeHistoryError(
+          error?.message ||
+            "Unable to load employee Attendance history."
+        );
+      } finally {
+        setEmployeeHistoryLoading(
+          false
+        );
+      }
+    };
+
+
   return (
     <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
@@ -2331,6 +2386,22 @@ export default function Attendance() {
                             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                               {employee.position}
                             </p>
+
+                            <button
+                              type="button"
+                              disabled={employeeHistoryLoading}
+                              onClick={() =>
+                                handleEmployeeAttendanceHistory(
+                                  employee.employeeId
+                                )
+                              }
+                              className="mt-2 text-xs font-black text-indigo-600 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-indigo-300 dark:hover:text-indigo-200"
+                            >
+                              {employeeHistory?.employee?.employeeId ===
+                              employee.employeeId
+                                ? "Hide History"
+                                : "View History"}
+                            </button>
                           </td>
 
                           <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
@@ -2372,6 +2443,174 @@ export default function Attendance() {
           )}
         </section>
       )}
+      {activeTab === "performance" &&
+        employeeHistoryError && (
+          <section className="rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300 sm:px-6">
+            {employeeHistoryError}
+          </section>
+        )}
+
+      {activeTab === "performance" &&
+        employeeHistory && (
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+            <div className="border-b border-slate-200 px-5 py-5 dark:border-white/10 sm:px-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 dark:text-white">
+                    Individual Attendance History
+                  </h2>
+
+                  <p className="mt-1 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    {employeeHistory.employee?.employeeName}
+                  </p>
+
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {employeeHistory.employee?.position} ? {employeeHistory.company}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEmployeeHistory(null)}
+                  className="self-start rounded-xl bg-slate-100 px-3.5 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  Close History
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 border-b border-slate-200 p-5 dark:border-white/10 sm:grid-cols-2 sm:p-6 lg:grid-cols-4 xl:grid-cols-7">
+              <SummaryCard
+                label="Attendance Rate"
+                value={formatAttendanceRate(
+                  employeeHistory.summary?.attendanceRate
+                )}
+                icon={<FiBarChart2 aria-hidden="true" />}
+              />
+
+              <SummaryCard
+                label="Present"
+                value={employeeHistory.summary?.present ?? 0}
+                tone="emerald"
+                icon={<FiCheckCircle aria-hidden="true" />}
+              />
+
+              <SummaryCard
+                label="Late"
+                value={employeeHistory.summary?.late ?? 0}
+                tone="amber"
+                icon={<FiCalendar aria-hidden="true" />}
+              />
+
+              <SummaryCard
+                label="Absent"
+                value={employeeHistory.summary?.absent ?? 0}
+                tone="red"
+                icon={<FiCalendar aria-hidden="true" />}
+              />
+
+              <SummaryCard
+                label="On Leave"
+                value={employeeHistory.summary?.onLeave ?? 0}
+                tone="blue"
+                icon={<FiFileText aria-hidden="true" />}
+              />
+
+              <SummaryCard
+                label="Rest Day"
+                value={employeeHistory.summary?.restDay ?? 0}
+                icon={<FiCalendar aria-hidden="true" />}
+              />
+
+              <SummaryCard
+                label="Not Marked"
+                value={employeeHistory.summary?.unmarked ?? 0}
+                icon={<FiFileText aria-hidden="true" />}
+              />
+            </div>
+
+            <div className="px-5 py-4 sm:px-6">
+              <p className="text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400">
+                Employee Attendance Rate = (Present + Late) ? (Present + Late + Absent). On Leave, Rest Day, and Not Marked are excluded.
+              </p>
+            </div>
+
+            <div className="overflow-x-auto border-t border-slate-200 dark:border-white/10">
+              <table className="min-w-full divide-y divide-slate-200 text-left text-sm dark:divide-white/10">
+                <thead className="bg-slate-50 dark:bg-slate-950">
+                  <tr>
+                    <th className="px-5 py-3 font-bold text-slate-600 dark:text-slate-300 sm:px-6">
+                      Date
+                    </th>
+
+                    <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                      Status
+                    </th>
+
+                    <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                      Source
+                    </th>
+
+                    <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                      Note
+                    </th>
+
+                    <th className="px-5 py-3 text-right font-bold text-slate-600 dark:text-slate-300 sm:px-6">
+                      Evidence
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                  {(employeeHistory.history || []).map((record) => (
+                    <tr key={record.id}>
+                      <td className="px-5 py-4 font-bold text-slate-900 dark:text-white sm:px-6">
+                        {record.date}
+                      </td>
+
+                      <td className="px-4 py-4 font-bold text-slate-700 dark:text-slate-200">
+                        {record.status === "Unmarked"
+                          ? "Not Marked"
+                          : record.status}
+                      </td>
+
+                      <td className="px-4 py-4 text-slate-600 dark:text-slate-300">
+                        {record.source === "client"
+                          ? "Client-Provided Record"
+                          : "Coordinator Monitoring"}
+                      </td>
+
+                      <td className="max-w-[360px] px-4 py-4 text-slate-600 dark:text-slate-300">
+                        {record.note || "?"}
+                      </td>
+
+                      <td className="px-5 py-4 text-right sm:px-6">
+                        {record.hasEvidence ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleViewEvidence(
+                                record.batchId
+                              )
+                            }
+                            className="text-xs font-black text-indigo-600 hover:text-indigo-700 dark:text-indigo-300 dark:hover:text-indigo-200"
+                          >
+                            View Evidence
+                          </button>
+                        ) : (
+                          <span className="text-xs font-semibold text-slate-400">
+                            ?
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
       <NoteModal
         employee={activeNoteEmployee}
         status={activeNoteStatus}

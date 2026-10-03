@@ -466,3 +466,27 @@ export async function getAttendanceEvidence(
     `${ATTENDANCE_API_URL}/history/${encodeURIComponent(id)}/evidence`
   );
 }
+
+
+export async function getEmployeeAttendanceHistory(
+  employeeId,
+  {
+    limit = 365,
+    signal,
+  } = {}
+) {
+  const params =
+    new URLSearchParams({
+      limit:
+        String(limit),
+    });
+
+  return requestWelljobJson(
+    `${ATTENDANCE_API_URL}/employee/${encodeURIComponent(
+      employeeId
+    )}/history?${params.toString()}`,
+    {
+      signal,
+    }
+  );
+}

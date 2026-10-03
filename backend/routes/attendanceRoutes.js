@@ -15,6 +15,7 @@ const {
   getAttendanceHistoryDetail,
   getAttendancePerformance,
   getAttendanceEvidence,
+  getEmployeeAttendanceHistory,
 } =
   require("../controllers/attendanceController");
 
@@ -98,6 +99,11 @@ router.get(
 router.get(
   "/attendance/performance",
   getAttendancePerformance
+);
+
+router.get(
+  "/attendance/employee/:employeeId/history",
+  getEmployeeAttendanceHistory
 );
 
 router.post(

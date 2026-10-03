@@ -2115,3 +2115,259 @@ exports.getAttendanceEvidence =
       );
     }
   };
+
+
+
+/*
+ * ==================================================
+ * INDIVIDUAL EMPLOYEE ATTENDANCE HISTORY
+ * ==================================================
+ *
+ * HR Coordinator only through attendanceRoutes.
+ *
+ * Scope is derived from the authenticated
+ * coordinator's assigned company.
+ *
+ * This endpoint deliberately reads historical
+ * Attendance snapshots instead of current browser
+ * state so previous Late/Absent/etc. remain visible.
+ */
+
+exports.getEmployeeAttendanceHistory =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const actor =
+        getActor(req);
+
+      const employeeId =
+        positiveInteger(
+          req.params
+            ?.employeeId
+        );
+
+      if (!employeeId) {
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            error:
+              "Invalid employee ID.",
+          });
+      }
+
+
+      const requestedLimit =
+        Number(
+          req.query?.limit ??
+          365
+        );
+
+      const limit =
+        Number.isSafeInteger(
+          requestedLimit
+        ) &&
+        requestedLimit > 0
+          ? Math.min(
+              requestedLimit,
+              500
+            )
+          : 365;
+
+
+      const [
+        rows,
+      ] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              ae.id,
+
+              ae.employee_id,
+
+              ae.employee_name,
+
+              ae.position,
+
+              ae.attendance_status,
+
+              ae.note,
+
+              ab.id AS batch_id,
+
+              DATE_FORMAT(
+                ab.attendance_date,
+                '%Y-%m-%d'
+              ) AS attendance_date,
+
+              ab.source,
+
+              ab.created_at,
+
+              EXISTS (
+                SELECT
+                  1
+
+                FROM attendance_evidence AS evidence
+
+                WHERE
+                  evidence.batch_id =
+                    ab.id
+              ) AS has_evidence
+
+            FROM attendance_entries AS ae
+
+            INNER JOIN attendance_batches AS ab
+              ON ab.id =
+                ae.batch_id
+
+            WHERE
+              ae.employee_id =
+                ?
+
+              AND LOWER(
+                TRIM(
+                  ab.company
+                )
+              ) =
+              LOWER(
+                TRIM(?)
+              )
+
+            ORDER BY
+              ab.attendance_date DESC,
+              ae.id DESC
+
+            LIMIT ${limit}
+            `,
+            [
+              employeeId,
+              actor.company,
+            ]
+          );
+
+
+      if (
+        rows.length ===
+        0
+      ) {
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            error:
+              "No Attendance history was found for this employee in your assigned company.",
+          });
+      }
+
+
+      const summary =
+        summarize(
+          rows
+        );
+
+      const eligibleDays =
+        summary.present +
+        summary.late +
+        summary.absent;
+
+      const attendedDays =
+        summary.present +
+        summary.late;
+
+      const attendanceRate =
+        eligibleDays > 0
+          ? Number(
+              (
+                (
+                  attendedDays /
+                  eligibleDays
+                ) *
+                100
+              ).toFixed(2)
+            )
+          : null;
+
+
+      const latest =
+        rows[0];
+
+
+      return res.json({
+        success:
+          true,
+
+        company:
+          actor.company,
+
+        employee: {
+          employeeId,
+
+          employeeName:
+            latest.employee_name,
+
+          position:
+            latest.position ||
+            "Not Assigned",
+        },
+
+        summary: {
+          ...summary,
+
+          eligibleDays,
+
+          attendedDays,
+
+          attendanceRate,
+        },
+
+        history:
+          rows.map(
+            (row) => ({
+              id:
+                row.id,
+
+              batchId:
+                row.batch_id,
+
+              date:
+                row.attendance_date,
+
+              status:
+                row.attendance_status,
+
+              source:
+                row.source,
+
+              note:
+                row.note ||
+                "",
+
+              hasEvidence:
+                Boolean(
+                  row.has_evidence
+                ),
+
+              createdAt:
+                row.created_at,
+            })
+          ),
+      });
+    } catch (
+      error
+    ) {
+      return sendError(
+        res,
+        error,
+        "GET EMPLOYEE ATTENDANCE HISTORY"
+      );
+    }
+  };
