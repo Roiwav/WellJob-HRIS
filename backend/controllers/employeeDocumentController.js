@@ -352,21 +352,58 @@ async function getEmployeeDocumentFile(
 
         WHERE ed.id = ?
 
-          AND e.archived = 0
+          AND COALESCE(
+            e.archived,
+            0
+          ) = 0
 
-          AND e.status <> 'Inactive'
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                e.status,
+                ''
+              )
+            )
+          ) = 'deployed'
 
           AND EXISTS (
             SELECT 1
-            FROM deployment_assignments AS da_scope
+
+            FROM deployment_assignments
+              AS da_current
+
             WHERE
-              da_scope.employee_id =
+              da_current.employee_id =
                 e.id
 
-              AND da_scope.status =
+              AND da_current.status =
                 'Active'
 
-              AND da_scope.company = ?
+              AND LOWER(
+                TRIM(
+                  COALESCE(
+                    da_current.company,
+                    ''
+                  )
+                )
+              ) = LOWER(TRIM(?))
+
+              AND NOT EXISTS (
+                SELECT 1
+
+                FROM deployment_assignments
+                  AS da_conflict
+
+                WHERE
+                  da_conflict.employee_id =
+                    e.id
+
+                  AND da_conflict.status =
+                    'Active'
+
+                  AND da_conflict.id <>
+                    da_current.id
+              )
           )
 
         LIMIT 1
