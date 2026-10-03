@@ -60,6 +60,11 @@ const DEPLOYMENT_OPTION_ROLES = new Set([
   "HR_STAFF",
 ]);
 
+const DEPLOYMENT_MUTATION_ROLES = new Set([
+  "HR_MANAGER",
+  "HR_STAFF",
+]);
+
 const DEFAULT_DEPLOYMENT_PAGE_SIZE = 50;
 const MAX_DEPLOYMENT_PAGE_SIZE = 100;
 
@@ -128,6 +133,16 @@ function canReadDeploymentOptions(
   req
 ) {
   return DEPLOYMENT_OPTION_ROLES.has(
+    normalizeRole(
+      req?.user?.role
+    )
+  );
+}
+
+function canMutateDeployments(
+  req
+) {
+  return DEPLOYMENT_MUTATION_ROLES.has(
     normalizeRole(
       req?.user?.role
     )
@@ -1518,8 +1533,17 @@ exports.updateDeploymentStatus =
     req,
     res
   ) => {
+    /*
+     * Defense in depth:
+     *
+     * Only HR Manager and HR Staff may mutate
+     * deployment state.
+     *
+     * Super Admin and HR Coordinator remain
+     * read-only.
+     */
     if (
-      isHrCoordinatorRequest(
+      !canMutateDeployments(
         req
       )
     ) {
@@ -1527,7 +1551,7 @@ exports.updateDeploymentStatus =
         .status(403)
         .json({
           error:
-            "HR Coordinator accounts have read-only deployment access.",
+            "Only HR Manager and HR Staff may update deployment status.",
         });
     }
 
@@ -1543,12 +1567,44 @@ exports.updateDeploymentStatus =
     } =
       req.body || {};
 
-    if (!deploymentId) {
+    const normalizedDeploymentId =
+      String(
+        deploymentId ??
+        ""
+      ).trim();
+
+
+    if (
+      !/^[1-9]\d*$/.test(
+        normalizedDeploymentId
+      )
+    ) {
       return res
         .status(400)
         .json({
           error:
-            "Deployment ID is required.",
+            "Deployment ID must be a positive integer.",
+        });
+    }
+
+
+    const canonicalDeploymentId =
+      Number(
+        normalizedDeploymentId
+      );
+
+
+    if (
+      !Number.isSafeInteger(
+        canonicalDeploymentId
+      ) ||
+      canonicalDeploymentId <= 0
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Deployment ID must be a valid positive integer.",
         });
     }
 
@@ -1673,7 +1729,7 @@ exports.updateDeploymentStatus =
           LIMIT 1
           `,
           [
-            deploymentId,
+            canonicalDeploymentId,
           ]
         );
 
@@ -1817,7 +1873,7 @@ exports.updateDeploymentStatus =
           FOR UPDATE
           `,
           [
-            deploymentId,
+            canonicalDeploymentId,
             employeeId,
           ]
         );
@@ -1901,9 +1957,7 @@ exports.updateDeploymentStatus =
             0
           ]?.id
         ) !==
-          Number(
-            deploymentId
-          )
+          canonicalDeploymentId
       ) {
         await connection
           .rollback();
@@ -1922,69 +1976,99 @@ exports.updateDeploymentStatus =
       /*
        * End deployment assignment.
        */
-      await connection.query(
-        `
-        UPDATE
-          deployment_assignments
+      const [
+        deploymentUpdateResult,
+      ] =
+        await connection.query(
+          `
+          UPDATE
+            deployment_assignments
 
-        SET
-          end_date =
-            CURDATE(),
+          SET
+            end_date =
+              CURDATE(),
 
-          end_reason = ?,
+            end_reason = ?,
 
-          end_remarks = ?,
+            end_remarks = ?,
 
-          status = ?,
+            status = ?,
 
-          ended_at =
-            NOW()
+            ended_at =
+              NOW()
 
-        WHERE
-          id = ?
+          WHERE
+            id = ?
 
-          AND
-          status = 'Active'
-        `,
-        [
-          finalReason,
-          finalRemarks,
-          status,
-          deploymentId,
-        ]
-      );
+            AND
+            status = 'Active'
+          `,
+          [
+            finalReason,
+            finalRemarks,
+            status,
+            canonicalDeploymentId,
+          ]
+        );
+
+
+      if (
+        Number(
+          deploymentUpdateResult.affectedRows ||
+          0
+        ) !== 1
+      ) {
+        throw new Error(
+          "Deployment assignment changed before the status update could be completed."
+        );
+      }
 
       /*
        * Synchronize employee lifecycle status.
        */
-      await connection.query(
-        `
-        UPDATE
-          employees
+      const [
+        employeeUpdateResult,
+      ] =
+        await connection.query(
+          `
+          UPDATE
+            employees
 
-        SET
-          status = ?,
+          SET
+            status = ?,
 
-          contractEnd =
-            CURDATE(),
+            contractEnd =
+              CURDATE(),
 
-          contractEndReason = ?,
+            contractEndReason = ?,
 
-          contractEndRemarks = ?,
+            contractEndRemarks = ?,
 
-          contractEndedAt =
-            NOW()
+            contractEndedAt =
+              NOW()
 
-        WHERE
-          id = ?
-        `,
-        [
-          employeeStatus,
-          finalReason,
-          finalRemarks,
-          employeeId,
-        ]
-      );
+          WHERE
+            id = ?
+          `,
+          [
+            employeeStatus,
+            finalReason,
+            finalRemarks,
+            employeeId,
+          ]
+        );
+
+
+      if (
+        Number(
+          employeeUpdateResult.affectedRows ||
+          0
+        ) !== 1
+      ) {
+        throw new Error(
+          "Employee lifecycle state changed before the deployment update could be completed."
+        );
+      }
 
       /*
        * Preserve lifecycle history.
@@ -2003,11 +2087,10 @@ exports.updateDeploymentStatus =
           source_event,
           changed_by_user_id
         )
-
         VALUES
         (
           ?,
-          'Deployed',
+          ?,
           ?,
           NOW(),
           ?,
@@ -2018,6 +2101,7 @@ exports.updateDeploymentStatus =
         `,
         [
           employeeId,
+          employee.status,
           employeeStatus,
           finalReason,
           finalRemarks,
@@ -2055,7 +2139,7 @@ exports.updateDeploymentStatus =
             "DEPLOYMENT_STATUS_UPDATED",
 
           description:
-            `${actor.fullName} updated deployment #${deploymentId} for ` +
+            `${actor.fullName} updated deployment #${canonicalDeploymentId} for ` +
             `${employee.name} (Employee #${employeeId}, ` +
             `${activeAssignment.company || "Unknown Company"}) from ` +
             `${activeAssignment.status} to ${status}. Employee status changed ` +
@@ -2087,14 +2171,10 @@ exports.updateDeploymentStatus =
             : "Deployment marked as completed successfully.",
 
         deploymentId:
-          Number(
-            deploymentId
-          ),
+          canonicalDeploymentId,
 
         assignmentId:
-          Number(
-            deploymentId
-          ),
+          canonicalDeploymentId,
 
         employeeId,
 
