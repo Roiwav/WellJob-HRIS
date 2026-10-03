@@ -22,6 +22,14 @@ import PageHeader from "../components/ui/PageHeader";
 import SearchInput from "../components/ui/SearchInput";
 import { useAuth } from "../context/useAuth";
 import { EMPLOYEE_API_URL } from "../utils/employees/employeeFormHelpers";
+import {
+  getAttendanceByDate,
+  getAttendanceEvidence,
+  getAttendanceHistory,
+  getAttendanceHistoryDetail,
+  getAttendancePerformance,
+  saveAttendanceRecord,
+} from "../utils/attendance/attendanceApi";
 const ATTENDANCE_STATUSES = [
   { value: "Unmarked", label: "Not Marked" },
   { value: "Present", label: "Present" },
@@ -103,6 +111,88 @@ function todayInputValue() {
   const now = new Date();
   const timezoneOffset = now.getTimezoneOffset() * 60 * 1000;
   return new Date(now.getTime() - timezoneOffset).toISOString().slice(0, 10);
+}
+
+function subtractDays(
+  isoDate,
+  days
+) {
+  const [
+    year,
+    month,
+    day,
+  ] = String(
+    isoDate ||
+      ""
+  )
+    .split("-")
+    .map(Number);
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day - days
+      )
+    );
+
+  return [
+    date.getUTCFullYear(),
+
+    String(
+      date.getUTCMonth() + 1
+    ).padStart(
+      2,
+      "0"
+    ),
+
+    String(
+      date.getUTCDate()
+    ).padStart(
+      2,
+      "0"
+    ),
+  ].join("-");
+}
+
+function performanceDateRange(
+  period
+) {
+  const to =
+    todayInputValue();
+
+  const days =
+    period === "3 Months"
+      ? 90
+      : period === "6 Months"
+        ? 180
+        : period === "Annual"
+          ? 365
+          : 30;
+
+  return {
+    from:
+      subtractDays(
+        to,
+        days - 1
+      ),
+
+    to,
+  };
+}
+
+function formatAttendanceRate(
+  value
+) {
+  const parsed =
+    Number(value);
+
+  return Number.isFinite(
+    parsed
+  )
+    ? `${parsed.toFixed(2)}%`
+    : "—";
 }
 function isNoteRecommended(status) {
   return NOTE_RECOMMENDED_STATUSES.includes(status);
@@ -286,6 +376,24 @@ export default function Attendance() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [draftReady, setDraftReady] = useState(false);
+
+  const [savedAttendance, setSavedAttendance] = useState(null);
+  const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
+  const [attendanceLoadError, setAttendanceLoadError] = useState("");
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
+
+  const [historyRecords, setHistoryRecords] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyDetail, setHistoryDetail] = useState(null);
+  const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
+
+  const [performanceData, setPerformanceData] = useState(null);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
+  const [performanceError, setPerformanceError] = useState("");
   useEffect(() => {
     setDraftReady(false);
     try {
@@ -384,6 +492,291 @@ export default function Attendance() {
       controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      !attendanceDate ||
+      employees.length === 0
+    ) {
+      return undefined;
+    }
+
+    const controller =
+      new AbortController();
+
+    async function loadSavedAttendance() {
+      try {
+        setIsAttendanceLoading(true);
+        setAttendanceLoadError("");
+        setSaveError("");
+        setSaveSuccess("");
+
+        const data =
+          await getAttendanceByDate(
+            attendanceDate,
+            {
+              signal:
+                controller.signal,
+            }
+          );
+
+        if (
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        const record =
+          data?.attendance ||
+          null;
+
+        if (record) {
+          applySavedAttendanceRecord(
+            record
+          );
+          return;
+        }
+
+        setSavedAttendance(
+          (current) => {
+            if (
+              current?.date &&
+              current.date !==
+                attendanceDate
+            ) {
+              const resetDraft = {};
+
+              employees.forEach(
+                (employee) => {
+                  const employeeId =
+                    employeeIdOf(
+                      employee
+                    );
+
+                  if (employeeId) {
+                    resetDraft[
+                      employeeId
+                    ] =
+                      "Unmarked";
+                  }
+                }
+              );
+
+              setAttendanceDraft(
+                resetDraft
+              );
+
+              setRemarks({});
+              setNoteDrafts({});
+
+              setAttendanceSource(
+                "coordinator"
+              );
+
+              setSourceLocked(false);
+
+              return null;
+            }
+
+            return current?.date ===
+              attendanceDate
+              ? null
+              : current;
+          }
+        );
+      } catch (error) {
+        if (
+          error?.name ===
+          "AbortError"
+        ) {
+          return;
+        }
+
+        console.error(
+          "Load saved Attendance error:",
+          error
+        );
+
+        setAttendanceLoadError(
+          error?.message ||
+            "Unable to load the saved Attendance record."
+        );
+      } finally {
+        if (
+          !controller.signal.aborted
+        ) {
+          setIsAttendanceLoading(
+            false
+          );
+        }
+      }
+    }
+
+    void loadSavedAttendance();
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    attendanceDate,
+    employees,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeTab !==
+      "history"
+    ) {
+      return undefined;
+    }
+
+    const controller =
+      new AbortController();
+
+    async function loadHistory() {
+      try {
+        setHistoryLoading(true);
+        setHistoryError("");
+
+        const data =
+          await getAttendanceHistory({
+            limit:
+              100,
+
+            signal:
+              controller.signal,
+          });
+
+        if (
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        setHistoryRecords(
+          Array.isArray(
+            data?.history
+          )
+            ? data.history
+            : []
+        );
+      } catch (error) {
+        if (
+          error?.name ===
+          "AbortError"
+        ) {
+          return;
+        }
+
+        console.error(
+          "Load Attendance history error:",
+          error
+        );
+
+        setHistoryError(
+          error?.message ||
+            "Unable to load Attendance history."
+        );
+      } finally {
+        if (
+          !controller.signal.aborted
+        ) {
+          setHistoryLoading(
+            false
+          );
+        }
+      }
+    }
+
+    void loadHistory();
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    activeTab,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeTab !==
+      "performance"
+    ) {
+      return undefined;
+    }
+
+    const controller =
+      new AbortController();
+
+    async function loadPerformance() {
+      try {
+        setPerformanceLoading(true);
+        setPerformanceError("");
+
+        const {
+          from,
+          to,
+        } =
+          performanceDateRange(
+            performancePeriod
+          );
+
+        const data =
+          await getAttendancePerformance({
+            from,
+            to,
+
+            signal:
+              controller.signal,
+          });
+
+        if (
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        setPerformanceData(
+          data
+        );
+      } catch (error) {
+        if (
+          error?.name ===
+          "AbortError"
+        ) {
+          return;
+        }
+
+        console.error(
+          "Load Attendance performance error:",
+          error
+        );
+
+        setPerformanceError(
+          error?.message ||
+            "Unable to load Attendance performance."
+        );
+      } finally {
+        if (
+          !controller.signal.aborted
+        ) {
+          setPerformanceLoading(
+            false
+          );
+        }
+      }
+    }
+
+    void loadPerformance();
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    activeTab,
+    performancePeriod,
+  ]);
+
   useEffect(() => {
     return () => {
       if (clientRecordPreview) {
@@ -451,7 +844,9 @@ export default function Attendance() {
   const hasActiveRosterFilter =
     Boolean(search.trim()) || positionFilter !== "All";
   const clientProofMissing =
-    attendanceSource === "client" && !clientRecordFile;
+    attendanceSource === "client" &&
+    !clientRecordFile &&
+    !savedAttendance?.hasEvidence;
   const hasRecordedStatus = useMemo(
     () =>
       Object.values(attendanceDraft).some(
@@ -465,10 +860,13 @@ export default function Attendance() {
     [remarks]
   );
   const hasUnsavedDraft =
-    sourceLocked ||
-    hasRecordedStatus ||
-    hasSavedNote ||
-    Boolean(clientRecordFile);
+    !savedAttendance &&
+    (
+      sourceLocked ||
+      hasRecordedStatus ||
+      hasSavedNote ||
+      Boolean(clientRecordFile)
+    );
   useEffect(() => {
     if (!draftReady) {
       return;
@@ -538,6 +936,13 @@ export default function Attendance() {
     ? noteDrafts[openRemarkFor] ?? remarks[openRemarkFor] ?? ""
     : "";
   const handleStatusChange = (employeeId, status) => {
+    if (
+      savedAttendance ||
+      isSaving
+    ) {
+      return;
+    }
+
     setAttendanceDraft((current) => ({
       ...current,
       [employeeId]: status,
@@ -547,6 +952,13 @@ export default function Attendance() {
     }
   };
   const handleOpenNote = (employeeId) => {
+    if (
+      savedAttendance ||
+      isSaving
+    ) {
+      return;
+    }
+
     setNoteDrafts((current) => ({
       ...current,
       [employeeId]: remarks[employeeId] || "",
@@ -589,6 +1001,13 @@ export default function Attendance() {
     setOpenRemarkFor(null);
   };
   const handleClearNote = (employeeId) => {
+    if (
+      savedAttendance ||
+      isSaving
+    ) {
+      return;
+    }
+
     setRemarks((current) => ({
       ...current,
       [employeeId]: "",
@@ -599,6 +1018,13 @@ export default function Attendance() {
     }));
   };
   const handleMarkPresent = () => {
+    if (
+      savedAttendance ||
+      isSaving
+    ) {
+      return;
+    }
+
     setAttendanceDraft((current) => {
       const next = { ...current };
       visibleEmployees.forEach((employee) => {
@@ -638,8 +1064,20 @@ export default function Attendance() {
     if (!file) {
       return;
     }
-    if (!file.type.startsWith("image/")) {
-      setClientRecordError("Please choose an image file.");
+    if (
+      ![
+        "image/png",
+        "image/jpeg",
+      ].includes(
+        String(
+          file.type ||
+          ""
+        ).toLowerCase()
+      )
+    ) {
+      setClientRecordError(
+        "Please choose a PNG or JPEG image."
+      );
       return;
     }
     if (file.size > MAX_CLIENT_RECORD_SIZE) {
@@ -696,6 +1134,368 @@ export default function Attendance() {
     }
     CLIENT_RECORD_DRAFTS.delete(draftStorageKey);
   };
+
+  function applySavedAttendanceRecord(
+    record
+  ) {
+    const nextDraft = {};
+    const nextRemarks = {};
+
+    employees.forEach(
+      (employee) => {
+        const employeeId =
+          employeeIdOf(
+            employee
+          );
+
+        if (employeeId) {
+          nextDraft[
+            employeeId
+          ] =
+            "Unmarked";
+        }
+      }
+    );
+
+    const entries =
+      Array.isArray(
+        record?.entries
+      )
+        ? record.entries
+        : [];
+
+    entries.forEach(
+      (entry) => {
+        const employeeId =
+          String(
+            entry?.employeeId ??
+              entry?.employee_id ??
+              ""
+          ).trim();
+
+        if (!employeeId) {
+          return;
+        }
+
+        nextDraft[
+          employeeId
+        ] =
+          entry?.status ||
+          "Unmarked";
+
+        nextRemarks[
+          employeeId
+        ] =
+          String(
+            entry?.note ||
+            ""
+          );
+      }
+    );
+
+    if (
+      clientRecordPreview
+    ) {
+      URL.revokeObjectURL(
+        clientRecordPreview
+      );
+    }
+
+    setAttendanceDraft(
+      nextDraft
+    );
+
+    setRemarks(
+      nextRemarks
+    );
+
+    setNoteDrafts(
+      nextRemarks
+    );
+
+    setAttendanceSource(
+      record?.source ===
+        "client"
+        ? "client"
+        : "coordinator"
+    );
+
+    setSourceLocked(true);
+
+    setClientRecordFile(null);
+    setClientRecordPreview("");
+    setClientRecordError("");
+
+    CLIENT_RECORD_DRAFTS.delete(
+      draftStorageKey
+    );
+
+    setSavedAttendance(
+      record
+    );
+  }
+
+  const handleSaveAttendance =
+    async () => {
+      if (
+        isSaving ||
+        savedAttendance
+      ) {
+        return;
+      }
+
+      setSaveError("");
+      setSaveSuccess("");
+
+      if (!attendanceDate) {
+        setSaveError(
+          "Choose an Attendance date."
+        );
+        return;
+      }
+
+      if (
+        employees.length ===
+        0
+      ) {
+        setSaveError(
+          "There are no employees available to save."
+        );
+        return;
+      }
+
+      if (
+        attendanceSource ===
+          "client" &&
+        !clientRecordFile
+      ) {
+        setSaveError(
+          "Attach the client Attendance image before saving."
+        );
+        return;
+      }
+
+      const entries =
+        employees.map(
+          (employee) => {
+            const employeeId =
+              employeeIdOf(
+                employee
+              );
+
+            return {
+              employeeId:
+                Number(
+                  employeeId
+                ),
+
+              status:
+                attendanceDraft[
+                  employeeId
+                ] ||
+                "Unmarked",
+
+              note:
+                String(
+                  remarks[
+                    employeeId
+                  ] ||
+                  ""
+                ).trim(),
+            };
+          }
+        );
+
+      if (
+        entries.some(
+          (entry) =>
+            !Number.isSafeInteger(
+              entry.employeeId
+            ) ||
+            entry.employeeId <= 0
+        )
+      ) {
+        setSaveError(
+          "One or more employees have an invalid employee ID."
+        );
+        return;
+      }
+
+      try {
+        setIsSaving(true);
+
+        await saveAttendanceRecord({
+          attendanceDate,
+
+          source:
+            attendanceSource,
+
+          entries,
+
+          evidenceFile:
+            attendanceSource ===
+              "client"
+              ? clientRecordFile
+              : null,
+        });
+
+        const refreshed =
+          await getAttendanceByDate(
+            attendanceDate
+          );
+
+        const record =
+          refreshed?.attendance ||
+          null;
+
+        if (record) {
+          applySavedAttendanceRecord(
+            record
+          );
+        }
+
+        try {
+          window.sessionStorage.removeItem(
+            draftStorageKey
+          );
+
+          window.localStorage.removeItem(
+            draftStorageKey
+          );
+        } catch (error) {
+          console.error(
+            "Clear saved Attendance draft error:",
+            error
+          );
+        }
+
+        CLIENT_RECORD_DRAFTS.delete(
+          draftStorageKey
+        );
+
+        setSaveSuccess(
+          "Attendance saved successfully."
+        );
+      } catch (error) {
+        console.error(
+          "Save Attendance error:",
+          error
+        );
+
+        setSaveError(
+          error?.message ||
+            "Unable to save Attendance."
+        );
+      } finally {
+        setIsSaving(
+          false
+        );
+      }
+    };
+
+  const handleHistoryDetail =
+    async (
+      recordId
+    ) => {
+      if (
+        historyDetail?.id ===
+        recordId
+      ) {
+        setHistoryDetail(null);
+        return;
+      }
+
+      try {
+        setHistoryDetailLoading(
+          true
+        );
+
+        setHistoryError("");
+
+        const data =
+          await getAttendanceHistoryDetail(
+            recordId
+          );
+
+        setHistoryDetail(
+          data?.attendance ||
+          null
+        );
+      } catch (error) {
+        console.error(
+          "Load Attendance history detail error:",
+          error
+        );
+
+        setHistoryError(
+          error?.message ||
+            "Unable to load Attendance details."
+        );
+      } finally {
+        setHistoryDetailLoading(
+          false
+        );
+      }
+    };
+
+  const handleViewEvidence =
+    async (
+      recordId
+    ) => {
+      try {
+        setHistoryError("");
+
+        const data =
+          await getAttendanceEvidence(
+            recordId
+          );
+
+        const signedUrl =
+          String(
+            data?.evidence
+              ?.signedUrl ||
+            ""
+          ).trim();
+
+        if (!signedUrl) {
+          throw new Error(
+            "The server did not return an Attendance evidence link."
+          );
+        }
+
+        const link =
+          document.createElement(
+            "a"
+          );
+
+        link.href =
+          signedUrl;
+
+        link.target =
+          "_blank";
+
+        link.rel =
+          "noopener noreferrer";
+
+        document.body.appendChild(
+          link
+        );
+
+        link.click();
+        link.remove();
+      } catch (error) {
+        console.error(
+          "View Attendance evidence error:",
+          error
+        );
+
+        setHistoryError(
+          error?.message ||
+            "Unable to open Attendance evidence."
+        );
+      }
+    };
+
   return (
     <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
@@ -730,6 +1530,8 @@ export default function Attendance() {
                   id="attendance-date"
                   type="date"
                   value={attendanceDate}
+                  max={todayInputValue()}
+                  disabled={isSaving}
                   onChange={(event) => setAttendanceDate(event.target.value)}
                   className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
@@ -753,7 +1555,11 @@ export default function Attendance() {
                   <select
                     id="attendance-source"
                     value={attendanceSource}
-                    disabled={sourceLocked}
+                    disabled={
+                      sourceLocked ||
+                      isSaving ||
+                      Boolean(savedAttendance)
+                    }
                     onChange={handleAttendanceSourceChange}
                     className="min-h-11 w-full appearance-none rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:disabled:bg-slate-800 dark:disabled:text-slate-400"
                   >
@@ -792,13 +1598,13 @@ export default function Attendance() {
                     </p>
                   </div>
                 </div>
-                {!clientRecordFile && (
+                {!clientRecordFile && !savedAttendance && (
                   <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-indigo-500">
                     <FiUploadCloud aria-hidden="true" />
                     Choose Image
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/png,image/jpeg"
                       className="sr-only"
                       onChange={handleClientRecordChange}
                     />
@@ -858,7 +1664,7 @@ export default function Attendance() {
                 onClick={() => setActiveTab("performance")}
               />
             </div>
-            {sourceLocked && (
+            {sourceLocked && !savedAttendance && (
               <button
                 type="button"
                 onClick={handleStartOver}
@@ -919,6 +1725,9 @@ export default function Attendance() {
                   onClick={handleMarkPresent}
                   disabled={
                     isLoading ||
+                    isAttendanceLoading ||
+                    isSaving ||
+                    Boolean(savedAttendance) ||
                     visibleEmployees.length === 0
                   }
                   leftIcon={<FiCheckCircle aria-hidden="true" />}
@@ -969,7 +1778,8 @@ export default function Attendance() {
                 <span>{attendanceDate}</span>
                 <span aria-hidden="true">•</span>
                 <span>{sourceDetails.label}</span>
-                {attendanceSource === "client" && clientRecordFile && (
+                {attendanceSource === "client" &&
+                  (clientRecordFile || savedAttendance?.hasEvidence) && (
                   <>
                     <span aria-hidden="true">•</span>
                     <span>Client record attached</span>
@@ -1051,6 +1861,10 @@ export default function Attendance() {
                               <div className="relative max-w-[180px]">
                                 <select
                                   value={status}
+                                                                    disabled={
+                                                                      Boolean(savedAttendance) ||
+                                                                      isSaving
+                                                                    }
                                                                     onChange={(event) =>
                                     handleStatusChange(
                                       employeeId,
@@ -1137,7 +1951,56 @@ export default function Attendance() {
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Your unfinished entries stay while you move around WELLJOB. Reloading or leaving the site will discard them.
                   </p>
-                  <Button disabled>Save Attendance</Button>
+                  <div className="flex min-w-0 flex-col items-end gap-2">
+                    {attendanceLoadError && (
+                      <p className="max-w-md text-right text-sm font-semibold text-red-600 dark:text-red-300">
+                        {attendanceLoadError}
+                      </p>
+                    )}
+
+                    {saveError && (
+                      <p className="max-w-md text-right text-sm font-semibold text-red-600 dark:text-red-300">
+                        {saveError}
+                      </p>
+                    )}
+
+                    {saveSuccess && (
+                      <p className="max-w-md text-right text-sm font-semibold text-emerald-600 dark:text-emerald-300">
+                        {saveSuccess}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {savedAttendance?.hasEvidence && (
+                        <Button
+                          type="button"
+                          onClick={() => handleViewEvidence(savedAttendance.id)}
+                          leftIcon={<FiImage aria-hidden="true" />}
+                        >
+                          View Evidence
+                        </Button>
+                      )}
+
+                      <Button
+                        type="button"
+                        onClick={handleSaveAttendance}
+                        disabled={
+                          isLoading ||
+                          isAttendanceLoading ||
+                          isSaving ||
+                          Boolean(savedAttendance) ||
+                          employees.length === 0 ||
+                          clientProofMissing
+                        }
+                      >
+                        {isSaving
+                          ? "Saving..."
+                          : savedAttendance
+                            ? "Attendance Saved"
+                            : "Save Attendance"}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1145,39 +2008,204 @@ export default function Attendance() {
         </>
       )}
       {activeTab === "history" && (
-        <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-white/10 dark:bg-slate-900">
-          <div className="mx-auto max-w-2xl text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
-              <FiFileText className="text-2xl" aria-hidden="true" />
-            </div>
-            <h2 className="mt-4 text-xl font-black text-slate-900 dark:text-white">
-              History
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-5 py-5 dark:border-white/10 sm:px-6">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">
+              Attendance History
             </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Saved records will show the date, source, employee statuses, notes,
-              and any client record attached.
+
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Saved Attendance records for {assignedCompany}.
             </p>
           </div>
+
+          {historyError && (
+            <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300 sm:px-6">
+              {historyError}
+            </div>
+          )}
+
+          {historyLoading ? (
+            <div className="p-10 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+              Loading Attendance history...
+            </div>
+          ) : historyRecords.length === 0 ? (
+            <div className="p-10 text-center">
+              <FiFileText
+                className="mx-auto text-3xl text-slate-400"
+                aria-hidden="true"
+              />
+
+              <p className="mt-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                No saved Attendance records yet.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-200 dark:divide-white/10">
+              {historyRecords.map((record) => (
+                <div
+                  key={record.id}
+                  className="px-5 py-5 sm:px-6"
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-black text-slate-900 dark:text-white">
+                          {record.date}
+                        </p>
+
+                        <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+                          {record.source === "client"
+                            ? "Client-Provided Record"
+                            : "Coordinator Monitoring"}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        <span>
+                          Present: {record.summary?.present ?? 0}
+                        </span>
+
+                        <span>
+                          Late: {record.summary?.late ?? 0}
+                        </span>
+
+                        <span>
+                          Absent: {record.summary?.absent ?? 0}
+                        </span>
+
+                        <span>
+                          On Leave: {record.summary?.onLeave ?? 0}
+                        </span>
+
+                        <span>
+                          Rest Day: {record.summary?.restDay ?? 0}
+                        </span>
+
+                        <span>
+                          Not Marked: {record.summary?.unmarked ?? 0}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {record.hasEvidence && (
+                        <Button
+                          type="button"
+                          onClick={() => handleViewEvidence(record.id)}
+                          leftIcon={<FiImage aria-hidden="true" />}
+                        >
+                          View Evidence
+                        </Button>
+                      )}
+
+                      <Button
+                        type="button"
+                        disabled={historyDetailLoading}
+                        onClick={() => handleHistoryDetail(record.id)}
+                        leftIcon={<FiFileText aria-hidden="true" />}
+                      >
+                        {historyDetail?.id === record.id
+                          ? "Hide Details"
+                          : "View Details"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {historyDetail?.id === record.id && (
+                    <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-200 text-left text-sm dark:divide-white/10">
+                          <thead className="bg-slate-50 dark:bg-slate-950">
+                            <tr>
+                              <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                                Employee
+                              </th>
+
+                              <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                                Position
+                              </th>
+
+                              <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                                Status
+                              </th>
+
+                              <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                                Note
+                              </th>
+                            </tr>
+                          </thead>
+
+                          <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                            {(historyDetail.entries || []).map((entry) => (
+                              <tr
+                                key={
+                                  entry.id ||
+                                  entry.employeeId
+                                }
+                              >
+                                <td className="px-4 py-3">
+                                  <p className="font-bold text-slate-900 dark:text-white">
+                                    {entry.employeeName}
+                                  </p>
+
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    Employee {entry.employeeId}
+                                  </p>
+                                </td>
+
+                                <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                                  {entry.position}
+                                </td>
+
+                                <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">
+                                  {entry.status === "Unmarked"
+                                    ? "Not Marked"
+                                    : entry.status}
+                                </td>
+
+                                <td className="max-w-[320px] px-4 py-3 text-slate-600 dark:text-slate-300">
+                                  {entry.note || "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
       {activeTab === "performance" && (
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900">
-          <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+          <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 dark:border-white/10 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="text-xl font-black text-slate-900 dark:text-white">
                 Attendance Performance
               </h2>
+
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Review attendance reliability over time.
+                Review persisted Attendance reliability for the assigned workforce.
               </p>
             </div>
+
             <div className="flex flex-wrap gap-2">
-              {["1 Month", "3 Months", "6 Months", "Annual"].map((period) => (
+              {[
+                "1 Month",
+                "3 Months",
+                "6 Months",
+                "Annual",
+              ].map((period) => (
                 <button
                   key={period}
                   type="button"
+                  disabled={performanceLoading}
                   onClick={() => setPerformancePeriod(period)}
-                  className={`rounded-xl px-3.5 py-2 text-sm font-bold transition ${
+                  className={`rounded-xl px-3.5 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                     performancePeriod === period
                       ? "bg-indigo-600 text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
@@ -1188,19 +2216,160 @@ export default function Attendance() {
               ))}
             </div>
           </div>
-          <div className="py-12 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
-              <FiBarChart2 className="text-2xl" aria-hidden="true" />
+
+          {performanceError && (
+            <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300 sm:px-6">
+              {performanceError}
             </div>
-            <h3 className="mt-4 text-lg font-black text-slate-900 dark:text-white">
-              {performancePeriod} summary
-            </h3>
-            <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Present, late, absent, leave counts, attendance rate, and
-              attendance reliability will appear here once attendance records
-              are saved.
-            </p>
-          </div>
+          )}
+
+          {performanceLoading ? (
+            <div className="p-10 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+              Loading Attendance performance...
+            </div>
+          ) : !performanceData ? (
+            <div className="p-10 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+              No Attendance performance data is available.
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-3 border-b border-slate-200 p-5 dark:border-white/10 sm:grid-cols-2 sm:p-6 lg:grid-cols-5">
+                <SummaryCard
+                  label="Attendance Rate"
+                  value={formatAttendanceRate(
+                    performanceData.summary?.attendanceRate
+                  )}
+                  icon={<FiBarChart2 aria-hidden="true" />}
+                />
+
+                <SummaryCard
+                  label="Present"
+                  value={performanceData.summary?.present ?? 0}
+                  tone="emerald"
+                  icon={<FiCheckCircle aria-hidden="true" />}
+                />
+
+                <SummaryCard
+                  label="Late"
+                  value={performanceData.summary?.late ?? 0}
+                  tone="amber"
+                  icon={<FiCalendar aria-hidden="true" />}
+                />
+
+                <SummaryCard
+                  label="Absent"
+                  value={performanceData.summary?.absent ?? 0}
+                  tone="red"
+                  icon={<FiCalendar aria-hidden="true" />}
+                />
+
+                <SummaryCard
+                  label="On Leave"
+                  value={performanceData.summary?.onLeave ?? 0}
+                  tone="blue"
+                  icon={<FiFileText aria-hidden="true" />}
+                />
+              </div>
+
+              <div className="px-5 py-4 sm:px-6">
+                <p className="text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400">
+                  Period: {performanceData.from} to {performanceData.to}. Attendance Rate = (Present + Late) ÷ (Present + Late + Absent). On Leave, Rest Day, and Not Marked are excluded from the denominator.
+                </p>
+              </div>
+
+              {(performanceData.employees || []).length === 0 ? (
+                <div className="border-t border-slate-200 p-10 text-center text-sm font-semibold text-slate-500 dark:border-white/10 dark:text-slate-400">
+                  No saved Attendance entries exist for this period.
+                </div>
+              ) : (
+                <div className="overflow-x-auto border-t border-slate-200 dark:border-white/10">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm dark:divide-white/10">
+                    <thead className="bg-slate-50 dark:bg-slate-950">
+                      <tr>
+                        <th className="px-5 py-3 font-bold text-slate-600 dark:text-slate-300 sm:px-6">
+                          Employee
+                        </th>
+
+                        <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                          Present
+                        </th>
+
+                        <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                          Late
+                        </th>
+
+                        <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                          Absent
+                        </th>
+
+                        <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                          Leave
+                        </th>
+
+                        <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                          Rest Day
+                        </th>
+
+                        <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">
+                          Not Marked
+                        </th>
+
+                        <th className="px-5 py-3 text-right font-bold text-slate-600 dark:text-slate-300 sm:px-6">
+                          Rate
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                      {(performanceData.employees || []).map((employee) => (
+                        <tr key={employee.employeeId}>
+                          <td className="px-5 py-4 sm:px-6">
+                            <p className="font-bold text-slate-900 dark:text-white">
+                              {employee.employeeName}
+                            </p>
+
+                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                              {employee.position}
+                            </p>
+                          </td>
+
+                          <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
+                            {employee.present}
+                          </td>
+
+                          <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
+                            {employee.late}
+                          </td>
+
+                          <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
+                            {employee.absent}
+                          </td>
+
+                          <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
+                            {employee.onLeave}
+                          </td>
+
+                          <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
+                            {employee.restDay}
+                          </td>
+
+                          <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
+                            {employee.unmarked}
+                          </td>
+
+                          <td className="px-5 py-4 text-right font-black text-indigo-700 dark:text-indigo-300 sm:px-6">
+                            {formatAttendanceRate(
+                              employee.attendanceRate
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
         </section>
       )}
       <NoteModal
