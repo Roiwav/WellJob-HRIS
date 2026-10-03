@@ -10,7 +10,6 @@ const {
   resendAccountCredentials,
   updateAssignedCompany,
   updateRecoveryEmail,
-  resetPassword,
   toggleStatus,
   changePassword,
 } = require("../controllers/userController");
@@ -135,21 +134,6 @@ router.put(
     "SUPER_ADMIN"
   ),
   updateAssignedCompany
-);
-
-/*
- * ==================================================
- * RESET USER PASSWORD
- * ==================================================
- */
-router.put(
-  "/users/reset/:id",
-  verifyToken,
-  authorizeRoles(
-    "SUPER_ADMIN",
-    "IT_SUPPORT"
-  ),
-  resetPassword
 );
 
 /*

@@ -6,7 +6,6 @@ const db = require("../config/db");
 const { sendRecoveryLink } = require("../utils/recoveryMailer");
 const { logAudit } = require("../utils/auditLogger");
 
-const GENERIC_RESPONSE = "If this email is eligible for recovery, you will receive a password-reset link shortly.";
 const INVALID_LINK = "This link is invalid or has expired. Request a new link.";
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
 
@@ -95,50 +94,6 @@ async function verifyEmail(req, res) {
   }
 }
 
-async function requestPasswordReset(req, res) {
-  const email = normalizeRecoveryEmail(req.body?.email);
-  const generic = () => res.json({ message: GENERIC_RESPONSE });
-  if (!email) return generic();
-  try {
-    const [rows] = await db.promise().query(
-      `SELECT id, email FROM users WHERE email = ? AND email_verified_at IS NOT NULL
-         AND status = 'Active' LIMIT 1`,
-      [email]
-    );
-    const account = rows[0];
-    if (!account) return generic();
-    const token = newToken();
-    const hash = hashToken(token);
-    const [result] = await db.promise().query(
-      `UPDATE users SET password_reset_token_hash = ?,
-          password_reset_expires_at = DATE_ADD(NOW(), INTERVAL 30 MINUTE),
-          password_reset_requested_at = NOW()
-       WHERE id = ? AND email = ? AND email_verified_at IS NOT NULL
-         AND status = 'Active' AND
-         (password_reset_requested_at IS NULL OR
-          password_reset_requested_at < DATE_SUB(NOW(), INTERVAL 60 SECOND))`,
-      [hash, account.id, account.email]
-    );
-    if (result.affectedRows !== 1) return generic();
-    try {
-      await sendRecoveryLink({ to: account.email, token, type: "reset" });
-    } catch (error) {
-      console.error("PASSWORD RESET EMAIL ERROR:", error?.code || "delivery failed");
-      await db.promise().query(
-        `UPDATE users SET password_reset_token_hash = NULL,
-          password_reset_expires_at = NULL, password_reset_requested_at = NULL
-         WHERE id = ? AND password_reset_token_hash = ?`,
-        [account.id, hash]
-      );
-    }
-    return generic();
-  } catch (error) {
-    console.error("REQUEST PASSWORD RESET ERROR:", error?.code || "request failed");
-    /* Identical external response for eligible/ineligible addresses. */
-    return generic();
-  }
-}
-
 async function resetPasswordWithToken(req, res) {
   const token = req.body?.token;
   const newPassword = req.body?.newPassword;
@@ -188,5 +143,5 @@ async function resetPasswordWithToken(req, res) {
 
 module.exports = {
   normalizeRecoveryEmail, isStrongPassword, newToken, hashToken,
-  requestEmailVerification, verifyEmail, requestPasswordReset, resetPasswordWithToken,
+  requestEmailVerification, verifyEmail, resetPasswordWithToken,
 };

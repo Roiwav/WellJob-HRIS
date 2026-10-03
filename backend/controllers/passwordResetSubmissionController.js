@@ -8,11 +8,12 @@ const {
  * WELLJOB HRIS
  * Forgot Password - Pending Request Submission
  *
- * This controller is STAGED ONLY.
+ * This controller is the ACTIVE public Forgot Password
+ * request-entry point.
  *
- * Do not mount this controller on the public
- * forgot-password route until the reviewer UI
- * and approval workflow have been validated.
+ * It creates only a pending review request. Reset-token
+ * generation and email delivery remain exclusively in
+ * the authorized approval workflow.
  *
  * This controller:
  * - accepts email, username, and fullName;
