@@ -112,14 +112,17 @@ if (
  * CONNECTION POOL LIMIT
  * ==================================================
  *
- * Render/local keeps the historical default of 10.
+ * Persistent/local runtimes retain the historical
+ * default of 10 connections.
  *
- * Vercel will later receive an explicit lower
- * DB_CONNECTION_LIMIT environment value so multiple
- * Fluid Compute instances do not each reserve an
- * unnecessarily large MySQL pool.
+ * Vercel receives a conservative default of 4 because
+ * every warm serverless instance owns its own mysql2
+ * pool. This prevents several concurrent instances
+ * from unnecessarily competing for Aiven's finite
+ * MySQL connection capacity.
  *
- * No deployment-specific value is hard-coded here.
+ * DB_CONNECTION_LIMIT remains the authoritative
+ * override for every environment.
  */
 
 function getConnectionLimit() {
@@ -132,7 +135,16 @@ function getConnectionLimit() {
 
 
   if (!rawValue) {
-    return 10;
+    const isVercel =
+      String(
+        process.env.VERCEL ??
+        ""
+      ).trim() ===
+      "1";
+
+    return isVercel
+      ? 4
+      : 10;
   }
 
 
