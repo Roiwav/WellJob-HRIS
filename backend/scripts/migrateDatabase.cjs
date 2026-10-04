@@ -608,6 +608,29 @@ const MIGRATIONS = [
       );
     },
   },
+
+  /*
+   * ==================================================
+   * MESSENGER SCHEMA - MIGRATION #15
+   * ==================================================
+   *
+   * Existing installations may adopt this migration
+   * only if their complete Messenger schema matches
+   * the required production contract.
+   */
+  {
+    name:
+      "add_chat_messenger_schema.sql",
+
+    isApplied:
+      chatMessengerSchemaIsApplied,
+
+    canAdopt:
+      chatMessengerSchemaIsApplied,
+
+    verifyApplied:
+      chatMessengerSchemaIsApplied,
+  },
 ];
 
 function requiredEnv(
@@ -1031,6 +1054,614 @@ async function recordMigration(
     ]
   );
 }
+
+/*
+ * ================================================================
+ * MESSENGER SCHEMA END-STATE VERIFICATION
+ * ================================================================
+ */
+async function chatMessengerSchemaIsApplied(
+  connection
+) {
+  const requiredTables = [
+    "chat_conversations",
+    "chat_messages",
+    "chat_groups",
+    "chat_group_members",
+    "chat_group_messages",
+    "chat_group_audit",
+    "chat_attachments",
+  ];
+
+
+  const [
+    tableRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        TABLE_NAME AS table_name
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE
+        TABLE_SCHEMA = DATABASE()
+        AND TABLE_TYPE = 'BASE TABLE'
+        AND TABLE_NAME IN (
+          ?, ?, ?, ?, ?, ?, ?
+        )
+      `,
+      requiredTables
+    );
+
+
+  const existingTables =
+    new Set(
+      tableRows.map(
+        (row) =>
+          String(
+            row.table_name ||
+            row.TABLE_NAME ||
+            ""
+          )
+      )
+    );
+
+
+  if (
+    requiredTables.some(
+      (tableName) =>
+        !existingTables.has(
+          tableName
+        )
+    )
+  ) {
+    return false;
+  }
+
+
+  const requiredColumns = [
+    ["chat_conversations", "user1_id"],
+    ["chat_conversations", "user2_id"],
+
+    ["chat_messages", "conversation_id"],
+    ["chat_messages", "sender_id"],
+    ["chat_messages", "body"],
+    ["chat_messages", "read_at"],
+
+    ["chat_groups", "name"],
+    ["chat_groups", "created_by"],
+
+    ["chat_group_members", "group_id"],
+    ["chat_group_members", "user_id"],
+    ["chat_group_members", "is_admin"],
+    ["chat_group_members", "joined_after_message_id"],
+    ["chat_group_members", "last_read_message_id"],
+
+    ["chat_group_messages", "group_id"],
+    ["chat_group_messages", "sender_id"],
+    ["chat_group_messages", "body"],
+    ["chat_group_messages", "system_action"],
+
+    ["chat_group_audit", "group_id"],
+    ["chat_group_audit", "actor_id"],
+    ["chat_group_audit", "target_user_id"],
+    ["chat_group_audit", "action"],
+
+    ["chat_attachments", "conversation_type"],
+    ["chat_attachments", "message_id"],
+    ["chat_attachments", "storage_name"],
+    ["chat_attachments", "original_name"],
+    ["chat_attachments", "byte_size"],
+  ];
+
+
+  const [
+    columnRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        TABLE_NAME AS table_name,
+        COLUMN_NAME AS column_name
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE
+        TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME IN (
+          ?, ?, ?, ?, ?, ?, ?
+        )
+      `,
+      requiredTables
+    );
+
+
+  const columnSet =
+    new Set(
+      columnRows.map(
+        (row) =>
+          `${String(
+            row.table_name ||
+            row.TABLE_NAME ||
+            ""
+          )}.${String(
+            row.column_name ||
+            row.COLUMN_NAME ||
+            ""
+          )}`
+      )
+    );
+
+
+  if (
+    requiredColumns.some(
+      ([
+        tableName,
+        columnName,
+      ]) =>
+        !columnSet.has(
+          `${tableName}.${columnName}`
+        )
+    )
+  ) {
+    return false;
+  }
+
+
+  const [
+    indexRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        TABLE_NAME AS table_name,
+        INDEX_NAME AS index_name,
+        NON_UNIQUE AS non_unique,
+        COLUMN_NAME AS column_name,
+        SEQ_IN_INDEX AS seq_in_index
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE
+        TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME IN (
+          ?, ?, ?, ?, ?, ?, ?
+        )
+      ORDER BY
+        TABLE_NAME,
+        INDEX_NAME,
+        SEQ_IN_INDEX
+      `,
+      requiredTables
+    );
+
+
+  function getIndex(
+    tableName,
+    indexName
+  ) {
+    return indexRows
+      .filter(
+        (row) =>
+          String(
+            row.table_name ||
+            row.TABLE_NAME ||
+            ""
+          ) ===
+            tableName &&
+          String(
+            row.index_name ||
+            row.INDEX_NAME ||
+            ""
+          ) ===
+            indexName
+      )
+      .sort(
+        (
+          left,
+          right
+        ) =>
+          Number(
+            left.seq_in_index ||
+            left.SEQ_IN_INDEX ||
+            0
+          ) -
+          Number(
+            right.seq_in_index ||
+            right.SEQ_IN_INDEX ||
+            0
+          )
+      );
+  }
+
+
+  function indexMatches({
+    tableName,
+    indexName,
+    columns,
+    unique = false,
+  }) {
+    const rows =
+      getIndex(
+        tableName,
+        indexName
+      );
+
+
+    if (
+      rows.length !==
+      columns.length
+    ) {
+      return false;
+    }
+
+
+    const expectedNonUnique =
+      unique
+        ? 0
+        : 1;
+
+
+    return rows.every(
+      (
+        row,
+        index
+      ) =>
+        String(
+          row.column_name ||
+          row.COLUMN_NAME ||
+          ""
+        ) ===
+          columns[index] &&
+        Number(
+          row.non_unique ??
+          row.NON_UNIQUE
+        ) ===
+          expectedNonUnique
+    );
+  }
+
+
+  const indexesValid =
+    [
+      indexMatches({
+        tableName:
+          "chat_conversations",
+
+        indexName:
+          "uq_chat_pair",
+
+        columns: [
+          "user1_id",
+          "user2_id",
+        ],
+
+        unique:
+          true,
+      }),
+
+      indexMatches({
+        tableName:
+          "chat_messages",
+
+        indexName:
+          "idx_chat_messages_history",
+
+        columns: [
+          "conversation_id",
+          "id",
+        ],
+      }),
+
+      indexMatches({
+        tableName:
+          "chat_messages",
+
+        indexName:
+          "idx_chat_messages_unread",
+
+        columns: [
+          "conversation_id",
+          "read_at",
+          "sender_id",
+        ],
+      }),
+
+      indexMatches({
+        tableName:
+          "chat_groups",
+
+        indexName:
+          "idx_chat_group_updated",
+
+        columns: [
+          "updated_at",
+        ],
+      }),
+
+      indexMatches({
+        tableName:
+          "chat_group_members",
+
+        indexName:
+          "PRIMARY",
+
+        columns: [
+          "group_id",
+          "user_id",
+        ],
+
+        unique:
+          true,
+      }),
+
+      indexMatches({
+        tableName:
+          "chat_group_members",
+
+        indexName:
+          "idx_chat_group_member_user",
+
+        columns: [
+          "user_id",
+        ],
+      }),
+
+      indexMatches({
+        tableName:
+          "chat_group_messages",
+
+        indexName:
+          "idx_chat_group_messages_history",
+
+        columns: [
+          "group_id",
+          "id",
+        ],
+      }),
+
+      indexMatches({
+        tableName:
+          "chat_group_audit",
+
+        indexName:
+          "idx_chat_group_audit_group",
+
+        columns: [
+          "group_id",
+          "created_at",
+        ],
+      }),
+
+      indexMatches({
+        tableName:
+          "chat_attachments",
+
+        indexName:
+          "uq_chat_attachment_storage",
+
+        columns: [
+          "storage_name",
+        ],
+
+        unique:
+          true,
+      }),
+
+      indexMatches({
+        tableName:
+          "chat_attachments",
+
+        indexName:
+          "idx_chat_attachment_message",
+
+        columns: [
+          "conversation_type",
+          "message_id",
+        ],
+      }),
+    ]
+      .every(
+        Boolean
+      );
+
+
+  if (
+    !indexesValid
+  ) {
+    return false;
+  }
+
+
+  const [
+    foreignKeyRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        kcu.TABLE_NAME AS table_name,
+        kcu.CONSTRAINT_NAME AS constraint_name,
+        kcu.COLUMN_NAME AS column_name,
+        kcu.REFERENCED_TABLE_NAME AS referenced_table,
+        kcu.REFERENCED_COLUMN_NAME AS referenced_column,
+        rc.UPDATE_RULE AS update_rule,
+        rc.DELETE_RULE AS delete_rule
+
+      FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS kcu
+
+      INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS AS rc
+        ON rc.CONSTRAINT_SCHEMA =
+           kcu.CONSTRAINT_SCHEMA
+
+        AND rc.TABLE_NAME =
+            kcu.TABLE_NAME
+
+        AND rc.CONSTRAINT_NAME =
+            kcu.CONSTRAINT_NAME
+
+      WHERE
+        kcu.TABLE_SCHEMA =
+          DATABASE()
+
+        AND kcu.CONSTRAINT_NAME IN (
+          'fk_chat_messages_conversation',
+          'fk_chat_group_members_group',
+          'fk_chat_group_messages_group',
+          'fk_chat_group_audit_group'
+        )
+      `
+    );
+
+
+  const foreignKeyMap =
+    new Map(
+      foreignKeyRows.map(
+        (row) => [
+          String(
+            row.constraint_name ||
+            row.CONSTRAINT_NAME ||
+            ""
+          ),
+          row,
+        ]
+      )
+    );
+
+
+  const expectedForeignKeys = [
+    {
+      name:
+        "fk_chat_messages_conversation",
+
+      table:
+        "chat_messages",
+
+      column:
+        "conversation_id",
+
+      referencedTable:
+        "chat_conversations",
+
+      referencedColumn:
+        "id",
+    },
+
+    {
+      name:
+        "fk_chat_group_members_group",
+
+      table:
+        "chat_group_members",
+
+      column:
+        "group_id",
+
+      referencedTable:
+        "chat_groups",
+
+      referencedColumn:
+        "id",
+    },
+
+    {
+      name:
+        "fk_chat_group_messages_group",
+
+      table:
+        "chat_group_messages",
+
+      column:
+        "group_id",
+
+      referencedTable:
+        "chat_groups",
+
+      referencedColumn:
+        "id",
+    },
+
+    {
+      name:
+        "fk_chat_group_audit_group",
+
+      table:
+        "chat_group_audit",
+
+      column:
+        "group_id",
+
+      referencedTable:
+        "chat_groups",
+
+      referencedColumn:
+        "id",
+    },
+  ];
+
+
+  for (
+    const expected of
+    expectedForeignKeys
+  ) {
+    const actual =
+      foreignKeyMap.get(
+        expected.name
+      );
+
+
+    if (
+      !actual
+    ) {
+      return false;
+    }
+
+
+    if (
+      String(
+        actual.table_name ||
+        actual.TABLE_NAME ||
+        ""
+      ) !==
+        expected.table ||
+
+      String(
+        actual.column_name ||
+        actual.COLUMN_NAME ||
+        ""
+      ) !==
+        expected.column ||
+
+      String(
+        actual.referenced_table ||
+        actual.REFERENCED_TABLE_NAME ||
+        ""
+      ) !==
+        expected.referencedTable ||
+
+      String(
+        actual.referenced_column ||
+        actual.REFERENCED_COLUMN_NAME ||
+        ""
+      ) !==
+        expected.referencedColumn ||
+
+      String(
+        actual.update_rule ||
+        actual.UPDATE_RULE ||
+        ""
+      ).toUpperCase() !==
+        "RESTRICT" ||
+
+      String(
+        actual.delete_rule ||
+        actual.DELETE_RULE ||
+        ""
+      ).toUpperCase() !==
+        "CASCADE"
+    ) {
+      return false;
+    }
+  }
+
+
+  return true;
+}
+
 
 async function tableExists(
   connection,

@@ -51,6 +51,13 @@ const REQUIRED_APPLICATION_TABLES = [
   "attendance_batches",
   "attendance_entries",
   "attendance_evidence",
+  "chat_conversations",
+  "chat_messages",
+  "chat_groups",
+  "chat_group_members",
+  "chat_group_messages",
+  "chat_group_audit",
+  "chat_attachments",
 ];
 
 const REQUIRED_SYSTEM_TABLES = [
@@ -72,6 +79,7 @@ const EXPECTED_MIGRATIONS = [
   "add_password_reset_approval_requests.sql",
   "add_account_credentials_delivery_status.sql",
   "add_attendance_tracking.sql",
+  "add_chat_messenger_schema.sql",
 ];
 
 function requiredEnv(
