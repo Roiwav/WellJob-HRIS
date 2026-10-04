@@ -176,6 +176,16 @@ const compression =
   require("compression");
 
 
+const {
+  configureProductionProxy,
+  productionSecurityHeaders,
+  apiRateLimiter,
+} =
+  require(
+    "./middleware/productionHardening"
+  );
+
+
 /*
  * Initialize the existing MySQL pool.
  *
@@ -275,6 +285,37 @@ const app =
 
 /*
  * ==================================================
+ * PRODUCTION SECURITY BASELINE
+ * ==================================================
+ */
+
+/*
+ * Do not disclose the Express framework in responses.
+ */
+app.disable(
+  "x-powered-by"
+);
+
+
+/*
+ * Vercel proxy trust is enabled only when VERCEL=1.
+ */
+configureProductionProxy(
+  app
+);
+
+
+/*
+ * Apply non-sensitive browser/cache security headers to every
+ * backend response before CORS, routes or error handlers run.
+ */
+app.use(
+  productionSecurityHeaders
+);
+
+
+/*
+ * ==================================================
  * CORS
  * ==================================================
  */
@@ -350,6 +391,21 @@ app.use(
     limit:
       JSON_BODY_LIMIT,
   })
+);
+
+
+/*
+ * ==================================================
+ * API ABUSE PROTECTION
+ * ==================================================
+ *
+ * This generous ceiling protects the API from gross automated
+ * abuse without interfering with normal Messenger polling.
+ */
+
+app.use(
+  "/api",
+  apiRateLimiter
 );
 
 

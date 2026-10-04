@@ -8,7 +8,7 @@
     "dev": "nodemon server.js",
     "db:migrate": "node scripts/migrateDatabase.cjs",
     "db:setup": "node scripts/setupDatabase.cjs",
-    "test": "node --test test/violationPolicyService.test.js test/companyDeactivationProtection.test.js test/attendanceRouteIsolation.test.js test/maintenanceAuditProtection.test.js test/databaseIntegrity.test.js"
+    "test": "node --test test/violationPolicyService.test.js test/companyDeactivationProtection.test.js test/attendanceRouteIsolation.test.js test/maintenanceAuditProtection.test.js test/databaseIntegrity.test.js test/productionHardening.test.js"
   },
   "keywords": [],
   "author": "",
