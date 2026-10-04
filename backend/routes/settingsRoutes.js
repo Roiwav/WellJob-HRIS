@@ -258,114 +258,272 @@ router.post(
   verifyToken,
   authorizeRoles("IT_SUPPORT"),
   async (req, res) => {
-    const { status } = req.body || {};
+    const { status } =
+      req.body || {};
 
-    if (typeof status !== "boolean") {
-      return res.status(400).json({
-        success: false,
-        error: "Maintenance status must be true or false.",
-      });
+    if (
+      typeof status !==
+      "boolean"
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error:
+            "Maintenance status must be true or false.",
+        });
     }
 
+    let connection =
+      null;
+
+    let transactionOpen =
+      false;
+
     try {
-      const existingSetting = await getMaintenanceSetting();
+      /*
+       * Maintenance state changes are security-sensitive.
+       *
+       * The system setting and its TECHNICAL audit trail
+       * must commit atomically. A maintenance state must
+       * never change successfully without its matching
+       * audit event.
+       */
+      connection =
+        await db
+          .promise()
+          .getConnection();
 
-      if (!existingSetting) {
-        return res.status(404).json({
-          success: false,
-          error: "Maintenance setting not found",
-          message:
-            "The maintenance_mode system setting is not configured.",
-        });
+      await connection
+        .beginTransaction();
+
+      transactionOpen =
+        true;
+
+      const [
+        settingRows,
+      ] =
+        await connection.query(
+          `
+          SELECT
+            setting_value
+
+          FROM system_settings
+
+          WHERE setting_name = ?
+
+          LIMIT 1
+
+          FOR UPDATE
+          `,
+          [
+            MAINTENANCE_SETTING_NAME,
+          ]
+        );
+
+      if (
+        settingRows.length ===
+        0
+      ) {
+        await connection
+          .rollback();
+
+        transactionOpen =
+          false;
+
+        return res
+          .status(404)
+          .json({
+            success: false,
+            error:
+              "Maintenance setting not found",
+            message:
+              "The maintenance_mode system setting is not configured.",
+          });
       }
 
-      const previousStatus = isMaintenanceEnabled(
-        existingSetting.setting_value
-      );
+      const previousStatus =
+        isMaintenanceEnabled(
+          settingRows[0]
+            .setting_value
+        );
 
-      const [updateResult] = await db.promise().query(
-        `
-        UPDATE system_settings
-        SET setting_value = ?
-        WHERE setting_name = ?
-        `,
-        [status ? 1 : 0, MAINTENANCE_SETTING_NAME]
-      );
+      const [
+        updateResult,
+      ] =
+        await connection.query(
+          `
+          UPDATE system_settings
 
-      if (Number(updateResult?.affectedRows || 0) !== 1) {
-        console.error(
-          "Maintenance update did not affect exactly one row:",
+          SET setting_value = ?
+
+          WHERE setting_name = ?
+          `,
+          [
+            status
+              ? 1
+              : 0,
+
+            MAINTENANCE_SETTING_NAME,
+          ]
+        );
+
+      if (
+        Number(
           updateResult
+            ?.affectedRows ||
+            0
+        ) !== 1
+      ) {
+        throw new Error(
+          "Maintenance update did not affect exactly one row."
+        );
+      }
+
+      const [
+        persistedRows,
+      ] =
+        await connection.query(
+          `
+          SELECT
+            setting_value
+
+          FROM system_settings
+
+          WHERE setting_name = ?
+
+          LIMIT 1
+          `,
+          [
+            MAINTENANCE_SETTING_NAME,
+          ]
         );
 
-        return res.status(500).json({
-          success: false,
-          error:
-            "Maintenance mode update could not be confirmed.",
-        });
+      if (
+        persistedRows.length !==
+        1
+      ) {
+        throw new Error(
+          "Maintenance mode state could not be verified after update."
+        );
       }
 
-      const persistedSetting = await getMaintenanceSetting();
+      const persistedStatus =
+        isMaintenanceEnabled(
+          persistedRows[0]
+            .setting_value
+        );
 
-      if (!persistedSetting) {
-        return res.status(500).json({
-          success: false,
-          error:
-            "Maintenance mode state could not be verified after update.",
-        });
+      if (
+        persistedStatus !==
+        status
+      ) {
+        throw new Error(
+          "Maintenance mode state verification failed."
+        );
       }
 
-      const persistedStatus = isMaintenanceEnabled(
-        persistedSetting.setting_value
+      await logAudit(
+        {
+          userId:
+            req.user?.userId ??
+            req.user?.id,
+
+          username:
+            req.user?.username,
+
+          fullName:
+            getCurrentUserName(
+              req.user
+            ),
+
+          role:
+            req.user?.role,
+
+          category:
+            AUDIT_CATEGORY.TECHNICAL,
+
+          action:
+            "TOGGLE_MAINTENANCE_MODE",
+
+          description:
+            previousStatus ===
+              persistedStatus
+              ? `Maintenance mode confirmed ${
+                  persistedStatus
+                    ? "ON"
+                    : "OFF"
+                }.`
+              : `Maintenance mode changed from ${
+                  previousStatus
+                    ? "ON"
+                    : "OFF"
+                } to ${
+                  persistedStatus
+                    ? "ON"
+                    : "OFF"
+                }.`,
+        },
+        {
+          connection,
+          throwOnError: true,
+        }
       );
 
-      if (persistedStatus !== status) {
-        console.error(
-          "Maintenance state verification mismatch:",
-          {
-            requestedStatus: status,
-            persistedStatus,
-          }
-        );
+      await connection
+        .commit();
 
-        return res.status(500).json({
-          success: false,
-          error:
-            "Maintenance mode state verification failed.",
+      transactionOpen =
+        false;
+
+      return res
+        .status(200)
+        .json({
+          message:
+            "System Maintenance Mode successfully updated!",
+
+          isMaintenanceOn:
+            persistedStatus,
         });
+    }
+    catch (error) {
+      if (
+        connection &&
+        transactionOpen
+      ) {
+        try {
+          await connection
+            .rollback();
+        }
+        catch (
+          rollbackError
+        ) {
+          console.error(
+            "Maintenance rollback error:",
+            rollbackError
+          );
+        }
       }
 
-      await logAudit({
-        userId: req.user?.userId ?? req.user?.id,
-        username: req.user?.username,
-        role: req.user?.role,
-        category: AUDIT_CATEGORY.TECHNICAL,
-        action: "TOGGLE_MAINTENANCE_MODE",
-        description:
-          previousStatus === persistedStatus
-            ? `Maintenance mode confirmed ${
-                persistedStatus ? "ON" : "OFF"
-              }.`
-            : `Maintenance mode changed from ${
-                previousStatus ? "ON" : "OFF"
-              } to ${persistedStatus ? "ON" : "OFF"}.`,
-      });
-
-      return res.status(200).json({
-        message:
-          "System Maintenance Mode successfully updated!",
-        isMaintenanceOn: persistedStatus,
-      });
-    } catch (error) {
       console.error(
         "Maintenance toggle database error:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
-        error: "Failed to update maintenance mode.",
-      });
+      return res
+        .status(500)
+        .json({
+          success: false,
+          error:
+            "Failed to update maintenance mode.",
+        });
+    }
+    finally {
+      if (
+        connection
+      ) {
+        connection.release();
+      }
     }
   }
 );

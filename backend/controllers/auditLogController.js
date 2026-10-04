@@ -12,6 +12,7 @@ const AUDIT_ROLE = Object.freeze({
   SUPER_ADMIN: "SUPER_ADMIN",
   HR_MANAGER: "HR_MANAGER",
   HR_STAFF: "HR_STAFF",
+  HR_COORDINATOR: "HR_COORDINATOR",
   IT_SUPPORT: "IT_SUPPORT",
 });
 
@@ -234,7 +235,7 @@ exports.getLogsByCategory =
           error:
             "Invalid audit log role filter.",
           message:
-            "Role must be ALL, SUPER_ADMIN, HR_MANAGER, HR_STAFF, or IT_SUPPORT.",
+            "Role must be ALL, SUPER_ADMIN, HR_MANAGER, HR_STAFF, HR_COORDINATOR, or IT_SUPPORT.",
         });
     }
 
@@ -314,6 +315,7 @@ exports.getLogsByCategory =
                 SUM(role = 'SUPER_ADMIN') AS super_admin,
                 SUM(role = 'HR_MANAGER') AS hr_manager,
                 SUM(role = 'HR_STAFF') AS hr_staff,
+                SUM(role = 'HR_COORDINATOR') AS hr_coordinator,
                 SUM(role = 'IT_SUPPORT') AS it_support
               FROM audit_logs
               WHERE category = ?
@@ -392,6 +394,15 @@ exports.getLogsByCategory =
               Math.max(
                 Number(
                   summaryRow.hr_staff ||
+                    0
+                ),
+                0
+              ),
+
+            hrCoordinator:
+              Math.max(
+                Number(
+                  summaryRow.hr_coordinator ||
                     0
                 ),
                 0

@@ -520,7 +520,7 @@ export default function SystemMaintenance() {
                     </h3>
 
                     <p className="mt-2 text-sm leading-6 text-red-700 dark:text-red-300">
-                      When maintenance mode is enabled, HR Staff, HR Manager, and Super Admin accounts are blocked. Only authorized IT Support users retain access.
+                      When maintenance mode is enabled, HR Staff, HR Manager, HR Coordinator, and Super Admin accounts are blocked. Only authorized IT Support users retain access.
                     </p>
                   </div>
                 </div>
@@ -644,7 +644,7 @@ export default function SystemMaintenance() {
         >
           {isMaintenanceOn
             ? "Disabling maintenance mode will restore normal system access for authorized users."
-            : "Enabling maintenance mode will immediately block HR Staff, HR Manager, and Super Admin access. IT Support will remain available."}
+            : "Enabling maintenance mode will immediately block HR Staff, HR Manager, HR Coordinator, and Super Admin access. IT Support will remain available."}
         </div>
       </ConfirmDialog>
 

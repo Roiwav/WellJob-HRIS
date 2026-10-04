@@ -38,6 +38,7 @@ const ROLE_LABELS = {
   SUPER_ADMIN: "Super Admin",
   HR_MANAGER: "HR Manager",
   HR_STAFF: "HR Staff",
+  HR_COORDINATOR: "HR Coordinator",
   IT_SUPPORT: "IT Support",
 };
 
@@ -411,6 +412,7 @@ export default function AuditLogsPage({
       superAdmin: 0,
       hrManager: 0,
       hrStaff: 0,
+      hrCoordinator: 0,
       itSupport: 0,
     });
 
@@ -648,6 +650,14 @@ export default function AuditLogsPage({
               0
             ),
 
+          hrCoordinator:
+            Math.max(
+              Number(
+                nextSummary.hrCoordinator
+              ) || 0,
+              0
+            ),
+
           itSupport:
             Math.max(
               Number(
@@ -783,6 +793,9 @@ export default function AuditLogsPage({
           summary.hrManager,
         HR_STAFF:
           summary.hrStaff,
+        HR_COORDINATOR:
+          summary.hrCoordinator,
+
         IT_SUPPORT:
           summary.itSupport,
       };
