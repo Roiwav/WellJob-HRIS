@@ -30,6 +30,7 @@ import {
 import {
   ROLES,
 } from "./constants/roles";
+import { API_BASE } from "./config/api";
 import {
   AUTH_SESSION_INVALID_EVENT,
   MAINTENANCE_MODE_DETECTED_EVENT,
@@ -73,7 +74,6 @@ const AUTHENTICATED_ROLES = [
  * HR Coordinator is intentionally excluded from:
  * - Dashboard
  * - KPI Reports
- * - existing Smart Notifications page
  */
 const HR_MODULE_ROLES = [
   ROLES.SUPER_ADMIN,
@@ -83,6 +83,7 @@ const HR_MODULE_ROLES = [
 
 const NOTIFICATION_ROLES = [
   ...HR_MODULE_ROLES,
+  ROLES.HR_COORDINATOR,
   ROLES.IT_SUPPORT,
 ];
 
@@ -122,6 +123,12 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+const MAINTENANCE_PROBE_URL =
+  `${API_BASE}/users`;
+
+const MAINTENANCE_PROBE_INTERVAL_MS =
+  15 * 1000;
 
 /*
  * Axios JWT transport.
@@ -196,6 +203,56 @@ function isAxiosMaintenanceError(error) {
   return getAxiosResponseMessage(error)
     .toLowerCase()
     .includes("maintenance");
+}
+
+async function probeMaintenanceMode(
+  signal
+) {
+  const response = await fetch(
+    MAINTENANCE_PROBE_URL,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      credentials: "omit",
+      signal,
+    }
+  );
+
+  if (response.status === 503) {
+    let responseData = null;
+
+    try {
+      responseData =
+        await response.json();
+    } catch {
+      return null;
+    }
+
+    const responseMessage = String(
+      responseData?.error ||
+        responseData?.message ||
+        ""
+    ).toLowerCase();
+
+    return responseMessage.includes(
+      "maintenance"
+    )
+      ? true
+      : null;
+  }
+
+  if (
+    response.ok ||
+    response.status === 401 ||
+    response.status === 403
+  ) {
+    return false;
+  }
+
+  return null;
 }
 
 function isAxiosSessionInvalidError(error) {
@@ -283,7 +340,7 @@ function MaintenanceScreen() {
             </div>
 
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-amber-300">
+              <p className="text-xs font-extrabold uppercase tracking-\[0.18em] text-amber-300">
                 Temporary Service Notice
               </p>
 
@@ -346,6 +403,7 @@ function MaintenanceScreen() {
 
 function ApplicationContent({
   isMaintenance,
+  onMaintenanceStatusChange,
 }) {
   const {
     user,
@@ -646,7 +704,14 @@ function ApplicationContent({
                 path="/system-maintenance"
                 element={
                   <LazyRoute>
-                    <SystemMaintenance />
+                    <SystemMaintenance
+                      isMaintenanceOn={
+                        isMaintenance
+                      }
+                      onMaintenanceStatusChange={
+                        onMaintenanceStatusChange
+                      }
+                    />
                   </LazyRoute>
                 }
               />
@@ -773,6 +838,90 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let isActive = true;
+    let activeController = null;
+
+    const refreshMaintenanceStatus =
+      async () => {
+        activeController?.abort();
+
+        const controller =
+          new AbortController();
+
+        activeController = controller;
+
+        try {
+          const maintenanceStatus =
+            await probeMaintenanceMode(
+              controller.signal
+            );
+
+          if (
+            isActive &&
+            maintenanceStatus !== null
+          ) {
+            setIsMaintenance(
+              maintenanceStatus
+            );
+          }
+        } catch (error) {
+          if (
+            error?.name !== "AbortError"
+          ) {
+            console.warn(
+              "Unable to verify maintenance status:",
+              error
+            );
+          }
+        }
+      };
+
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState ===
+        "visible"
+      ) {
+        void refreshMaintenanceStatus();
+      }
+    };
+
+    void refreshMaintenanceStatus();
+
+    const intervalId =
+      window.setInterval(
+        refreshMaintenanceStatus,
+        MAINTENANCE_PROBE_INTERVAL_MS
+      );
+
+    window.addEventListener(
+      "focus",
+      refreshMaintenanceStatus
+    );
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    return () => {
+      isActive = false;
+      activeController?.abort();
+
+      window.clearInterval(intervalId);
+
+      window.removeEventListener(
+        "focus",
+        refreshMaintenanceStatus
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+    };
+  }, []);
+
   return (
     <QueryClientProvider
       client={queryClient}
@@ -782,17 +931,21 @@ function App() {
           isMaintenance={
             isMaintenance
           }
+          onMaintenanceStatusChange={
+            setIsMaintenance
+          }
         />
 
-        {!isMaintenance && (
-          <StandbyExperience
-            idleTimeoutMs={
-              3 * 60 * 1000
-            }
-            introDurationMs={3400}
-            showIntroOncePerSession
-          />
-        )}
+        <StandbyExperience
+          isMaintenance={
+            isMaintenance
+          }
+          idleTimeoutMs={
+            3 * 60 * 1000
+          }
+          introDurationMs={3400}
+          showIntroOncePerSession
+        />
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -302,8 +302,8 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
   const { canView, latestAlerts, popupAlert, unreadCount, readAlertCount, hasReadAlerts, isFetching, isClearingRead, markAlertAsRead, dismissAlert, clearReadAlerts, } = useSmartNotifications(user, {
     pollInterval: SMART_ALERT_POLL_INTERVAL,
   });
-  const canViewSmartNotifications = Boolean(canView &&
-    !isHRCoordinator);
+  const canViewSmartNotifications =
+    Boolean(canView);
   const notificationsAreOpen = Boolean(canViewSmartNotifications &&
     openNotifications);
   const roleConfig = useMemo(() => ROLE_CONFIGS[currentRole] ||

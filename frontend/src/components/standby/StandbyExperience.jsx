@@ -9,6 +9,7 @@ const DEFAULT_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const DEFAULT_WAKE_DELAY_MS = 600;
 
 export default function StandbyExperience({
+  isMaintenance = false,
   idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
   wakeDelayMs = DEFAULT_WAKE_DELAY_MS,
 }) {
@@ -18,6 +19,8 @@ export default function StandbyExperience({
   const [dismissedLoginVisitKey, setDismissedLoginVisitKey] = useState("");
 
   const isLoginRoute = location.pathname === "/login";
+  const isSystemMaintenanceRoute =
+    location.pathname === "/system-maintenance";
   const loginVisitKey = location.key || "login";
 
   const shouldShowLoginIntro =
@@ -25,7 +28,10 @@ export default function StandbyExperience({
     !user &&
     dismissedLoginVisitKey !== loginVisitKey;
 
-  const shouldMonitorIdle = Boolean(user) && !shouldShowLoginIntro;
+  const shouldMonitorIdle =
+    Boolean(user) &&
+    !shouldShowLoginIntro &&
+    !isSystemMaintenanceRoute;
 
   const { isIdle, wake } = useIdleStandby({
     enabled: shouldMonitorIdle,
@@ -41,6 +47,7 @@ export default function StandbyExperience({
     return (
       <WelljobStandbyScreen
         mode="intro"
+        isMaintenance={isMaintenance}
         onDismiss={handleIntroDismiss}
       />
     );
@@ -50,6 +57,7 @@ export default function StandbyExperience({
     return (
       <WelljobStandbyScreen
         mode="idle"
+        isMaintenance={isMaintenance}
         onDismiss={wake}
       />
     );

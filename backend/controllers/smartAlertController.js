@@ -9,6 +9,7 @@ const ALERT_PRIORITY = {
 const ALLOWED_ROLES = new Set([
   "HR_MANAGER",
   "HR_STAFF",
+  "HR_COORDINATOR",
   "SUPER_ADMIN",
 ]);
 
@@ -53,6 +54,15 @@ function normalizeRole(value) {
 
   if (
     [
+      "HRCOORDINATOR",
+      "HR_COORDINATOR",
+    ].includes(role)
+  ) {
+    return "HR_COORDINATOR";
+  }
+
+  if (
+    [
       "ITSUPPORT",
       "IT_SUPPORT",
     ].includes(role)
@@ -71,6 +81,13 @@ function normalizeText(value) {
 
 function normalizeIdentity(value) {
   return normalizeText(value);
+}
+
+function getAssignedCompany(req) {
+  return cleanValue(
+    req?.user?.assignedCompany ??
+      req?.user?.assigned_company
+  );
 }
 
 function cleanValue(value) {
@@ -997,7 +1014,8 @@ function isSameEmployee(
 function isAlertVisibleForCurrentUser(
   incident,
   role,
-  aliases
+  aliases,
+  assignedCompany = ""
 ) {
   if (
     !ALLOWED_ROLES.has(
@@ -1064,6 +1082,36 @@ function isAlertVisibleForCurrentUser(
     isReturnedCase(
       incident
     );
+
+  if (
+    role ===
+    "HR_COORDINATOR"
+  ) {
+    const incidentCompany =
+      cleanValue(
+        incident.company
+      );
+
+    const hasCompanyScope =
+      Boolean(
+        assignedCompany &&
+          incidentCompany
+      ) &&
+      normalizeText(
+        assignedCompany
+      ) ===
+        normalizeText(
+          incidentCompany
+        );
+
+    return (
+      hasCompanyScope &&
+      (
+        returnedCase ||
+        status === "Closed"
+      )
+    );
+  }
 
   /*
     NEW INCIDENT
@@ -1572,7 +1620,11 @@ function buildIncidentAlert(
   return {
     alertKey:
       cleanAlertKey(
-        `INCIDENT:${incident.id}:${status}:${reviewDecision}:${
+        `INCIDENT:${incident.id}:${
+          incident.workflowEventId ||
+          incident.workflow_event_id ||
+          "CURRENT"
+        }:${status}:${reviewDecision}:${
           incident.lastActionType ||
           ""
         }:${timestamp}`
@@ -1999,6 +2051,7 @@ async function fetchBaseData() {
   const [
     userNameMap,
     [incidentRows],
+    [workflowEventRows],
   ] =
     await Promise.all([
       getUserNameMap(),
@@ -2051,6 +2104,41 @@ async function fetchBaseData() {
           FROM incidents i
           LEFT JOIN employees e
             ON e.id = i.employee_id
+        `),
+
+      db
+        .promise()
+        .query(`
+          SELECT
+            t.id AS workflow_event_id,
+            t.action_type AS workflow_action_type,
+            t.created_at AS workflow_event_at,
+            t.created_by_id AS workflow_actor_id,
+            t.created_by_username AS workflow_actor_username,
+            t.created_by_name AS workflow_actor_name,
+            i.id,
+            i.employee_id,
+            i.company,
+            i.violation_type,
+            i.severity,
+            i.reported_by,
+            i.incident_date,
+            i.created_at,
+            i.updated_at,
+            e.id AS employeeRecordId,
+            e.name AS employeeNameFromEmployee,
+            e.company AS employeeCompany,
+            e.status AS employeeStatus,
+            e.archived AS employeeArchived
+          FROM incident_timeline t
+          INNER JOIN incidents i
+            ON i.id = t.incident_id
+          LEFT JOIN employees e
+            ON e.id = i.employee_id
+          WHERE t.action_type IN (
+            'RETURN_INCIDENT',
+            'CLOSE_INCIDENT'
+          )
         `),
     ]);
 
@@ -2125,14 +2213,98 @@ async function fetchBaseData() {
             userNameMap
           )
       ),
+
+    workflowEvents:
+      workflowEventRows.map(
+        (event) => {
+          const normalized =
+            normalizeIncident(
+              event,
+              userNameMap
+            );
+
+          const isReturn =
+            event.workflow_action_type ===
+            "RETURN_INCIDENT";
+
+          return {
+            ...normalized,
+
+            workflowEventId:
+              event.workflow_event_id,
+
+            workflow_event_id:
+              event.workflow_event_id,
+
+            status:
+              isReturn
+                ? "Investigating"
+                : "Closed",
+
+            reviewDecision:
+              isReturn
+                ? "Returned"
+                : "Approved",
+
+            review_decision:
+              isReturn
+                ? "Returned"
+                : "Approved",
+
+            reviewedAt:
+              event.workflow_event_at,
+
+            reviewed_at:
+              event.workflow_event_at,
+
+            lastActionAt:
+              event.workflow_event_at,
+
+            last_action_at:
+              event.workflow_event_at,
+
+            lastActionType:
+              event.workflow_action_type,
+
+            last_action_type:
+              event.workflow_action_type,
+
+            reviewedById:
+              event.workflow_actor_id ||
+              null,
+
+            reviewed_by_id:
+              event.workflow_actor_id ||
+              null,
+
+            reviewedByUsername:
+              event.workflow_actor_username ||
+              null,
+
+            reviewed_by_username:
+              event.workflow_actor_username ||
+              null,
+
+            reviewedByName:
+              event.workflow_actor_name ||
+              null,
+
+            reviewed_by_name:
+              event.workflow_actor_name ||
+              null,
+          };
+        }
+      ),
   };
 }
 
 function buildSmartAlerts({
   employees,
   incidents,
+  workflowEvents = [],
   role,
   currentUserAliases,
+  assignedCompany,
 }) {
   const activeEmployees =
     employees.filter(
@@ -2173,8 +2345,14 @@ function buildSmartAlerts({
     }
   );
 
+  const candidateIncidents =
+    role ===
+    "HR_COORDINATOR"
+      ? workflowEvents
+      : incidents;
+
   const visibleIncidents =
-    incidents.filter(
+    candidateIncidents.filter(
       (incident) => {
         const incidentEmployeeId =
           String(
@@ -2203,11 +2381,16 @@ function buildSmartAlerts({
           );
 
         return (
-          employeeIsActive &&
+          (
+            role ===
+              "HR_COORDINATOR" ||
+            employeeIsActive
+          ) &&
           isAlertVisibleForCurrentUser(
             incident,
             role,
-            currentUserAliases
+            currentUserAliases,
+            assignedCompany
           )
         );
       }
@@ -2534,6 +2717,7 @@ async function getVisibleAlertKeySetForRequest(
   const {
     employees,
     incidents,
+    workflowEvents,
     userNameMap,
   } =
     await fetchBaseData();
@@ -2548,8 +2732,11 @@ async function getVisibleAlertKeySetForRequest(
     buildSmartAlerts({
       employees,
       incidents,
+      workflowEvents,
       role,
       currentUserAliases,
+      assignedCompany:
+        getAssignedCompany(req),
     });
 
   return new Set(
@@ -2604,9 +2791,28 @@ exports.getSmartAlerts =
           });
       }
 
+      const assignedCompany =
+        getAssignedCompany(req);
+
+      if (
+        role ===
+          "HR_COORDINATOR" &&
+        !assignedCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            success: false,
+
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
       const {
         employees,
         incidents,
+        workflowEvents,
         userNameMap,
       } =
         await fetchBaseData();
@@ -2634,9 +2840,12 @@ exports.getSmartAlerts =
         buildSmartAlerts({
           employees,
           incidents,
+          workflowEvents,
           role,
 
           currentUserAliases,
+
+          assignedCompany,
         });
 
       const alertsWithState =

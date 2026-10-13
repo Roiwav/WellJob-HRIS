@@ -13,6 +13,7 @@ import welljobLogo from "../../assets/welljob.png";
 
 export default function WelljobStandbyScreen({
   mode = "idle",
+  isMaintenance = false,
   onDismiss,
   autoDismissMs = 0,
 }) {
@@ -258,12 +259,28 @@ export default function WelljobStandbyScreen({
             </div>
           </div>
 
-          <div className="hidden items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/[0.06] px-3.5 py-1.5 text-[11px] font-semibold text-slate-200 shadow-[0_0_20px_rgba(34,211,238,0.08)] backdrop-blur sm:flex">
-            <span className="welljob-pulse h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.95)]" />
+          <div
+            className={[
+              "hidden items-center gap-2 rounded-full border px-3.5 py-1.5 text-[11px] font-semibold backdrop-blur sm:flex",
+              isMaintenance
+                ? "border-amber-400/30 bg-amber-400/[0.08] text-amber-200 shadow-[0_0_20px_rgba(251,191,36,0.10)]"
+                : "border-cyan-400/20 bg-cyan-400/[0.06] text-slate-200 shadow-[0_0_20px_rgba(34,211,238,0.08)]",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "welljob-pulse h-2 w-2 rounded-full",
+                isMaintenance
+                  ? "bg-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.95)]"
+                  : "bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.95)]",
+              ].join(" ")}
+            />
 
-            {isIntro
-              ? "System Ready"
-              : "Standby Mode"}
+            {isMaintenance
+              ? "Under Maintenance"
+              : isIntro
+                ? "System Ready"
+                : "Standby Mode"}
           </div>
         </header>
 
@@ -396,15 +413,17 @@ export default function WelljobStandbyScreen({
 
                 <div className="absolute inset-[20%] rounded-full border border-blue-400/20 shadow-[0_0_42px_rgba(59,130,246,0.08)]" />
 
-                <div className="welljob-logo-float absolute left-1/2 top-1/2 flex h-[142px] w-[205px] -translate-x-1/2 -translate-y-1/2 items-center justify-center overflow-hidden rounded-[26px] border border-blue-400/35 bg-[#030817]/95 p-3 shadow-[0_0_28px_rgba(59,130,246,0.25),0_0_72px_rgba(79,70,229,0.16)] sm:h-[164px] sm:w-[238px] xl:h-[184px] xl:w-[266px]">
-                  <div className="welljob-sheen pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="welljob-logo-float relative flex h-[142px] w-[205px] items-center justify-center overflow-hidden rounded-[26px] border border-blue-400/35 bg-[#030817]/95 p-3 shadow-[0_0_28px_rgba(59,130,246,0.25),0_0_72px_rgba(79,70,229,0.16)] sm:h-[164px] sm:w-[238px] xl:h-[184px] xl:w-[266px]">
+                    <div className="welljob-sheen pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
-                  <img
-                    src={welljobLogo}
-                    alt="Welljob Solutions"
-                    className="relative z-10 h-full w-full object-contain"
-                    draggable="false"
-                  />
+                    <img
+                      src={welljobLogo}
+                      alt="Welljob Solutions"
+                      className="relative z-10 h-full w-full object-contain"
+                      draggable="false"
+                    />
+                  </div>
                 </div>
 
                 <div className="absolute left-[1%] top-[29%] z-20 inline-flex items-center gap-2 rounded-xl border border-cyan-400/35 bg-slate-950/90 px-3 py-2 text-[10px] font-extrabold text-slate-200 shadow-[0_0_22px_rgba(34,211,238,0.12)] backdrop-blur">

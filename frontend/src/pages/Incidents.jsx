@@ -10,6 +10,7 @@ import {
 } from "react-router-dom";
 import {
   FiAlertTriangle,
+  FiDownload,
   FiPlus,
   FiRefreshCw,
 } from "react-icons/fi";
@@ -36,6 +37,9 @@ import {
 import {
   normalizeEvidenceFiles,
 } from "../utils/incidents/evidenceFiles";
+import {
+  exportIncidentReportPDF,
+} from "../utils/incidents/incidentPdfExport";
 const INCIDENT_API_URL =
   `${API_BASE}/incidents`;
 const DATA_EVENT_SOURCE =
@@ -866,6 +870,10 @@ export default function Incidents() {
   const isAuthorizedReviewer =
     isSuperAdmin ||
     isHrManager;
+  const canExportIncidentReport =
+    isSuperAdmin ||
+    isHrManager ||
+    isHrCoordinator;
   const actorFullName =
     user?.full_name ||
     user?.fullName ||
@@ -922,6 +930,10 @@ export default function Incidents() {
     setIsRefreshing,
   ] =
     useState(false);
+  const [
+    isExporting,
+    setIsExporting,
+  ] = useState(false);
   const [
     fetchError,
     setFetchError,
@@ -2549,6 +2561,155 @@ export default function Incidents() {
         isRefreshing,
       ]
     );
+  const handleExportPDF =
+    useCallback(
+      async () => {
+        if (
+          !canExportIncidentReport ||
+          isExporting
+        ) {
+          return;
+        }
+
+        setIsExporting(true);
+
+        try {
+          const params =
+            new URLSearchParams();
+          const trimmedSearch =
+            String(
+              debouncedSearch ||
+              ""
+            ).trim();
+          const normalizedCaseTab =
+            String(
+              caseTab ||
+              "ALL"
+            )
+              .trim()
+              .toUpperCase();
+          const normalizedSeverity =
+            String(
+              severityFilter ||
+              "ALL"
+            ).trim();
+
+          if (trimmedSearch) {
+            params.set(
+              "search",
+              trimmedSearch
+            );
+          }
+
+          if (
+            normalizedCaseTab !==
+            "ALL"
+          ) {
+            params.set(
+              "caseTab",
+              normalizedCaseTab
+            );
+          }
+
+          if (
+            normalizedSeverity
+              .toUpperCase() !==
+            "ALL"
+          ) {
+            params.set(
+              "severity",
+              normalizedSeverity
+            );
+          }
+
+          if (
+            normalizedCaseTab ===
+              "ALL" &&
+            String(
+              caseStatusFilter ||
+              "ALL"
+            ).toUpperCase() !==
+              "ALL"
+          ) {
+            params.set(
+              "status",
+              normalizeStatus(
+                caseStatusFilter
+              )
+            );
+          }
+
+          const query =
+            params.toString();
+          const reportData =
+            await requestJson(
+              `${INCIDENT_API_URL}/report${
+                query
+                  ? `?${query}`
+                  : ""
+              }`
+            );
+          const reportIncidents =
+            buildIncidentList(
+              reportData?.incidents ||
+              []
+            );
+
+          exportIncidentReportPDF({
+            incidents:
+              reportIncidents,
+            user,
+            scopeCompany:
+              reportData?.scope
+                ?.company ||
+              "",
+            filters: {
+              search:
+                trimmedSearch,
+              caseTab:
+                normalizedCaseTab,
+              severity:
+                normalizedSeverity,
+              status:
+                caseStatusFilter,
+            },
+          });
+
+          showNotice(
+            "success",
+            "PDF Exported",
+            `${reportIncidents.length} incident record${
+              reportIncidents.length === 1
+                ? ""
+                : "s"
+            } included in the report.`
+          );
+        } catch (error) {
+          showNotice(
+            "error",
+            "PDF Export Failed",
+            error?.message ||
+              "Unable to export the incident report."
+          );
+        } finally {
+          if (
+            isMountedRef.current
+          ) {
+            setIsExporting(false);
+          }
+        }
+      },
+      [
+        canExportIncidentReport,
+        caseStatusFilter,
+        caseTab,
+        debouncedSearch,
+        isExporting,
+        severityFilter,
+        showNotice,
+        user,
+      ]
+    );
   const handleSearchChange =
     useCallback(
       (
@@ -2767,6 +2928,30 @@ export default function Incidents() {
             >
               Refresh
             </Button>
+            {canExportIncidentReport && (
+              <Button
+                type="button"
+                variant="success"
+                leftIcon={
+                  <FiDownload
+                    aria-hidden="true"
+                  />
+                }
+                loading={
+                  isExporting
+                }
+                disabled={
+                  isLoading ||
+                  isRefreshing ||
+                  isExporting
+                }
+                onClick={
+                  handleExportPDF
+                }
+              >
+                Export PDF
+              </Button>
+            )}
             {!isSuperAdmin && (
               <RoleGuard
                 permission={

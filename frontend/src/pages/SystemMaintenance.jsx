@@ -93,12 +93,10 @@ function normalizeMaintenanceStatus(data) {
   );
 }
 
-export default function SystemMaintenance() {
-  const [
-    isMaintenanceOn,
-    setIsMaintenanceOn,
-  ] = useState(false);
-
+export default function SystemMaintenance({
+  isMaintenanceOn = false,
+  onMaintenanceStatusChange,
+}) {
   const [
     isLoading,
     setIsLoading,
@@ -173,7 +171,7 @@ export default function SystemMaintenance() {
             return false;
           }
 
-          setIsMaintenanceOn(
+          onMaintenanceStatusChange?.(
             normalizeMaintenanceStatus(
               response.data
             )
@@ -211,7 +209,7 @@ export default function SystemMaintenance() {
           }
         }
       },
-      []
+      [onMaintenanceStatusChange]
     );
 
   useEffect(() => {
@@ -302,7 +300,7 @@ export default function SystemMaintenance() {
           return;
         }
 
-        setIsMaintenanceOn(
+        onMaintenanceStatusChange?.(
           nextMaintenanceStatus
         );
 
@@ -357,6 +355,7 @@ export default function SystemMaintenance() {
     }, [
       isMaintenanceOn,
       isUpdating,
+      onMaintenanceStatusChange,
     ]);
 
   const targetStatus =

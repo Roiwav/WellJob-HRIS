@@ -21,6 +21,7 @@ const SMART_ALERT_ROLES = [
   "SUPER_ADMIN",
   "HR_MANAGER",
   "HR_STAFF",
+  "HR_COORDINATOR",
 ];
 
 router.get(

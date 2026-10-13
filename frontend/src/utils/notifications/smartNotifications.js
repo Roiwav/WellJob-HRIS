@@ -5,6 +5,7 @@ export function canViewSmartAlerts(role) {
   return [
     "HR_MANAGER",
     "HR_STAFF",
+    "HR_COORDINATOR",
     "SUPER_ADMIN",
   ].includes(role);
 }

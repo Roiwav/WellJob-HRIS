@@ -3,6 +3,7 @@ const express = require("express");
 
 const {
   getIncidents,
+  getIncidentReport,
   getIncidentsByEmployee,
   getIncidentById,
   getIncidentFormMeta,
@@ -136,6 +137,22 @@ router.get(
     "HR_COORDINATOR"
   ),
   getIncidents
+);
+
+/*
+ * Complete filtered data for client-side PDF generation.
+ * HR Staff is intentionally excluded from report export.
+ * Coordinator company scope is enforced by the controller.
+ */
+router.get(
+  "/incidents/report",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN",
+    "HR_MANAGER",
+    "HR_COORDINATOR"
+  ),
+  getIncidentReport
 );
 
 /*

@@ -24,6 +24,7 @@ const INCIDENT_ALERT_ROLES = new Set([
   "SUPER_ADMIN",
   "HR_MANAGER",
   "HR_STAFF",
+  "HR_COORDINATOR",
 ]);
 const PASSWORD_RESET_REVIEWER_ROLES = new Set([
   "SUPER_ADMIN",
@@ -91,39 +92,46 @@ function filterAlerts(
   alerts,
   activeFilter,
   caseStatusFilter,
-  search
+  search,
+  includeClosed = false
 ) {
   let filtered = Array.isArray(alerts)
     ? [...alerts]
     : [];
   if (activeFilter === "ALL") {
-    filtered = filtered.filter(isActiveCase);
+    filtered = includeClosed
+      ? filtered
+      : filtered.filter(isActiveCase);
   }
   if (activeFilter === "UNREAD") {
     filtered = filtered.filter(
       (alert) =>
-        isActiveCase(alert) &&
+        (includeClosed ||
+          isActiveCase(alert)) &&
         !alert?.isRead
     );
   }
   if (activeFilter === "HIGH") {
     filtered = filtered.filter(
       (alert) =>
-        isActiveCase(alert) &&
+        (includeClosed ||
+          isActiveCase(alert)) &&
         alert?.priority === "High"
     );
   }
   if (activeFilter === "MEDIUM") {
     filtered = filtered.filter(
       (alert) =>
-        isActiveCase(alert) &&
+        (includeClosed ||
+          isActiveCase(alert)) &&
         alert?.priority === "Medium"
     );
   }
   if (activeFilter === "LOW") {
     filtered = filtered.filter(
       (alert) =>
-        isActiveCase(alert) &&
+        (includeClosed ||
+          isActiveCase(alert)) &&
         alert?.priority === "Low"
     );
   }
@@ -154,13 +162,18 @@ function filterAlerts(
   }
   return filtered;
 }
-function buildAlertCounts(alerts = []) {
+function buildAlertCounts(
+  alerts = [],
+  includeClosed = false
+) {
   const safeAlerts = Array.isArray(alerts)
     ? alerts
     : [];
-  const activeAlerts = safeAlerts.filter(
-    isActiveCase
-  );
+  const activeAlerts = includeClosed
+    ? safeAlerts
+    : safeAlerts.filter(
+        isActiveCase
+      );
   const uniqueActiveCases = new Set(
     activeAlerts.map(getUniqueIncidentKey)
   );
@@ -655,14 +668,15 @@ function PasswordResetRequestsSection() {
 /*
  * EXISTING SMART INCIDENT ALERTS
  *
- * Preserve incident-alert functionality for
- * Super Admin, HR Manager, and HR Staff.
- *
- * Do not fetch incident alerts for IT Support
- * or HR Coordinator.
+ * Preserve incident-alert functionality for internal
+ * HR roles and expose assigned-company reviewer outcomes
+ * to HR Coordinator.
  */
 function IncidentAlertsSection({ user }) {
   const navigate = useNavigate();
+  const includeClosed =
+    user?.role ===
+    "HR_COORDINATOR";
   const [activeFilter, setActiveFilter] =
     useState("ALL");
   const [caseStatusFilter, setCaseStatusFilter] =
@@ -680,8 +694,15 @@ function IncidentAlertsSection({ user }) {
     pollInterval: 0,
   });
   const counts = useMemo(
-    () => buildAlertCounts(alerts),
-    [alerts]
+    () =>
+      buildAlertCounts(
+        alerts,
+        includeClosed
+      ),
+    [
+      alerts,
+      includeClosed,
+    ]
   );
   const visibleAlerts = useMemo(
     () =>
@@ -689,13 +710,15 @@ function IncidentAlertsSection({ user }) {
         alerts,
         activeFilter,
         caseStatusFilter,
-        search
+        search,
+        includeClosed
       ),
     [
       alerts,
       activeFilter,
       caseStatusFilter,
       search,
+      includeClosed,
     ]
   );
   const handleRefresh = async () => {
@@ -746,7 +769,9 @@ function IncidentAlertsSection({ user }) {
             Incident Alerts
           </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Monitor assigned incident notifications and case activity.
+            {includeClosed
+              ? "Review returned and approved cases for your assigned company."
+              : "Monitor assigned incident notifications and case activity."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

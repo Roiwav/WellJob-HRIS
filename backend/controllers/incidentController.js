@@ -2449,6 +2449,54 @@ function buildIncidentSummaryFilters(
     );
   }
 
+  const requestedStatus =
+    String(
+      query.status ||
+      query.caseStatus ||
+      query.case_status ||
+      "ALL"
+    ).trim();
+
+  const normalizedStatus =
+    requestedStatus
+      .toLowerCase()
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ");
+
+  if (
+    caseTab === "ALL" &&
+    normalizedStatus &&
+    normalizedStatus !== "all"
+  ) {
+    const statusValues =
+      normalizedStatus ===
+      "for review"
+        ? [
+            "for review",
+            "for_review",
+            "resolved",
+          ]
+        : normalizedStatus ===
+          "closed"
+          ? [
+              "closed",
+              "resolved",
+            ]
+          : [
+              normalizedStatus,
+            ];
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(i.status, ''))) IN (${statusValues
+        .map(() => "?")
+        .join(", ")})`
+    );
+
+    params.push(
+      ...statusValues
+    );
+  }
+
   const normalizedSearch =
     normalizeIncidentSummarySearch(
       query.search
@@ -2518,6 +2566,170 @@ function buildIncidentSummaryFilters(
     params,
   };
 }
+
+exports.getIncidentReport =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const role =
+        normalizeRole(
+          req?.user?.role
+        );
+
+      const isHrCoordinator =
+        role ===
+        "HR_COORDINATOR";
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
+      const {
+        whereClause,
+        params,
+      } =
+        buildIncidentSummaryFilters(
+          req.query || {},
+          {
+            coordinatorCompany,
+          }
+        );
+
+      const [incidents] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              i.id,
+              i.employee_id,
+              i.employee_name,
+              i.company,
+              i.violation_type,
+              i.severity,
+              i.status,
+              i.incident_date,
+              i.location,
+              i.description,
+              i.reported_by,
+              i.action_taken,
+              i.policy_sanction,
+              i.recommendation,
+              i.resolution_notes,
+              i.investigation_started_by_id,
+              i.investigation_started_by_username,
+              i.investigation_started_by_name,
+              i.investigation_started_at,
+              i.resolution_submitted_by_id,
+              i.resolution_submitted_by_username,
+              i.resolution_submitted_by_name,
+              i.resolution_submitted_at,
+              i.reviewed_by_id,
+              i.reviewed_by_username,
+              i.reviewed_by_name,
+              i.reviewed_at,
+              i.review_decision,
+              i.review_comments,
+              i.created_at,
+              i.updated_at,
+              i.last_action_by_id,
+              i.last_action_by_username,
+              i.last_action_by_name,
+              i.last_action_type,
+              i.last_action_at,
+              e.name AS employeeNameFromEmployee,
+              e.company AS employeeCompany,
+              e.status AS employeeStatus,
+              ${
+                isHrCoordinator
+                  ? `CASE WHEN
+                      ${buildCurrentCoordinatorEmployeeScopeCondition("e")}
+                     THEN 1 ELSE 0 END`
+                  : "1"
+              } AS coordinatorCanViewDetails
+            FROM incidents i
+            LEFT JOIN employees e
+              ON e.id = i.employee_id
+            ${whereClause}
+            ORDER BY
+              i.created_at DESC,
+              i.id DESC
+            `,
+            [
+              ...(isHrCoordinator
+                ? [coordinatorCompany]
+                : []),
+              ...params,
+            ]
+          );
+
+      const reportIncidents =
+        incidents.map(
+          (incident) => {
+            if (
+              isHrCoordinator &&
+              Number(
+                incident
+                  .coordinatorCanViewDetails
+              ) !== 1
+            ) {
+              return serializeHistoricalIncidentListItem(
+                incident
+              );
+            }
+
+            return serializeIncidentSummary(
+              incident
+            );
+          }
+        );
+
+      return res.json({
+        incidents:
+          reportIncidents,
+
+        total:
+          reportIncidents.length,
+
+        scope: {
+          role,
+
+          company:
+            coordinatorCompany ||
+            null,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "GET INCIDENT REPORT ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to generate incident report data.",
+        });
+    }
+  };
 
 exports.getIncidents =
   async (
