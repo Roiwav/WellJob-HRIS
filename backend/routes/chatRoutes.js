@@ -352,6 +352,77 @@ async function notifySaved(saved, req) {
     sender: { id: req.chatUser.id, username: req.chatUser.username, fullName: req.chatUser.fullName } });
 }
 
+/**
+ * TEMPORARY PRODUCTION DATABASE DIAGNOSTIC
+ *
+ * Read-only. An authenticated, ACTIVE Super Admin is checked against
+ * the users table, not solely against a client-supplied role or JWT claim.
+ *
+ * Does not return any connection strings, credentials, hostnames, usernames,
+ * message bodies, attachment filenames, or individual employee information.
+ *
+ * Remove this route after the Messenger production DB mismatch is resolved.
+ */
+router.get('/diagnostics/database', async (req, res) => {
+  try {
+    const actor = await findUser(req.chatUser.id);
+    if (
+      !actor ||
+      String(actor.accountStatus || '').toUpperCase() !== 'ACTIVE' ||
+      normalizeRole(actor.role) !== 'SUPER_ADMIN'
+    ) {
+      return fail(res, 403, 'Super Admin access required.');
+    }
+
+    const [[result]] = await sql.query(`
+      SELECT
+        DATABASE() AS databaseName,
+        LEFT(SHA2(CONCAT(@@server_uuid, '|', DATABASE()), 256), 16) AS fingerprint,
+        (SELECT COUNT(*) FROM chat_messages) AS privateMessages,
+        (SELECT COUNT(*) FROM chat_group_messages) AS groupMessages,
+        (SELECT COUNT(*) FROM chat_attachments) AS attachments,
+        (SELECT COUNT(*) FROM chat_conversations) AS conversations,
+        (SELECT COUNT(*) FROM chat_groups) AS chatGroups,
+        (SELECT COUNT(*) FROM chat_group_members) AS groupMembers
+    `);
+
+    const expectedHost =
+      'mysql-1fa118a2-hriswelljobsolutions.j.aivencloud.com';
+    const expectedPort = 16505;
+    const expectedDatabase = 'welljob_hris';
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Pragma', 'no-cache');
+
+    return res.json({
+      diagnosticVersion: 'welljob-db-check-20261013-01',
+      databaseFingerprint: String(result.fingerprint || ''),
+      targetChecks: {
+        configuredHostMatchesExpected:
+          String(process.env.DB_HOST || '').trim().toLowerCase() === expectedHost,
+        configuredPortMatchesExpected:
+          Number(process.env.DB_PORT) === expectedPort,
+        configuredDatabaseMatchesExpected:
+          String(process.env.DB_NAME || '').trim() === expectedDatabase,
+        connectedDatabaseMatchesExpected:
+          String(result.databaseName || '') === expectedDatabase,
+      },
+      messageCounts: {
+        private: Number(result.privateMessages),
+        group: Number(result.groupMessages),
+        attachments: Number(result.attachments),
+      },
+      preservedStructureCounts: {
+        conversations: Number(result.conversations),
+        groups: Number(result.chatGroups),
+        groupMembers: Number(result.groupMembers),
+      },
+    });
+  } catch (error) {
+    return serverError(res, error);
+  }
+});
+
 router.get('/users', async (req, res) => {
   try {
     const [rows] = await sql.query(`SELECT ${userSelect('u')},u.${col('status')} AS accountStatus,u.${col('assigned_company')} AS assignedCompany FROM ${table} u WHERE u.${col(config.userIdColumn)}<>? ORDER BY u.${col(config.usernameColumn)}`, [req.chatUser.id]);
