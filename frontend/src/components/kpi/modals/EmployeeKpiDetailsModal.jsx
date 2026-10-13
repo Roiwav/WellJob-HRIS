@@ -29,6 +29,11 @@ import {
   getDecisionConfidenceClasses,
   getSuggestedHRActionClasses,
 } from "../../../utils/kpi/kpiHelpers";
+import {
+  clarifyActiveAssessmentText,
+  formatCount,
+  getRuleIndicatorLabel,
+} from "../../../utils/kpi/kpiPresentationHelpers";
 
 function formatEmployeeId(id) {
   return String(id || "-").replace(/^KPI-/i, "");
@@ -204,7 +209,7 @@ function ActionOption({
         {getActionIcon(action.code)}
       </span>
 
-      <span className="min-w-0 flex-1 truncate text-xs font-bold">
+      <span className="min-w-0 flex-1 whitespace-normal text-xs font-bold leading-4">
         {action.title}
       </span>
 
@@ -241,26 +246,44 @@ export default function EmployeeKpiDetailsModal({
     employee?.decisionConfidence ||
     DECISION_CONFIDENCE.LOW;
 
+  const ruleIndicatorLabel =
+    getRuleIndicatorLabel(decisionConfidence);
+
   const suggestedHRAction =
     employee?.suggestedHRAction ||
     HR_ACTION_WORKFLOW.MONITOR;
 
   const decisionConfidenceReason =
-    employee?.decisionConfidenceReason ||
-    "The confidence level considers the employee's incident count, severity score, critical incidents, and current risk level.";
+    clarifyActiveAssessmentText(
+      employee?.decisionConfidenceReason ||
+        "This rule-based assessment considers violations and critical incidents still counted, the current severity score, and the current risk level."
+    );
 
   const suggestedHRActionReason =
-    employee?.suggestedHRActionReason ||
-    "The recommended HR follow-up is based on the employee's current KPI standing and incident record and still requires HR review.";
+    suggestedHRAction === HR_ACTION_WORKFLOW.SUSPENSION &&
+    Number(
+      employee?.activeCriticalIncidentCount ??
+        employee?.criticalIncidentCount ??
+        0
+    ) > 0
+      ? "Suspension Review is suggested because a critical incident is still considered in the risk assessment. The HR Manager must review the full employee record before taking action."
+      : clarifyActiveAssessmentText(
+          employee?.suggestedHRActionReason ||
+            "The additional HR review is based on the employee's current KPI standing and incident record."
+        );
 
   const recommendationReason =
-    employee?.correctiveActionReason ||
-    employee?.recommendationReason ||
-    "No recommendation reason is available.";
+    clarifyActiveAssessmentText(
+      employee?.correctiveActionReason ||
+        employee?.recommendationReason ||
+        "No recommendation reason is available."
+    );
 
   const correctiveActionBasis =
-    employee?.correctiveActionBasis ||
-    "The recommendation considers the employee's KPI standing, recorded violations, severity score, and risk level.";
+    clarifyActiveAssessmentText(
+      employee?.correctiveActionBasis ||
+        "The recommendation considers the employee's KPI standing, violations still counted, current severity score, and risk level."
+    );
 
   const employeeName =
     employee?.name ||
@@ -301,14 +324,21 @@ export default function EmployeeKpiDetailsModal({
     "Insufficient Data";
 
   const criticalIncidentCount =
+    employee?.activeCriticalIncidentCount ??
     employee?.criticalIncidentCount;
+
+  const historicalCriticalIncidentCount = Number(
+    employee?.historicalCriticalIncidentCount ??
+      employee?.criticalIncidentCount ??
+      0
+  );
 
   return (
     <Dialog
       open={isOpen}
       onClose={onClose}
       title="Employee KPI Details"
-      description="Review the employee's KPI standing, incident record, risk level, and recommended HR follow-up."
+      description="Review the employee's current KPI standing, incident history, suggested performance action, and additional HR review."
       size="xl"
       tone="default"
       footer={
@@ -362,7 +392,7 @@ export default function EmployeeKpiDetailsModal({
               </h3>
 
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Review the employee's recorded incident information together with the resulting KPI and risk assessment.
+                Review the incidents still counted in the current assessment together with the employee's full recorded history.
               </p>
             </div>
 
@@ -374,16 +404,16 @@ export default function EmployeeKpiDetailsModal({
                   </p>
 
                   <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                    Recorded incident information considered in the review.
+                    Current assessment details with total recorded history shown for context.
                   </p>
                 </div>
 
                 <div className="mt-3 space-y-2">
                   <IndicatorRow
                     icon={<FiFileText aria-hidden="true" />}
-                    label="Active Violations"
+                    label="Violations Still Counted"
                     value={violationCount}
-                    helper={`${historicalViolationCount} historical violation(s)`}
+                    helper={`Total Recorded Violations: ${historicalViolationCount}`}
                     tone={
                       violationCount >= 5
                         ? "rose"
@@ -395,9 +425,9 @@ export default function EmployeeKpiDetailsModal({
 
                   <IndicatorRow
                     icon={<FiBarChart2 aria-hidden="true" />}
-                    label="Active Severity Score"
+                    label="Current Severity Score"
                     value={severityScore}
-                    helper={`Historical score: ${historicalSeverityScore}`}
+                    helper={`Original Total Severity Points: ${historicalSeverityScore}`}
                     tone={
                       severityScore >= 8
                         ? "rose"
@@ -411,9 +441,12 @@ export default function EmployeeKpiDetailsModal({
                     criticalIncidentCount !== null && (
                       <IndicatorRow
                         icon={<FiAlertTriangle aria-hidden="true" />}
-                        label="Critical Incidents"
+                        label="Critical Incidents Still Counted"
                         value={Number(criticalIncidentCount || 0)}
-                        helper="Recorded incidents marked as critical"
+                        helper={`Total Recorded: ${formatCount(
+                          historicalCriticalIncidentCount,
+                          "critical incident"
+                        )}`}
                         tone={
                           Number(criticalIncidentCount || 0) > 0
                             ? "rose"
@@ -430,7 +463,10 @@ export default function EmployeeKpiDetailsModal({
                       employee?.monthsWithoutNewIncident === null ||
                       employee?.monthsWithoutNewIncident === undefined
                         ? "Incident-free period unavailable"
-                        : `${employee.monthsWithoutNewIncident} month(s) without a new incident`
+                        : `${formatCount(
+                            employee.monthsWithoutNewIncident,
+                            "month"
+                          )} without a new incident`
                     }
                     tone={
                       behaviorTrend === "Improving" ||
@@ -451,7 +487,7 @@ export default function EmployeeKpiDetailsModal({
                   </p>
 
                   <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                    Current assessment based on the employee's recorded KPI and incident information.
+                    Current assessment based on the employee's KPI and incident indicators.
                   </p>
                 </div>
 
@@ -484,7 +520,7 @@ export default function EmployeeKpiDetailsModal({
 
                   <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
                     <p className="mb-2 whitespace-nowrap text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                      Assessment Confidence
+                      Rule-Based Assessment
                     </p>
 
                     <DecisionBadge
@@ -494,7 +530,7 @@ export default function EmployeeKpiDetailsModal({
                           aria-hidden="true"
                         />
                       }
-                      label={decisionConfidence}
+                      label={ruleIndicatorLabel}
                       className={getDecisionConfidenceClasses(
                         decisionConfidence
                       )}
@@ -503,7 +539,7 @@ export default function EmployeeKpiDetailsModal({
 
                   <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
                     <p className="mb-2 whitespace-nowrap text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                      Recommended HR Follow-up
+                      Additional HR Review
                     </p>
 
                     <DecisionBadge
@@ -522,7 +558,7 @@ export default function EmployeeKpiDetailsModal({
                 </div>
 
                 <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2.5 text-xs leading-5 text-indigo-800 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-300">
-                  The incident record on the left provides the basis for the KPI standing and risk assessment shown here. HR should review these results together with the employee's full record before taking action.
+                  These are separate recommendations, not automatic decisions. The HR Manager must review the full employee record before taking action.
                 </div>
               </div>
             </div>
@@ -539,7 +575,7 @@ export default function EmployeeKpiDetailsModal({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
                 <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  Recommended HR Action
+                  Suggested Performance Action
                 </p>
 
                 <div
@@ -577,11 +613,11 @@ export default function EmployeeKpiDetailsModal({
                   className="text-indigo-500 dark:text-indigo-300"
                   aria-hidden="true"
                 />
-                Basis for Recommendation
+                Why These Actions Are Suggested
               </h3>
 
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Supporting reasons behind the recommended HR action.
+                Supporting reasons for the suggested performance action and additional HR review.
               </p>
             </div>
 
@@ -594,14 +630,14 @@ export default function EmployeeKpiDetailsModal({
               </ExplanationRow>
 
               <ExplanationRow
-                label="Why this confidence level"
+                label="Why these rule indicators apply"
                 icon={<FiZap aria-hidden="true" />}
               >
                 {decisionConfidenceReason}
               </ExplanationRow>
 
               <ExplanationRow
-                label="Why this follow-up is recommended"
+                label="Why additional HR review is suggested"
                 icon={<FiShield aria-hidden="true" />}
               >
                 {suggestedHRActionReason}
@@ -617,7 +653,7 @@ export default function EmployeeKpiDetailsModal({
                 </h3>
 
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Other available HR actions are shown for reference. The recommended option is highlighted.
+                  Other performance actions are shown for reference. The suggested option is highlighted.
                 </p>
               </div>
 

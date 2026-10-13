@@ -141,9 +141,9 @@ export default function SystemConfiguration() {
   return (
     <main className="min-w-0 space-y-4 p-4 pb-6 sm:p-6 sm:pb-6 lg:p-8 lg:pb-8">
       <PageHeader
-        eyebrow="System Settings"
-        title="System Configuration"
-        description="Manage the core policies and operational settings used across WELLJOB HRIS."
+        eyebrow="POLICIES & MASTER DATA"
+        title="Administration"
+        description="Manage company policies, performance standards, client companies, and positions."
         icon={<FiSettings size={22} />}
         actions={
           <div className="flex flex-wrap items-center gap-2">

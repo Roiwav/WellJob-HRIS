@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
   FiBarChart2,
@@ -399,6 +399,114 @@ export default function Attendance() {
   const [employeeHistory, setEmployeeHistory] = useState(null);
   const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
   const [employeeHistoryError, setEmployeeHistoryError] = useState("");
+
+  const applySavedAttendanceRecord = useCallback(
+    (record) => {
+      const nextDraft = {};
+      const nextRemarks = {};
+
+      employees.forEach(
+        (employee) => {
+          const employeeId =
+            employeeIdOf(
+              employee
+            );
+
+          if (employeeId) {
+            nextDraft[
+              employeeId
+            ] =
+              "Unmarked";
+          }
+        }
+      );
+
+      const entries =
+        Array.isArray(
+          record?.entries
+        )
+          ? record.entries
+          : [];
+
+      entries.forEach(
+        (entry) => {
+          const employeeId =
+            String(
+              entry?.employeeId ??
+                entry?.employee_id ??
+                ""
+            ).trim();
+
+          if (!employeeId) {
+            return;
+          }
+
+          nextDraft[
+            employeeId
+          ] =
+            entry?.status ||
+            "Unmarked";
+
+          nextRemarks[
+            employeeId
+          ] =
+            String(
+              entry?.note ||
+              ""
+            );
+        }
+      );
+
+      setClientRecordPreview(
+        (currentPreview) => {
+          if (currentPreview) {
+            URL.revokeObjectURL(
+              currentPreview
+            );
+          }
+
+          return "";
+        }
+      );
+
+      setAttendanceDraft(
+        nextDraft
+      );
+
+      setRemarks(
+        nextRemarks
+      );
+
+      setNoteDrafts(
+        nextRemarks
+      );
+
+      setAttendanceSource(
+        record?.source ===
+          "client"
+          ? "client"
+          : "coordinator"
+      );
+
+      setSourceLocked(true);
+
+      setClientRecordFile(null);
+      setClientRecordError("");
+
+      CLIENT_RECORD_DRAFTS.delete(
+        draftStorageKey
+      );
+
+      setSavedAttendance(
+        record
+      );
+    },
+    [
+      draftStorageKey,
+      employees,
+    ]
+  );
+
   useEffect(() => {
     setDraftReady(false);
     try {
@@ -623,6 +731,7 @@ export default function Attendance() {
       controller.abort();
     };
   }, [
+    applySavedAttendanceRecord,
     attendanceDate,
     employees,
   ]);
@@ -1139,106 +1248,6 @@ export default function Attendance() {
     }
     CLIENT_RECORD_DRAFTS.delete(draftStorageKey);
   };
-
-  function applySavedAttendanceRecord(
-    record
-  ) {
-    const nextDraft = {};
-    const nextRemarks = {};
-
-    employees.forEach(
-      (employee) => {
-        const employeeId =
-          employeeIdOf(
-            employee
-          );
-
-        if (employeeId) {
-          nextDraft[
-            employeeId
-          ] =
-            "Unmarked";
-        }
-      }
-    );
-
-    const entries =
-      Array.isArray(
-        record?.entries
-      )
-        ? record.entries
-        : [];
-
-    entries.forEach(
-      (entry) => {
-        const employeeId =
-          String(
-            entry?.employeeId ??
-              entry?.employee_id ??
-              ""
-          ).trim();
-
-        if (!employeeId) {
-          return;
-        }
-
-        nextDraft[
-          employeeId
-        ] =
-          entry?.status ||
-          "Unmarked";
-
-        nextRemarks[
-          employeeId
-        ] =
-          String(
-            entry?.note ||
-            ""
-          );
-      }
-    );
-
-    if (
-      clientRecordPreview
-    ) {
-      URL.revokeObjectURL(
-        clientRecordPreview
-      );
-    }
-
-    setAttendanceDraft(
-      nextDraft
-    );
-
-    setRemarks(
-      nextRemarks
-    );
-
-    setNoteDrafts(
-      nextRemarks
-    );
-
-    setAttendanceSource(
-      record?.source ===
-        "client"
-        ? "client"
-        : "coordinator"
-    );
-
-    setSourceLocked(true);
-
-    setClientRecordFile(null);
-    setClientRecordPreview("");
-    setClientRecordError("");
-
-    CLIENT_RECORD_DRAFTS.delete(
-      draftStorageKey
-    );
-
-    setSavedAttendance(
-      record
-    );
-  }
 
   const handleSaveAttendance =
     async () => {

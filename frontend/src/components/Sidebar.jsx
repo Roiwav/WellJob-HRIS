@@ -1,3 +1,4 @@
+
 import { NavLink } from "react-router-dom";
 import {
   FiAlertTriangle,
@@ -8,8 +9,8 @@ import {
   FiHome,
   FiMapPin,
   FiMoon,
-  FiSettings,
   FiShield,
+  FiSliders,
   FiSun,
   FiTool,
   FiUsers,
@@ -20,19 +21,34 @@ import { sidebarItems } from "../config/sidebarItems";
 import { ROLES } from "../constants/roles";
 import { useAuth } from "../context/useAuth";
 
+// Sidebar icons.
+// Supports both original and updated navigation titles.
 const iconMap = {
   Dashboard: <FiHome />,
   Employees: <FiUsers />,
   Attendance: <FiClipboard />,
   Deployments: <FiMapPin />,
+  Deployed: <FiMapPin />,
   "KPI Reports": <FiBarChart2 />,
   Incidents: <FiAlertTriangle />,
   Notifications: <FiBell />,
   "User Management": <FiUsers />,
   "Super Admin Portal": <FiShield />,
-  "System Configuration": <FiSettings />,
+  "System Configuration": <FiSliders />,
+  Administration: <FiSliders />,
   "Technical Audit": <FiShield />,
   "Operational Audit": <FiFileText />,
+};
+
+// Display-only navigation labels.
+// Original paths, permissions, and module behavior remain unchanged.
+const sidebarDisplayLabels = {
+  Deployments: "Deployed",
+  "System Configuration": "Administration",
+};
+
+const getSidebarLabel = (title) => {
+  return sidebarDisplayLabels[title] || title;
 };
 
 export default function Sidebar({ toggleTheme, darkMode }) {
@@ -55,6 +71,7 @@ export default function Sidebar({ toggleTheme, darkMode }) {
       "
     >
       <div className="min-w-0">
+        {/* Logo and system name */}
         <div className="flex h-16 items-center justify-center px-3 transition-all duration-200 group-hover/sidebar:justify-start group-hover/sidebar:gap-3">
           <img
             src={logo}
@@ -76,6 +93,7 @@ export default function Sidebar({ toggleTheme, darkMode }) {
           </span>
         </div>
 
+        {/* Main navigation */}
         <nav
           className="mt-5 flex flex-col gap-1"
           aria-label="Main navigation"
@@ -85,11 +103,12 @@ export default function Sidebar({ toggleTheme, darkMode }) {
               key={item.path}
               to={item.path}
               icon={iconMap[item.title] || <FiHome />}
-              label={item.title}
+              label={getSidebarLabel(item.title)}
             />
           ))}
 
-          {user?.role === ROLES.IT_SUPPORT && (
+          {/* IT Support navigation */}
+          {userRole === ROLES.IT_SUPPORT && (
             <SidebarItem
               to="/system-maintenance"
               icon={<FiTool className="text-red-500" />}
@@ -99,6 +118,7 @@ export default function Sidebar({ toggleTheme, darkMode }) {
         </nav>
       </div>
 
+      {/* Theme toggle */}
       <div className="border-t border-gray-200 p-3 dark:border-white/10">
         <button
           type="button"
