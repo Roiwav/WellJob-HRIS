@@ -468,17 +468,21 @@ function ReviewRecommendationModal({
                 />
               </ReviewFact>
 
-              <ReviewFact label="Recorded Violations">
+              <ReviewFact label="Active Violations">
                 <p className="text-sm font-black text-slate-900 dark:text-white">
                   {Number(employee.violationCount || 0)}
                 </p>
               </ReviewFact>
 
-              <ReviewFact label="Severity Score">
+              <ReviewFact label="Active / Historical Score">
                 <p className="text-sm font-black text-slate-900 dark:text-white">
-                  {Number(employee.severityScore || 0)}
+                  {Number(employee.activeSeverityScore ?? employee.severityScore ?? 0)} / {Number(employee.historicalSeverityScore ?? employee.severityScore ?? 0)}
                 </p>
               </ReviewFact>
+            </div>
+
+            <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-300">
+              Behavior trend: {employee.behaviorTrend || "Insufficient Data"}. Current KPI and HR recommendations use the active score; historical incidents remain available for audit.
             </div>
 
             {Number(

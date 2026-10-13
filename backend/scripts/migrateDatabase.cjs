@@ -631,7 +631,170 @@ const MIGRATIONS = [
     verifyApplied:
       chatMessengerSchemaIsApplied,
   },
+
+  {
+    name:
+      "add_kpi_severity_decay_snapshots.sql",
+
+    isApplied:
+      kpiSeverityDecayFullStateIsApplied,
+
+    canAdopt:
+      kpiSeverityDecayFullStateIsApplied,
+
+    verifyApplied:
+      kpiSeverityDecayFullStateIsApplied,
+
+    preflight:
+      kpiSeverityDecayPreflight,
+  },
 ];
+
+async function kpiSeverityDecaySchemaIsApplied(connection) {
+  const expected = new Map([
+    ["severity_score", ["decimal(10,2)", "NO"]],
+    ["historical_violation_count", ["int", "NO"]],
+    ["active_violation_count", ["int", "NO"]],
+    ["historical_severity_score", ["decimal(10,2)", "NO"]],
+    ["active_severity_score", ["decimal(10,2)", "NO"]],
+    ["historical_critical_incident_count", ["int", "NO"]],
+    ["active_critical_incident_count", ["int", "NO"]],
+    ["behavior_trend", ["varchar(50)", "YES"]],
+    ["months_without_new_incident", ["int", "YES"]],
+    ["latest_incident_date", ["datetime", "YES"]],
+    ["scoring_policy_version", ["varchar(80)", "YES"]],
+    ["evaluation_as_of", ["datetime", "YES"]],
+  ]);
+
+  const [rows] = await connection.query(`
+    SELECT
+      COLUMN_NAME AS column_name,
+      COLUMN_TYPE AS column_type,
+      IS_NULLABLE AS is_nullable
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'kpi_decision_history'
+  `);
+
+  const actual = new Map(
+    rows.map((row) => [
+      String(row.column_name).toLowerCase(),
+      row,
+    ])
+  );
+
+  return [...expected].every(([name, [type, nullable]]) => {
+    const column = actual.get(name);
+
+    return (
+      Boolean(column) &&
+      String(column.column_type).toLowerCase() === type &&
+      String(column.is_nullable).toUpperCase() === nullable
+    );
+  });
+}
+
+async function kpiSeverityDecayFullStateIsApplied(connection) {
+  const schemaReady =
+    await kpiSeverityDecaySchemaIsApplied(connection);
+
+  if (!schemaReady) {
+    return false;
+  }
+
+  const [rows] = await connection.query(`
+    SELECT COUNT(*) AS inconsistent_rows
+    FROM kpi_decision_history
+    WHERE scoring_policy_version IS NULL
+       OR (
+         scoring_policy_version = 'LEGACY_PRE_DECAY'
+         AND (
+           NOT (historical_violation_count <=> violation_count)
+           OR NOT (active_violation_count <=> violation_count)
+           OR NOT (historical_severity_score <=> severity_score)
+           OR NOT (active_severity_score <=> severity_score)
+           OR NOT (
+             historical_critical_incident_count
+             <=> critical_incident_count
+           )
+           OR NOT (
+             active_critical_incident_count
+             <=> critical_incident_count
+           )
+           OR NOT (evaluation_as_of <=> decided_at)
+         )
+       )
+  `);
+
+  return Number(rows[0]?.inconsistent_rows ?? -1) === 0;
+}
+
+async function kpiSeverityDecayPreflight(connection) {
+  const [columns] = await connection.query(`
+    SELECT
+      COLUMN_NAME AS column_name,
+      COLUMN_TYPE AS column_type
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'kpi_decision_history'
+  `);
+
+  const severity = columns.find(
+    (column) =>
+      String(column.column_name).toLowerCase() ===
+      "severity_score"
+  );
+
+  if (!severity) {
+    throw new Error(
+      "Severity Decay preflight: severity_score column is missing."
+    );
+  }
+
+  const newColumnNames = new Set([
+    "historical_violation_count",
+    "active_violation_count",
+    "historical_severity_score",
+    "active_severity_score",
+    "historical_critical_incident_count",
+    "active_critical_incident_count",
+    "behavior_trend",
+    "months_without_new_incident",
+    "latest_incident_date",
+    "scoring_policy_version",
+    "evaluation_as_of",
+  ]);
+
+  const preexistingNewColumns = columns
+    .map((column) => String(column.column_name).toLowerCase())
+    .filter((name) => newColumnNames.has(name));
+
+  if (
+    preexistingNewColumns.length > 0 ||
+    String(severity.column_type).toLowerCase() !== "int"
+  ) {
+    throw new Error(
+      "Severity Decay preflight: unexpected or partially applied schema. " +
+      "Stop and inspect the database; do not automatically rerun the ALTER TABLE."
+    );
+  }
+
+  const [rows] = await connection.query(`
+    SELECT COUNT(*) AS invalid_rows
+    FROM kpi_decision_history
+    WHERE severity_score IS NULL
+       OR violation_count IS NULL
+       OR critical_incident_count IS NULL
+       OR ABS(severity_score) > 99999999
+  `);
+
+  if (Number(rows[0]?.invalid_rows ?? -1) !== 0) {
+    throw new Error(
+      "Severity Decay preflight: legacy records contain NULL or " +
+      "out-of-range scoring values. Migration stopped."
+    );
+  }
+}
 
 function requiredEnv(
   name,

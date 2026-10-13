@@ -1,3 +1,7 @@
+import {
+  calculateSeveritySnapshot,
+} from "./severityDecayHelpers";
+
 export const EMPLOYEES_KEY =
   "legacy_employees_disabled";
 
@@ -1105,6 +1109,8 @@ export function getSuggestedHRAction({
 
   riskLevel =
     RISK_LEVELS.LOW_RISK,
+
+  behaviorTrend = "Stable",
 }) {
   if (
     criticalIncidentCount >=
@@ -1112,7 +1118,9 @@ export function getSuggestedHRAction({
     violationCount >=
       5 &&
     severityScore >=
-      12
+      12 &&
+    behaviorTrend !==
+      "Improving"
   ) {
     return HR_ACTION_WORKFLOW.TERMINATION;
   }
@@ -2401,40 +2409,22 @@ export function buildKPIEmployees(
             incidentLookup,
         });
 
-      const totalSeverityScore =
-        relatedIncidents.reduce(
-          (
-            sum,
-            incident
-          ) => {
-            const normalizedSeverity =
-              normalizeSeverityLabel(
-                incident?.severity
-              );
-
-            return (
-              sum +
-              (
-                SEVERITY_WEIGHTS[
-                  normalizedSeverity
-                ] ??
-                0
-              )
-            );
-          },
-          0
+      const severitySnapshot =
+        calculateSeveritySnapshot(
+          relatedIncidents
         );
 
+      const totalSeverityScore =
+        severitySnapshot.activeSeverityScore;
+
+      const activeViolationCount =
+        severitySnapshot.activeViolationCount;
+
       const criticalCount =
-        relatedIncidents.filter(
-          (
-            incident
-          ) =>
-            normalizeSeverityLabel(
-              incident?.severity
-            ) ===
-            SEVERITY_LABELS.CRITICAL
-        ).length;
+        severitySnapshot.activeCriticalIncidentCount;
+
+      const activeRelatedIncidents =
+        severitySnapshot.activeIncidents;
 
       const openCount =
         relatedIncidents.filter(
@@ -2455,20 +2445,20 @@ export function buildKPIEmployees(
       const kpiLevel =
         getKPILevelByScore(
           totalSeverityScore,
-          relatedIncidents.length
+          activeViolationCount
         );
 
       const riskLevel =
         getRiskLevelByKPI(
           kpiLevel,
-          relatedIncidents.length,
+          activeViolationCount,
           criticalCount
         );
 
       const correctiveAction =
         getCorrectiveActionRecommendation({
           violationCount:
-            relatedIncidents.length,
+            activeViolationCount,
 
           criticalIncidentCount:
             criticalCount,
@@ -2480,13 +2470,14 @@ export function buildKPIEmployees(
 
           kpiLevel,
 
-          relatedIncidents,
+          relatedIncidents:
+            activeRelatedIncidents,
         });
 
       const decisionConfidence =
         getDecisionConfidence({
           violationCount:
-            relatedIncidents.length,
+            activeViolationCount,
 
           criticalIncidentCount:
             criticalCount,
@@ -2503,7 +2494,7 @@ export function buildKPIEmployees(
             decisionConfidence,
 
           violationCount:
-            relatedIncidents.length,
+            activeViolationCount,
 
           criticalIncidentCount:
             criticalCount,
@@ -2512,6 +2503,9 @@ export function buildKPIEmployees(
             totalSeverityScore,
 
           riskLevel,
+
+          behaviorTrend:
+            severitySnapshot.behaviorTrend,
         });
 
       const decisionConfidenceReason =
@@ -2520,7 +2514,7 @@ export function buildKPIEmployees(
             decisionConfidence,
 
           violationCount:
-            relatedIncidents.length,
+            activeViolationCount,
 
           criticalIncidentCount:
             criticalCount,
@@ -2536,7 +2530,7 @@ export function buildKPIEmployees(
           suggestedHRAction,
 
           violationCount:
-            relatedIncidents.length,
+            activeViolationCount,
 
           criticalIncidentCount:
             criticalCount,
@@ -2570,7 +2564,12 @@ export function buildKPIEmployees(
           "deployed",
 
         violationCount:
-          relatedIncidents.length,
+          activeViolationCount,
+
+        activeViolationCount,
+
+        historicalViolationCount:
+          severitySnapshot.historicalViolationCount,
 
         openIncidentCount:
           openCount,
@@ -2578,13 +2577,34 @@ export function buildKPIEmployees(
         criticalIncidentCount:
           criticalCount,
 
+        activeCriticalIncidentCount:
+          criticalCount,
+
+        historicalCriticalIncidentCount:
+          severitySnapshot.historicalCriticalIncidentCount,
+
         severityScore:
           totalSeverityScore,
+
+        activeSeverityScore:
+          totalSeverityScore,
+
+        historicalSeverityScore:
+          severitySnapshot.historicalSeverityScore,
+
+        behaviorTrend:
+          severitySnapshot.behaviorTrend,
+
+        monthsWithoutNewIncident:
+          severitySnapshot.monthsWithoutNewIncident,
+
+        scoringPolicyVersion:
+          severitySnapshot.scoringPolicyVersion,
 
         severityLabel:
           getSeverityLabelByScore(
             totalSeverityScore,
-            relatedIncidents.length
+            activeViolationCount
           ),
 
         kpiLevel,
@@ -2600,9 +2620,13 @@ export function buildKPIEmployees(
         suggestedHRActionReason,
 
         lastIncidentDate:
+          severitySnapshot.latestIncidentDate ||
           getLatestIncidentDate(
             relatedIncidents
           ),
+
+        scoredIncidents:
+          severitySnapshot.scoredIncidents,
 
         relatedIncidents,
 

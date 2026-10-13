@@ -78,7 +78,7 @@ function normalizeLevel(level) {
 function getKPIExplanation(level) {
   switch (level) {
     case "Critical Concern":
-      return "Critical Concern means the employee has serious incident severity points or critical cases that require priority HR review.";
+      return "Critical Concern means the employee's current active severity score remains high after incident status, age, and improvement are considered.";
 
     case "Needs Improvement":
       return "Needs Improvement means the employee has repeated or notable KPI standing concerns that require structured HR monitoring.";
@@ -87,10 +87,10 @@ function getKPIExplanation(level) {
       return "Minor Concern means the employee has a recorded minor concern that should be monitored or coached early.";
 
     case "Good Standing":
-      return "Good Standing means the employee has no recorded incident severity score and no active KPI standing concern.";
+      return "Good Standing means the employee currently has no active severity score. Historical incidents may remain visible for audit.";
 
     default:
-      return "KPI standing is based on the total weighted severity score and incident frequency.";
+      return "KPI standing is based on the active weighted severity score and active incident frequency.";
   }
 }
 

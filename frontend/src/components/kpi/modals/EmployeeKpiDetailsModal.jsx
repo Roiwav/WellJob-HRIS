@@ -9,6 +9,7 @@ import {
   FiRefreshCw,
   FiShield,
   FiTarget,
+  FiTrendingUp,
   FiUser,
   FiUsers,
   FiVideo,
@@ -278,8 +279,26 @@ export default function EmployeeKpiDetailsModal({
   );
 
   const severityScore = Number(
-    employee?.severityScore || 0
+    employee?.activeSeverityScore ??
+      employee?.severityScore ??
+      0
   );
+
+  const historicalSeverityScore = Number(
+    employee?.historicalSeverityScore ??
+      employee?.severityScore ??
+      0
+  );
+
+  const historicalViolationCount = Number(
+    employee?.historicalViolationCount ??
+      employee?.violationCount ??
+      0
+  );
+
+  const behaviorTrend =
+    employee?.behaviorTrend ||
+    "Insufficient Data";
 
   const criticalIncidentCount =
     employee?.criticalIncidentCount;
@@ -362,9 +381,9 @@ export default function EmployeeKpiDetailsModal({
                 <div className="mt-3 space-y-2">
                   <IndicatorRow
                     icon={<FiFileText aria-hidden="true" />}
-                    label="Recorded Violations"
+                    label="Active Violations"
                     value={violationCount}
-                    helper="Total recorded violations"
+                    helper={`${historicalViolationCount} historical violation(s)`}
                     tone={
                       violationCount >= 5
                         ? "rose"
@@ -376,9 +395,9 @@ export default function EmployeeKpiDetailsModal({
 
                   <IndicatorRow
                     icon={<FiBarChart2 aria-hidden="true" />}
-                    label="Severity Score"
+                    label="Active Severity Score"
                     value={severityScore}
-                    helper="Overall severity from recorded incidents"
+                    helper={`Historical score: ${historicalSeverityScore}`}
                     tone={
                       severityScore >= 8
                         ? "rose"
@@ -402,6 +421,26 @@ export default function EmployeeKpiDetailsModal({
                         }
                       />
                     )}
+
+                  <IndicatorRow
+                    icon={<FiTrendingUp aria-hidden="true" />}
+                    label="Behavior Trend"
+                    value={behaviorTrend}
+                    helper={
+                      employee?.monthsWithoutNewIncident === null ||
+                      employee?.monthsWithoutNewIncident === undefined
+                        ? "Incident-free period unavailable"
+                        : `${employee.monthsWithoutNewIncident} month(s) without a new incident`
+                    }
+                    tone={
+                      behaviorTrend === "Improving" ||
+                      behaviorTrend === "Good Standing"
+                        ? "emerald"
+                        : behaviorTrend === "Worsening"
+                        ? "rose"
+                        : "amber"
+                    }
+                  />
                 </div>
               </div>
 

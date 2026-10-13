@@ -15,6 +15,9 @@ import {
   normalizeEmployeeStatus,
 } from "../../utils/employees/employeeHelpers";
 import {
+  calculateSeveritySnapshot,
+} from "../../utils/kpi/severityDecayHelpers";
+import {
   parseEmployeeDocuments,
 } from "../../utils/employees/employeeFormHelpers";
 import authenticatedFetch from "../../utils/authenticatedFetch";
@@ -39,17 +42,18 @@ const OPEN_INCIDENT_STATUSES = new Set([
   "Investigating",
   "For Review",
 ]);
-const SEVERITY_WEIGHTS = {
-  Critical: 5,
-  Major: 3,
-  Minor: 1,
-};
 const EMPTY_INCIDENT_SUMMARY = Object.freeze({
   total: 0,
+  activeTotal: 0,
   open: 0,
   closed: 0,
   critical: 0,
+  activeCritical: 0,
   severityScore: 0,
+  historicalSeverityScore: 0,
+  activeSeverityScore: 0,
+  behaviorTrend: "Good Standing",
+  monthsWithoutNewIncident: null,
 });
 const STATUS_CLASSES = {
   Valid:
@@ -445,7 +449,6 @@ function parseHistoricalSummary(data, expectedEmployeeId) {
     "open",
     "closed",
     "critical",
-    "severityScore",
   ];
   const validated = {};
   for (const field of requiredFields) {
@@ -466,6 +469,30 @@ function parseHistoricalSummary(data, expectedEmployeeId) {
     }
     validated[field] = value;
   }
+
+  const decimalFields = [
+    "severityScore",
+    "historicalSeverityScore",
+    "activeSeverityScore",
+  ];
+
+  for (const field of decimalFields) {
+    const value = Number(summary[field]);
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`Invalid incident summary field: ${field}`);
+    }
+    validated[field] = value;
+  }
+
+  validated.activeTotal = Number(summary.activeTotal || 0);
+  validated.activeCritical = Number(summary.activeCritical || 0);
+  validated.behaviorTrend =
+    String(summary.behaviorTrend || "Insufficient Data");
+  validated.monthsWithoutNewIncident =
+    summary.monthsWithoutNewIncident === null ||
+    summary.monthsWithoutNewIncident === undefined
+      ? null
+      : Number(summary.monthsWithoutNewIncident);
   if (
     validated.open + validated.closed !== validated.total ||
     validated.critical > validated.total
@@ -735,11 +762,9 @@ export default function EmployeeModal({ employee, onClose }) {
    * roles. This preserves the original modal behavior.
    */
   const detailedIncidentSummary = useMemo(() => {
-    return employeeIncidents.reduce(
+    const historicalSummary = employeeIncidents.reduce(
       (summary, incident) => {
         summary.total += 1;
-        summary.severityScore +=
-          SEVERITY_WEIGHTS[incident.severity] || 0;
         if (OPEN_INCIDENT_STATUSES.has(incident.status)) {
           summary.open += 1;
         }
@@ -755,6 +780,26 @@ export default function EmployeeModal({ employee, onClose }) {
         ...EMPTY_INCIDENT_SUMMARY,
       }
     );
+    const severitySnapshot =
+      calculateSeveritySnapshot(employeeIncidents);
+
+    return {
+      ...historicalSummary,
+      activeTotal:
+        severitySnapshot.activeViolationCount,
+      activeCritical:
+        severitySnapshot.activeCriticalIncidentCount,
+      severityScore:
+        severitySnapshot.activeSeverityScore,
+      historicalSeverityScore:
+        severitySnapshot.historicalSeverityScore,
+      activeSeverityScore:
+        severitySnapshot.activeSeverityScore,
+      behaviorTrend:
+        severitySnapshot.behaviorTrend,
+      monthsWithoutNewIncident:
+        severitySnapshot.monthsWithoutNewIncident,
+    };
   }, [employeeIncidents]);
   /*
    * The coordinator's historical summary is usable
@@ -819,13 +864,19 @@ export default function EmployeeModal({ employee, onClose }) {
       };
     }
     const kpiLevel = getKPILevel(
-      incidentSummary.severityScore,
-      incidentSummary.total
+      incidentSummary.activeSeverityScore ??
+        incidentSummary.severityScore,
+      incidentSummary.activeTotal ??
+        incidentSummary.total
     );
     const riskLevel = getRiskLevel({
       kpiLevel,
-      totalIncidents: incidentSummary.total,
-      criticalIncidents: incidentSummary.critical,
+      totalIncidents:
+        incidentSummary.activeTotal ??
+        incidentSummary.total,
+      criticalIncidents:
+        incidentSummary.activeCritical ??
+        incidentSummary.critical,
     });
     /*
      * Historical aggregate statistics may contain
@@ -859,8 +910,12 @@ export default function EmployeeModal({ employee, onClose }) {
       kpiLevel,
       riskLevel,
       ...getRecommendationDecision({
-        totalIncidents: incidentSummary.total,
-        criticalIncidents: incidentSummary.critical,
+        totalIncidents:
+          incidentSummary.activeTotal ??
+          incidentSummary.total,
+        criticalIncidents:
+          incidentSummary.activeCritical ??
+          incidentSummary.critical,
         riskLevel,
       }),
     };
@@ -1165,7 +1220,7 @@ export default function EmployeeModal({ employee, onClose }) {
                       : "Current incident totals and system-generated employee indicators."
                   }
                 />
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
                   <StatBox
                     label="Total Incidents"
                     value={getDisplayedStatistic("total")}
@@ -1181,8 +1236,16 @@ export default function EmployeeModal({ employee, onClose }) {
                     valueClassName="text-emerald-600 dark:text-emerald-300"
                   />
                   <StatBox
-                    label="Severity Score"
-                    value={getDisplayedStatistic("severityScore")}
+                    label="Active Score"
+                    value={getDisplayedStatistic("activeSeverityScore")}
+                  />
+                  <StatBox
+                    label="Historical Score"
+                    value={getDisplayedStatistic("historicalSeverityScore")}
+                  />
+                  <StatBox
+                    label="Behavior Trend"
+                    value={getDisplayedStatistic("behaviorTrend")}
                   />
                   <MetricBadgeBox
                     label="Risk Level"

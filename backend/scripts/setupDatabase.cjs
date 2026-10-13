@@ -80,6 +80,7 @@ const EXPECTED_MIGRATIONS = [
   "add_account_credentials_delivery_status.sql",
   "add_attendance_tracking.sql",
   "add_chat_messenger_schema.sql",
+  "add_kpi_severity_decay_snapshots.sql",
 ];
 
 function requiredEnv(

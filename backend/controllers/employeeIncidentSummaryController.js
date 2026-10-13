@@ -1,6 +1,10 @@
 
 const db = require("../config/db");
 
+const {
+  calculateEmployeeSeveritySnapshot,
+} = require("../utils/kpiSeverityDecayService");
+
 /*
  * ==================================================
  * EMPLOYEE INCIDENT SUMMARY
@@ -302,6 +306,28 @@ exports.getEmployeeIncidentSummary = async (req, res) => {
 
     const row = rows[0];
 
+    const [incidentRows] = await db.promise().query(
+      `
+      SELECT
+        severity,
+        status,
+        incident_date,
+        created_at,
+        updated_at,
+        resolution_submitted_at,
+        reviewed_at
+      FROM incidents
+      WHERE employee_id = ?
+      ORDER BY incident_date ASC, id ASC
+      `,
+      [employeeId]
+    );
+
+    const severitySnapshot =
+      calculateEmployeeSeveritySnapshot(
+        incidentRows
+      );
+
     /*
      * Historical statistics only.
      *
@@ -319,13 +345,44 @@ exports.getEmployeeIncidentSummary = async (req, res) => {
       summary: {
         total: toSafeCount(row.total_incidents),
 
+        historicalTotal:
+          severitySnapshot.historicalViolationCount,
+
+        activeTotal:
+          severitySnapshot.activeViolationCount,
+
         open: toSafeCount(row.open_cases),
 
         closed: toSafeCount(row.closed_cases),
 
         critical: toSafeCount(row.critical_incidents),
 
-        severityScore: toSafeCount(row.severity_score),
+        historicalCritical:
+          severitySnapshot.historicalCriticalIncidentCount,
+
+        activeCritical:
+          severitySnapshot.activeCriticalIncidentCount,
+
+        severityScore:
+          severitySnapshot.activeSeverityScore,
+
+        historicalSeverityScore:
+          severitySnapshot.historicalSeverityScore,
+
+        activeSeverityScore:
+          severitySnapshot.activeSeverityScore,
+
+        behaviorTrend:
+          severitySnapshot.behaviorTrend,
+
+        monthsWithoutNewIncident:
+          severitySnapshot.monthsWithoutNewIncident,
+
+        latestIncidentDate:
+          severitySnapshot.latestIncidentDate,
+
+        scoringPolicyVersion:
+          severitySnapshot.scoringPolicyVersion,
       },
     });
   } catch (error) {

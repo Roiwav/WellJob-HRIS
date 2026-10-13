@@ -10,6 +10,10 @@ const {
   isCurrentWorkforceStatus,
 } = require("../utils/workforceScope");
 
+const {
+  calculateEmployeeSeveritySnapshot,
+} = require("../utils/kpiSeverityDecayService");
+
 const KPI_LEVELS = {
   GOOD_STANDING: "Good Standing",
   MINOR_CONCERN: "Minor Concern",
@@ -217,6 +221,71 @@ function toCamelCaseRecord(
         row.critical_incident_count ||
           0
       ),
+
+    historicalViolationCount:
+      Number(
+        row.historical_violation_count ??
+          row.violation_count ??
+          0
+      ),
+
+    activeViolationCount:
+      Number(
+        row.active_violation_count ??
+          row.violation_count ??
+          0
+      ),
+
+    historicalSeverityScore:
+      Number(
+        row.historical_severity_score ??
+          row.severity_score ??
+          0
+      ),
+
+    activeSeverityScore:
+      Number(
+        row.active_severity_score ??
+          row.severity_score ??
+          0
+      ),
+
+    historicalCriticalIncidentCount:
+      Number(
+        row.historical_critical_incident_count ??
+          row.critical_incident_count ??
+          0
+      ),
+
+    activeCriticalIncidentCount:
+      Number(
+        row.active_critical_incident_count ??
+          row.critical_incident_count ??
+          0
+      ),
+
+    behaviorTrend:
+      row.behavior_trend ||
+      "Insufficient Data",
+
+    monthsWithoutNewIncident:
+      row.months_without_new_incident === null ||
+      row.months_without_new_incident === undefined
+        ? null
+        : Number(row.months_without_new_incident),
+
+    latestIncidentDate:
+      row.latest_incident_date ||
+      null,
+
+    scoringPolicyVersion:
+      row.scoring_policy_version ||
+      "LEGACY_PRE_DECAY",
+
+    evaluationAsOf:
+      row.evaluation_as_of ||
+      row.decided_at ||
+      null,
 
     decisionConfidence:
       row.decision_confidence ||
@@ -579,12 +648,14 @@ function getExpectedSuggestedHRAction({
   criticalIncidentCount,
   severityScore,
   riskLevel,
+  behaviorTrend = "Stable",
 }) {
   if (
     criticalIncidentCount >=
       1 &&
     violationCount >= 5 &&
-    severityScore >= 12
+    severityScore >= 12 &&
+    behaviorTrend !== "Improving"
   ) {
     return HR_ACTION_WORKFLOW.TERMINATION;
   }
@@ -1491,7 +1562,13 @@ async function getTrustedIncidents(
         id,
         violation_type,
         severity,
-        description
+        status,
+        incident_date,
+        description,
+        created_at,
+        updated_at,
+        resolution_submitted_at,
+        reviewed_at
       FROM incidents
       WHERE employee_id = ?
       ORDER BY id ASC
@@ -1510,39 +1587,28 @@ async function getTrustedIncidents(
 }
 
 function buildTrustedDecisionSnapshot(
-  incidents
+  incidents,
+  evaluationDate = new Date()
 ) {
   const relatedIncidents =
     getSafeIncidents(
       incidents
     );
 
-  const violationCount =
-    relatedIncidents.length;
-
-  const severityScore =
-    relatedIncidents.reduce(
-      (
-        sum,
-        incident
-      ) =>
-        sum +
-        getSeverityWeight(
-          incident?.severity
-        ),
-      0
+  const severitySnapshot =
+    calculateEmployeeSeveritySnapshot(
+      relatedIncidents,
+      evaluationDate
     );
 
+  const violationCount =
+    severitySnapshot.activeViolationCount;
+
+  const severityScore =
+    severitySnapshot.activeSeverityScore;
+
   const criticalIncidentCount =
-    relatedIncidents.filter(
-      (
-        incident
-      ) =>
-        normalizeSeverityLabel(
-          incident?.severity
-        ) ===
-        SEVERITY_LABELS.CRITICAL
-    ).length;
+    severitySnapshot.activeCriticalIncidentCount;
 
   const kpiLevel =
     getExpectedKPILevel(
@@ -1566,6 +1632,9 @@ function buildTrustedDecisionSnapshot(
       severityScore,
 
       riskLevel,
+
+      behaviorTrend:
+        severitySnapshot.behaviorTrend,
     });
 
   const suggestedHRAction =
@@ -1625,6 +1694,39 @@ function buildTrustedDecisionSnapshot(
     });
 
   return {
+    historicalViolationCount:
+      severitySnapshot.historicalViolationCount,
+
+    activeViolationCount:
+      severitySnapshot.activeViolationCount,
+
+    historicalSeverityScore:
+      severitySnapshot.historicalSeverityScore,
+
+    activeSeverityScore:
+      severitySnapshot.activeSeverityScore,
+
+    historicalCriticalIncidentCount:
+      severitySnapshot.historicalCriticalIncidentCount,
+
+    activeCriticalIncidentCount:
+      severitySnapshot.activeCriticalIncidentCount,
+
+    behaviorTrend:
+      severitySnapshot.behaviorTrend,
+
+    monthsWithoutNewIncident:
+      severitySnapshot.monthsWithoutNewIncident,
+
+    latestIncidentDate:
+      severitySnapshot.latestIncidentDate,
+
+    scoringPolicyVersion:
+      severitySnapshot.scoringPolicyVersion,
+
+    evaluatedAt:
+      severitySnapshot.evaluatedAt,
+
     violationCount,
 
     severityScore,
@@ -1943,6 +2045,17 @@ exports.getKpiDecisionHistory =
                 d.violation_count,
                 d.severity_score,
                 d.critical_incident_count,
+                d.historical_violation_count,
+                d.active_violation_count,
+                d.historical_severity_score,
+                d.active_severity_score,
+                d.historical_critical_incident_count,
+                d.active_critical_incident_count,
+                d.behavior_trend,
+                d.months_without_new_incident,
+                d.latest_incident_date,
+                d.scoring_policy_version,
+                d.evaluation_as_of,
                 d.decision_confidence,
                 d.suggested_hr_action,
                 d.system_recommendation,
@@ -2189,6 +2302,17 @@ exports.getKpiDecisionHistory =
                 violation_count,
                 severity_score,
                 critical_incident_count,
+                historical_violation_count,
+                active_violation_count,
+                historical_severity_score,
+                active_severity_score,
+                historical_critical_incident_count,
+                active_critical_incident_count,
+                behavior_trend,
+                months_without_new_incident,
+                latest_incident_date,
+                scoring_policy_version,
+                evaluation_as_of,
                 decision_confidence,
                 suggested_hr_action,
                 system_recommendation,
@@ -2923,6 +3047,18 @@ exports.createKpiDecision =
             severity_score,
             critical_incident_count,
 
+            historical_violation_count,
+            active_violation_count,
+            historical_severity_score,
+            active_severity_score,
+            historical_critical_incident_count,
+            active_critical_incident_count,
+            behavior_trend,
+            months_without_new_incident,
+            latest_incident_date,
+            scoring_policy_version,
+            evaluation_as_of,
+
             decision_confidence,
             suggested_hr_action,
             system_recommendation,
@@ -2945,6 +3081,7 @@ exports.createKpiDecision =
           VALUES (
             ?, ?, ?,
             ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?,
             ?, ?,
             ?, ?, ?,
@@ -2970,6 +3107,28 @@ exports.createKpiDecision =
             trustedSnapshot.severityScore,
 
             trustedSnapshot.criticalIncidentCount,
+
+            trustedSnapshot.historicalViolationCount,
+
+            trustedSnapshot.activeViolationCount,
+
+            trustedSnapshot.historicalSeverityScore,
+
+            trustedSnapshot.activeSeverityScore,
+
+            trustedSnapshot.historicalCriticalIncidentCount,
+
+            trustedSnapshot.activeCriticalIncidentCount,
+
+            trustedSnapshot.behaviorTrend,
+
+            trustedSnapshot.monthsWithoutNewIncident,
+
+            trustedSnapshot.latestIncidentDate,
+
+            trustedSnapshot.scoringPolicyVersion,
+
+            trustedSnapshot.evaluatedAt,
 
             trustedSnapshot.decisionConfidence,
 

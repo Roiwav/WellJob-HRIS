@@ -646,7 +646,7 @@ export default function RiskTable({
         </div>
 
         <div className="max-h-[520px] overflow-auto">
-          <table className="w-full min-w-[820px] border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[980px] border-separate border-spacing-0 text-sm">
             <caption className="sr-only">
               Employee KPI standing, risk level, recommendation, and details
             </caption>
@@ -676,6 +676,13 @@ export default function RiskTable({
 
                 <th
                   scope="col"
+                  className="sticky top-0 z-20 w-[170px] border-b border-slate-200 bg-slate-100 px-3 py-3 text-center font-bold dark:border-slate-700 dark:bg-slate-800"
+                >
+                  Active / Historical
+                </th>
+
+                <th
+                  scope="col"
                   className="sticky top-0 z-20 w-[220px] border-b border-slate-200 bg-slate-100 px-3 py-3 text-left font-bold dark:border-slate-700 dark:bg-slate-800"
                 >
                   Recommendation
@@ -694,7 +701,7 @@ export default function RiskTable({
               {paginatedEmployees.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-6 py-10 text-center"
                   >
                     <div
@@ -787,6 +794,15 @@ export default function RiskTable({
                             {Number(employee?.violationCount) || 0} violation(s)
                           </span>
                         </div>
+                      </td>
+
+                      <td className="border-b border-slate-200 px-3 py-3.5 text-center dark:border-slate-800">
+                        <p className="font-black text-slate-900 dark:text-white">
+                          {Number(employee?.activeSeverityScore ?? employee?.severityScore ?? 0)} / {Number(employee?.historicalSeverityScore ?? employee?.severityScore ?? 0)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {employee?.behaviorTrend || "Insufficient Data"}
+                        </p>
                       </td>
 
                       <td className="border-b border-slate-200 px-3 py-3.5 dark:border-slate-800">

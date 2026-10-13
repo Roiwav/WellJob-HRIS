@@ -71,6 +71,18 @@ function mapKpiIncident(row) {
     description:
       row.description ||
       "",
+
+    updatedAt:
+      row.updatedAt ||
+      null,
+
+    resolutionSubmittedAt:
+      row.resolutionSubmittedAt ||
+      null,
+
+    reviewedAt:
+      row.reviewedAt ||
+      null,
   };
 }
 
@@ -133,6 +145,9 @@ exports.getKpiData = async (
               i.status,
               i.incident_date AS incidentDate,
               i.created_at AS createdAt,
+              i.updated_at AS updatedAt,
+              i.resolution_submitted_at AS resolutionSubmittedAt,
+              i.reviewed_at AS reviewedAt,
               i.description
 
             FROM incidents AS i

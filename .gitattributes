@@ -1,1 +1,3 @@
 backend/documents/seed-defense/*.pdf -text
+backend/database/add_chat_messenger_schema.sql text eol=lf
+backend/database/add_kpi_severity_decay_snapshots.sql text eol=lf

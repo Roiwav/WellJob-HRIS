@@ -246,10 +246,16 @@ export function exportKPIReportPDF({
       "violationCount"
     );
 
-  const totalSeverityScore =
+  const totalActiveSeverityScore =
     getTotal(
       safeEmployees,
-      "severityScore"
+      "activeSeverityScore"
+    );
+
+  const totalHistoricalSeverityScore =
+    getTotal(
+      safeEmployees,
+      "historicalSeverityScore"
     );
 
   const totalCriticalCases =
@@ -340,7 +346,7 @@ export function exportKPIReportPDF({
   doc.setTextColor(90);
 
   doc.text(
-    "This report summarizes workforce KPI indicators without displaying individual employee names.",
+    "Current KPI and HR recommendations use active severity scores. Historical scores remain available for audit.",
     14,
     34
   );
@@ -393,8 +399,12 @@ export function exportKPIReportPDF({
         totalViolations,
       ],
       [
-        "Total Severity Score",
-        totalSeverityScore,
+        "Total Active Severity Score",
+        totalActiveSeverityScore,
+      ],
+      [
+        "Total Historical Severity Score",
+        totalHistoricalSeverityScore,
       ],
       [
         "Total Critical Cases",
