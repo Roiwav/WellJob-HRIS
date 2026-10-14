@@ -69,6 +69,23 @@ const MIGRATIONS = [
   },
 
   {
+    name: "add_incident_evidence_purpose.sql",
+    isApplied: async (connection) => {
+      const purposeColumn = await columnExists(
+        connection,
+        "incident_evidence",
+        "evidence_purpose"
+      );
+      const purposeIndex = await indexExists(
+        connection,
+        "incident_evidence",
+        "idx_incident_evidence_incident_purpose"
+      );
+      return purposeColumn && purposeIndex;
+    },
+  },
+
+  {
     name: "add_one_active_deployment_invariant.sql",
 
     prepare: async (

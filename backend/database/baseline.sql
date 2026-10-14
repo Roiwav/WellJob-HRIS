@@ -426,6 +426,10 @@ CREATE TABLE IF NOT EXISTS incident_evidence (
   incident_id INT NOT NULL,
   file_name VARCHAR(255) DEFAULT NULL,
   file_path VARCHAR(500) NOT NULL,
+  evidence_purpose ENUM(
+    'INITIAL_NTE',
+    'RESOLUTION_PROOF'
+  ) NOT NULL DEFAULT 'RESOLUTION_PROOF',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   PRIMARY KEY (id),
@@ -436,6 +440,11 @@ CREATE TABLE IF NOT EXISTS incident_evidence (
 
   KEY idx_incident_evidence_created_at (
     created_at
+  ),
+
+  KEY idx_incident_evidence_incident_purpose (
+    incident_id,
+    evidence_purpose
   ),
 
   CONSTRAINT fk_incident_evidence

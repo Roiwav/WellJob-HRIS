@@ -14,6 +14,14 @@ const {
 } = require("../utils/incidentReviewPolicy");
 
 const {
+  evaluateProofSubmission,
+  evaluateStartInvestigation,
+  getCreateIncidentActorSelect,
+  getIncidentCreator,
+  getReportingPath,
+} = require("../utils/incidentInvestigationPolicy");
+
+const {
   ViolationPolicyError,
   getViolationRulesConfiguration,
   resolveViolationRule,
@@ -34,9 +42,13 @@ const WORKFLOW_ACTION = {
 const INVESTIGATOR_ROLES =
   new Set([
     "HR_MANAGER",
-    "HR_STAFF",
     "HR_COORDINATOR",
   ]);
+
+const EVIDENCE_PURPOSE = Object.freeze({
+  INITIAL_NTE: "INITIAL_NTE",
+  RESOLUTION_PROOF: "RESOLUTION_PROOF",
+});
 
 const REVIEWER_ROLES =
   new Set([
@@ -279,6 +291,17 @@ function isHrCoordinatorRequest(
       req?.user?.role
     ) ===
     "HR_COORDINATOR"
+  );
+}
+
+function isHrStaffRequest(
+  req
+) {
+  return (
+    normalizeRole(
+      req?.user?.role
+    ) ===
+    "HR_STAFF"
   );
 }
 
@@ -1169,6 +1192,14 @@ function serializeEvidenceItem(
 
     filePath,
 
+    evidencePurpose:
+      item.evidence_purpose ||
+      EVIDENCE_PURPOSE.RESOLUTION_PROOF,
+
+    evidence_purpose:
+      item.evidence_purpose ||
+      EVIDENCE_PURPOSE.RESOLUTION_PROOF,
+
     url:
       isExternalUrl
         ? filePath
@@ -1544,6 +1575,18 @@ function serializeIncident(
         }
       : null;
 
+  const initialNteFiles = evidence.filter(
+    (item) =>
+      item.evidence_purpose ===
+      EVIDENCE_PURPOSE.INITIAL_NTE
+  );
+  const resolutionProofFiles = evidence.filter(
+    (item) =>
+      !item.evidence_purpose ||
+      item.evidence_purpose ===
+        EVIDENCE_PURPOSE.RESOLUTION_PROOF
+  );
+
   const resolution =
     hasResolutionSubmission
       ? {
@@ -1571,7 +1614,7 @@ function serializeIncident(
             "",
 
           proofFiles:
-            evidence.map(
+            resolutionProofFiles.map(
               serializeEvidenceItem
             ),
         }
@@ -1605,6 +1648,12 @@ function serializeIncident(
               .review_comments,
         }
       : null;
+
+  const reportCreator =
+    getIncidentCreator(incident);
+
+  const reportingPath =
+    getReportingPath(incident);
 
   return {
     id:
@@ -1692,6 +1741,37 @@ function serializeIncident(
       incident.reported_by ||
       "",
 
+    reportCreator,
+
+    reportCreatorId:
+      reportCreator.id,
+
+    report_creator_id:
+      reportCreator.id,
+
+    reportCreatorUsername:
+      reportCreator.username,
+
+    report_creator_username:
+      reportCreator.username,
+
+    reportCreatorName:
+      reportCreator.name,
+
+    report_creator_name:
+      reportCreator.name,
+
+    reportCreatorRole:
+      reportCreator.role || null,
+
+    report_creator_role:
+      reportCreator.role || null,
+
+    reportingPath,
+
+    reporting_path:
+      reportingPath,
+
     /*
      * Actual investigator action.
      */
@@ -1729,6 +1809,16 @@ function serializeIncident(
     investigation,
     resolution,
     review,
+
+    initialNte:
+      initialNteFiles.length
+        ? serializeEvidenceItem(initialNteFiles[0])
+        : null,
+
+    initial_nte:
+      initialNteFiles.length
+        ? serializeEvidenceItem(initialNteFiles[0])
+        : null,
 
     investigationStartedAt:
       incident
@@ -1946,6 +2036,148 @@ function serializeIncident(
 }
 
 
+function serializeHrStaffEmployeeIncidentHistoryItem(
+  incident
+) {
+  const employeeName =
+    incident.employee_name ||
+    incident.employeeNameFromEmployee ||
+    "Unknown Employee";
+
+  const hasResolutionSubmission =
+    Boolean(
+      incident.resolution_submitted_at
+    );
+
+  const legacyPolicySanction =
+    !incident.policy_sanction &&
+    !hasResolutionSubmission
+      ? (
+          incident.action_taken ||
+          ""
+        )
+      : "";
+
+  const policySanction =
+    incident.policy_sanction ||
+    legacyPolicySanction ||
+    "";
+
+  return {
+    id:
+      incident.id,
+
+    employeeId:
+      incident.employee_id,
+
+    employee_id:
+      incident.employee_id,
+
+    employee:
+      employeeName,
+
+    employeeName,
+
+    company:
+      incident.company ||
+      incident.employeeCompany ||
+      "",
+
+    violation:
+      incident.violation_type ||
+      "",
+
+    violationType:
+      incident.violation_type ||
+      "",
+
+    violation_type:
+      incident.violation_type ||
+      "",
+
+    severity:
+      incident.severity ||
+      "Minor",
+
+    status:
+      incident.status ||
+      "Open",
+
+    date:
+      incident.incident_date,
+
+    incidentDate:
+      incident.incident_date,
+
+    incident_date:
+      incident.incident_date,
+
+    reportedAt:
+      incident.created_at ||
+      incident.incident_date,
+
+    createdAt:
+      incident.created_at,
+
+    created_at:
+      incident.created_at,
+
+    description:
+      incident.description ||
+      "",
+
+    /*
+     * EmployeeModal displays the prescribed sanction
+     * as read-only textual history.
+     *
+     * Do not expose investigator/reviewer identities,
+     * workflow state objects, timeline data, NTE metadata,
+     * Resolution Proof metadata, file IDs, paths, or URLs.
+     */
+    sanction:
+      policySanction,
+
+    policySanction:
+      policySanction,
+
+    policy_sanction:
+      policySanction,
+
+    initialNte:
+      null,
+
+    initial_nte:
+      null,
+
+    evidence:
+      [],
+
+    resolution:
+      null,
+
+    investigation:
+      null,
+
+    review:
+      null,
+
+    timelineEvents:
+      [],
+
+    timeline_events:
+      [],
+
+    timeline:
+      [],
+
+    protectedEvidenceAccess:
+      false,
+
+    protected_evidence_access:
+      false,
+  };
+}
+
 function serializeIncidentSummary(
   incident
 ) {
@@ -2085,6 +2317,7 @@ async function getIncidentWithEvidence(
       `
       SELECT
         i.*,
+        ${getCreateIncidentActorSelect("i")},
         e.name AS employeeNameFromEmployee,
         e.company AS employeeCompany,
         e.status AS employeeStatus
@@ -2654,6 +2887,7 @@ exports.getIncidentReport =
               i.last_action_by_name,
               i.last_action_type,
               i.last_action_at,
+              ${getCreateIncidentActorSelect("i")},
               e.name AS employeeNameFromEmployee,
               e.company AS employeeCompany,
               e.status AS employeeStatus,
@@ -2989,6 +3223,7 @@ exports.getIncidents =
                 i.last_action_by_name,
                 i.last_action_type,
                 i.last_action_at,
+                ${getCreateIncidentActorSelect("i")},
                 e.name AS employeeNameFromEmployee,
                 e.company AS employeeCompany,
                 e.status AS employeeStatus,
@@ -3152,6 +3387,11 @@ exports.getIncidentsByEmployee =
           req
         );
 
+      const isHrStaff =
+        isHrStaffRequest(
+          req
+        );
+
       const coordinatorCompany =
         isHrCoordinator
           ? getHrCoordinatorAssignedCompany(
@@ -3282,6 +3522,32 @@ exports.getIncidentsByEmployee =
           (incident) =>
             incident.id
         );
+
+      /*
+       * ==================================================
+       * HR STAFF EMPLOYEE-HISTORY BOUNDARY
+       * ==================================================
+       *
+       * EmployeeModal only requires read-only textual
+       * Incident fields such as violation, severity,
+       * status, date, description, and prescribed sanction.
+       *
+       * For HR Staff:
+       * - do not query incident_evidence
+       * - do not query incident_timeline
+       * - do not serialize investigator/reviewer workflow
+       *   identities or protected attachment metadata
+       *
+       * This keeps Employee history available without
+       * restoring Incident operational authority.
+       */
+      if (isHrStaff) {
+        return res.json(
+          incidents.map(
+            serializeHrStaffEmployeeIncidentHistoryItem
+          )
+        );
+      }
 
       const [
         [evidence],
@@ -3602,6 +3868,12 @@ exports.createIncident =
           req
         );
 
+      if (evidenceFiles.length > 1) {
+        return res.status(400).json({
+          error: "A maximum of one initial NTE may be attached.",
+        });
+      }
+
       connection =
         await db
           .promise()
@@ -3895,14 +4167,16 @@ exports.createIncident =
           (
             incident_id,
             file_name,
-            file_path
+            file_path,
+            evidence_purpose
           )
-          VALUES (?, ?, ?)
+          VALUES (?, ?, ?, ?)
           `,
           [
             incidentId,
             file.fileName,
             file.filePath,
+            EVIDENCE_PURPOSE.INITIAL_NTE,
           ]
         );
       }
@@ -4252,9 +4526,11 @@ exports.updateIncidentStatus =
       ] =
         await connection.query(
           `
-          SELECT *
-          FROM incidents
-          WHERE id = ?
+          SELECT
+            i.*,
+            ${getCreateIncidentActorSelect("i")}
+          FROM incidents AS i
+          WHERE i.id = ?
           LIMIT 1
           FOR UPDATE
           `,
@@ -4279,11 +4555,6 @@ exports.updateIncidentStatus =
         normalizeStatus(
           existingIncident
             .status
-        );
-
-      const investigatorValues =
-        getAssignedInvestigatorValues(
-          existingIncident
         );
 
       const cleanResolutionNotes =
@@ -4315,26 +4586,23 @@ exports.updateIncidentStatus =
         actionType ===
         WORKFLOW_ACTION.START
       ) {
-        if (
-          !isInvestigatorRole(
-            actor.role
-          )
-        ) {
-          rejectLockedWorkflow(
-            403,
-            "Only an HR Manager, HR Staff, or HR Coordinator user can start an investigation."
-          );
-        }
+        const startPolicy =
+          evaluateStartInvestigation({
+            actor: {
+              ...actor,
+              assignedCompany:
+                getHrCoordinatorAssignedCompany(
+                  req
+                ),
+            },
+            incident:
+              existingIncident,
+          });
 
-        if (
-          existingStatus !==
-            "Open" ||
-          existingIncident
-            .investigation_started_at
-        ) {
+        if (!startPolicy.allowed) {
           rejectLockedWorkflow(
-            409,
-            "Only an Open case can begin investigation."
+            startPolicy.statusCode,
+            startPolicy.message
           );
         }
       }
@@ -4350,45 +4618,23 @@ exports.updateIncidentStatus =
       if (
         isProofSubmission
       ) {
-        if (
-          !isInvestigatorRole(
-            actor.role
-          )
-        ) {
-          rejectLockedWorkflow(
-            403,
-            "Only an HR Manager, HR Staff, or HR Coordinator user can submit investigation proof."
-          );
-        }
+        const proofPolicy =
+          evaluateProofSubmission({
+            actor: {
+              ...actor,
+              assignedCompany:
+                getHrCoordinatorAssignedCompany(
+                  req
+                ),
+            },
+            incident:
+              existingIncident,
+          });
 
-        if (
-          existingStatus !==
-          "Investigating"
-        ) {
+        if (!proofPolicy.allowed) {
           rejectLockedWorkflow(
-            409,
-            "Only an Investigating case can be submitted for review."
-          );
-        }
-
-        if (
-          !investigatorValues.length
-        ) {
-          rejectLockedWorkflow(
-            409,
-            "This case has no assigned investigator. Start the investigation before submitting proof."
-          );
-        }
-
-        if (
-          !hasActorMatch(
-            actor,
-            investigatorValues
-          )
-        ) {
-          rejectLockedWorkflow(
-            403,
-            "Only the HR user assigned to this investigation can submit or resubmit proof."
+            proofPolicy.statusCode,
+            proofPolicy.message
           );
         }
 
@@ -4650,16 +4896,37 @@ exports.updateIncidentStatus =
         id
       );
 
-      await connection.query(
+      const [updateResult] =
+        await connection.query(
         `
         UPDATE incidents
         SET ${updateFields.join(
           ", "
         )}
         WHERE id = ?
+          ${
+            actionType ===
+            WORKFLOW_ACTION.START
+              ? "AND LOWER(TRIM(COALESCE(status, ''))) = 'open' AND investigation_started_at IS NULL"
+              : ""
+          }
         `,
         params
       );
+
+      if (
+        actionType ===
+          WORKFLOW_ACTION.START &&
+        Number(
+          updateResult?.affectedRows ||
+          0
+        ) !== 1
+      ) {
+        rejectLockedWorkflow(
+          409,
+          "Another authorized investigator has already started this investigation."
+        );
+      }
 
       if (
         isProofSubmission
@@ -4674,14 +4941,16 @@ exports.updateIncidentStatus =
             (
               incident_id,
               file_name,
-              file_path
+              file_path,
+              evidence_purpose
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, ?)
             `,
             [
               id,
               file.fileName,
               file.filePath,
+              EVIDENCE_PURPOSE.RESOLUTION_PROOF,
             ]
           );
         }

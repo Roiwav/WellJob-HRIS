@@ -69,6 +69,7 @@ const EXPECTED_MIGRATIONS = [
   "add_incident_timeline.sql",
   "smart_suggestion_states.sql",
   "add_incident_policy_sanction.sql",
+  "add_incident_evidence_purpose.sql",
   "add_one_active_deployment_invariant.sql",
   "add_employee_documents_employee_id_index.sql",
   "add_employee_documents_expiration_index.sql",

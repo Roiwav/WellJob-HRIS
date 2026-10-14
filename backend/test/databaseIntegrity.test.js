@@ -34,6 +34,38 @@ function readSource(
 
 
 test(
+  "Incident evidence purpose migration preserves legacy proof semantics",
+  () => {
+    const baseline = readSource("database/baseline.sql");
+    const migration = readSource(
+      "database/add_incident_evidence_purpose.sql"
+    );
+    const runner = readSource("scripts/migrateDatabase.cjs");
+    const setup = readSource("scripts/setupDatabase.cjs");
+
+    for (const source of [baseline, migration]) {
+      assert.match(source, /evidence_purpose/i);
+      assert.match(source, /INITIAL_NTE/);
+      assert.match(source, /RESOLUTION_PROOF/);
+    }
+    assert.match(
+      baseline,
+      /DEFAULT\s+'RESOLUTION_PROOF'/i
+    );
+    assert.match(
+      migration,
+      /DEFAULT\s+''RESOLUTION_PROOF''/i
+    );
+    assert.doesNotMatch(migration, /UPDATE\s+incident_evidence/i);
+    assert.match(
+      runner,
+      /name:\s*"add_incident_evidence_purpose\.sql"/
+    );
+    assert.match(setup, /"add_incident_evidence_purpose\.sql"/);
+  }
+);
+
+test(
   "Messenger migration reproduces all seven required tables",
   () => {
     const sql =

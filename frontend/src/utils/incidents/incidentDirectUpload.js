@@ -8,6 +8,9 @@ import authenticatedFetch from "../authenticatedFetch";
 const INCIDENT_WORKFLOW_UPLOAD_AUTHORIZATION_URL =
   `${API_BASE}/incident-evidence/upload-authorizations/workflow`;
 
+const INCIDENT_CREATE_UPLOAD_AUTHORIZATION_URL =
+  `${API_BASE}/incident-evidence/upload-authorizations/create`;
+
 const MAX_INCIDENT_EVIDENCE_FILES =
   10;
 
@@ -259,6 +262,99 @@ async function uploadEvidenceToSignedUrl(
         : `Evidence upload failed with status ${response.status}.`
     );
   }
+}
+
+
+export async function prepareIncidentCreateDirectUpload({
+  employeeId,
+  file,
+}) {
+  const normalizedEmployeeId =
+    normalizePositiveInteger(
+      employeeId
+    );
+
+  if (!normalizedEmployeeId) {
+    throw new Error(
+      "Invalid employee ID for Initial NTE upload."
+    );
+  }
+
+  if (!isBrowserFile(file)) {
+    return [];
+  }
+
+  const response =
+    await authenticatedFetch(
+      INCIDENT_CREATE_UPLOAD_AUTHORIZATION_URL,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          employeeId:
+            normalizedEmployeeId,
+          files: [
+            {
+              name: file.name,
+              type: file.type,
+              size: file.size,
+            },
+          ],
+        }),
+      }
+    );
+
+  const data =
+    await response
+      .json()
+      .catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error ||
+        data?.message ||
+        `Unable to authorize Initial NTE upload. Status ${response.status}`
+    );
+  }
+
+  const authorization =
+    Array.isArray(data?.uploads)
+      ? data.uploads[0]
+      : null;
+  const signedUrl =
+    String(
+      authorization?.signedUrl ||
+        ""
+    ).trim();
+  const descriptor =
+    String(
+      authorization?.descriptor ||
+        ""
+    ).trim();
+
+  if (
+    data?.uploads?.length !== 1 ||
+    !signedUrl ||
+    !descriptor
+  ) {
+    throw new Error(
+      "The server returned an incomplete Initial NTE upload authorization."
+    );
+  }
+
+  await uploadEvidenceToSignedUrl(
+    signedUrl,
+    file
+  );
+
+  return [
+    {
+      descriptor,
+    },
+  ];
 }
 
 

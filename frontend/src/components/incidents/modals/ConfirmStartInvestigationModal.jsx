@@ -24,6 +24,7 @@ import {
   Detail,
   InfoCard,
   ModalFooter,
+  ProofList,
 } from "../shared/ModalUI";
 
 const SEVERITY_STYLE = {
@@ -297,6 +298,22 @@ export default function ConfirmStartInvestigationModal({
                 0
             )} day(s)`}
           />
+        </InfoCard>
+
+        <InfoCard title="Initial NTE Attachment">
+          {safeIncident.initialNte ||
+          safeIncident.initial_nte ? (
+            <ProofList
+              files={[
+                safeIncident.initialNte ||
+                  safeIncident.initial_nte,
+              ]}
+            />
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              No NTE was attached when this Incident was reported.
+            </p>
+          )}
         </InfoCard>
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">

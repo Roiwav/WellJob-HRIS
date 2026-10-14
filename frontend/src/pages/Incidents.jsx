@@ -38,6 +38,10 @@ import {
   normalizeEvidenceFiles,
 } from "../utils/incidents/evidenceFiles";
 import {
+  canUserStartInvestigation,
+  canUserSubmitInvestigationProof,
+} from "../utils/incidents/investigationEligibility";
+import {
   exportIncidentReportPDF,
 } from "../utils/incidents/incidentPdfExport";
 const INCIDENT_API_URL =
@@ -315,6 +319,19 @@ function normalizeBackendIncident(
 ) {
   const incidentId =
     incident.id;
+  const rawInitialNte =
+    incident.initialNte ||
+    incident.initial_nte ||
+    null;
+  const initialNte =
+    rawInitialNte
+      ? normalizeEvidenceFiles({
+          incidentId,
+          proofFiles: [
+            rawInitialNte,
+          ],
+        })[0] || null
+      : null;
   const reportedBy =
     incident.reportedByName ||
     incident.reported_by_name ||
@@ -523,6 +540,33 @@ function normalizeBackendIncident(
     reportedBy,
     reportedByName:
       reportedBy,
+    reportCreatorId:
+      incident.reportCreatorId ||
+      incident.report_creator_id ||
+      null,
+    report_creator_id:
+      incident.report_creator_id ||
+      incident.reportCreatorId ||
+      null,
+    reportCreatorRole:
+      incident.reportCreatorRole ||
+      incident.report_creator_role ||
+      "",
+    report_creator_role:
+      incident.report_creator_role ||
+      incident.reportCreatorRole ||
+      "",
+    reportingPath:
+      incident.reportingPath ||
+      incident.reporting_path ||
+      "UNKNOWN",
+    reporting_path:
+      incident.reporting_path ||
+      incident.reportingPath ||
+      "UNKNOWN",
+    initialNte,
+    initial_nte:
+      initialNte,
     investigation,
     resolution,
     review,
@@ -1419,7 +1463,10 @@ export default function Incidents() {
               "submit-resolution" &&
             currentStatus ===
               "Investigating" &&
-            canInvestigate
+            canUserSubmitInvestigationProof(
+              fullIncident,
+              currentUser
+            )
           ) {
             setCaseTab(
               "ACTIVE"
@@ -1435,7 +1482,10 @@ export default function Incidents() {
               "start-investigation" &&
             currentStatus ===
               "Open" &&
-            canInvestigate
+            canUserStartInvestigation(
+              fullIncident,
+              currentUser
+            )
           ) {
             setCaseTab(
               "ACTIVE"
@@ -1467,7 +1517,7 @@ export default function Incidents() {
         }
       },
       [
-        canInvestigate,
+        currentUser,
         isAuthorizedReviewer,
         loadIncidentDetails,
         showNotice,
@@ -2088,6 +2138,12 @@ export default function Incidents() {
                     actorFullName,
                   role:
                     user?.role,
+                  directUploads:
+                    Array.isArray(
+                      normalizedIncident.directUploads
+                    )
+                      ? normalizedIncident.directUploads
+                      : [],
                 }),
             }
           );
@@ -2141,7 +2197,10 @@ export default function Incidents() {
       incident
     ) => {
       if (
-        !canInvestigate ||
+        !canUserStartInvestigation(
+          incident,
+          currentUser
+        ) ||
         !incident
       ) {
         return false;
@@ -2207,7 +2266,10 @@ export default function Incidents() {
       resolutionData
     ) => {
       if (
-        !canInvestigate
+        !canUserSubmitInvestigationProof(
+          incident,
+          currentUser
+        )
       ) {
         return false;
       }
@@ -2893,7 +2955,7 @@ export default function Incidents() {
         );
   const pageDescription =
     isHrCoordinator
-      ? "Report and review incident records for your assigned client company. Investigation and case review remain role-restricted."
+      ? "Report and monitor incidents for your assigned client company, claim eligible open investigations, and submit proof for cases you own."
       : isAuthorizedReviewer
         ? "Monitor incident cases, review submitted resolution proof, and maintain complete case history."
         : "Report incidents, manage investigations, and submit resolution proof for authorized review.";

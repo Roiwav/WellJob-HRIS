@@ -1,5 +1,12 @@
 const db = require("../config/db");
 
+const {
+  evaluateStartInvestigation,
+  getCreateIncidentActorSelect,
+  getIncidentCreator,
+  getReportingPath,
+} = require("../utils/incidentInvestigationPolicy");
+
 const ALERT_PRIORITY = {
   HIGH: "High",
   MEDIUM: "Medium",
@@ -8,7 +15,6 @@ const ALERT_PRIORITY = {
 
 const ALLOWED_ROLES = new Set([
   "HR_MANAGER",
-  "HR_STAFF",
   "HR_COORDINATOR",
   "SUPER_ADMIN",
 ]);
@@ -691,6 +697,9 @@ function normalizeIncident(
   const reviewedByName =
     reviewerProfile.name;
 
+  const reportCreator =
+    getIncidentCreator(incident);
+
   return {
     ...incident,
 
@@ -759,6 +768,33 @@ function normalizeIncident(
 
     reporterName:
       reportedByName,
+
+    reportCreatorId:
+      reportCreator.id,
+
+    report_creator_id:
+      reportCreator.id,
+
+    reportCreatorUsername:
+      reportCreator.username,
+
+    report_creator_username:
+      reportCreator.username,
+
+    reportCreatorName:
+      reportCreator.name,
+
+    report_creator_name:
+      reportCreator.name,
+
+    reportCreatorRole:
+      reportCreator.role || null,
+
+    report_creator_role:
+      reportCreator.role || null,
+
+    reportingPath:
+      getReportingPath(incident),
 
     reported_by:
       reportedByName,
@@ -1015,7 +1051,8 @@ function isAlertVisibleForCurrentUser(
   incident,
   role,
   aliases,
-  assignedCompany = ""
+  assignedCompany = "",
+  currentUser = {}
 ) {
   if (
     !ALLOWED_ROLES.has(
@@ -1083,6 +1120,16 @@ function isAlertVisibleForCurrentUser(
       incident
     );
 
+  const startPolicy =
+    evaluateStartInvestigation({
+      actor: {
+        ...currentUser,
+        role,
+        assignedCompany,
+      },
+      incident,
+    });
+
   if (
     role ===
     "HR_COORDINATOR"
@@ -1104,13 +1151,19 @@ function isAlertVisibleForCurrentUser(
           incidentCompany
         );
 
-    return (
-      hasCompanyScope &&
-      (
-        returnedCase ||
-        status === "Closed"
-      )
-    );
+    if (!hasCompanyScope) {
+      return false;
+    }
+
+    if (status === "Open") {
+      return startPolicy.allowed;
+    }
+
+    return [
+      "Investigating",
+      "For Review",
+      "Closed",
+    ].includes(status) || returnedCase;
   }
 
   /*
@@ -1127,14 +1180,14 @@ function isAlertVisibleForCurrentUser(
   if (
     status === "Open"
   ) {
-    return (
-      [
-        "HR_MANAGER",
-        "HR_STAFF",
-      ].includes(role) &&
-      !isReporter &&
-      !isLastActor
-    );
+    if (startPolicy.allowed) {
+      return true;
+    }
+
+    return [
+      "HR_MANAGER",
+      "SUPER_ADMIN",
+    ].includes(role);
   }
 
   /*
@@ -1393,6 +1446,13 @@ function getIncidentTitle(
     );
 
   if (
+    status === "Open" &&
+    incident.canStartInvestigation
+  ) {
+    return `Start Investigation ${incidentId}`;
+  }
+
+  if (
     isReturnedCase(
       incident
     )
@@ -1414,10 +1474,7 @@ function getIncidentTitle(
       role
     )
   ) {
-    return priority ===
-      ALERT_PRIORITY.HIGH
-      ? `Critical Case for Review ${incidentId}`
-      : `Case Pending Review ${incidentId}`;
+    return `Proof Submitted for Review ${incidentId}`;
   }
 
   if (
@@ -1427,14 +1484,7 @@ function getIncidentTitle(
     return `Investigation Started ${incidentId}`;
   }
 
-  if (
-    priority ===
-    ALERT_PRIORITY.HIGH
-  ) {
-    return `Critical Incident Reported ${incidentId}`;
-  }
-
-  return `New Incident Reported ${incidentId}`;
+  return `Incident Report for Review ${incidentId}`;
 }
 
 function getIncidentRecommendedAction(
@@ -1479,6 +1529,13 @@ function getIncidentRecommendedAction(
   }
 
   if (
+    status === "Open" &&
+    incident.canStartInvestigation
+  ) {
+    return "Review the incident details and claim investigation responsibility if you are ready to proceed.";
+  }
+
+  if (
     normalizeSeverity(
       incident.severity
     ) === "Critical"
@@ -1486,7 +1543,7 @@ function getIncidentRecommendedAction(
     return "Review immediately and start the appropriate HR investigation.";
   }
 
-  return "Review the new incident and start an investigation when appropriate.";
+  return "Review the incident for awareness and monitoring. This notification does not assign investigation ownership or request approval.";
 }
 
 function getIncidentReason(
@@ -1530,7 +1587,14 @@ function getIncidentReason(
     return "Generated because an HR user started the investigation and the case is now being monitored.";
   }
 
-  return "Generated because a new incident is available for HR investigation.";
+  if (
+    status === "Open" &&
+    incident.canStartInvestigation
+  ) {
+    return "Generated because you are currently eligible to claim this investigation.";
+  }
+
+  return "Generated because a new incident is available within your authorized management scope for awareness and review.";
 }
 
 function getIncidentNavigationAction(
@@ -1565,10 +1629,7 @@ function getIncidentNavigationAction(
   if (
     status ===
       "Open" &&
-    [
-      "HR_MANAGER",
-      "HR_STAFF",
-    ].includes(role)
+    incident.canStartInvestigation
   ) {
     return "start-investigation";
   }
@@ -1785,6 +1846,20 @@ function buildIncidentAlert(
       incident.lastActionType ||
       incident.last_action_type ||
       null,
+
+    notificationPurpose:
+      status === "For Review" &&
+      isReviewerRole(role)
+        ? "PROOF_SUBMITTED_FOR_REVIEW"
+        : status === "Open" &&
+            incident.canStartInvestigation
+          ? "START_INVESTIGATION"
+          : "INCIDENT_REPORT_FOR_REVIEW",
+
+    canStartInvestigation:
+      Boolean(
+        incident.canStartInvestigation
+      ),
 
     recommendedAction:
       getIncidentRecommendedAction(
@@ -2096,6 +2171,7 @@ async function fetchBaseData() {
             i.reviewed_at,
             i.review_decision,
             i.review_comments,
+            ${getCreateIncidentActorSelect("i")},
             e.id AS employeeRecordId,
             e.name AS employeeNameFromEmployee,
             e.company AS employeeCompany,
@@ -2301,10 +2377,10 @@ async function fetchBaseData() {
 function buildSmartAlerts({
   employees,
   incidents,
-  workflowEvents = [],
   role,
   currentUserAliases,
   assignedCompany,
+  currentUser = {},
 }) {
   const activeEmployees =
     employees.filter(
@@ -2346,10 +2422,7 @@ function buildSmartAlerts({
   );
 
   const candidateIncidents =
-    role ===
-    "HR_COORDINATOR"
-      ? workflowEvents
-      : incidents;
+    incidents;
 
   const visibleIncidents =
     candidateIncidents.filter(
@@ -2380,6 +2453,19 @@ function buildSmartAlerts({
             )
           );
 
+        const startPolicy =
+          evaluateStartInvestigation({
+            actor: {
+              ...currentUser,
+              role,
+              assignedCompany,
+            },
+            incident,
+          });
+
+        incident.canStartInvestigation =
+          startPolicy.allowed;
+
         return (
           (
             role ===
@@ -2390,7 +2476,8 @@ function buildSmartAlerts({
             incident,
             role,
             currentUserAliases,
-            assignedCompany
+            assignedCompany,
+            currentUser
           )
         );
       }
@@ -2717,7 +2804,6 @@ async function getVisibleAlertKeySetForRequest(
   const {
     employees,
     incidents,
-    workflowEvents,
     userNameMap,
   } =
     await fetchBaseData();
@@ -2732,11 +2818,12 @@ async function getVisibleAlertKeySetForRequest(
     buildSmartAlerts({
       employees,
       incidents,
-      workflowEvents,
       role,
       currentUserAliases,
       assignedCompany:
         getAssignedCompany(req),
+      currentUser:
+        req.user,
     });
 
   return new Set(
@@ -2812,7 +2899,6 @@ exports.getSmartAlerts =
       const {
         employees,
         incidents,
-        workflowEvents,
         userNameMap,
       } =
         await fetchBaseData();
@@ -2840,12 +2926,14 @@ exports.getSmartAlerts =
         buildSmartAlerts({
           employees,
           incidents,
-          workflowEvents,
           role,
 
           currentUserAliases,
 
           assignedCompany,
+
+          currentUser:
+            req.user,
         });
 
       const alertsWithState =
@@ -3246,3 +3334,11 @@ exports.markAllSmartAlertsRead =
         });
     }
   };
+
+if (
+  process.env.NODE_ENV === "test"
+) {
+  exports.__test = {
+    buildSmartAlerts,
+  };
+}

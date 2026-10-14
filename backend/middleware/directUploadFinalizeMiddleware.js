@@ -22,6 +22,8 @@ const MAX_EMPLOYEE_DOCUMENTS =
 const MAX_INCIDENT_EVIDENCE_FILES =
   10;
 
+const MAX_INITIAL_NTE_FILES = 1;
+
 const MAX_ATTENDANCE_EVIDENCE_FILES =
   1;
 
@@ -856,7 +858,7 @@ function finalizeIncidentCreateDirectUploads(
     next,
     {
       maxFiles:
-        MAX_INCIDENT_EVIDENCE_FILES,
+        MAX_INITIAL_NTE_FILES,
 
       expectedUploadType:
         DIRECT_UPLOAD_TYPES

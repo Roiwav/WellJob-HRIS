@@ -417,6 +417,8 @@ function validateClientUploadMetadata(
   {
     uploadType =
       null,
+    purpose =
+      null,
   } = {}
 ) {
   if (
@@ -512,6 +514,35 @@ function validateClientUploadMetadata(
       )
       .trim()
       .toLowerCase();
+
+  const isInitialNte =
+    uploadType ===
+      DIRECT_UPLOAD_TYPES
+        .INCIDENT_EVIDENCE &&
+    purpose ===
+      DIRECT_UPLOAD_PURPOSES
+        .INCIDENT_CREATE;
+
+  if (
+    isInitialNte &&
+    !new Set([
+      ".pdf",
+      ".jpg",
+      ".jpeg",
+      ".png",
+    ]).has(
+      originalExtension
+    )
+  ) {
+    throw new DirectUploadError(
+      "Initial NTE must be a PDF, JPG, JPEG, or PNG file.",
+      {
+        statusCode: 415,
+        code:
+          "UNSUPPORTED_INITIAL_NTE_EXTENSION",
+      }
+    );
+  }
 
   if (
     !typeConfig
@@ -1183,6 +1214,8 @@ function createDirectUploadDescriptor({
       {
         uploadType:
           normalizedUploadType,
+        purpose:
+          normalizedPurpose,
       }
     );
 
@@ -1561,6 +1594,8 @@ function verifyDirectUploadDescriptor(
       {
         uploadType:
           payload.uploadType,
+        purpose:
+          payload.purpose,
       }
     );
 

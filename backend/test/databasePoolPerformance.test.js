@@ -37,17 +37,30 @@ function extractGetConnectionLimit() {
     );
 
 
-  const end =
-    source.indexOf(
-      "\n\n\nconst connectionLimit",
-      start
-    );
-
-
   assert.ok(
     start >= 0,
     "getConnectionLimit() was not found."
   );
+
+
+  /*
+   * Do not depend on Windows CRLF vs Unix LF spacing.
+   *
+   * The previous extractor searched for:
+   *
+   *   "\n\n\nconst connectionLimit"
+   *
+   * which is brittle on Windows because the physical
+   * file may contain "\r\n" line endings.
+   *
+   * The next stable source marker is enough to isolate
+   * the function regardless of line-ending style.
+   */
+  const end =
+    source.indexOf(
+      "const connectionLimit",
+      start
+    );
 
 
   assert.ok(

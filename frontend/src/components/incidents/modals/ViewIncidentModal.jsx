@@ -23,6 +23,7 @@ import {
   Detail,
   InfoCard,
   ModalFooter,
+  ProofList,
   ProofReview,
 } from "../shared/ModalUI";
 
@@ -630,6 +631,20 @@ export default function ViewIncidentModal({
                   "No description provided."}
               </p>
             </div>
+          </InfoCard>
+
+          <InfoCard title="Initial NTE Attachment">
+            {incident.initialNte ||
+            incident.initial_nte ? (
+              <ProofList
+                files={[
+                  incident.initialNte ||
+                    incident.initial_nte,
+                ]}
+              />
+            ) : (
+              <EmptyWorkflowState message="No NTE was attached when this Incident was reported." />
+            )}
           </InfoCard>
 
           <div className="grid gap-4 xl:grid-cols-2">

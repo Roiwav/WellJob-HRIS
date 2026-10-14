@@ -18,6 +18,12 @@ const {
   createDirectUploadDescriptor,
 } = require("../services/directUploadSecurityService");
 
+const db = require("../config/db");
+
+const {
+  evaluateProofSubmission,
+} = require("../utils/incidentInvestigationPolicy");
+
 
 /*
  * ==================================================
@@ -55,6 +61,8 @@ const MAX_EMPLOYEE_DOCUMENTS =
 
 const MAX_INCIDENT_EVIDENCE_FILES =
   10;
+
+const MAX_INITIAL_NTE_FILES = 1;
 
 
 class UploadAuthorizationError
@@ -238,6 +246,7 @@ async function createAuthorizationBatch(
           index,
           {
             uploadType,
+            purpose,
           }
         )
     );
@@ -560,7 +569,6 @@ exports.createEmployeeDocumentUploadAuthorizations =
  * Route roles remain:
  *
  * HR_MANAGER
- * HR_STAFF
  * HR_COORDINATOR
  */
 exports.createIncidentEvidenceUploadAuthorizations =
@@ -598,7 +606,7 @@ exports.createIncidentEvidenceUploadAuthorizations =
           req.body?.files,
           {
             maxFiles:
-              MAX_INCIDENT_EVIDENCE_FILES,
+              MAX_INITIAL_NTE_FILES,
 
             actor:
               req.user,
@@ -666,7 +674,7 @@ exports.createIncidentEvidenceUploadAuthorizations =
  * Route roles remain:
  *
  * HR_MANAGER
- * HR_STAFF
+ * HR_COORDINATOR
  */
 exports.createIncidentWorkflowEvidenceUploadAuthorizations =
   async (
@@ -702,6 +710,53 @@ exports.createIncidentWorkflowEvidenceUploadAuthorizations =
           {
             code:
               "INVALID_EVIDENCE_WORKFLOW_ACTION",
+          }
+        );
+      }
+
+      const [incidentRows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              id,
+              company,
+              status,
+              investigation_started_by_id,
+              investigation_started_at
+            FROM incidents
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [incidentId]
+          );
+
+      if (!incidentRows.length) {
+        throw new UploadAuthorizationError(
+          "Incident not found.",
+          {
+            statusCode: 404,
+            code: "INCIDENT_NOT_FOUND",
+          }
+        );
+      }
+
+      const proofPolicy =
+        evaluateProofSubmission({
+          actor: req.user,
+          incident:
+            incidentRows[0],
+        });
+
+      if (!proofPolicy.allowed) {
+        throw new UploadAuthorizationError(
+          proofPolicy.message,
+          {
+            statusCode:
+              proofPolicy.statusCode,
+            code:
+              proofPolicy.code,
           }
         );
       }

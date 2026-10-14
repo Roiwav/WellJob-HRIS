@@ -43,7 +43,6 @@ export const sidebarItems = [
     allowedRoles: [
       ROLES.SUPER_ADMIN,
       ROLES.HR_MANAGER,
-      ROLES.HR_STAFF,
       ROLES.HR_COORDINATOR,
     ],
   },

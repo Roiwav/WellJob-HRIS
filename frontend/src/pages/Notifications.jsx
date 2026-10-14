@@ -23,7 +23,6 @@ import { API_BASE } from "../config/api";
 const INCIDENT_ALERT_ROLES = new Set([
   "SUPER_ADMIN",
   "HR_MANAGER",
-  "HR_STAFF",
   "HR_COORDINATOR",
 ]);
 const PASSWORD_RESET_REVIEWER_ROLES = new Set([
@@ -742,6 +741,10 @@ function IncidentAlertsSection({ user }) {
       navigate("/incidents", {
         state: {
           incidentId: alert.incidentId,
+          action:
+            alert.navigationAction ||
+            alert.action ||
+            "view",
         },
       });
     } else {

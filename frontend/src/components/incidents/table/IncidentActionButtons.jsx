@@ -8,6 +8,10 @@ import {
   FiUpload,
   FiUserCheck,
 } from "react-icons/fi";
+import {
+  canUserStartInvestigation,
+  canUserSubmitInvestigationProof,
+} from "../../../utils/incidents/investigationEligibility";
 
 const STATUS = {
   OPEN: "open",
@@ -270,6 +274,18 @@ export default function ActionButtons({
   const isInvestigator =
     INVESTIGATOR_ROLES.has(currentRole);
 
+  const canStartInvestigation =
+    canUserStartInvestigation(
+      incident,
+      currentUser
+    );
+
+  const canSubmitProof =
+    canUserSubmitInvestigationProof(
+      incident,
+      currentUser
+    );
+
   const isReviewer =
     isSuperAdmin ||
     REVIEWER_ROLES.has(currentRole);
@@ -378,6 +394,7 @@ export default function ActionButtons({
    */
   if (
     isInvestigator &&
+    canStartInvestigation &&
     status === STATUS.OPEN
   ) {
     return (
@@ -405,7 +422,10 @@ export default function ActionButtons({
     isInvestigator &&
     status === STATUS.INVESTIGATING
   ) {
-    if (currentUserIsInvestigator) {
+    if (
+      currentUserIsInvestigator &&
+      canSubmitProof
+    ) {
       return (
         <ActionButton
           icon={

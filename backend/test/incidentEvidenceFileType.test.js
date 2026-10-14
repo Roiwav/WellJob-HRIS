@@ -8,6 +8,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  DIRECT_UPLOAD_PURPOSES,
+  DIRECT_UPLOAD_TYPES,
   validateClientUploadMetadata,
 } = require("../services/directUploadSecurityService");
 
@@ -44,6 +46,52 @@ test(
       assert.equal(
         result.mimeType,
         "image/jpeg"
+      );
+    }
+  }
+);
+
+test(
+  "Initial NTE accepts only pdf, jpg, jpeg, and png filename extensions",
+  () => {
+    const options = {
+      uploadType:
+        DIRECT_UPLOAD_TYPES.INCIDENT_EVIDENCE,
+      purpose:
+        DIRECT_UPLOAD_PURPOSES.INCIDENT_CREATE,
+    };
+
+    for (const [name, type] of [
+      ["nte.pdf", "application/pdf"],
+      ["nte.jpg", "image/jpeg"],
+      ["nte.jpeg", "image/jpeg"],
+      ["nte.png", "image/png"],
+    ]) {
+      assert.doesNotThrow(() =>
+        validateClientUploadMetadata(
+          metadata(name, type),
+          0,
+          options
+        )
+      );
+    }
+
+    for (const name of ["nte.jfif", "nte.jpe"]) {
+      assert.throws(
+        () =>
+          validateClientUploadMetadata(
+            metadata(name, "image/jpeg"),
+            0,
+            options
+          ),
+        (error) => {
+          assert.equal(
+            error.code,
+            "UNSUPPORTED_INITIAL_NTE_EXTENSION"
+          );
+          assert.equal(error.statusCode, 415);
+          return true;
+        }
       );
     }
   }

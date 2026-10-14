@@ -1,5 +1,11 @@
-
 "use strict";
+
+process.env.SUPABASE_URL ||=
+  "https://example.supabase.co";
+process.env.SUPABASE_SECRET_KEY ||=
+  "test-secret-key";
+process.env.SUPABASE_STORAGE_BUCKET ||=
+  "test-bucket";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -17,8 +23,10 @@ const assert = require("node:assert/strict");
  * - Both coordinator-company query parameters are bound.
  * - An unauthorized or missing evidence row returns 404.
  * - An unassigned coordinator is rejected before DB access.
- * - Other authorized HR roles do not receive the
- *   coordinator-specific SQL restriction.
+ * - HR Staff is denied protected Incident evidence access.
+ * - IT Support is denied protected Incident evidence access.
+ * - Other authorized Incident roles are not given the
+ *   coordinator-specific company restriction.
  */
 
 function loadControllerWithMockDatabase() {
@@ -162,15 +170,22 @@ test(
       1
     );
 
-    const { sql, parameters } =
-      queryCalls[0];
+    const {
+      sql,
+      parameters,
+    } = queryCalls[0];
 
     const normalizedSql =
       sql.replace(/\s+/g, " ");
 
     assert.deepEqual(
       parameters,
-      [7, 104, "Shopee", "Shopee"]
+      [
+        7,
+        104,
+        "Shopee",
+        "Shopee",
+      ]
     );
 
     assert.match(
@@ -287,7 +302,7 @@ test(
 );
 
 test(
-  "HR Staff retains the existing non-coordinator evidence query",
+  "HR Staff is rejected before database query",
   async () => {
     queryCalls.length = 0;
 
@@ -309,13 +324,74 @@ test(
       response
     );
 
-    /*
-     * The mocked database contains no evidence row,
-     * so 404 is expected even for HR Staff.
-     *
-     * This test checks query scope, NOT successful
-     * retrieval of an existing file.
-     */
+    assert.equal(
+      response.statusCode,
+      403
+    );
+
+    assert.equal(
+      queryCalls.length,
+      0
+    );
+  }
+);
+
+test(
+  "IT Support is rejected before database query",
+  async () => {
+    queryCalls.length = 0;
+
+    const request = {
+      params: {
+        incidentId: "104",
+        evidenceId: "7",
+      },
+
+      user: {
+        role: "IT_SUPPORT",
+      },
+    };
+
+    const response = createResponse();
+
+    await getIncidentEvidenceFile(
+      request,
+      response
+    );
+
+    assert.equal(
+      response.statusCode,
+      403
+    );
+
+    assert.equal(
+      queryCalls.length,
+      0
+    );
+  }
+);
+
+test(
+  "HR Manager reaches evidence lookup without coordinator company restriction",
+  async () => {
+    queryCalls.length = 0;
+
+    const response = createResponse();
+
+    await getIncidentEvidenceFile(
+      {
+        params: {
+          incidentId: "104",
+          evidenceId: "7",
+        },
+
+        user: {
+          role: "HR_MANAGER",
+        },
+      },
+      response
+    );
+
     assert.equal(
       response.statusCode,
       404
@@ -326,14 +402,73 @@ test(
       1
     );
 
+    const {
+      sql,
+      parameters,
+    } = queryCalls[0];
+
+    const normalizedSql =
+      sql.replace(/\s+/g, " ");
+
     assert.deepEqual(
-      queryCalls[0].parameters,
+      parameters,
       [7, 104]
     );
 
     assert.doesNotMatch(
-      queryCalls[0].sql,
-      /deployment_assignments/i
+      normalizedSql,
+      /deployment_assignments AS da_current/i
+    );
+  }
+);
+
+test(
+  "Super Admin reaches evidence lookup without coordinator company restriction",
+  async () => {
+    queryCalls.length = 0;
+
+    const response = createResponse();
+
+    await getIncidentEvidenceFile(
+      {
+        params: {
+          incidentId: "104",
+          evidenceId: "7",
+        },
+
+        user: {
+          role: "SUPER_ADMIN",
+        },
+      },
+      response
+    );
+
+    assert.equal(
+      response.statusCode,
+      404
+    );
+
+    assert.equal(
+      queryCalls.length,
+      1
+    );
+
+    const {
+      sql,
+      parameters,
+    } = queryCalls[0];
+
+    const normalizedSql =
+      sql.replace(/\s+/g, " ");
+
+    assert.deepEqual(
+      parameters,
+      [7, 104]
+    );
+
+    assert.doesNotMatch(
+      normalizedSql,
+      /deployment_assignments AS da_current/i
     );
   }
 );

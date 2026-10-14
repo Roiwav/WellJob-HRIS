@@ -101,6 +101,12 @@ const WORKFORCE_RECORD_ROLES = [
   ROLES.HR_COORDINATOR,
 ];
 
+const INCIDENT_OPERATIONAL_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.HR_MANAGER,
+  ROLES.HR_COORDINATOR,
+];
+
 const ATTENDANCE_ROLES = [
   ROLES.HR_COORDINATOR,
 ];
@@ -545,7 +551,7 @@ function ApplicationContent({
               />
             </Route>
 
-            {/* Employee, Deployment, and Incident records */}
+            {/* Employee and Deployment records */}
             <Route
               element={
                 <ProtectedRoute
@@ -573,6 +579,18 @@ function ApplicationContent({
                 }
               />
 
+            </Route>
+
+            {/* Incident records intentionally exclude HR Staff. */}
+            <Route
+              element={
+                <ProtectedRoute
+                  allowedRoles={
+                    INCIDENT_OPERATIONAL_ROLES
+                  }
+                />
+              }
+            >
               <Route
                 path="/incidents"
                 element={

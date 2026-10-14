@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test test/deploymentHelpers.test.js test/severityDecayHelpers.test.js test/kpiPresentationHelpers.test.js",
+    "test": "node --test test/deploymentHelpers.test.js test/severityDecayHelpers.test.js test/kpiPresentationHelpers.test.js test/investigationEligibility.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

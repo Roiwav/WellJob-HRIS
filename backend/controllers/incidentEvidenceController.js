@@ -420,6 +420,13 @@ exports.getIncidentEvidenceFile =
           });
       }
 
+      const role = normalizeRole(req?.user?.role);
+      if (!["HR_MANAGER", "HR_COORDINATOR", "SUPER_ADMIN"].includes(role)) {
+        return res.status(403).json({
+          error: "You do not have permission to access Incident files.",
+        });
+      }
+
       const isHrCoordinator =
         isHrCoordinatorRequest(
           req

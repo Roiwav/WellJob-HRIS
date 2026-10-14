@@ -179,3 +179,29 @@ test(
     );
   }
 );
+
+test(
+  "an HR Manager investigator cannot approve their own proof but Super Admin can",
+  () => {
+    const managerReview =
+      evaluateIndependentIncidentReview({
+        reviewerUserId: 20,
+        investigationStartedById: 20,
+        resolutionSubmittedById: 20,
+      });
+
+    const superAdminReview =
+      evaluateIndependentIncidentReview({
+        reviewerUserId: 30,
+        investigationStartedById: 20,
+        resolutionSubmittedById: 20,
+      });
+
+    assert.equal(managerReview.allowed, false);
+    assert.equal(
+      managerReview.code,
+      "SELF_REVIEW_FORBIDDEN"
+    );
+    assert.equal(superAdminReview.allowed, true);
+  }
+);

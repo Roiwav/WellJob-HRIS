@@ -18,6 +18,14 @@ export function getUserIdentity(user) {
       user?.username ||
       "Unknown",
     role: user?.role || "Unknown",
+    assignedCompany:
+      user?.assignedCompany ||
+      user?.assigned_company ||
+      "",
+    assigned_company:
+      user?.assigned_company ||
+      user?.assignedCompany ||
+      "",
   };
 }
 

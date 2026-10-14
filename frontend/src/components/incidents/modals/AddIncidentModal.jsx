@@ -13,8 +13,10 @@ import {
   FiChevronLeft,
   FiFileText,
   FiHash,
+  FiPaperclip,
   FiSearch,
   FiShield,
+  FiTrash2,
   FiUser,
 } from "react-icons/fi";
 
@@ -58,6 +60,14 @@ import {
   NoticeModal,
 } from "../shared/ModalUI";
 
+import {
+  formatFileSize,
+} from "../../../utils/incidents/evidenceFiles";
+
+import {
+  prepareIncidentCreateDirectUpload,
+} from "../../../utils/incidents/incidentDirectUpload";
+
 const INCIDENT_FORM_META_URL =
   `${API_BASE}/incidents/form-meta`;
 
@@ -66,6 +76,17 @@ const INCIDENT_EMPLOYEE_HISTORY_URL =
 
 const EMPLOYEE_SEARCH_DEBOUNCE_MS =
   350;
+
+const MAX_INITIAL_NTE_SIZE =
+  5 * 1024 * 1024;
+
+const INITIAL_NTE_EXTENSIONS =
+  new Set([
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+  ]);
 
 const EMPTY_ALERT = {
   show: false,
@@ -186,6 +207,9 @@ export default function AddIncidentModal({
   const employeeIncidentHistoryRequestRef =
     useRef(null);
 
+  const initialNteInputRef =
+    useRef(null);
+
   const [
     formData,
     setFormData,
@@ -265,6 +289,11 @@ export default function AddIncidentModal({
     customAlert,
     setCustomAlert,
   ] = useState(EMPTY_ALERT);
+
+  const [
+    initialNte,
+    setInitialNte,
+  ] = useState(null);
 
   const {
     violationOptions,
@@ -424,6 +453,17 @@ export default function AddIncidentModal({
             false
           );
 
+          setInitialNte(
+            (current) => {
+              if (current?.localUrl) {
+                URL.revokeObjectURL(
+                  current.localUrl
+                );
+              }
+              return null;
+            }
+          );
+
           closeCustomAlert();
         },
         0
@@ -461,8 +501,122 @@ export default function AddIncidentModal({
       ) {
         employeeIncidentHistoryRequestRef.current.abort();
       }
+
+      setInitialNte(
+        (current) => {
+          if (current?.localUrl) {
+            URL.revokeObjectURL(
+              current.localUrl
+            );
+          }
+          return null;
+        }
+      );
     };
   }, []);
+
+  const removeInitialNte =
+    useCallback(() => {
+      setInitialNte(
+        (current) => {
+          if (current?.localUrl) {
+            URL.revokeObjectURL(
+              current.localUrl
+            );
+          }
+          return null;
+        }
+      );
+
+      if (initialNteInputRef.current) {
+        initialNteInputRef.current.value =
+          "";
+      }
+    }, []);
+
+  const handleInitialNteChange =
+    useCallback(
+      (event) => {
+        const files =
+          Array.from(
+            event.target.files ||
+              []
+          );
+        const file =
+          files[0] || null;
+
+        event.target.value =
+          "";
+
+        if (!file) {
+          return;
+        }
+
+        if (files.length > 1) {
+          showCustomAlert({
+            title:
+              "One Initial NTE Only",
+            message:
+              "Select only one Initial NTE attachment.",
+          });
+          return;
+        }
+
+        const extension =
+          `.${String(file.name || "")
+            .split(".")
+            .pop()
+            .toLowerCase()}`;
+
+        if (
+          !INITIAL_NTE_EXTENSIONS.has(
+            extension
+          )
+        ) {
+          showCustomAlert({
+            title:
+              "Unsupported Initial NTE",
+            message:
+              "Initial NTE must be a PDF, JPG, JPEG, or PNG file.",
+          });
+          return;
+        }
+
+        if (
+          file.size <= 0 ||
+          file.size >
+            MAX_INITIAL_NTE_SIZE
+        ) {
+          showCustomAlert({
+            title:
+              "Initial NTE File Too Large",
+            message:
+              "Initial NTE must be no larger than 5 MB.",
+          });
+          return;
+        }
+
+        setInitialNte(
+          (current) => {
+            if (current?.localUrl) {
+              URL.revokeObjectURL(
+                current.localUrl
+              );
+            }
+
+            return {
+              file,
+              localUrl:
+                URL.createObjectURL(
+                  file
+                ),
+            };
+          }
+        );
+        setIsReviewing(false);
+      },
+      [showCustomAlert]
+    );
 
   useEffect(() => {
     if (!isOpen) {
@@ -1751,9 +1905,22 @@ export default function AddIncidentModal({
 
           closeCustomAlert();
 
+          const directUploads =
+            initialNte?.file
+              ? await prepareIncidentCreateDirectUpload({
+                  employeeId:
+                    formData.employeeId,
+                  file:
+                    initialNte.file,
+                })
+              : [];
+
           const saved =
             await onSave(
-              finalIncident
+              {
+                ...finalIncident,
+                directUploads,
+              }
             );
 
           if (
@@ -1821,6 +1988,7 @@ export default function AddIncidentModal({
         employeeIncidentHistory,
         formData,
         isSaving,
+        initialNte,
         needsDuplicateVerification,
         onClose,
         onSave,
@@ -2438,6 +2606,81 @@ export default function AddIncidentModal({
               </Field>
             </section>
 
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-gray-900 dark:text-white">
+                    Initial NTE Attachment
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                    Optional. Upload one PDF, JPG, JPEG, or PNG file up to 5 MB.
+                  </p>
+                </div>
+
+                <input
+                  ref={initialNteInputRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                  className="hidden"
+                  onChange={
+                    handleInitialNteChange
+                  }
+                  disabled={
+                    isSaving
+                  }
+                />
+
+                {!initialNte && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      initialNteInputRef.current?.click()
+                    }
+                    disabled={isSaving}
+                    className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-500/30 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                  >
+                    <FiPaperclip aria-hidden="true" />
+                    Select File
+                  </button>
+                )}
+              </div>
+
+              {initialNte && (
+                <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 dark:border-indigo-500/20 dark:bg-indigo-950/20">
+                  <div className="flex items-start gap-3">
+                    <FiFileText className="mt-0.5 shrink-0 text-indigo-600 dark:text-indigo-300" />
+                    <div className="min-w-0 flex-1">
+                      <p className="break-all text-sm font-bold text-gray-900 dark:text-white">
+                        {initialNte.file.name}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {formatFileSize(initialNte.file.size)}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <a
+                          href={initialNte.localUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-white dark:border-indigo-500/30 dark:text-indigo-300"
+                        >
+                          Preview
+                        </a>
+                        <button
+                          type="button"
+                          onClick={removeInitialNte}
+                          disabled={isSaving}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-500/30 dark:text-red-300"
+                        >
+                          <FiTrash2 aria-hidden="true" />
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
             <FooterButtons>
               <button
                 type="button"
@@ -2600,6 +2843,36 @@ export default function AddIncidentModal({
                   formData.description
                 }
               </p>
+            </section>
+
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                Initial NTE Attachment
+              </p>
+              {initialNte ? (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-gray-50 p-4 dark:bg-slate-950/50">
+                  <div className="min-w-0">
+                    <p className="break-all text-sm font-semibold text-gray-900 dark:text-white">
+                      {initialNte.file.name}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatFileSize(initialNte.file.size)}
+                    </p>
+                  </div>
+                  <a
+                    href={initialNte.localUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/30 dark:text-indigo-300"
+                  >
+                    Preview
+                  </a>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+                  No Initial NTE attached.
+                </p>
+              )}
             </section>
 
             <FooterButtons>
