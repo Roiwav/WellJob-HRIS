@@ -9,6 +9,7 @@ import {
 import {
   FiBriefcase,
   FiCalendar,
+  FiCamera,
   FiCheckCircle,
   FiChevronLeft,
   FiFileText,
@@ -16,9 +17,15 @@ import {
   FiPaperclip,
   FiSearch,
   FiShield,
+  FiSmartphone,
   FiTrash2,
   FiUser,
+  FiX,
 } from "react-icons/fi";
+
+import {
+  QRCodeSVG,
+} from "qrcode.react";
 
 import useViolationPolicyOptions from "../../../hooks/useViolationPolicyOptions";
 
@@ -65,8 +72,21 @@ import {
 } from "../../../utils/incidents/evidenceFiles";
 
 import {
-  prepareIncidentCreateDirectUpload,
+  MAX_INCIDENT_EVIDENCE_FILES,
+  mergeIncidentDirectUploads,
+  prepareIncidentCreateDirectUploads,
 } from "../../../utils/incidents/incidentDirectUpload";
+
+import {
+  INCIDENT_PHONE_CAPTURE_PURPOSES,
+  INCIDENT_PHONE_CAPTURE_STATUSES,
+  cancelIncidentPhoneCaptureSession,
+  cancelIncidentPhoneCaptureSessions,
+  consumeIncidentPhoneCaptureSessions,
+  createIncidentPhoneCaptureSession,
+  getIncidentPhoneCaptureSession,
+  refreshIncidentPhoneCaptureDirectUploads,
+} from "../../../utils/incidents/incidentPhoneCapture";
 
 const INCIDENT_FORM_META_URL =
   `${API_BASE}/incidents/form-meta`;
@@ -77,16 +97,19 @@ const INCIDENT_EMPLOYEE_HISTORY_URL =
 const EMPLOYEE_SEARCH_DEBOUNCE_MS =
   350;
 
-const MAX_INITIAL_NTE_SIZE =
+const MAX_INCIDENT_EVIDENCE_SIZE =
   5 * 1024 * 1024;
 
-const INITIAL_NTE_EXTENSIONS =
+const INCIDENT_EVIDENCE_EXTENSIONS =
   new Set([
     ".pdf",
     ".jpg",
     ".jpeg",
     ".png",
   ]);
+
+const PHONE_CAPTURE_POLL_MS =
+  1500;
 
 const EMPTY_ALERT = {
   show: false,
@@ -207,8 +230,27 @@ export default function AddIncidentModal({
   const employeeIncidentHistoryRequestRef =
     useRef(null);
 
-  const initialNteInputRef =
+  const incidentEvidenceInputRef =
     useRef(null);
+
+  const evidenceFilesRef =
+    useRef([]);
+
+  const phoneCapturesRef =
+    useRef([]);
+
+  /*
+   * Phone sessions listed here are already owned by a
+   * successfully saved Incident.
+   *
+   * They must never be cancelled by modal close/unmount
+   * cleanup, even when the follow-up consume bookkeeping
+   * request fails.
+   */
+  const protectedPhoneSessionIdsRef =
+    useRef(
+      new Set()
+    );
 
   const [
     formData,
@@ -291,9 +333,24 @@ export default function AddIncidentModal({
   ] = useState(EMPTY_ALERT);
 
   const [
-    initialNte,
-    setInitialNte,
-  ] = useState(null);
+    incidentEvidenceFiles,
+    setIncidentEvidenceFiles,
+  ] = useState([]);
+
+  const [
+    phoneCaptures,
+    setPhoneCaptures,
+  ] = useState([]);
+
+  const [
+    activePhoneCaptureSessionId,
+    setActivePhoneCaptureSessionId,
+  ] = useState("");
+
+  const [
+    isStartingPhoneCapture,
+    setIsStartingPhoneCapture,
+  ] = useState(false);
 
   const {
     violationOptions,
@@ -376,6 +433,67 @@ export default function AddIncidentModal({
           null;
       }
 
+      const protectedSessionIds =
+        protectedPhoneSessionIdsRef.current;
+
+      const sessionIds =
+        phoneCapturesRef.current
+          .map(
+            (
+              item
+            ) =>
+              item?.sessionId
+          )
+          .filter(
+            Boolean
+          )
+          .filter(
+            (
+              sessionId
+            ) =>
+              !protectedSessionIds.has(
+                sessionId
+              )
+          );
+
+      if (
+        sessionIds.length >
+        0
+      ) {
+        void cancelIncidentPhoneCaptureSessions(
+          sessionIds
+        );
+      }
+
+      for (
+        const item of
+        evidenceFilesRef.current
+      ) {
+        if (item?.localUrl) {
+          URL.revokeObjectURL(
+            item.localUrl
+          );
+        }
+      }
+
+      evidenceFilesRef.current =
+        [];
+
+      phoneCapturesRef.current =
+        [];
+
+      setIncidentEvidenceFiles(
+        []
+      );
+
+      setPhoneCaptures(
+        []
+      );
+
+      setActivePhoneCaptureSessionId(
+        ""
+      );
+
       closeCustomAlert();
 
       onClose();
@@ -386,6 +504,20 @@ export default function AddIncidentModal({
     ]);
 
   useEffect(() => {
+    evidenceFilesRef.current =
+      incidentEvidenceFiles;
+  }, [
+    incidentEvidenceFiles,
+  ]);
+
+  useEffect(() => {
+    phoneCapturesRef.current =
+      phoneCaptures;
+  }, [
+    phoneCaptures,
+  ]);
+
+  useEffect(() => {
     if (!isOpen) {
       return undefined;
     }
@@ -393,6 +525,72 @@ export default function AddIncidentModal({
     const resetTimerId =
       window.setTimeout(
         () => {
+          /*
+           * Release any local preview URLs left from a
+           * previous unsaved modal instance.
+           */
+          for (
+            const item of
+            evidenceFilesRef.current
+          ) {
+            if (item?.localUrl) {
+              URL.revokeObjectURL(
+                item.localUrl
+              );
+            }
+          }
+
+          /*
+           * Best-effort cancel only temporary sessions
+           * left from a previous unsaved modal instance.
+           *
+           * Sessions protected after a successful Incident
+           * save are never cancelled here.
+           */
+          const protectedSessionIds =
+            protectedPhoneSessionIdsRef.current;
+
+          const previousSessionIds =
+            phoneCapturesRef.current
+              .map(
+                (
+                  item
+                ) =>
+                  item?.sessionId
+              )
+              .filter(
+                Boolean
+              )
+              .filter(
+                (
+                  sessionId
+                ) =>
+                  !protectedSessionIds.has(
+                    sessionId
+                  )
+              );
+
+          if (
+            previousSessionIds.length >
+            0
+          ) {
+            void cancelIncidentPhoneCaptureSessions(
+              previousSessionIds
+            );
+          }
+
+          /*
+           * A newly opened Add Incident form starts with a
+           * fresh ownership set.
+           */
+          protectedPhoneSessionIdsRef.current.clear();
+
+          evidenceFilesRef.current =
+            [];
+
+          phoneCapturesRef.current =
+            [];
+
           setFormData(
             createInitialFormData()
           );
@@ -453,16 +651,28 @@ export default function AddIncidentModal({
             false
           );
 
-          setInitialNte(
-            (current) => {
-              if (current?.localUrl) {
-                URL.revokeObjectURL(
-                  current.localUrl
-                );
-              }
-              return null;
-            }
+          setIncidentEvidenceFiles(
+            []
           );
+
+          setPhoneCaptures(
+            []
+          );
+
+          setActivePhoneCaptureSessionId(
+            ""
+          );
+
+          setIsStartingPhoneCapture(
+            false
+          );
+
+          if (
+            incidentEvidenceInputRef.current
+          ) {
+            incidentEvidenceInputRef.current.value =
+              "";
+          }
 
           closeCustomAlert();
         },
@@ -481,6 +691,22 @@ export default function AddIncidentModal({
   ]);
 
   useEffect(() => {
+    /*
+     * This ref always points to the same Set instance.
+     * Successful phone-session IDs are added with .add()
+     * after the Incident save succeeds.
+     *
+     * Capture the Set reference during effect setup so
+     * cleanup uses the same live Set without reading
+     * protectedPhoneSessionIdsRef.current inside the
+     * cleanup function.
+     *
+     * This preserves ownership protection and satisfies
+     * react-hooks/exhaustive-deps.
+     */
+    const protectedSessionIds =
+      protectedPhoneSessionIdsRef.current;
+
     return () => {
       if (
         closeTimerRef.current
@@ -502,121 +728,723 @@ export default function AddIncidentModal({
         employeeIncidentHistoryRequestRef.current.abort();
       }
 
-      setInitialNte(
-        (current) => {
-          if (current?.localUrl) {
-            URL.revokeObjectURL(
-              current.localUrl
-            );
-          }
-          return null;
+      for (
+        const item of
+        evidenceFilesRef.current
+      ) {
+        if (item?.localUrl) {
+          URL.revokeObjectURL(
+            item.localUrl
+          );
         }
-      );
+      }
+
+      const sessionIds =
+        phoneCapturesRef.current
+          .map(
+            (
+              item
+            ) =>
+              item?.sessionId
+          )
+          .filter(
+            Boolean
+          )
+          .filter(
+            (
+              sessionId
+            ) =>
+              !protectedSessionIds.has(
+                sessionId
+              )
+          );
+
+      if (
+        sessionIds.length >
+        0
+      ) {
+        void cancelIncidentPhoneCaptureSessions(
+          sessionIds
+        );
+      }
     };
   }, []);
 
-  const removeInitialNte =
-    useCallback(() => {
-      setInitialNte(
-        (current) => {
-          if (current?.localUrl) {
-            URL.revokeObjectURL(
-              current.localUrl
+  const totalEvidenceSlotsUsed =
+    incidentEvidenceFiles.length +
+    phoneCaptures.length;
+
+  const completedPhoneCaptures =
+    useMemo(
+      () =>
+        phoneCaptures.filter(
+          (
+            item
+          ) =>
+            item?.status ===
+              INCIDENT_PHONE_CAPTURE_STATUSES
+                .PHOTO_ADDED ||
+            item?.status ===
+              INCIDENT_PHONE_CAPTURE_STATUSES
+                .DONE
+        ),
+      [
+        phoneCaptures,
+      ]
+    );
+
+  const activePhoneCapture =
+    useMemo(
+      () =>
+        phoneCaptures.find(
+          (
+            item
+          ) =>
+            item?.sessionId ===
+            activePhoneCaptureSessionId
+        ) ||
+        null,
+      [
+        activePhoneCaptureSessionId,
+        phoneCaptures,
+      ]
+    );
+
+  const hasPendingPhoneCapture =
+    phoneCaptures.some(
+      (
+        item
+      ) =>
+        item?.status ===
+          INCIDENT_PHONE_CAPTURE_STATUSES
+            .WAITING ||
+        item?.status ===
+          INCIDENT_PHONE_CAPTURE_STATUSES
+            .READY_FOR_UPLOAD
+    );
+
+  const removeIncidentEvidenceFile =
+    useCallback(
+      (
+        evidenceId
+      ) => {
+        setIncidentEvidenceFiles(
+          (
+            current
+          ) => {
+            const target =
+              current.find(
+                (
+                  item
+                ) =>
+                  item.id ===
+                  evidenceId
+              );
+
+            if (target?.localUrl) {
+              URL.revokeObjectURL(
+                target.localUrl
+              );
+            }
+
+            return current.filter(
+              (
+                item
+              ) =>
+                item.id !==
+                evidenceId
             );
           }
-          return null;
+        );
+
+        if (
+          incidentEvidenceInputRef.current
+        ) {
+          incidentEvidenceInputRef.current.value =
+            "";
         }
-      );
 
-      if (initialNteInputRef.current) {
-        initialNteInputRef.current.value =
-          "";
-      }
-    }, []);
+        setIsReviewing(
+          false
+        );
+      },
+      []
+    );
 
-  const handleInitialNteChange =
+  const handleIncidentEvidenceChange =
     useCallback(
-      (event) => {
-        const files =
+      (
+        event
+      ) => {
+        const selectedFiles =
           Array.from(
             event.target.files ||
-              []
+            []
           );
-        const file =
-          files[0] || null;
 
         event.target.value =
           "";
 
-        if (!file) {
+        if (
+          selectedFiles.length ===
+          0
+        ) {
           return;
         }
 
-        if (files.length > 1) {
-          showCustomAlert({
-            title:
-              "One Initial NTE Only",
-            message:
-              "Select only one Initial NTE attachment.",
-          });
-          return;
-        }
-
-        const extension =
-          `.${String(file.name || "")
-            .split(".")
-            .pop()
-            .toLowerCase()}`;
+        const availableSlots =
+          MAX_INCIDENT_EVIDENCE_FILES -
+          (
+            incidentEvidenceFiles.length +
+            phoneCaptures.length
+          );
 
         if (
-          !INITIAL_NTE_EXTENSIONS.has(
-            extension
-          )
+          availableSlots <=
+          0
         ) {
           showCustomAlert({
             title:
-              "Unsupported Initial NTE",
+              "Attachment Limit Reached",
+
             message:
-              "Initial NTE must be a PDF, JPG, JPEG, or PNG file.",
+              `You can add up to ${MAX_INCIDENT_EVIDENCE_FILES} files or phone photos.`,
           });
+
           return;
         }
 
         if (
-          file.size <= 0 ||
-          file.size >
-            MAX_INITIAL_NTE_SIZE
+          selectedFiles.length >
+          availableSlots
         ) {
           showCustomAlert({
             title:
-              "Initial NTE File Too Large",
+              "Too Many Attachments",
+
             message:
-              "Initial NTE must be no larger than 5 MB.",
+              `You can add ${availableSlots} more ${
+                availableSlots ===
+                  1
+                  ? "attachment"
+                  : "attachments"
+              }. The maximum is ${MAX_INCIDENT_EVIDENCE_FILES}.`,
           });
+
           return;
         }
 
-        setInitialNte(
-          (current) => {
-            if (current?.localUrl) {
+        const existingKeys =
+          new Set(
+            incidentEvidenceFiles.map(
+              (
+                item
+              ) =>
+                `${item.file.name}:${item.file.size}:${item.file.lastModified}`
+            )
+          );
+
+        const nextItems =
+          [];
+
+        for (
+          const file of
+          selectedFiles
+        ) {
+          const extension =
+            `.${String(
+              file.name ||
+              ""
+            )
+              .split(".")
+              .pop()
+              .toLowerCase()}`;
+
+          if (
+            !INCIDENT_EVIDENCE_EXTENSIONS.has(
+              extension
+            )
+          ) {
+            for (
+              const item of
+              nextItems
+            ) {
               URL.revokeObjectURL(
-                current.localUrl
+                item.localUrl
               );
             }
 
-            return {
-              file,
-              localUrl:
-                URL.createObjectURL(
-                  file
-                ),
-            };
+            showCustomAlert({
+              title:
+                "Unsupported File",
+
+              message:
+                `${file.name || "Selected file"} must be a PDF, JPG, JPEG, or PNG file.`,
+            });
+
+            return;
           }
+
+          if (
+            file.size <= 0 ||
+            file.size >
+              MAX_INCIDENT_EVIDENCE_SIZE
+          ) {
+            for (
+              const item of
+              nextItems
+            ) {
+              URL.revokeObjectURL(
+                item.localUrl
+              );
+            }
+
+            showCustomAlert({
+              title:
+                "File Too Large",
+
+              message:
+                `${file.name || "Selected file"} must be no larger than 5 MB.`,
+            });
+
+            return;
+          }
+
+          const duplicateKey =
+            `${file.name}:${file.size}:${file.lastModified}`;
+
+          if (
+            existingKeys.has(
+              duplicateKey
+            )
+          ) {
+            continue;
+          }
+
+          existingKeys.add(
+            duplicateKey
+          );
+
+          nextItems.push({
+            id:
+              `${
+                Date.now()
+              }-${
+                Math.random()
+                  .toString(36)
+                  .slice(2)
+              }`,
+
+            file,
+
+            localUrl:
+              URL.createObjectURL(
+                file
+              ),
+          });
+        }
+
+        if (
+          nextItems.length ===
+          0
+        ) {
+          showCustomAlert({
+            type:
+              "error",
+
+            title:
+              "File Already Added",
+
+            message:
+              "The selected file is already attached.",
+          });
+
+          return;
+        }
+
+        setIncidentEvidenceFiles(
+          (
+            current
+          ) => [
+            ...current,
+            ...nextItems,
+          ]
         );
-        setIsReviewing(false);
+
+        setIsReviewing(
+          false
+        );
       },
-      [showCustomAlert]
+      [
+        incidentEvidenceFiles,
+        phoneCaptures,
+        showCustomAlert,
+      ]
     );
+
+  const handleStartPhoneCapture =
+    useCallback(
+      async () => {
+        if (
+          isSaving ||
+          isStartingPhoneCapture
+        ) {
+          return;
+        }
+
+        const employeeId =
+          formData?.employeeId;
+
+        if (
+          !employeeId ||
+          !selectedEmployeeOption ||
+          String(
+            selectedEmployeeOption.id
+          ) !==
+            String(
+              employeeId
+            )
+        ) {
+          showCustomAlert({
+            type:
+              "error",
+
+            title:
+              "Select Employee First",
+
+            message:
+              "Select a currently deployed employee before adding a photo from your phone.",
+          });
+
+          return;
+        }
+
+        if (
+          totalEvidenceSlotsUsed >=
+          MAX_INCIDENT_EVIDENCE_FILES
+        ) {
+          showCustomAlert({
+            type:
+              "error",
+
+            title:
+              "Attachment Limit Reached",
+
+            message:
+              `You can add up to ${MAX_INCIDENT_EVIDENCE_FILES} files or phone photos.`,
+          });
+
+          return;
+        }
+
+        if (
+          hasPendingPhoneCapture
+        ) {
+          showCustomAlert({
+            type:
+              "error",
+
+            title:
+              "Phone Photo Already Open",
+
+            message:
+              "Finish or cancel the current phone photo before starting another.",
+          });
+
+          return;
+        }
+
+        try {
+          setIsStartingPhoneCapture(
+            true
+          );
+
+          closeCustomAlert();
+
+          const session =
+            await createIncidentPhoneCaptureSession({
+              capturePurpose:
+                INCIDENT_PHONE_CAPTURE_PURPOSES
+                  .CREATE,
+
+              employeeId,
+            });
+
+          const capture = {
+            ...session,
+
+            status:
+              INCIDENT_PHONE_CAPTURE_STATUSES
+                .WAITING,
+
+            photo:
+              null,
+          };
+
+          setPhoneCaptures(
+            (
+              current
+            ) => [
+              ...current,
+              capture,
+            ]
+          );
+
+          setActivePhoneCaptureSessionId(
+            session.sessionId
+          );
+
+          setIsReviewing(
+            false
+          );
+        } catch (error) {
+          console.error(
+            "Start Incident phone capture error:",
+            error
+          );
+
+          showCustomAlert({
+            type:
+              "error",
+
+            title:
+              "Unable to Start Phone Photo",
+
+            message:
+              "Unable to prepare the phone photo. Please try again.",
+          });
+        } finally {
+          setIsStartingPhoneCapture(
+            false
+          );
+        }
+      },
+      [
+        closeCustomAlert,
+        formData?.employeeId,
+        hasPendingPhoneCapture,
+        isSaving,
+        isStartingPhoneCapture,
+        selectedEmployeeOption,
+        showCustomAlert,
+        totalEvidenceSlotsUsed,
+      ]
+    );
+
+  const handleRemovePhoneCapture =
+    useCallback(
+      async (
+        sessionId
+      ) => {
+        if (
+          !sessionId ||
+          isSaving
+        ) {
+          return;
+        }
+
+        try {
+          await cancelIncidentPhoneCaptureSession(
+            sessionId
+          );
+        } catch (error) {
+          console.warn(
+            "Cancel Incident phone capture warning:",
+            error
+          );
+        }
+
+        setPhoneCaptures(
+          (
+            current
+          ) =>
+            current.filter(
+              (
+                item
+              ) =>
+                item.sessionId !==
+                sessionId
+            )
+        );
+
+        if (
+          activePhoneCaptureSessionId ===
+          sessionId
+        ) {
+          setActivePhoneCaptureSessionId(
+            ""
+          );
+        }
+
+        setIsReviewing(
+          false
+        );
+      },
+      [
+        activePhoneCaptureSessionId,
+        isSaving,
+      ]
+    );
+
+  useEffect(() => {
+    if (
+      !isOpen ||
+      !activePhoneCaptureSessionId
+    ) {
+      return undefined;
+    }
+
+    let stopped =
+      false;
+
+    let timerId =
+      null;
+
+    const poll =
+      async () => {
+        try {
+          const session =
+            await getIncidentPhoneCaptureSession(
+              activePhoneCaptureSessionId
+            );
+
+          if (stopped) {
+            return;
+          }
+
+          setPhoneCaptures(
+            (
+              current
+            ) =>
+              current.map(
+                (
+                  item
+                ) =>
+                  item.sessionId ===
+                  activePhoneCaptureSessionId
+                    ? {
+                        ...item,
+                        ...session,
+                      }
+                    : item
+              )
+          );
+
+          const status =
+            String(
+              session?.status ||
+              ""
+            ).trim();
+
+          if (
+            status ===
+              INCIDENT_PHONE_CAPTURE_STATUSES
+                .PHOTO_ADDED ||
+            status ===
+              INCIDENT_PHONE_CAPTURE_STATUSES
+                .DONE
+          ) {
+            setActivePhoneCaptureSessionId(
+              ""
+            );
+
+            showCustomAlert({
+              type:
+                "success",
+
+              title:
+                "Photo Added",
+
+              message:
+                "The phone photo was added to this Incident report.",
+            });
+
+            return;
+          }
+
+          if (
+            status ===
+              INCIDENT_PHONE_CAPTURE_STATUSES
+                .CANCELLED ||
+            status ===
+              INCIDENT_PHONE_CAPTURE_STATUSES
+                .EXPIRED
+          ) {
+            setPhoneCaptures(
+              (
+                current
+              ) =>
+                current.filter(
+                  (
+                    item
+                  ) =>
+                    item.sessionId !==
+                    activePhoneCaptureSessionId
+                )
+            );
+
+            setActivePhoneCaptureSessionId(
+              ""
+            );
+
+            showCustomAlert({
+              type:
+                "error",
+
+              title:
+                "Phone Photo Ended",
+
+              message:
+                status ===
+                  INCIDENT_PHONE_CAPTURE_STATUSES
+                    .EXPIRED
+                  ? "The QR code expired. Start a new phone photo to continue."
+                  : "The phone photo was cancelled.",
+            });
+
+            return;
+          }
+
+          timerId =
+            window.setTimeout(
+              poll,
+              PHONE_CAPTURE_POLL_MS
+            );
+        } catch (error) {
+          if (stopped) {
+            return;
+          }
+
+          console.error(
+            "Incident phone capture polling error:",
+            error
+          );
+
+          timerId =
+            window.setTimeout(
+              poll,
+              PHONE_CAPTURE_POLL_MS
+            );
+        }
+      };
+
+    void poll();
+
+    return () => {
+      stopped =
+        true;
+
+      if (timerId) {
+        window.clearTimeout(
+          timerId
+        );
+      }
+    };
+  }, [
+    activePhoneCaptureSessionId,
+    isOpen,
+    showCustomAlert,
+  ]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -811,8 +1639,7 @@ export default function AddIncidentModal({
             );
 
             setEmployeeSearchError(
-              error?.message ||
-                "Unable to search deployed employees."
+              "Unable to search deployed employees. Please try again."
             );
           } finally {
             if (
@@ -977,8 +1804,7 @@ export default function AddIncidentModal({
           );
 
           setEmployeeIncidentHistoryError(
-            error?.message ||
-              "Unable to load the selected employee's complete incident history."
+            "Unable to load the selected employee's incident history. Please try again."
           );
 
           return [];
@@ -1243,6 +2069,52 @@ export default function AddIncidentModal({
           return;
         }
 
+        const previousEmployeeId =
+          String(
+            formData?.employeeId ||
+            ""
+          );
+
+        if (
+          previousEmployeeId &&
+          previousEmployeeId !==
+            String(
+              selectedEmployee.id
+            )
+        ) {
+          const sessionIds =
+            phoneCapturesRef.current
+              .map(
+                (
+                  item
+                ) =>
+                  item?.sessionId
+              )
+              .filter(
+                Boolean
+              );
+
+          if (
+            sessionIds.length >
+            0
+          ) {
+            void cancelIncidentPhoneCaptureSessions(
+              sessionIds
+            );
+          }
+
+          phoneCapturesRef.current =
+            [];
+
+          setPhoneCaptures(
+            []
+          );
+
+          setActivePhoneCaptureSessionId(
+            ""
+          );
+        }
+
         setSelectedEmployeeOption(
           selectedEmployee
         );
@@ -1313,6 +2185,7 @@ export default function AddIncidentModal({
         );
       },
       [
+        formData?.employeeId,
         loadEmployeeIncidentHistory,
         resetDuplicateVerification,
         showCustomAlert,
@@ -1324,6 +2197,38 @@ export default function AddIncidentModal({
       (
         event
       ) => {
+        const sessionIds =
+          phoneCapturesRef.current
+            .map(
+              (
+                item
+              ) =>
+                item?.sessionId
+            )
+            .filter(
+              Boolean
+            );
+
+        if (
+          sessionIds.length >
+          0
+        ) {
+          void cancelIncidentPhoneCaptureSessions(
+            sessionIds
+          );
+
+          phoneCapturesRef.current =
+            [];
+
+          setPhoneCaptures(
+            []
+          );
+
+          setActivePhoneCaptureSessionId(
+            ""
+          );
+        }
+
         setEmployeeSearch(
           event.target.value
         );
@@ -1594,7 +2499,7 @@ export default function AddIncidentModal({
             "Incident History Loading",
 
           message:
-            "Please wait until the selected employee's complete incident history finishes loading.",
+            "Please wait until the selected employee's incident history finishes loading.",
         });
 
         return false;
@@ -1647,8 +2552,7 @@ export default function AddIncidentModal({
             "Violation Policy Unavailable",
 
           message:
-            violationPolicyError ||
-            "The current violation policy could not be loaded. Please retry before creating an incident.",
+            "The current violation policy could not be loaded. Please try again before creating the incident report.",
         });
 
         return false;
@@ -1707,10 +2611,45 @@ export default function AddIncidentModal({
             "error",
 
           title:
-            "Incident Description Required",
+            "Case Description Required",
 
           message:
             "Please enter the incident description before reviewing.",
+        });
+
+        return false;
+      }
+
+      if (
+        hasPendingPhoneCapture
+      ) {
+        showCustomAlert({
+          type:
+            "error",
+
+          title:
+            "Phone Photo In Progress",
+
+          message:
+            "Finish or cancel the current phone photo before reviewing the report.",
+        });
+
+        return false;
+      }
+
+      if (
+        totalEvidenceSlotsUsed >
+        MAX_INCIDENT_EVIDENCE_FILES
+      ) {
+        showCustomAlert({
+          type:
+            "error",
+
+          title:
+            "Attachment Limit Exceeded",
+
+          message:
+            `You can add up to ${MAX_INCIDENT_EVIDENCE_FILES} files or phone photos.`,
         });
 
         return false;
@@ -1720,9 +2659,11 @@ export default function AddIncidentModal({
     }, [
       employeeIncidentHistoryError,
       formData,
+      hasPendingPhoneCapture,
       isLoadingEmployeeIncidentHistory,
       isLoadingViolationPolicy,
       showCustomAlert,
+      totalEvidenceSlotsUsed,
       violationOptions,
       violationPolicyError,
     ]);
@@ -1781,10 +2722,10 @@ export default function AddIncidentModal({
             "success",
 
           title:
-            "Report Ready for Review",
+            "Ready for Review",
 
           message:
-            "Incident details have been validated. Please review the report before final saving.",
+            "The incident details are ready. Please review the report before saving.",
         });
       },
       [
@@ -1834,10 +2775,10 @@ export default function AddIncidentModal({
               "error",
 
             title:
-              "Invalid Employee",
+              "Employee Selection Required",
 
             message:
-              "Please select a currently deployed employee from the server search results before saving.",
+              "Please select a currently deployed employee from the search results before saving.",
           });
 
           return;
@@ -1852,10 +2793,44 @@ export default function AddIncidentModal({
               "error",
 
             title:
-              "Duplicate Verification Required",
+              "Related Case Review Required",
 
             message:
-              "A related active incident exists for the same employee and violation. Please verify the duplicate-check box before saving.",
+              "A related active case exists for the same employee and violation. Review it and confirm that this is a separate incident before saving.",
+          });
+
+          return;
+        }
+
+        const phoneSessionIds =
+          completedPhoneCaptures
+            .map(
+              (
+                item
+              ) =>
+                item?.sessionId
+            )
+            .filter(
+              Boolean
+            );
+
+        const combinedEvidenceCount =
+          incidentEvidenceFiles.length +
+          phoneSessionIds.length;
+
+        if (
+          combinedEvidenceCount >
+          MAX_INCIDENT_EVIDENCE_FILES
+        ) {
+          showCustomAlert({
+            type:
+              "error",
+
+            title:
+              "Attachment Limit Exceeded",
+
+            message:
+              `You can submit up to ${MAX_INCIDENT_EVIDENCE_FILES} files or phone photos.`,
           });
 
           return;
@@ -1905,15 +2880,37 @@ export default function AddIncidentModal({
 
           closeCustomAlert();
 
+          /*
+           * Refresh phone descriptors immediately before
+           * Save so a user cannot accidentally submit an
+           * expired descriptor after leaving this form
+           * open for several minutes.
+           */
+          const phoneUploadResult =
+            await refreshIncidentPhoneCaptureDirectUploads(
+              phoneSessionIds
+            );
+
+          const desktopDirectUploads =
+            await prepareIncidentCreateDirectUploads({
+              employeeId:
+                formData.employeeId,
+
+              files:
+                incidentEvidenceFiles.map(
+                  (
+                    item
+                  ) =>
+                    item.file
+                ),
+            });
+
           const directUploads =
-            initialNte?.file
-              ? await prepareIncidentCreateDirectUpload({
-                  employeeId:
-                    formData.employeeId,
-                  file:
-                    initialNte.file,
-                })
-              : [];
+            mergeIncidentDirectUploads(
+              desktopDirectUploads,
+              phoneUploadResult
+                .directUploads
+            );
 
           const saved =
             await onSave(
@@ -1927,11 +2924,112 @@ export default function AddIncidentModal({
             saved ===
             false
           ) {
+            if (
+              phoneSessionIds.length >
+              0
+            ) {
+              await cancelIncidentPhoneCaptureSessions(
+                phoneSessionIds
+              );
+
+              phoneCapturesRef.current =
+                [];
+
+              setPhoneCaptures(
+                []
+              );
+
+              setActivePhoneCaptureSessionId(
+                ""
+              );
+
+              showCustomAlert({
+                type:
+                  "error",
+
+                title:
+                  "Report Not Saved",
+
+                message:
+                  "The incident report was not saved. Please add the phone photos again before retrying.",
+              });
+            }
+
             setIsSaving(
               false
             );
 
             return;
+          }
+
+          /*
+           * The Incident transaction succeeded. From
+           * this point forward the saved Incident owns
+           * every phone object submitted in this save.
+           *
+           * CRITICAL:
+           * Protect those session IDs from all modal
+           * close/unmount cleanup BEFORE attempting the
+           * follow-up consume request.
+           *
+           * Consume is bookkeeping only. If it fails,
+           * the successfully attached evidence must
+           * remain owned by the saved Incident.
+           */
+          phoneSessionIds.forEach(
+            (
+              sessionId
+            ) => {
+              protectedPhoneSessionIdsRef.current.add(
+                sessionId
+              );
+            }
+          );
+
+          if (
+            phoneSessionIds.length >
+            0
+          ) {
+            try {
+              await consumeIncidentPhoneCaptureSessions(
+                phoneSessionIds
+              );
+
+              setPhoneCaptures(
+                (
+                  current
+                ) =>
+                  current.map(
+                    (
+                      item
+                    ) =>
+                      phoneSessionIds.includes(
+                        item.sessionId
+                      )
+                        ? {
+                            ...item,
+
+                            status:
+                              INCIDENT_PHONE_CAPTURE_STATUSES
+                                .DONE,
+                          }
+                        : item
+                  )
+              );
+            } catch (consumeError) {
+              /*
+               * Do not remove the session IDs from the
+               * protected Set and do not convert the
+               * successful Incident save into a failure.
+               *
+               * The Storage objects are already owned by
+               * the saved Incident.
+               */
+              console.warn(
+                "Incident phone capture consume bookkeeping warning after successful save:",
+                consumeError
+              );
+            }
           }
 
           showCustomAlert({
@@ -1964,6 +3062,36 @@ export default function AddIncidentModal({
             error
           );
 
+          /*
+           * If a final save attempt reached backend
+           * direct-upload verification and later failed,
+           * the backend cleanup boundary may already
+           * have deleted the staged objects.
+           *
+           * Release the phone sessions so a retry never
+           * reuses a stale object path. The rest of the
+           * unsaved Incident form remains intact.
+           */
+          if (
+            phoneSessionIds.length >
+            0
+          ) {
+            await cancelIncidentPhoneCaptureSessions(
+              phoneSessionIds
+            );
+
+            phoneCapturesRef.current =
+              [];
+
+            setPhoneCaptures(
+              []
+            );
+
+            setActivePhoneCaptureSessionId(
+              ""
+            );
+          }
+
           setIsSaving(
             false
           );
@@ -1973,22 +3101,27 @@ export default function AddIncidentModal({
               "error",
 
             title:
-              "Save Failed",
+              "Unable to Save Report",
 
             message:
-              error?.message ||
-              "The incident report could not be saved. Please try again.",
+              `The incident report could not be saved. Please try again.${
+                phoneSessionIds.length >
+                0
+                  ? " Add the phone photos again before retrying."
+                  : ""
+              }`,
           });
         }
       },
       [
         closeCustomAlert,
+        completedPhoneCaptures,
         computePenaltyData,
         duplicateConfirmed,
         employeeIncidentHistory,
         formData,
+        incidentEvidenceFiles,
         isSaving,
-        initialNte,
         needsDuplicateVerification,
         onClose,
         onSave,
@@ -2024,7 +3157,7 @@ export default function AddIncidentModal({
         color={
           isReviewing
             ? "green"
-            : "red"
+            : "indigo"
         }
         size="lg"
         preventClose={
@@ -2046,7 +3179,7 @@ export default function AddIncidentModal({
                 icon={
                   <FiFileText />
                 }
-                title="Incident Information"
+                title="Case Information"
               />
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -2067,7 +3200,7 @@ export default function AddIncidentModal({
                 </Field>
 
                 <Field
-                  label="Reported Date and Time"
+                  label="Reported On"
                   icon={
                     <FiCalendar />
                   }
@@ -2151,7 +3284,7 @@ export default function AddIncidentModal({
                       disabled={
                         isSaving
                       }
-                      placeholder="Search deployed employee name, ID number, or company..."
+                      placeholder="Search employee name, ID number, or client company..."
                       className="input-field"
                       style={{
                         paddingLeft:
@@ -2278,7 +3411,7 @@ export default function AddIncidentModal({
                 </div>
 
                 <Field
-                  label="Company / Client"
+                  label="Client Company"
                   icon={
                     <FiBriefcase />
                   }
@@ -2302,7 +3435,7 @@ export default function AddIncidentModal({
                 icon={
                   <FiShield />
                 }
-                title="Violation & Policy"
+                title="Violation and Policy"
               />
 
               {isLoadingViolationPolicy && (
@@ -2324,9 +3457,7 @@ export default function AddIncidentModal({
                   </p>
 
                   <p className="mt-1 leading-6">
-                    {
-                      violationPolicyError
-                    }
+                    The current violation policy could not be loaded. Please try again.
                   </p>
 
                   <button
@@ -2345,7 +3476,7 @@ export default function AddIncidentModal({
                 violationPolicySource && (
                   <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 text-sm text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
                     <p className="font-bold">
-                      Policy Reference:{" "}
+                      Policy Details:{" "}
                       {
                         violationPolicySource
                       }
@@ -2559,7 +3690,7 @@ export default function AddIncidentModal({
                     offense:{" "}
                     <span className="font-semibold">
                       {formData.sanction ||
-                        "No sanction configured"}
+                        "Not specified"}
                     </span>
                   </p>
                 </div>
@@ -2583,7 +3714,7 @@ export default function AddIncidentModal({
 
             <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-slate-950/50">
               <Field
-                label="Incident Description"
+                label="Case Description"
                 required
               >
                 <textarea
@@ -2600,7 +3731,7 @@ export default function AddIncidentModal({
                   disabled={
                     isSaving
                   }
-                  placeholder="Write specific incident details, context, and supporting notes..."
+                  placeholder="Describe what happened, including relevant details and supporting notes..."
                   className="input-field resize-none"
                 />
               </Field>
@@ -2610,73 +3741,310 @@ export default function AddIncidentModal({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-bold text-gray-900 dark:text-white">
-                    Initial NTE Attachment
+                    Files and Photos
                   </p>
+
                   <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                    Optional. Upload one PDF, JPG, JPEG, or PNG file up to 5 MB.
+                    Optional. Add up to{" "}
+                    {MAX_INCIDENT_EVIDENCE_FILES} total
+                    PDF, JPG, JPEG, or PNG files and photos.
+                    Each file must be 5 MB or smaller.
+                  </p>
+
+                  <p className="mt-1 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                    {totalEvidenceSlotsUsed}/
+                    {MAX_INCIDENT_EVIDENCE_FILES} attachments added
                   </p>
                 </div>
 
                 <input
-                  ref={initialNteInputRef}
+                  ref={
+                    incidentEvidenceInputRef
+                  }
                   type="file"
+                  multiple
                   accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
                   className="hidden"
                   onChange={
-                    handleInitialNteChange
+                    handleIncidentEvidenceChange
                   }
                   disabled={
-                    isSaving
+                    isSaving ||
+                    totalEvidenceSlotsUsed >=
+                      MAX_INCIDENT_EVIDENCE_FILES
                   }
                 />
 
-                {!initialNte && (
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() =>
-                      initialNteInputRef.current?.click()
+                      incidentEvidenceInputRef.current?.click()
                     }
-                    disabled={isSaving}
-                    className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-500/30 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                    disabled={
+                      isSaving ||
+                      totalEvidenceSlotsUsed >=
+                        MAX_INCIDENT_EVIDENCE_FILES
+                    }
+                    className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/30 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
                   >
-                    <FiPaperclip aria-hidden="true" />
-                    Select File
+                    <FiPaperclip
+                      aria-hidden="true"
+                    />
+                    Select Files
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={
+                      handleStartPhoneCapture
+                    }
+                    disabled={
+                      isSaving ||
+                      isStartingPhoneCapture ||
+                      hasPendingPhoneCapture ||
+                      totalEvidenceSlotsUsed >=
+                        MAX_INCIDENT_EVIDENCE_FILES
+                    }
+                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+                  >
+                    <FiSmartphone
+                      aria-hidden="true"
+                    />
+
+                    {isStartingPhoneCapture
+                      ? "Getting QR code..."
+                      : "Add photo from phone"}
+                  </button>
+                </div>
               </div>
 
-              {initialNte && (
-                <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 dark:border-indigo-500/20 dark:bg-indigo-950/20">
-                  <div className="flex items-start gap-3">
-                    <FiFileText className="mt-0.5 shrink-0 text-indigo-600 dark:text-indigo-300" />
+              {activePhoneCapture && (
+                <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-500/30 dark:bg-emerald-950/20">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <div className="mx-auto shrink-0 rounded-2xl bg-white p-3 shadow-sm sm:mx-0">
+                      {activePhoneCapture.captureUrl ? (
+                        <QRCodeSVG
+                          value={
+                            activePhoneCapture.captureUrl
+                          }
+                          size={
+                            168
+                          }
+                          level="M"
+                          includeMargin
+                        />
+                      ) : (
+                        <div className="flex h-[168px] w-[168px] items-center justify-center text-sm text-gray-500">
+                          Preparing QR code...
+                        </div>
+                      )}
+                    </div>
+
                     <div className="min-w-0 flex-1">
-                      <p className="break-all text-sm font-bold text-gray-900 dark:text-white">
-                        {initialNte.file.name}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {formatFileSize(initialNte.file.size)}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <a
-                          href={initialNte.localUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-white dark:border-indigo-500/30 dark:text-indigo-300"
-                        >
-                          Preview
-                        </a>
-                        <button
-                          type="button"
-                          onClick={removeInitialNte}
-                          disabled={isSaving}
-                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-500/30 dark:text-red-300"
-                        >
-                          <FiTrash2 aria-hidden="true" />
-                          Remove
-                        </button>
+                      <div className="flex items-center gap-2">
+                        <FiCamera
+                          className="shrink-0 text-emerald-700 dark:text-emerald-300"
+                          aria-hidden="true"
+                        />
+
+                        <p className="font-bold text-emerald-900 dark:text-emerald-200">
+                          Scan this QR code with your phone
+                        </p>
                       </div>
+
+                      <p className="mt-2 text-sm leading-6 text-emerald-800 dark:text-emerald-300">
+                        Open the camera on your phone,
+                        scan the code, take a photo of the
+                        physical evidence, then tap
+                        <span className="font-bold">
+                          {" "}Use photo
+                        </span>
+                        . Keep this desktop form open.
+                      </p>
+
+                      <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                        {activePhoneCapture.status ===
+                        INCIDENT_PHONE_CAPTURE_STATUSES
+                          .READY_FOR_UPLOAD
+                          ? "Waiting for photo..."
+                          : "Waiting for photo..."}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleRemovePhoneCapture(
+                            activePhoneCapture.sessionId
+                          )
+                        }
+                        disabled={
+                          isSaving
+                        }
+                        className="mt-3 inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-500/40 dark:bg-slate-900 dark:text-emerald-300"
+                      >
+                        <FiX
+                          aria-hidden="true"
+                        />
+                        Cancel phone photo
+                      </button>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {incidentEvidenceFiles.length >
+                0 && (
+                <div className="mt-4 space-y-3">
+                  {incidentEvidenceFiles.map(
+                    (
+                      evidence,
+                      index
+                    ) => (
+                      <div
+                        key={
+                          evidence.id
+                        }
+                        className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 dark:border-indigo-500/20 dark:bg-indigo-950/20"
+                      >
+                        <div className="flex items-start gap-3">
+                          <FiFileText className="mt-0.5 shrink-0 text-indigo-600 dark:text-indigo-300" />
+
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                              File {index + 1}
+                            </p>
+
+                            <p className="mt-1 break-all text-sm font-bold text-gray-900 dark:text-white">
+                              {
+                                evidence.file.name
+                              }
+                            </p>
+
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                              {formatFileSize(
+                                evidence.file.size
+                              )}
+                            </p>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <a
+                                href={
+                                  evidence.localUrl
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-white dark:border-indigo-500/30 dark:text-indigo-300"
+                              >
+                                Preview
+                              </a>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeIncidentEvidenceFile(
+                                    evidence.id
+                                  )
+                                }
+                                disabled={
+                                  isSaving
+                                }
+                                className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-500/30 dark:text-red-300"
+                              >
+                                <FiTrash2
+                                  aria-hidden="true"
+                                />
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
+              {completedPhoneCaptures.length >
+                0 && (
+                <div className="mt-4 space-y-3">
+                  {completedPhoneCaptures.map(
+                    (
+                      capture,
+                      index
+                    ) => (
+                      <div
+                        key={
+                          capture.sessionId
+                        }
+                        className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 dark:border-emerald-500/20 dark:bg-emerald-950/20"
+                      >
+                        <div className="flex items-start gap-3">
+                          <FiSmartphone className="mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-300" />
+
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                              Phone photo {index + 1}
+                            </p>
+
+                            <p className="mt-1 break-all text-sm font-bold text-gray-900 dark:text-white">
+                              {capture.photo?.name ||
+                                "Phone photo"}
+                            </p>
+
+                            {capture.photo?.size ? (
+                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                {formatFileSize(
+                                  capture.photo.size
+                                )}
+                              </p>
+                            ) : null}
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {capture.photo
+                                ?.previewUrl && (
+                                <a
+                                  href={
+                                    capture.photo.previewUrl
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-white dark:border-emerald-500/30 dark:text-emerald-300"
+                                >
+                                  Preview
+                                </a>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRemovePhoneCapture(
+                                    capture.sessionId
+                                  )
+                                }
+                                disabled={
+                                  isSaving
+                                }
+                                className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-500/30 dark:text-red-300"
+                              >
+                                <FiTrash2
+                                  aria-hidden="true"
+                                />
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
+              {totalEvidenceSlotsUsed ===
+                0 && (
+                <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-slate-700 dark:text-gray-400">
+                  No files or photos added yet. You may choose files from this computer or add a photo using your phone.
                 </div>
               )}
             </section>
@@ -2702,7 +4070,7 @@ export default function AddIncidentModal({
                   isLoadingEmployeeIncidentHistory ||
                   !isViolationPolicyReady
                 }
-                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <FiCheckCircle
                   aria-hidden="true"
@@ -2757,7 +4125,7 @@ export default function AddIncidentModal({
               />
 
               <ReviewItem
-                label="Reported Date and Time"
+                label="Reported On"
                 value={
                   formatDateTime(
                     formData.reportedAt
@@ -2776,7 +4144,7 @@ export default function AddIncidentModal({
               />
 
               <ReviewItem
-                label="Company / Client"
+                label="Client Company"
                 value={
                   formData.company
                 }
@@ -2804,12 +4172,12 @@ export default function AddIncidentModal({
               />
 
               <ReviewItem
-                label="Offense Count"
+                label="Offense Number"
                 value={`${formData.offenseCount} offense`}
               />
 
               <ReviewItem
-                label="Policy Sanction Reference"
+                label="Prescribed Sanction"
                 value={
                   formData.sanction
                 }
@@ -2846,32 +4214,119 @@ export default function AddIncidentModal({
             </section>
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900">
-              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
-                Initial NTE Attachment
-              </p>
-              {initialNte ? (
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-gray-50 p-4 dark:bg-slate-950/50">
-                  <div className="min-w-0">
-                    <p className="break-all text-sm font-semibold text-gray-900 dark:text-white">
-                      {initialNte.file.name}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {formatFileSize(initialNte.file.size)}
-                    </p>
-                  </div>
-                  <a
-                    href={initialNte.localUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/30 dark:text-indigo-300"
-                  >
-                    Preview
-                  </a>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                    Files and Photos
+                  </p>
+
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {incidentEvidenceFiles.length +
+                      completedPhoneCaptures.length}
+                    /{MAX_INCIDENT_EVIDENCE_FILES} attachments added
+                  </p>
                 </div>
-              ) : (
+              </div>
+
+              {incidentEvidenceFiles.length ===
+                0 &&
+              completedPhoneCaptures.length ===
+                0 ? (
                 <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-                  No Initial NTE attached.
+                  No files or photos added.
                 </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {incidentEvidenceFiles.map(
+                    (
+                      evidence,
+                      index
+                    ) => (
+                      <div
+                        key={
+                          evidence.id
+                        }
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-gray-50 p-4 dark:bg-slate-950/50"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                            File {index + 1}
+                          </p>
+
+                          <p className="mt-1 break-all text-sm font-semibold text-gray-900 dark:text-white">
+                            {
+                              evidence.file.name
+                            }
+                          </p>
+
+                          <p className="mt-1 text-xs text-gray-500">
+                            {formatFileSize(
+                              evidence.file.size
+                            )}
+                          </p>
+                        </div>
+
+                        <a
+                          href={
+                            evidence.localUrl
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/30 dark:text-indigo-300"
+                        >
+                          Preview
+                        </a>
+                      </div>
+                    )
+                  )}
+
+                  {completedPhoneCaptures.map(
+                    (
+                      capture,
+                      index
+                    ) => (
+                      <div
+                        key={
+                          capture.sessionId
+                        }
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-emerald-50/70 p-4 dark:bg-emerald-950/20"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                            Phone photo {index + 1}
+                          </p>
+
+                          <p className="mt-1 break-all text-sm font-semibold text-gray-900 dark:text-white">
+                            {capture.photo?.name ||
+                              "Phone photo"}
+                          </p>
+
+                          {capture.photo?.size ? (
+                            <p className="mt-1 text-xs text-gray-500">
+                              {formatFileSize(
+                                capture.photo.size
+                              )}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        {capture.photo
+                          ?.previewUrl && (
+                          <a
+                            href={
+                              capture.photo.previewUrl
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:border-emerald-500/30 dark:text-emerald-300"
+                          >
+                            Preview
+                          </a>
+                        )}
+                      </div>
+                    )
+                  )}
+                </div>
               )}
             </section>
 
@@ -2917,8 +4372,8 @@ export default function AddIncidentModal({
                 />
 
                 {isSaving
-                  ? "Saving Report..."
-                  : "Final Save Report"}
+                  ? "Saving..."
+                  : "Save Incident Report"}
               </button>
             </FooterButtons>
           </div>

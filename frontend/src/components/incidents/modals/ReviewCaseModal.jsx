@@ -155,8 +155,8 @@ export default function ReviewCaseModal({
         ) {
           showNotice?.(
             "error",
-            "Return Comment Required",
-            "Please enter a return comment before sending this case back for correction."
+            "Reason Required",
+            "Please enter a reason before returning this case for correction."
           );
           return;
         }
@@ -192,9 +192,8 @@ export default function ReviewCaseModal({
 
           showNotice?.(
             "error",
-            "Return Failed",
-            error?.message ||
-              "The case could not be returned for correction. Please try again."
+            "Couldn’t Return Case",
+            "We couldn’t return this case. Please try again."
           );
         }
       },
@@ -247,9 +246,8 @@ export default function ReviewCaseModal({
 
           showNotice?.(
             "error",
-            "Approval Failed",
-            error?.message ||
-              "The case could not be approved and closed. Please try again."
+            "Couldn’t Approve Case",
+            "We couldn’t approve and close this case. Please try again."
           );
         }
       },
@@ -305,7 +303,7 @@ export default function ReviewCaseModal({
       onClose={
         handleClose
       }
-      title="Authorized Case Review"
+      title="Case Review"
       subtitle={`${incidentCode} • ${employeeName}`}
       color="indigo"
       size="lg"
@@ -326,11 +324,11 @@ export default function ReviewCaseModal({
 
               <div className="min-w-0">
                 <p className="text-sm font-extrabold text-violet-900 dark:text-violet-200">
-                  Independent HR Review
+                  Review Case
                 </p>
 
                 <p className="mt-1 text-xs leading-5 text-violet-700 dark:text-violet-300">
-                  Review the incident details, investigation record, and submitted proof before approving closure or returning the case for correction.
+                  Review the case details and submitted information before approving or returning the case for correction.
                 </p>
               </div>
             </div>
@@ -368,7 +366,7 @@ export default function ReviewCaseModal({
             />
           </div>
 
-          <InfoCard title="Incident Summary">
+          <InfoCard title="Case Summary">
             <Detail
               label="Incident ID"
               value={
@@ -408,7 +406,7 @@ export default function ReviewCaseModal({
 
           {smartAlerts.length >
             0 && (
-            <InfoCard title="Smart Alerts">
+            <InfoCard title="Case Alerts">
               <div className="space-y-2">
                 {smartAlerts.map(
                   (
@@ -430,7 +428,7 @@ export default function ReviewCaseModal({
             </InfoCard>
           )}
 
-          <InfoCard title="Investigation Information">
+          <InfoCard title="Investigation Details">
             <Detail
               label="Started By"
               value={
@@ -442,25 +440,7 @@ export default function ReviewCaseModal({
             />
 
             <Detail
-              label="Username"
-              value={
-                investigation.startedByUsername ||
-                incident.investigationStartedByUsername ||
-                "-"
-              }
-            />
-
-            <Detail
-              label="User ID"
-              value={
-                investigation.startedById ||
-                incident.investigationStartedById ||
-                "-"
-              }
-            />
-
-            <Detail
-              label="Date Started"
+              label="Started On"
               value={formatDateTime(
                 investigation.startedAt ||
                   incident.investigationStartedAt ||
@@ -476,7 +456,7 @@ export default function ReviewCaseModal({
               }
             />
           ) : (
-            <InfoCard title="Resolution Proof Review">
+            <InfoCard title="Submitted Resolution">
               <div className="flex items-start gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
                 <FiFileText
                   className="mt-0.5 shrink-0 text-slate-400"
@@ -484,14 +464,14 @@ export default function ReviewCaseModal({
                 />
 
                 <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">
-                  No resolution proof was submitted for this case.
+                  No resolution details or supporting files were submitted for this case.
                 </p>
               </div>
             </InfoCard>
           )}
 
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
-            <Field label="Return Comment if Proof is Not Enough">
+            <Field label="Reason for Return">
               <textarea
                 rows={4}
                 value={
@@ -503,12 +483,12 @@ export default function ReviewCaseModal({
                 disabled={
                   isProcessing
                 }
-                placeholder="Example: Proof is incomplete. Please upload the signed memo or acknowledged document."
+                placeholder="Example: Please add the missing signed document or clarify the submitted details."
                 className="input-field resize-none disabled:cursor-not-allowed disabled:opacity-60"
               />
 
               <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                Required only when returning the case for correction. Approval does not require a return comment.
+                Required only when returning the case for correction.
               </p>
             </Field>
           </div>
@@ -533,7 +513,7 @@ export default function ReviewCaseModal({
               }
             >
               {isReturning
-                ? "Returning Case..."
+                ? "Returning..."
                 : "Return for Correction"}
             </Button>
 
@@ -556,7 +536,7 @@ export default function ReviewCaseModal({
               }
             >
               {isApproving
-                ? "Approving Case..."
+                ? "Approving..."
                 : "Approve & Close"}
             </Button>
           </ModalFooter>

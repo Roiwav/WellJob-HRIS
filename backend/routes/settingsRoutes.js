@@ -1271,7 +1271,7 @@ router.patch(
          * A company remains operationally required while
          * any employee has an Active deployment there.
          *
-         * Historical Completed / Cancelled deployments do
+         * Historical completed / separation deployment records do
          * not block deactivation because their company
          * value is an immutable deployment snapshot.
          */
@@ -1706,7 +1706,7 @@ router.patch(
        * choices while an Active deployment is still using
        * that exact company-position pair.
        *
-       * Completed / Cancelled deployment history remains
+       * Completed / separation deployment history remains
        * unaffected and does not block deactivation.
        */
       if (

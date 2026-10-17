@@ -20,7 +20,9 @@ const AGING_COLORS = {
   "30+ Days": "#ef4444",
 };
 
-function normalizeCaseAgingData(data) {
+function normalizeCaseAgingData(
+  data
+) {
   if (!Array.isArray(data)) {
     return [];
   }
@@ -40,9 +42,9 @@ function normalizeCaseAgingData(data) {
         const name =
           String(
             item?.name ||
-              `Bracket ${index + 1}`
+              `Period ${index + 1}`
           ).trim() ||
-          `Bracket ${index + 1}`;
+          `Period ${index + 1}`;
 
         return {
           ...item,
@@ -71,11 +73,11 @@ function EmptyChartState() {
     <div className="flex h-[210px] w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-5 text-center dark:border-slate-700 dark:bg-slate-950/40">
       <div>
         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          No active case-aging data
+          No Active Case Data Available
         </p>
 
         <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-          No open, investigating, or for-review cases were found for the selected historical period.
+          No open, investigating, or for review cases are available for the selected period.
         </p>
       </div>
     </div>
@@ -128,11 +130,11 @@ export default function CaseAgingChart({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-            Active Case Aging
+            Active Case Age Summary
           </h3>
 
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Current unresolved cases grouped by how long they have remained active.
+            Active cases grouped by the number of days they have remained unresolved.
           </p>
         </div>
 
@@ -141,6 +143,7 @@ export default function CaseAgingChart({
             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
               Active Cases
             </p>
+
             <p className="text-sm font-extrabold text-slate-900 dark:text-white">
               {totalCases}
             </p>
@@ -150,6 +153,7 @@ export default function CaseAgingChart({
             <p className="text-[10px] font-bold uppercase tracking-wide text-red-500 dark:text-red-300">
               30+ Days
             </p>
+
             <p className="text-sm font-extrabold text-red-700 dark:text-red-300">
               {overdueCases} · {overdueShare}%
             </p>
@@ -164,7 +168,7 @@ export default function CaseAgingChart({
       ) : (
         <div
           role="img"
-          aria-label={`Case-aging distribution chart containing ${totalCases} active case${
+          aria-label={`Active case age chart containing ${totalCases} active case${
             totalCases === 1
               ? ""
               : "s"
@@ -210,8 +214,10 @@ export default function CaseAgingChart({
                 tickLine={false}
                 axisLine={false}
                 tick={{
-                  fill: "currentColor",
-                  fontSize: 11,
+                  fill:
+                    "currentColor",
+                  fontSize:
+                    11,
                 }}
               />
 
@@ -221,8 +227,10 @@ export default function CaseAgingChart({
                 tickLine={false}
                 axisLine={false}
                 tick={{
-                  fill: "currentColor",
-                  fontSize: 11,
+                  fill:
+                    "currentColor",
+                  fontSize:
+                    11,
                 }}
                 width={82}
               />
@@ -235,7 +243,7 @@ export default function CaseAgingChart({
 
               <Bar
                 dataKey="value"
-                name="Cases"
+                name="Active Cases"
                 radius={[
                   0,
                   7,

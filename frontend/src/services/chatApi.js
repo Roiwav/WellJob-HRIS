@@ -1,3 +1,5 @@
+import API_ORIGIN from "../config/api";
+
 /**
  * ==================================================
  * WELLJOB SOLUTIONS
@@ -5,62 +7,152 @@
  * ==================================================
  *
  * Connects the Messenger frontend to the existing
- * WELLJOB Express backend.
- *
- * Authentication:
- * - Uses the existing WELLJOB login JWT.
- * - Reads the token from localStorage.
- * - Sends the token through Authorization headers.
- * - Does not create a separate login session.
- *
- * Backend:
- * http://localhost:5000/api/chat
- */
-
-/*
- * ==================================================
- * API SERVER CONFIGURATION
- * ==================================================
- *
- * The environment variable must contain the
- * backend origin, without /api at the end.
- *
- * Example:
- * VITE_API_URL=http://localhost:5000
+ * WELLJOB Express backend using the current login JWT.
  */
 
 export const CHAT_SERVER_URL = String(
-  import.meta.env.VITE_API_URL ||
-    "http://localhost:5000"
+  API_ORIGIN
 )
   .trim()
   .replace(/\/+$/, "");
+
+const MAX_CHAT_FILES = 30;
+const MAX_CHAT_ATTACHMENT_BYTES =
+  15 * 1024 * 1024;
+const MAX_CHAT_MESSAGE_LENGTH = 2000;
+
+const CHAT_ATTACHMENT_TYPES =
+  Object.freeze({
+    pdf: {
+      mime:
+        "application/pdf",
+      label:
+        "PDF",
+    },
+
+    docx: {
+      mime:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      label:
+        "Word file",
+    },
+
+    xls: {
+      mime:
+        "application/vnd.ms-excel",
+      label:
+        "Excel file",
+    },
+
+    xlsx: {
+      mime:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      label:
+        "Excel file",
+    },
+
+    png: {
+      mime:
+        "image/png",
+      label:
+        "image",
+    },
+
+    jpg: {
+      mime:
+        "image/jpeg",
+      label:
+        "image",
+    },
+
+    jpeg: {
+      mime:
+        "image/jpeg",
+      label:
+        "image",
+    },
+
+    webp: {
+      mime:
+        "image/webp",
+      label:
+        "image",
+    },
+
+    gif: {
+      mime:
+        "image/gif",
+      label:
+        "image",
+    },
+  });
+
+function fileExtension(
+  filename
+) {
+  const normalized =
+    String(
+      filename || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const dotIndex =
+    normalized.lastIndexOf(
+      "."
+    );
+
+  if (
+    dotIndex < 0 ||
+    dotIndex ===
+      normalized.length - 1
+  ) {
+    return "";
+  }
+
+  return normalized.slice(
+    dotIndex + 1
+  );
+}
+
+function getAttachmentType(
+  file
+) {
+  if (!file) {
+    return null;
+  }
+
+  const extension =
+    fileExtension(
+      file.name
+    );
+
+  return (
+    CHAT_ATTACHMENT_TYPES[
+      extension
+    ] || null
+  );
+}
 
 /*
  * ==================================================
  * GET EXISTING LOGIN TOKEN
  * ==================================================
  *
- * The existing WELLJOB authentication system
- * stores the JWT under the localStorage key:
- *
- * "token"
- *
- * This function does not generate a new token.
- *
- * The optional parameter is retained for
- * compatibility with existing Messenger
- * components that call getChatToken(user).
+ * Uses the same WELLJOB login session.
+ * The optional argument is retained for compatibility.
  */
 
-export function getChatToken(_user) {
-  // Retain the optional argument for backward-compatible callers.
+export function getChatToken(
+  _user
+) {
   void _user;
 
   try {
     return (
-      localStorage.getItem("token") ||
-      ""
+      localStorage.getItem(
+        "token"
+      ) || ""
     );
   } catch {
     return "";
@@ -71,22 +163,6 @@ export function getChatToken(_user) {
  * ==================================================
  * CHAT API REQUEST
  * ==================================================
- *
- * Usage:
- *
- * chatApi("/users")
- *
- * chatApi("/conversations")
- *
- * chatApi("/conversations", {
- *   method: "POST",
- *   body: JSON.stringify({
- *     recipientId: 1,
- *   }),
- * })
- *
- * The optional third argument is retained
- * for compatibility with Messenger components.
  */
 
 export async function chatApi(
@@ -94,58 +170,45 @@ export async function chatApi(
   options = {},
   _user
 ) {
-  // Retain the optional third argument for backward-compatible callers.
   void _user;
 
-  /*
-   * Retrieve the existing WELLJOB login token.
-   */
-
-  const token = getChatToken();
+  const token =
+    getChatToken();
 
   if (!token) {
     throw new Error(
-      "Your login session is missing. Please sign in again."
+      "Your session has ended. Please sign in again."
     );
   }
 
-  /*
-   * Validate the requested API path.
-   */
-
   if (
-    typeof path !== "string" ||
-    !path.startsWith("/")
+    typeof path !==
+      "string" ||
+    !path.startsWith(
+      "/"
+    )
   ) {
     throw new Error(
-      "Invalid Messenger API path."
+      "This Messenger request could not be completed."
     );
   }
 
-  /*
-   * Build the request headers.
-   *
-   * The JWT always comes from the existing
-   * WELLJOB login session.
-   */
-
-  const headers = new Headers(
-    options.headers || {}
-  );
-
-  /*
-   * Messenger currently sends JSON request
-   * bodies for conversation and message
-   * creation.
-   *
-   * Do not overwrite a Content-Type already
-   * explicitly provided by the caller.
-   */
+  const headers =
+    new Headers(
+      options.headers ||
+        {}
+    );
 
   if (
-    options.body != null &&
-    !headers.has("Content-Type") &&
-    !(options.body instanceof FormData)
+    options.body !=
+      null &&
+    !headers.has(
+      "Content-Type"
+    ) &&
+    !(
+      options.body instanceof
+      FormData
+    )
   ) {
     headers.set(
       "Content-Type",
@@ -153,101 +216,133 @@ export async function chatApi(
     );
   }
 
-  /*
-   * Set Authorization after reading any
-   * custom request headers.
-   *
-   * This prevents a caller from accidentally
-   * replacing the current login token.
-   */
-
   headers.set(
     "Authorization",
     `Bearer ${token}`
   );
 
-  /*
-   * ==================================================
-   * SEND REQUEST TO WELLJOB BACKEND
-   * ==================================================
-   */
-
-  const response = await fetch(
-    `${CHAT_SERVER_URL}/api/chat${path}`,
-    {
-      ...options,
-
-      headers,
-    }
-  );
-
-  /*
-   * Parse the backend response.
-   */
-
-  const data = await response
-    .json()
-    .catch(() => ({}));
-
-  /*
-   * ==================================================
-   * API ERROR HANDLING
-   * ==================================================
-   *
-   * Preserve the HTTP status for components
-   * that need to distinguish authentication
-   * failures from other request errors.
-   */
-
-  if (!response.ok) {
-    const error = new Error(
-      data.message ||
-        data.error ||
-        `Chat request failed (${response.status}).`
+  const response =
+    await fetch(
+      `${CHAT_SERVER_URL}/api/chat${path}`,
+      {
+        ...options,
+        headers,
+      }
     );
 
-    error.status = response.status;
+  const data =
+    await response
+      .json()
+      .catch(
+        () => ({})
+      );
+
+  if (!response.ok) {
+    const error =
+      new Error(
+        data.message ||
+          data.error ||
+          "Messenger could not complete that request."
+      );
+
+    error.status =
+      response.status;
 
     throw error;
   }
 
-  /*
-   * Return successful API response.
-   */
-
   return data;
 }
-/* One chat message may contain multiple PDFs. The 15 MB cap is COMBINED. */
-function normalizeChatPdfSelection(files, body) {
-  const selected = Array.from(files || []);
-  const total = selected.reduce((sum, file) => sum + Number(file?.size || 0), 0);
-  const maxBytes = 15 * 1024 * 1024;
+
+/*
+ * ==================================================
+ * ATTACHMENT VALIDATION
+ * ==================================================
+ */
+
+function normalizeChatAttachmentSelection(
+  files,
+  body
+) {
+  const selected =
+    Array.from(
+      files || []
+    );
+
+  const total =
+    selected.reduce(
+      (
+        sum,
+        file
+      ) =>
+        sum +
+        Number(
+          file?.size || 0
+        ),
+      0
+    );
+
+  const invalidFile =
+    selected.find(
+      (file) => {
+        const type =
+          getAttachmentType(
+            file
+          );
+
+        return (
+          !file ||
+          !type ||
+          !Number.isSafeInteger(
+            Number(
+              file.size
+            )
+          ) ||
+          Number(
+            file.size
+          ) <= 0
+        );
+      }
+    );
 
   if (
-    !selected.length ||
-    selected.length > 30 ||
-    total > maxBytes ||
-    selected.some(
-      (file) =>
-        !file ||
-        Number(file.size) <= 0 ||
-        !String(file.name || "").toLowerCase().endsWith(".pdf") ||
-        (file.type && file.type !== "application/pdf")
-    )
+    selected.length <
+      1 ||
+    selected.length >
+      MAX_CHAT_FILES
   ) {
     throw new Error(
-      "Select 1–30 valid PDF files with a combined size of 15 MB or less."
+      `You can attach 1–${MAX_CHAT_FILES} files in one message.`
+    );
+  }
+
+  if (invalidFile) {
+    throw new Error(
+      "You can send PDF, Word, Excel, and image files only."
+    );
+  }
+
+  if (
+    total >
+    MAX_CHAT_ATTACHMENT_BYTES
+  ) {
+    throw new Error(
+      "Your selected files are over the 15 MB total limit."
     );
   }
 
   const normalizedBody =
-    typeof body === "string"
+    typeof body ===
+      "string"
       ? body.trim()
       : "";
 
-  if (normalizedBody.length > 2000) {
+  if (
+    normalizedBody.length >
+    MAX_CHAT_MESSAGE_LENGTH
+  ) {
     throw new Error(
-      "Message must contain at most 2000 characters."
+      `Messages can contain up to ${MAX_CHAT_MESSAGE_LENGTH} characters.`
     );
   }
 
@@ -259,9 +354,10 @@ function normalizeChatPdfSelection(files, body) {
   };
 }
 
-function uploadPdfToSignedUrl(
+function uploadFileToSignedUrl(
   signedUrl,
   file,
+  mime,
   {
     onLoaded,
   } = {}
@@ -281,7 +377,7 @@ function uploadPdfToSignedUrl(
 
       request.setRequestHeader(
         "Content-Type",
-        "application/pdf"
+        mime
       );
 
       request.setRequestHeader(
@@ -290,7 +386,9 @@ function uploadPdfToSignedUrl(
       );
 
       request.upload.onprogress =
-        (event) => {
+        (
+          event
+        ) => {
           if (
             event.lengthComputable &&
             typeof onLoaded ===
@@ -307,7 +405,7 @@ function uploadPdfToSignedUrl(
         () => {
           reject(
             new Error(
-              "PDF upload to private storage failed. Check your connection."
+              "The file could not be uploaded. Check your connection and try again."
             )
           );
         };
@@ -315,16 +413,19 @@ function uploadPdfToSignedUrl(
       request.onload =
         () => {
           if (
-            request.status >= 200 &&
-            request.status < 300
+            request.status >=
+              200 &&
+            request.status <
+              300
           ) {
             resolve();
+
             return;
           }
 
           reject(
             new Error(
-              `PDF upload failed (${request.status}).`
+              "The file could not be uploaded. Please try again."
             )
           );
         };
@@ -344,7 +445,8 @@ async function cleanupChatDirectUploads(
     !Array.isArray(
       directUploads
     ) ||
-    directUploads.length === 0
+    directUploads.length ===
+      0
   ) {
     return;
   }
@@ -368,13 +470,23 @@ async function cleanupChatDirectUploads(
     /*
      * Cleanup is best-effort only.
      *
-     * The backend also refuses to delete any object
-     * that is already referenced by chat_attachments.
+     * The backend also refuses to remove any object
+     * that is already referenced by a saved message.
      */
   }
 }
 
-export async function uploadChatPdfs(
+/*
+ * ==================================================
+ * GENERIC CHAT ATTACHMENT UPLOAD
+ * ==================================================
+ *
+ * Supports PDF, DOCX, XLS/XLSX, PNG, JPEG, WEBP,
+ * and GIF files through the backend's signed-upload
+ * authorization flow.
+ */
+
+export async function uploadChatAttachments(
   conversationId,
   files,
   body = "",
@@ -386,9 +498,32 @@ export async function uploadChatPdfs(
     body:
       normalizedBody,
   } =
-    normalizeChatPdfSelection(
+    normalizeChatAttachmentSelection(
       files,
       body
+    );
+
+  const fileMetadata =
+    selected.map(
+      (
+        file
+      ) => {
+        const type =
+          getAttachmentType(
+            file
+          );
+
+        return {
+          name:
+            file.name,
+
+          type:
+            type.mime,
+
+          size:
+            file.size,
+        };
+      }
     );
 
   const authorization =
@@ -406,19 +541,7 @@ export async function uploadChatPdfs(
               normalizedBody,
 
             files:
-              selected.map(
-                (file) => ({
-                  name:
-                    file.name,
-
-                  type:
-                    file.type ||
-                    "application/pdf",
-
-                  size:
-                    file.size,
-                })
-              ),
+              fileMetadata,
           }),
       }
     );
@@ -435,20 +558,27 @@ export async function uploadChatPdfs(
     selected.length
   ) {
     throw new Error(
-      "The server returned an incomplete Messenger upload authorization."
+      "The selected files could not be prepared for sending. Please try again."
     );
   }
 
-  const directUploads = [];
-  let completedBytes = 0;
-  let finalized = false;
+  const directUploads =
+    [];
+
+  let completedBytes =
+    0;
+
+  let finalized =
+    false;
 
   try {
     for (
-      let authorizationIndex = 0;
+      let authorizationIndex =
+        0;
       authorizationIndex <
         uploads.length;
-      authorizationIndex += 1
+      authorizationIndex +=
+        1
     ) {
       const upload =
         uploads[
@@ -464,12 +594,13 @@ export async function uploadChatPdfs(
         !Number.isInteger(
           clientIndex
         ) ||
-        clientIndex < 0 ||
+        clientIndex <
+          0 ||
         clientIndex >=
           selected.length
       ) {
         throw new Error(
-          "Messenger upload authorization contains an invalid file index."
+          "One of the selected files could not be prepared for sending."
         );
       }
 
@@ -490,7 +621,7 @@ export async function uploadChatPdfs(
         !descriptor
       ) {
         throw new Error(
-          "Messenger upload authorization is incomplete."
+          "The selected files could not be prepared for sending. Please try again."
         );
       }
 
@@ -499,15 +630,28 @@ export async function uploadChatPdfs(
           clientIndex
         ];
 
-      await uploadPdfToSignedUrl(
+      const type =
+        getAttachmentType(
+          file
+        );
+
+      if (!type) {
+        throw new Error(
+          "One of the selected files is not supported."
+        );
+      }
+
+      await uploadFileToSignedUrl(
         signedUrl,
         file,
+        type.mime,
         {
           onLoaded(
             loaded
           ) {
             if (
-              total > 0 &&
+              total >
+                0 &&
               typeof onProgress ===
                 "function"
             ) {
@@ -572,11 +716,12 @@ export async function uploadChatPdfs(
         }
       );
 
-    finalized = true;
+    finalized =
+      true;
 
     if (
       typeof onProgress ===
-        "function"
+      "function"
     ) {
       onProgress(
         100
@@ -596,13 +741,34 @@ export async function uploadChatPdfs(
   }
 }
 
-/* Preserve compatibility with any older component that sends a single PDF. */
+/*
+ * Backward-compatible aliases.
+ *
+ * Existing callers can continue using the older
+ * PDF-named functions while the application moves
+ * to the generic attachment service.
+ */
+
+export function uploadChatPdfs(
+  conversationId,
+  files,
+  body = "",
+  onProgress = () => {}
+) {
+  return uploadChatAttachments(
+    conversationId,
+    files,
+    body,
+    onProgress
+  );
+}
+
 export function uploadChatPdf(
   conversationId,
   file,
   onProgress = () => {}
 ) {
-  return uploadChatPdfs(
+  return uploadChatAttachments(
     conversationId,
     [
       file,
@@ -613,13 +779,15 @@ export function uploadChatPdf(
 }
 
 /*
- * Protected file download.
+ * ==================================================
+ * PROTECTED FILE DOWNLOAD
+ * ==================================================
  *
  * The WELLJOB JWT is sent only to the WELLJOB API.
- * After authorization, the browser receives a short-
- * lived Supabase signed URL and downloads the binary
- * without forwarding the WELLJOB Bearer token.
+ * The backend returns a short-lived private-storage
+ * signed URL for the actual download.
  */
+
 export async function downloadChatAttachment(
   attachmentId,
   filename
@@ -639,7 +807,7 @@ export async function downloadChatAttachment(
 
   if (!signedUrl) {
     throw new Error(
-      "The attachment download authorization is invalid."
+      "This file is not available for download right now."
     );
   }
 
@@ -654,7 +822,7 @@ export async function downloadChatAttachment(
 
   if (!response.ok) {
     throw new Error(
-      `Unable to download attachment (${response.status}).`
+      "The file could not be downloaded. Please try again."
     );
   }
 
@@ -675,7 +843,7 @@ export async function downloadChatAttachment(
     String(
       authorization?.filename ||
         filename ||
-        "attachment.pdf"
+        "attachment"
     ).replace(
       /[\\/]/g,
       "_"
@@ -689,7 +857,7 @@ export async function downloadChatAttachment(
 
   link.remove();
 
-  setTimeout(
+  window.setTimeout(
     () =>
       URL.revokeObjectURL(
         objectUrl

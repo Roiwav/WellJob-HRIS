@@ -22,7 +22,16 @@ const MAX_EMPLOYEE_DOCUMENTS =
 const MAX_INCIDENT_EVIDENCE_FILES =
   10;
 
-const MAX_INITIAL_NTE_FILES = 1;
+/*
+ * Add Incident and workflow proof share the same
+ * 10-evidence ceiling.
+ *
+ * This limit applies to the final directUploads array,
+ * so desktop/laptop-selected files and phone-captured
+ * photos are counted together.
+ */
+const MAX_INCIDENT_CREATE_EVIDENCE_FILES =
+  10;
 
 const MAX_ATTENDANCE_EVIDENCE_FILES =
   1;
@@ -827,6 +836,15 @@ function finalizeEmployeeUpdateDirectUploads(
  * ==================================================
  * INCIDENT CREATE
  * ==================================================
+ *
+ * Up to 10 Incident evidence items may be finalized
+ * in one Add Incident request.
+ *
+ * The final directUploads array may contain evidence
+ * prepared from desktop/laptop file selection and
+ * phone-camera capture sessions, provided every
+ * descriptor is valid for the same authenticated
+ * actor and employee context.
  */
 
 function finalizeIncidentCreateDirectUploads(
@@ -858,7 +876,7 @@ function finalizeIncidentCreateDirectUploads(
     next,
     {
       maxFiles:
-        MAX_INITIAL_NTE_FILES,
+        MAX_INCIDENT_CREATE_EVIDENCE_FILES,
 
       expectedUploadType:
         DIRECT_UPLOAD_TYPES

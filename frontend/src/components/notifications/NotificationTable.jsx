@@ -10,6 +10,7 @@ import {
 
 import {
   formatSmartAlertDate,
+  formatSmartAlertRelativeTime,
   getAlertPriorityClasses,
 } from "../../utils/notifications/smartNotifications";
 
@@ -31,6 +32,30 @@ function PriorityBadge({
   );
 }
 
+function isComplianceNotification(item) {
+  const sourceType =
+    String(
+      item?.sourceType ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const purpose =
+    String(
+      item?.notificationPurpose ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  return (
+    sourceType === "COMPLIANCE" ||
+    purpose === "COMPLIANCE_EXPIRED" ||
+    purpose === "COMPLIANCE_EXPIRING_SOON"
+  );
+}
+
 function StatusBadge({
   status,
 }) {
@@ -45,6 +70,10 @@ function StatusBadge({
       "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
     Closed:
       "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
+    Expired:
+      "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300",
+    "Expiring Soon":
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
   };
 
   const current =
@@ -181,11 +210,15 @@ function AlertMobileCard({
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <PriorityBadge
-              priority={
-                item.priority
-              }
-            />
+            {!isComplianceNotification(
+              item
+            ) && (
+              <PriorityBadge
+                priority={
+                  item.priority
+                }
+              />
+            )}
 
             <StatusBadge
               status={
@@ -193,9 +226,16 @@ function AlertMobileCard({
               }
             />
 
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              {formatSmartAlertDate(
-                item.date
+            <span
+              className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+              title={
+                formatSmartAlertDate(
+                item
+              )
+              }
+            >
+              {formatSmartAlertRelativeTime(
+                item
               )}
             </span>
           </div>
@@ -203,7 +243,7 @@ function AlertMobileCard({
           <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
             {item.reason ||
               item.recommendedAction ||
-              "-"}
+              "No additional details."}
           </div>
 
           <div className="mt-3 flex flex-wrap justify-end gap-2">
@@ -220,7 +260,7 @@ function AlertMobileCard({
                 <FiCheckCircle
                   aria-hidden="true"
                 />
-                Mark Read
+                Mark as Read
               </button>
             )}
 
@@ -324,17 +364,17 @@ export default function NotificationTable({
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-2xl">
             <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-              Smart Alert Feed
+              Notification Records
             </h2>
 
             <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Prioritized incident alerts based on severity, workflow status, role assignment, and repeated patterns.
+              Review workforce, compliance, deployment, and incident notifications available to your role.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <SmallCount
-              label="Active"
+              label="All"
               value={
                 safeCounts.active
               }
@@ -448,7 +488,7 @@ export default function NotificationTable({
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_240px]">
           <label className="relative block">
             <span className="sr-only">
-              Search smart alerts
+              Search notifications
             </span>
 
             <FiSearch
@@ -467,7 +507,7 @@ export default function NotificationTable({
                     .value
                 )
               }
-              placeholder="Search alert, employee, violation, or status..."
+              placeholder="Search by notification, employee, document, violation, or status..."
               className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
             />
           </label>
@@ -485,10 +525,10 @@ export default function NotificationTable({
               )
             }
             className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
-            aria-label="Filter smart alerts by case status"
+            aria-label="Filter incident notifications by status"
           >
             <option value="ALL">
-              All Case Statuses
+              All Incident Statuses
             </option>
             <option value="Open">
               Open
@@ -519,11 +559,11 @@ export default function NotificationTable({
             </div>
 
             <p className="font-semibold text-slate-900 dark:text-white">
-              No smart alerts found
+              No Notifications Available
             </p>
 
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Alerts will appear here when monitored incidents require attention.
+              Notifications will appear here when records require HR attention or follow-up.
             </p>
           </div>
         ) : (
@@ -551,7 +591,7 @@ export default function NotificationTable({
           <thead className="sticky top-0 z-10 bg-slate-100/95 text-[11px] uppercase tracking-wide text-slate-500 backdrop-blur dark:bg-slate-950/95 dark:text-slate-400">
             <tr>
               <th className="px-5 py-3.5">
-                Alert
+                Notification
               </th>
               <th className="px-5 py-3.5">
                 Employee
@@ -563,13 +603,13 @@ export default function NotificationTable({
                 Status
               </th>
               <th className="px-5 py-3.5">
-                Alert Basis
+                Details
               </th>
               <th className="px-5 py-3.5">
-                Date
+                Date & Time
               </th>
               <th className="px-5 py-3.5 text-right">
-                Action
+                Actions
               </th>
             </tr>
           </thead>
@@ -591,11 +631,11 @@ export default function NotificationTable({
                   </div>
 
                   <p className="font-semibold text-slate-900 dark:text-white">
-                    No smart alerts found
+                    No Notifications Available
                   </p>
 
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Alerts will appear here when monitored incidents require attention.
+                    Notifications will appear here when records require HR attention or follow-up.
                   </p>
                 </td>
               </tr>
@@ -646,11 +686,19 @@ export default function NotificationTable({
                     </td>
 
                     <td className="px-5 py-4">
-                      <PriorityBadge
-                        priority={
-                          item.priority
-                        }
-                      />
+                      {!isComplianceNotification(
+                        item
+                      ) ? (
+                        <PriorityBadge
+                          priority={
+                            item.priority
+                          }
+                        />
+                      ) : (
+                        <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
+                          —
+                        </span>
+                      )}
                     </td>
 
                     <td className="px-5 py-4">
@@ -665,14 +713,22 @@ export default function NotificationTable({
                       <p className="line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
                         {item.reason ||
                           item.recommendedAction ||
-                          "-"}
+                          "No additional details."}
                       </p>
                     </td>
 
-                    <td className="whitespace-nowrap px-5 py-4 text-sm text-slate-600 dark:text-slate-300">
-                      {formatSmartAlertDate(
-                        item.date
-                      )}
+                    <td className="whitespace-nowrap px-5 py-4">
+                      <div className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                        {formatSmartAlertDate(
+                item
+              )}
+                      </div>
+
+                      <div className="mt-1 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                        {formatSmartAlertRelativeTime(
+                item
+              )}
+                      </div>
                     </td>
 
                     <td className="px-5 py-4 text-right">
@@ -690,7 +746,7 @@ export default function NotificationTable({
                             <FiCheckCircle
                               aria-hidden="true"
                             />
-                            Read
+                            Mark as Read
                           </button>
                         )}
 

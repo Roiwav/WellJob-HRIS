@@ -11,6 +11,7 @@ import authenticatedFetch from "../authenticatedFetch";
 import {
   EMPLOYEE_API_URL,
   getSelectedDocuments,
+  normalizeEmployeeDocumentNumber,
 } from "./employeeFormHelpers";
 
 
@@ -243,6 +244,11 @@ function prepareEmployeeDocuments(
         expirationDate:
           document?.expirationDate ||
           "",
+
+        documentNumber:
+          normalizeEmployeeDocumentNumber(
+            document?.documentNumber
+          ),
       })
     );
 
@@ -458,8 +464,16 @@ function buildEmployeeJsonPayload(
   documents,
   directUploads
 ) {
+  const status =
+    String(
+      formData?.workforceStatus ||
+      formData?.workforce_status ||
+      formData?.status ||
+      "Floating / Standby"
+    ).trim();
+
   const isDeployed =
-    formData?.status ===
+    status ===
     "Deployed";
 
   return {
@@ -468,30 +482,62 @@ function buildEmployeeJsonPayload(
         formData?.name
       ),
 
+    birthday:
+      String(
+        formData?.birthday ||
+        ""
+      ).trim(),
+
+    dateHired:
+      String(
+        formData?.dateHired ||
+        formData?.date_hired ||
+        ""
+      ).trim(),
+
+    /*
+     * Company + position are employee-level placement
+     * fields for every active workforce state:
+     *
+     * Floating / Standby -> designated placement
+     * For Deployment     -> locked scheduled placement
+     * Deployed           -> current actual placement
+     *
+     * Do not clear them merely because the employee
+     * is not yet actually deployed.
+     */
     company:
-      isDeployed
-        ? String(
-            formData?.company ||
-            ""
-          ).trim()
-        : "",
+      String(
+        formData?.company ||
+        ""
+      ).trim(),
 
     position:
-      isDeployed
-        ? String(
-            formData?.position ||
-            ""
-          ).trim()
-        : "",
+      String(
+        formData?.position ||
+        ""
+      ).trim(),
 
-    status:
-      formData?.status ||
-      "Floating / Standby",
+    /*
+     * Preserve the current canonical workforce state.
+     * Generic Edit Employee does not create workflow
+     * transitions; the dedicated deployment endpoints
+     * own For Deployment / Deployed transitions.
+     */
+    status,
 
+    /*
+     * contractStart represents actual deployment
+     * history only. For Deployment uses the attempt's
+     * scheduled date and Pooling has no actual
+     * deployment start yet.
+     */
     contractStart:
       isDeployed
-        ? formData?.contractStart ||
-          ""
+        ? String(
+            formData?.contractStart ||
+            ""
+          ).trim()
         : "",
 
     documents,

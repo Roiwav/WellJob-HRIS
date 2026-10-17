@@ -1,6 +1,9 @@
 import authenticatedFetch from "../authenticatedFetch";
 import { API_BASE } from "../../config/api";
 
+const SMART_SUGGESTION_TIME_ZONE =
+  "Asia/Manila";
+
 export function canViewSmartSuggestions(
   role
 ) {
@@ -217,14 +220,107 @@ export function getSuggestionCategoryClasses(
 export function formatSuggestionDate(
   value
 ) {
-  if (!value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return "-";
   }
 
-  const date =
-    new Date(value);
+  let date = null;
 
   if (
+    value instanceof Date
+  ) {
+    date = value;
+  } else if (
+    typeof value ===
+      "number"
+  ) {
+    const milliseconds =
+      value <
+      100000000000
+        ? value * 1000
+        : value;
+
+    date =
+      new Date(
+        milliseconds
+      );
+  } else {
+    const normalized =
+      String(
+        value
+      ).trim();
+
+    if (!normalized) {
+      return "-";
+    }
+
+    if (
+      /^\d{10,13}$/.test(
+        normalized
+      )
+    ) {
+      const numericValue =
+        Number(
+          normalized
+        );
+
+      const milliseconds =
+        numericValue <
+        100000000000
+          ? numericValue * 1000
+          : numericValue;
+
+      date =
+        new Date(
+          milliseconds
+        );
+    } else {
+      /*
+       * Compatibility handling for legacy
+       * timezone-less MySQL DATETIME values.
+       *
+       * Preserve the stored wall-clock value for
+       * display instead of applying an unverified
+       * blanket historical UTC conversion.
+       *
+       * Values that already include Z or an explicit
+       * offset are treated as absolute instants.
+       */
+      const timezoneLessMatch =
+        normalized.match(
+          /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?$/
+        );
+
+      if (
+        timezoneLessMatch
+      ) {
+        const millisecondsPart =
+          timezoneLessMatch[3]
+            ? `.${timezoneLessMatch[3].padEnd(
+                3,
+                "0"
+              )}`
+            : "";
+
+        date =
+          new Date(
+            `${timezoneLessMatch[1]}T${timezoneLessMatch[2]}${millisecondsPart}+08:00`
+          );
+      } else {
+        date =
+          new Date(
+            normalized
+          );
+      }
+    }
+  }
+
+  if (
+    !date ||
     Number.isNaN(
       date.getTime()
     )
@@ -232,13 +328,23 @@ export function formatSuggestionDate(
     return "-";
   }
 
-  return date.toLocaleString(
+  return new Intl.DateTimeFormat(
     "en-PH",
     {
-      month: "short",
-      day: "2-digit",
-      hour: "numeric",
-      minute: "2-digit",
+      timeZone:
+        SMART_SUGGESTION_TIME_ZONE,
+      month:
+        "short",
+      day:
+        "2-digit",
+      hour:
+        "numeric",
+      minute:
+        "2-digit",
+      hour12:
+        true,
     }
+  ).format(
+    date
   );
 }

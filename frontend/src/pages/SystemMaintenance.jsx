@@ -56,11 +56,11 @@ function getApiError(
     error?.code === "ECONNABORTED" ||
     error?.name === "AbortError"
   ) {
-    return "The server took too long to respond. Check that the backend and database are running, then try again.";
+    return "The system took too long to respond. Please check the connection and try again.";
   }
 
   if (error?.response?.status === 401) {
-    return "Your session is missing or expired. Please log in again.";
+    return "Session expired. Please sign in again.";
   }
 
   if (error?.response?.status === 403) {
@@ -71,12 +71,7 @@ function getApiError(
     return "The system is currently unavailable. Please try again later.";
   }
 
-  return (
-    error?.response?.data?.message ||
-    error?.response?.data?.error ||
-    error?.message ||
-    fallbackMessage
-  );
+  return fallbackMessage;
 }
 
 function normalizeMaintenanceStatus(data) {
@@ -587,11 +582,11 @@ export default function SystemMaintenance({
                 </li>
 
                 <li>
-                  <strong>2.</strong> Complete database, backend, or deployment work.
+                  <strong>2.</strong> Complete the required maintenance work.
                 </li>
 
                 <li>
-                  <strong>3.</strong> Validate login, API, and database connectivity.
+                  <strong>3.</strong> Validate sign-in and system connectivity.
                 </li>
 
                 <li>

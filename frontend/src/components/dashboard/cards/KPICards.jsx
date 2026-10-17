@@ -23,7 +23,7 @@ const KPI_CARD_CONFIGS = [
       "border-slate-200 dark:border-slate-800",
     bar: "bg-slate-500",
     description:
-      "Active workforce records",
+      "Current active employee records",
     clickable: false,
   },
   {
@@ -40,13 +40,13 @@ const KPI_CARD_CONFIGS = [
       "border-indigo-200 dark:border-indigo-900/60",
     bar: "bg-indigo-500",
     description:
-      "Currently assigned workers",
+      "Currently assigned to client companies",
     clickable: false,
   },
   {
     id: "available",
     valueKey: "available",
-    title: "Available Workers",
+    title: "Available Employees",
     suffix: "",
     icon: UserCheck,
     iconBg:
@@ -57,7 +57,7 @@ const KPI_CARD_CONFIGS = [
       "border-emerald-200 dark:border-emerald-900/60",
     bar: "bg-emerald-500",
     description:
-      "Floating or unassigned",
+      "Floating / Standby employees",
     clickable: false,
   },
   {
@@ -73,7 +73,7 @@ const KPI_CARD_CONFIGS = [
       "border-cyan-200 dark:border-cyan-900/60",
     bar: "bg-cyan-500",
     description:
-      "Deployment efficiency",
+      "Share of workforce currently deployed",
     clickable: true,
   },
   {
@@ -90,7 +90,7 @@ const KPI_CARD_CONFIGS = [
       "border-red-200 dark:border-red-900/60",
     bar: "bg-red-500",
     description:
-      "Open or investigating cases",
+      "Open, investigating, or for review",
     clickable: true,
   },
   {
@@ -125,9 +125,12 @@ const TREND_TONE_CLASSES = {
 };
 
 function getNumericValue(value) {
-  const numericValue = Number(value);
+  const numericValue =
+    Number(value);
 
-  return Number.isFinite(numericValue)
+  return Number.isFinite(
+    numericValue
+  )
     ? numericValue
     : 0;
 }
@@ -138,7 +141,8 @@ function getCardValue(
   utilizationRate
 ) {
   if (
-    card.id === "utilizationRate"
+    card.id ===
+    "utilizationRate"
   ) {
     return getNumericValue(
       utilizationRate
@@ -155,21 +159,28 @@ function getProgressValue(
   numericValue
 ) {
   if (
-    card.id !== "utilizationRate"
+    card.id !==
+    "utilizationRate"
   ) {
     return 100;
   }
 
   return Math.max(
     0,
-    Math.min(numericValue, 100)
+    Math.min(
+      numericValue,
+      100
+    )
   );
 }
 
-function TrendBadge({ trend }) {
+function TrendBadge({
+  trend,
+}) {
   const hasTrend =
     trend &&
-    typeof trend.label === "string" &&
+    typeof trend.label ===
+      "string" &&
     trend.label.trim();
 
   return (
@@ -195,29 +206,37 @@ function MetricProgress({
   progressValue,
 }) {
   const isUtilization =
-    card.id === "utilizationRate";
+    card.id ===
+    "utilizationRate";
 
   return (
     <div
       className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
-      {...(isUtilization
-        ? {
-            role: "progressbar",
-            "aria-label":
-              "Deployment utilization rate",
-            "aria-valuemin": 0,
-            "aria-valuemax": 100,
-            "aria-valuenow":
-              progressValue,
-          }
-        : {
-            "aria-hidden": "true",
-          })}
+      {...(
+        isUtilization
+          ? {
+              role:
+                "progressbar",
+              "aria-label":
+                "Workforce utilization rate",
+              "aria-valuemin":
+                0,
+              "aria-valuemax":
+                100,
+              "aria-valuenow":
+                progressValue,
+            }
+          : {
+              "aria-hidden":
+                "true",
+            }
+      )}
     >
       <div
         className={`h-full rounded-full transition-[width] duration-300 ${card.bar}`}
         style={{
-          width: `${progressValue}%`,
+          width:
+            `${progressValue}%`,
         }}
       />
     </div>
@@ -231,7 +250,8 @@ export default function KPICards({
   onCardClick,
 }) {
   const canOpenCard =
-    typeof onCardClick === "function";
+    typeof onCardClick ===
+    "function";
 
   return (
     <section
@@ -240,7 +260,8 @@ export default function KPICards({
     >
       {KPI_CARD_CONFIGS.map(
         (card) => {
-          const Icon = card.icon;
+          const Icon =
+            card.icon;
 
           const numericValue =
             getCardValue(
@@ -256,7 +277,9 @@ export default function KPICards({
             );
 
           const trend =
-            trendData?.[card.id];
+            trendData?.[
+              card.id
+            ];
 
           const targetKey =
             card.drilldownKey ||
@@ -289,7 +312,7 @@ export default function KPICards({
               }
               aria-label={
                 isInteractive
-                  ? `${card.title}: ${numericValue}${card.suffix}. Open details.`
+                  ? `${card.title}: ${numericValue}${card.suffix}. View details.`
                   : undefined
               }
               className={[
@@ -298,7 +321,9 @@ export default function KPICards({
                 isInteractive
                   ? "cursor-pointer hover:-translate-y-1 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950"
                   : "cursor-default",
-              ].join(" ")}
+              ].join(
+                " "
+              )}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -320,8 +345,12 @@ export default function KPICards({
 
                     <span aria-hidden="true">
                       <CountUp
-                        end={numericValue}
-                        duration={1.2}
+                        end={
+                          numericValue
+                        }
+                        duration={
+                          1.2
+                        }
                         decimals={
                           card.suffix ===
                           "%"
@@ -336,11 +365,15 @@ export default function KPICards({
                   </h2>
 
                   <p className="mt-1 text-[10px] leading-4 text-slate-500 dark:text-slate-400">
-                    {card.description}
+                    {
+                      card.description
+                    }
                   </p>
 
                   <TrendBadge
-                    trend={trend}
+                    trend={
+                      trend
+                    }
                   />
                 </div>
 
@@ -350,14 +383,18 @@ export default function KPICards({
                 >
                   <Icon
                     className={`h-4 w-4 ${card.iconColor}`}
-                    strokeWidth={2.2}
+                    strokeWidth={
+                      2.2
+                    }
                   />
                 </div>
               </div>
 
               <div className="mt-auto w-full pt-3">
                 <MetricProgress
-                  card={card}
+                  card={
+                    card
+                  }
                   progressValue={
                     progressValue
                   }

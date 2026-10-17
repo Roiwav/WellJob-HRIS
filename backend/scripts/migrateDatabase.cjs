@@ -139,6 +139,152 @@ const MIGRATIONS = [
       ),
   },
 
+  /*
+   * ==================================================
+   * EMPLOYEE COMPLIANCE DOCUMENT NUMBERS
+   * ==================================================
+   *
+   * Stores the readable SSS / Pag-IBIG / PhilHealth
+   * identifier beside the protected scanned copy.
+   *
+   * Existing rows remain compatible because the
+   * column is nullable.
+   */
+  {
+    name:
+      "add_employee_documents_document_number.sql",
+
+    isApplied:
+      employeeDocumentNumberSchemaIsApplied,
+
+    canAdopt:
+      employeeDocumentNumberSchemaIsApplied,
+
+    verifyApplied:
+      employeeDocumentNumberSchemaIsApplied,
+
+    preflight:
+      employeeDocumentNumberPreflight,
+  },
+
+  /*
+   * ==================================================
+   * EMPLOYEE BIRTHDAY
+   * ==================================================
+   *
+   * Adds an optional employee birthday/date of birth
+   * for employee detail and profile workflows.
+   *
+   * Existing production rows remain valid because the
+   * column is nullable. No historical value is guessed
+   * or backfilled.
+   */
+  {
+    name:
+      "add_employees_birthday.sql",
+
+    isApplied:
+      employeeBirthdaySchemaIsApplied,
+
+    canAdopt:
+      employeeBirthdaySchemaIsApplied,
+
+    verifyApplied:
+      employeeBirthdaySchemaIsApplied,
+
+    preflight:
+      employeeBirthdayPreflight,
+  },
+
+  /*
+   * ==================================================
+   * EMPLOYEE MOBILE DOCUMENT HANDOFFS
+   * ==================================================
+   *
+   * Supports the short-lived "Continue on Phone"
+   * workflow used for employee compliance-document
+   * capture.
+   *
+   * Only the SHA-256 token hash is persisted. The
+   * raw handoff token exists only in the generated QR
+   * URL returned to the authorized HR Staff user.
+   */
+  {
+    name:
+      "add_employee_mobile_handoffs.sql",
+
+    isApplied:
+      employeeMobileHandoffSchemaIsApplied,
+
+    canAdopt:
+      employeeMobileHandoffSchemaIsApplied,
+
+    verifyApplied:
+      employeeMobileHandoffSchemaIsApplied,
+
+    preflight:
+      employeeMobileHandoffPreflight,
+  },
+
+  /*
+   * ==================================================
+   * EMPLOYEE WORKFORCE WORKFLOW FOUNDATION
+   * ==================================================
+   *
+   * Separates the canonical employment state from the
+   * workforce/deployment state and adds a dedicated
+   * deployment-attempt layer.
+   *
+   * Existing deployment_assignments and
+   * employee_status_history remain preserved as
+   * historical compatibility structures.
+   *
+   * This migration intentionally does NOT fabricate
+   * Date Hired values and does NOT guess a canonical
+   * employment outcome for legacy Inactive rows.
+   */
+  {
+    name:
+      "add_employee_workforce_workflow.sql",
+
+    /*
+     * After the migration has been recorded, verify the
+     * persistent schema contract only. Application data is
+     * expected to evolve after rollout.
+     */
+    isApplied:
+      employeeWorkforceWorkflowSchemaIsApplied,
+
+    /*
+     * Adoption is stricter than the ongoing schema check.
+     * Existing unrecorded installations may be adopted only
+     * when both the exact schema and deterministic legacy
+     * compatibility backfill are already present.
+     */
+    canAdopt:
+      employeeWorkforceWorkflowFullStateIsApplied,
+
+    verifyApplied:
+      employeeWorkforceWorkflowFullStateIsApplied,
+
+    /*
+     * MySQL DDL auto-commits statement-by-statement.
+     *
+     * If an earlier production attempt reached the exact
+     * known safe partial state (employee columns/indexes,
+     * deterministic compatibility backfill, and
+     * employee_employment_history created) but failed while
+     * creating deployment_attempts, recover only the missing
+     * deployment_attempts table and then run the normal
+     * full-state verification before recording the migration.
+     */
+    recoverPartial:
+      recoverEmployeeWorkforceWorkflowPartialState,
+
+    preflight:
+      employeeWorkforceWorkflowPreflight,
+  },
+
   {
     name: "add_audit_logs_category_created_index.sql",
     isApplied: async (connection) =>
@@ -666,6 +812,2340 @@ const MIGRATIONS = [
       kpiSeverityDecayPreflight,
   },
 ];
+
+async function employeeDocumentNumberSchemaIsApplied(
+  connection
+) {
+  return columnDefinitionMatches(
+    connection,
+    {
+      tableName:
+        "employee_documents",
+
+      columnName:
+        "document_number",
+
+      dataType:
+        "varchar",
+
+      maxLength:
+        64,
+
+      nullable:
+        true,
+
+      collationName:
+        "utf8mb4_general_ci",
+    }
+  );
+}
+
+async function employeeDocumentNumberPreflight(
+  connection
+) {
+  const documentTableExists =
+    await tableExists(
+      connection,
+      "employee_documents"
+    );
+
+  if (!documentTableExists) {
+    throw new Error(
+      "Employee document-number migration preflight failed: employee_documents table is missing."
+    );
+  }
+
+  const documentNumberExists =
+    await columnExists(
+      connection,
+      "employee_documents",
+      "document_number"
+    );
+
+  /*
+   * isApplied() runs before preflight().
+   *
+   * Reaching this branch means document_number
+   * already exists but does not match the required
+   * VARCHAR(64) NULL utf8mb4_general_ci contract.
+   *
+   * Stop instead of blindly running ADD COLUMN and
+   * risking a duplicate-column or silent mismatch.
+   */
+  if (documentNumberExists) {
+    throw new Error(
+      "Employee document-number migration preflight failed: document_number already exists with an unexpected definition. Stop and inspect the schema before continuing."
+    );
+  }
+}
+
+async function employeeBirthdaySchemaIsApplied(
+  connection
+) {
+  return columnDefinitionMatches(
+    connection,
+    {
+      tableName:
+        "employees",
+
+      columnName:
+        "birthday",
+
+      dataType:
+        "date",
+
+      nullable:
+        true,
+    }
+  );
+}
+
+async function employeeBirthdayPreflight(
+  connection
+) {
+  const employeesTableExists =
+    await tableExists(
+      connection,
+      "employees"
+    );
+
+  if (!employeesTableExists) {
+    throw new Error(
+      "Employee birthday migration preflight failed: employees table is missing."
+    );
+  }
+
+  const birthdayExists =
+    await columnExists(
+      connection,
+      "employees",
+      "birthday"
+    );
+
+  /*
+   * isApplied() runs before preflight().
+   *
+   * Reaching this branch means birthday already
+   * exists but does not match the required DATE NULL
+   * contract.
+   *
+   * Fail closed instead of blindly running ADD COLUMN
+   * against an unexpected or partially modified
+   * production schema.
+   */
+  if (birthdayExists) {
+    throw new Error(
+      "Employee birthday migration preflight failed: birthday already exists with an unexpected definition. Stop and inspect the schema before continuing."
+    );
+  }
+}
+
+async function employeeMobileHandoffSchemaIsApplied(
+  connection
+) {
+  const tableName =
+    "employee_mobile_handoffs";
+
+  if (
+    !await tableExists(
+      connection,
+      tableName
+    )
+  ) {
+    return false;
+  }
+
+  const columnChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "id",
+          dataType:
+            "bigint",
+          nullable:
+            false,
+          unsigned:
+            true,
+          extraIncludes:
+            "auto_increment",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "token_hash",
+          dataType:
+            "char",
+          maxLength:
+            64,
+          nullable:
+            false,
+          collationName:
+            "ascii_bin",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "employee_id",
+          dataType:
+            "int",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "created_by_user_id",
+          dataType:
+            "int",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "purpose",
+          dataType:
+            "varchar",
+          maxLength:
+            64,
+          nullable:
+            false,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "expires_at",
+          dataType:
+            "datetime",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "consumed_at",
+          dataType:
+            "datetime",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "revoked_at",
+          dataType:
+            "datetime",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "created_at",
+          dataType:
+            "timestamp",
+          nullable:
+            false,
+        }
+      ),
+    ]);
+
+  if (
+    columnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const [
+    purposeDefaultMatches,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = 'purpose'
+        AND COLUMN_DEFAULT = 'EMPLOYEE_DOCUMENT_CAPTURE'
+      `,
+      [
+        tableName,
+      ]
+    );
+
+  if (
+    Number(
+      purposeDefaultMatches[
+        0
+      ]?.count ||
+        0
+    ) !== 1
+  ) {
+    return false;
+  }
+
+  const indexChecks =
+    await Promise.all([
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "PRIMARY",
+          columns: [
+            "id",
+          ],
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "uq_employee_mobile_handoffs_token_hash",
+          columns: [
+            "token_hash",
+          ],
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_employee_mobile_handoffs_employee_expiry",
+          columns: [
+            "employee_id",
+            "expires_at",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_employee_mobile_handoffs_creator_employee_expiry",
+          columns: [
+            "created_by_user_id",
+            "employee_id",
+            "expires_at",
+          ],
+        }
+      ),
+    ]);
+
+  if (
+    indexChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const foreignKeyChecks =
+    await Promise.all([
+      foreignKeyExists(
+        connection,
+        {
+          tableName,
+          constraintName:
+            "fk_employee_mobile_handoffs_employee",
+          columnName:
+            "employee_id",
+          referencedTableName:
+            "employees",
+          referencedColumnName:
+            "id",
+          updateRule:
+            "CASCADE",
+          deleteRule:
+            "CASCADE",
+        }
+      ),
+
+      foreignKeyExists(
+        connection,
+        {
+          tableName,
+          constraintName:
+            "fk_employee_mobile_handoffs_created_by",
+          columnName:
+            "created_by_user_id",
+          referencedTableName:
+            "users",
+          referencedColumnName:
+            "id",
+          updateRule:
+            "CASCADE",
+          deleteRule:
+            "CASCADE",
+        }
+      ),
+    ]);
+
+  return foreignKeyChecks.every(
+    Boolean
+  );
+}
+
+async function employeeMobileHandoffPreflight(
+  connection
+) {
+  const prerequisiteChecks =
+    await Promise.all([
+      tableExists(
+        connection,
+        "employees"
+      ),
+      tableExists(
+        connection,
+        "users"
+      ),
+    ]);
+
+  if (
+    prerequisiteChecks.some(
+      (exists) =>
+        !exists
+    )
+  ) {
+    throw new Error(
+      "Employee mobile-handoff migration preflight failed: employees and users tables are required."
+    );
+  }
+
+  const handoffTableExists =
+    await tableExists(
+      connection,
+      "employee_mobile_handoffs"
+    );
+
+  /*
+   * isApplied() runs before preflight().
+   *
+   * If this table already exists but did not satisfy
+   * employeeMobileHandoffSchemaIsApplied(), stop.
+   * CREATE TABLE must never overwrite or silently
+   * adopt a partial/unexpected security-sensitive
+   * handoff schema.
+   */
+  if (handoffTableExists) {
+    throw new Error(
+      "Employee mobile-handoff migration preflight failed: employee_mobile_handoffs already exists with an unexpected or partial schema. Stop and inspect the table before continuing."
+    );
+  }
+}
+
+async function employeeWorkforceWorkflowSchemaIsApplied(
+  connection
+) {
+  const employeeColumnChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          columnName:
+            "date_hired",
+          dataType:
+            "date",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          columnName:
+            "position",
+          dataType:
+            "varchar",
+          maxLength:
+            150,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          columnName:
+            "employment_status",
+          dataType:
+            "varchar",
+          maxLength:
+            30,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          columnName:
+            "workforce_status",
+          dataType:
+            "varchar",
+          maxLength:
+            30,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+    ]);
+
+  if (
+    employeeColumnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const employeeIndexChecks =
+    await Promise.all([
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          indexName:
+            "idx_employees_date_hired",
+          columns: [
+            "date_hired",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          indexName:
+            "idx_employees_company_position",
+          columns: [
+            "company",
+            "position",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          indexName:
+            "idx_employees_employment_status",
+          columns: [
+            "employment_status",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          indexName:
+            "idx_employees_workforce_status",
+          columns: [
+            "workforce_status",
+          ],
+        }
+      ),
+    ]);
+
+  if (
+    employeeIndexChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const employmentHistoryMatches =
+    await employeeEmploymentHistorySchemaIsApplied(
+      connection
+    );
+
+  if (
+    !employmentHistoryMatches
+  ) {
+    return false;
+  }
+
+  return deploymentAttemptSchemaIsApplied(
+    connection
+  );
+}
+
+async function employeeWorkforceWorkflowFullStateIsApplied(
+  connection
+) {
+  const schemaMatches =
+    await employeeWorkforceWorkflowSchemaIsApplied(
+      connection
+    );
+
+  if (!schemaMatches) {
+    return false;
+  }
+
+  const [invalidCanonicalRows] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM employees
+      WHERE
+        (
+          employment_status IS NOT NULL
+          AND employment_status NOT IN (
+            'Active',
+            'Resigned',
+            'Terminated'
+          )
+        )
+        OR
+        (
+          workforce_status IS NOT NULL
+          AND workforce_status NOT IN (
+            'Floating / Standby',
+            'For Deployment',
+            'Deployed'
+          )
+        )
+      `
+    );
+
+  if (
+    Number(
+      invalidCanonicalRows[0]?.count ||
+        0
+    ) > 0
+  ) {
+    return false;
+  }
+
+  /*
+   * The migration deterministically normalizes only
+   * active legacy workforce rows. Legacy Inactive rows
+   * intentionally remain unresolved until an explicit
+   * business outcome is approved.
+   */
+  const [legacyBackfillViolations] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM employees
+      WHERE
+        (
+          LOWER(
+            TRIM(
+              COALESCE(status, '')
+            )
+          ) = 'deployed'
+          AND (
+            workforce_status <> 'Deployed'
+            OR employment_status <> 'Active'
+            OR workforce_status IS NULL
+            OR employment_status IS NULL
+          )
+        )
+        OR
+        (
+          LOWER(
+            REPLACE(
+              TRIM(
+                COALESCE(status, '')
+              ),
+              ' ',
+              ''
+            )
+          ) IN (
+            'floating/standby',
+            'floating',
+            'standby'
+          )
+          AND (
+            workforce_status <> 'Floating / Standby'
+            OR employment_status <> 'Active'
+            OR workforce_status IS NULL
+            OR employment_status IS NULL
+          )
+        )
+      `
+    );
+
+  if (
+    Number(
+      legacyBackfillViolations[0]?.count ||
+        0
+    ) > 0
+  ) {
+    return false;
+  }
+
+  /*
+   * Existing Deployed employees receive employee-level position only
+   * from their real Active deployment assignment.
+   *
+   * Floating / Standby employees are intentionally excluded because
+   * the migration must not fabricate a designated position for them.
+   */
+  const [deployedPositionBackfillViolations] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM employees AS e
+      INNER JOIN deployment_assignments AS da
+        ON da.employee_id = e.id
+        AND da.status = 'Active'
+      WHERE e.workforce_status = 'Deployed'
+        AND da.position IS NOT NULL
+        AND TRIM(da.position) <> ''
+        AND (
+          e.position IS NULL
+          OR TRIM(e.position) = ''
+          OR TRIM(e.position) <> TRIM(da.position)
+        )
+      `
+    );
+
+  return (
+    Number(
+      deployedPositionBackfillViolations[0]?.count ||
+        0
+    ) === 0
+  );
+}
+
+async function employeeEmploymentHistorySchemaIsApplied(
+  connection
+) {
+  const tableName =
+    "employee_employment_history";
+
+  if (
+    !await tableExists(
+      connection,
+      tableName
+    )
+  ) {
+    return false;
+  }
+
+  const [tableRows] =
+    await connection.query(
+      `
+      SELECT
+        ENGINE AS engine,
+        TABLE_COLLATION AS table_collation
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND TABLE_TYPE = 'BASE TABLE'
+      LIMIT 1
+      `,
+      [tableName]
+    );
+
+  if (
+    String(
+      tableRows[0]?.engine ||
+        ""
+    ).toLowerCase() !==
+      "innodb" ||
+    String(
+      tableRows[0]?.table_collation ||
+        ""
+    ).toLowerCase() !==
+      "utf8mb4_general_ci"
+  ) {
+    return false;
+  }
+
+  const columnChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "id",
+          dataType:
+            "int",
+          nullable:
+            false,
+          extraIncludes:
+            "auto_increment",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "employee_id",
+          dataType:
+            "int",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "from_status",
+          dataType:
+            "varchar",
+          maxLength:
+            30,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "to_status",
+          dataType:
+            "varchar",
+          maxLength:
+            30,
+          nullable:
+            false,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "effective_at",
+          dataType:
+            "datetime",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "reason",
+          dataType:
+            "varchar",
+          maxLength:
+            100,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "remarks",
+          dataType:
+            "text",
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "source_event",
+          dataType:
+            "varchar",
+          maxLength:
+            50,
+          nullable:
+            false,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "changed_by_user_id",
+          dataType:
+            "int",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "created_at",
+          dataType:
+            "timestamp",
+          nullable:
+            false,
+        }
+      ),
+    ]);
+
+  if (
+    columnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const indexChecks =
+    await Promise.all([
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "PRIMARY",
+          columns: [
+            "id",
+          ],
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_employee_employment_history_employee_effective",
+          columns: [
+            "employee_id",
+            "effective_at",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_employee_employment_history_to_status_effective",
+          columns: [
+            "to_status",
+            "effective_at",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_employee_employment_history_source_event",
+          columns: [
+            "source_event",
+          ],
+        }
+      ),
+    ]);
+
+  if (
+    indexChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const foreignKeyChecks =
+    await Promise.all([
+      foreignKeyExists(
+        connection,
+        {
+          tableName,
+          constraintName:
+            "fk_employee_employment_history_employee",
+          columnName:
+            "employee_id",
+          referencedTableName:
+            "employees",
+          referencedColumnName:
+            "id",
+          updateRule:
+            "CASCADE",
+          deleteRule:
+            "RESTRICT",
+        }
+      ),
+
+      foreignKeyExists(
+        connection,
+        {
+          tableName,
+          constraintName:
+            "fk_employee_employment_history_changed_by",
+          columnName:
+            "changed_by_user_id",
+          referencedTableName:
+            "users",
+          referencedColumnName:
+            "id",
+          updateRule:
+            "CASCADE",
+          deleteRule:
+            "SET NULL",
+        }
+      ),
+    ]);
+
+  return foreignKeyChecks.every(
+    Boolean
+  );
+}
+
+async function deploymentAttemptSchemaIsApplied(
+  connection
+) {
+  const tableName =
+    "deployment_attempts";
+
+  if (
+    !await tableExists(
+      connection,
+      tableName
+    )
+  ) {
+    return false;
+  }
+
+  const [tableRows] =
+    await connection.query(
+      `
+      SELECT
+        ENGINE AS engine,
+        TABLE_COLLATION AS table_collation
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND TABLE_TYPE = 'BASE TABLE'
+      LIMIT 1
+      `,
+      [tableName]
+    );
+
+  if (
+    String(
+      tableRows[0]?.engine ||
+        ""
+    ).toLowerCase() !==
+      "innodb" ||
+    String(
+      tableRows[0]?.table_collation ||
+        ""
+    ).toLowerCase() !==
+      "utf8mb4_general_ci"
+  ) {
+    return false;
+  }
+
+  const columnChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "id",
+          dataType:
+            "int",
+          nullable:
+            false,
+          extraIncludes:
+            "auto_increment",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "employee_id",
+          dataType:
+            "int",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "company",
+          dataType:
+            "varchar",
+          maxLength:
+            255,
+          nullable:
+            false,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "position",
+          dataType:
+            "varchar",
+          maxLength:
+            150,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "scheduled_date",
+          dataType:
+            "date",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "actual_arrival_date",
+          dataType:
+            "date",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "status",
+          dataType:
+            "varchar",
+          maxLength:
+            30,
+          nullable:
+            false,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "outcome_reason",
+          dataType:
+            "varchar",
+          maxLength:
+            100,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "remarks",
+          dataType:
+            "text",
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "resolved_at",
+          dataType:
+            "datetime",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "created_by_user_id",
+          dataType:
+            "int",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "resolved_by_user_id",
+          dataType:
+            "int",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "deployment_assignment_id",
+          dataType:
+            "int",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "pending_employee_id_guard",
+          dataType:
+            "int",
+          nullable:
+            true,
+          extraIncludes:
+            "stored generated",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "created_at",
+          dataType:
+            "timestamp",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName,
+          columnName:
+            "updated_at",
+          dataType:
+            "datetime",
+          nullable:
+            true,
+        }
+      ),
+    ]);
+
+  if (
+    columnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const [defaultRows] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = 'status'
+        AND COLUMN_DEFAULT = 'For Deployment'
+      `,
+      [tableName]
+    );
+
+  if (
+    Number(
+      defaultRows[0]?.count ||
+        0
+    ) !== 1
+  ) {
+    return false;
+  }
+
+  const [generatedRows] =
+    await connection.query(
+      `
+      SELECT
+        GENERATION_EXPRESSION AS generation_expression
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = 'pending_employee_id_guard'
+      LIMIT 1
+      `,
+      [tableName]
+    );
+
+  const generationExpression =
+    String(
+      generatedRows[0]?.generation_expression ||
+        ""
+    )
+      .toLowerCase()
+      .replaceAll("`", "")
+      .replace(/_utf8mb4/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (
+    !generationExpression.includes(
+      "status"
+    ) ||
+    !generationExpression.includes(
+      "for deployment"
+    ) ||
+    !generationExpression.includes(
+      "employee_id"
+    )
+  ) {
+    return false;
+  }
+
+  const indexChecks =
+    await Promise.all([
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "PRIMARY",
+          columns: [
+            "id",
+          ],
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "uq_deployment_attempts_one_pending_employee",
+          columns: [
+            "pending_employee_id_guard",
+          ],
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "uq_deployment_attempts_assignment",
+          columns: [
+            "deployment_assignment_id",
+          ],
+          unique:
+            true,
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_deployment_attempts_employee_status",
+          columns: [
+            "employee_id",
+            "status",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_deployment_attempts_company_status",
+          columns: [
+            "company",
+            "status",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_deployment_attempts_scheduled_date",
+          columns: [
+            "scheduled_date",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_deployment_attempts_created_by",
+          columns: [
+            "created_by_user_id",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName,
+          indexName:
+            "idx_deployment_attempts_resolved_by",
+          columns: [
+            "resolved_by_user_id",
+          ],
+        }
+      ),
+    ]);
+
+  if (
+    indexChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const foreignKeyChecks =
+    await Promise.all([
+      foreignKeyExists(
+        connection,
+        {
+          tableName,
+          constraintName:
+            "fk_deployment_attempts_employee",
+          columnName:
+            "employee_id",
+          referencedTableName:
+            "employees",
+          referencedColumnName:
+            "id",
+          updateRule:
+            "RESTRICT",
+          deleteRule:
+            "RESTRICT",
+        }
+      ),
+
+      foreignKeyExists(
+        connection,
+        {
+          tableName,
+          constraintName:
+            "fk_deployment_attempts_created_by",
+          columnName:
+            "created_by_user_id",
+          referencedTableName:
+            "users",
+          referencedColumnName:
+            "id",
+          updateRule:
+            "CASCADE",
+          deleteRule:
+            "SET NULL",
+        }
+      ),
+
+      foreignKeyExists(
+        connection,
+        {
+          tableName,
+          constraintName:
+            "fk_deployment_attempts_resolved_by",
+          columnName:
+            "resolved_by_user_id",
+          referencedTableName:
+            "users",
+          referencedColumnName:
+            "id",
+          updateRule:
+            "CASCADE",
+          deleteRule:
+            "SET NULL",
+        }
+      ),
+
+      foreignKeyExists(
+        connection,
+        {
+          tableName,
+          constraintName:
+            "fk_deployment_attempts_assignment",
+          columnName:
+            "deployment_assignment_id",
+          referencedTableName:
+            "deployment_assignments",
+          referencedColumnName:
+            "id",
+          updateRule:
+            "CASCADE",
+          deleteRule:
+            "SET NULL",
+        }
+      ),
+    ]);
+
+  return foreignKeyChecks.every(
+    Boolean
+  );
+}
+
+
+function extractCreateTableStatement(
+  sql,
+  tableName
+) {
+  const escapedTableName =
+    String(tableName)
+      .replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+  const pattern =
+    new RegExp(
+      `CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?` +
+        `(?:\`)?${escapedTableName}(?:\`)?\\s*\\(`,
+      "i"
+    );
+
+  const match =
+    pattern.exec(sql);
+
+  if (!match) {
+    throw new Error(
+      `Recovery failed: CREATE TABLE ${tableName} was not found in the approved migration SQL.`
+    );
+  }
+
+  const statementStart =
+    match.index;
+
+  const statementEnd =
+    sql.indexOf(
+      ";",
+      statementStart
+    );
+
+  if (
+    statementEnd ===
+    -1
+  ) {
+    throw new Error(
+      `Recovery failed: CREATE TABLE ${tableName} has no terminating semicolon.`
+    );
+  }
+
+  return sql.slice(
+    statementStart,
+    statementEnd + 1
+  );
+}
+
+async function recoverEmployeeWorkforceWorkflowPartialState(
+  connection,
+  {
+    executableSql,
+  }
+) {
+  const targetColumns = [
+    "date_hired",
+    "position",
+    "employment_status",
+    "workforce_status",
+  ];
+
+  const targetColumnPresence =
+    await Promise.all(
+      targetColumns.map(
+        (columnName) =>
+          columnExists(
+            connection,
+            "employees",
+            columnName
+          )
+      )
+    );
+
+  const employmentHistoryExists =
+    await tableExists(
+      connection,
+      "employee_employment_history"
+    );
+
+  const deploymentAttemptsExists =
+    await tableExists(
+      connection,
+      "deployment_attempts"
+    );
+
+  const anyPartialSignal =
+    targetColumnPresence.some(
+      Boolean
+    ) ||
+    employmentHistoryExists ||
+    deploymentAttemptsExists;
+
+  /*
+   * No workflow objects exist yet: this is a normal fresh
+   * migration path. Let the standard preflight + full SQL
+   * execution handle it.
+   */
+  if (
+    !anyPartialSignal
+  ) {
+    return false;
+  }
+
+  /*
+   * If deployment_attempts already exists but the full
+   * migration was not adoptable, do not guess how to repair
+   * it. A partially or incorrectly created workflow table
+   * requires manual inspection.
+   */
+  if (
+    deploymentAttemptsExists
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: deployment_attempts already exists but the complete migration state was not detected. Inspect the table before continuing."
+    );
+  }
+
+  if (
+    targetColumnPresence.some(
+      (exists) =>
+        !exists
+    )
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: only some employee workflow columns exist. The partial state does not match the approved recovery contract."
+    );
+  }
+
+  const employeeColumnDefinitionChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          columnName:
+            "date_hired",
+          dataType:
+            "date",
+          nullable:
+            true,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          columnName:
+            "position",
+          dataType:
+            "varchar",
+          maxLength:
+            150,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          columnName:
+            "employment_status",
+          dataType:
+            "varchar",
+          maxLength:
+            30,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          columnName:
+            "workforce_status",
+          dataType:
+            "varchar",
+          maxLength:
+            30,
+          nullable:
+            true,
+          collationName:
+            "utf8mb4_general_ci",
+        }
+      ),
+    ]);
+
+  if (
+    employeeColumnDefinitionChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: an existing employee workflow column has an unexpected definition."
+    );
+  }
+
+  const employeeIndexChecks =
+    await Promise.all([
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          indexName:
+            "idx_employees_date_hired",
+          columns: [
+            "date_hired",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          indexName:
+            "idx_employees_company_position",
+          columns: [
+            "company",
+            "position",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          indexName:
+            "idx_employees_employment_status",
+          columns: [
+            "employment_status",
+          ],
+        }
+      ),
+
+      indexDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          indexName:
+            "idx_employees_workforce_status",
+          columns: [
+            "workforce_status",
+          ],
+        }
+      ),
+    ]);
+
+  if (
+    employeeIndexChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: the employee workflow indexes do not match the approved partial state."
+    );
+  }
+
+  if (
+    !employmentHistoryExists ||
+    !await employeeEmploymentHistorySchemaIsApplied(
+      connection
+    )
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: employee_employment_history is missing or does not match the approved schema."
+    );
+  }
+
+  const [
+    employmentHistoryRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM employee_employment_history
+      `
+    );
+
+  if (
+    Number(
+      employmentHistoryRows[0]?.count ||
+        0
+    ) !== 0
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: employee_employment_history is not empty. The database has moved beyond the audited partial migration state."
+    );
+  }
+
+  const [
+    populatedDateHiredRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM employees
+      WHERE date_hired IS NOT NULL
+      `
+    );
+
+  if (
+    Number(
+      populatedDateHiredRows[0]?.count ||
+        0
+    ) !== 0
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: date_hired contains values in the unrecorded partial migration state. Stop and verify those values before recovery."
+    );
+  }
+
+  const [
+    invalidCanonicalRows,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM employees
+      WHERE
+        (
+          employment_status IS NOT NULL
+          AND employment_status NOT IN (
+            'Active',
+            'Resigned',
+            'Terminated'
+          )
+        )
+        OR
+        (
+          workforce_status IS NOT NULL
+          AND workforce_status NOT IN (
+            'Floating / Standby',
+            'For Deployment',
+            'Deployed'
+          )
+        )
+      `
+    );
+
+  if (
+    Number(
+      invalidCanonicalRows[0]?.count ||
+        0
+    ) !== 0
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: invalid canonical employment/workforce values were found."
+    );
+  }
+
+  const [
+    legacyBackfillViolations,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM employees
+      WHERE
+        (
+          LOWER(
+            TRIM(
+              COALESCE(status, '')
+            )
+          ) = 'deployed'
+          AND (
+            workforce_status <> 'Deployed'
+            OR employment_status <> 'Active'
+            OR workforce_status IS NULL
+            OR employment_status IS NULL
+          )
+        )
+        OR
+        (
+          LOWER(
+            REPLACE(
+              TRIM(
+                COALESCE(status, '')
+              ),
+              ' ',
+              ''
+            )
+          ) IN (
+            'floating/standby',
+            'floating',
+            'standby'
+          )
+          AND (
+            workforce_status <> 'Floating / Standby'
+            OR employment_status <> 'Active'
+            OR workforce_status IS NULL
+            OR employment_status IS NULL
+          )
+        )
+      `
+    );
+
+  if (
+    Number(
+      legacyBackfillViolations[0]?.count ||
+        0
+    ) !== 0
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: deterministic canonical backfill is incomplete."
+    );
+  }
+
+  const [
+    deployedPositionBackfillViolations,
+  ] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM employees AS e
+      INNER JOIN deployment_assignments AS da
+        ON da.employee_id = e.id
+        AND da.status = 'Active'
+      WHERE e.workforce_status = 'Deployed'
+        AND da.position IS NOT NULL
+        AND TRIM(da.position) <> ''
+        AND (
+          e.position IS NULL
+          OR TRIM(e.position) = ''
+          OR TRIM(e.position) <> TRIM(da.position)
+        )
+      `
+    );
+
+  if (
+    Number(
+      deployedPositionBackfillViolations[0]?.count ||
+        0
+    ) !== 0
+  ) {
+    throw new Error(
+      "Employee workforce workflow recovery stopped: deterministic deployed-position backfill is incomplete."
+    );
+  }
+
+  const createDeploymentAttemptsSql =
+    extractCreateTableStatement(
+      executableSql,
+      "deployment_attempts"
+    );
+
+  console.log(
+    "RECOVER add_employee_workforce_workflow.sql (create missing deployment_attempts only)"
+  );
+
+  await connection.query(
+    createDeploymentAttemptsSql
+  );
+
+  return true;
+}
+
+async function employeeWorkforceWorkflowPreflight(
+  connection
+) {
+  const prerequisiteTables = [
+    "employees",
+    "users",
+    "deployment_assignments",
+    "employee_status_history",
+  ];
+
+  for (
+    const tableName of
+      prerequisiteTables
+  ) {
+    if (
+      !await tableExists(
+        connection,
+        tableName
+      )
+    ) {
+      throw new Error(
+        `Employee workforce workflow migration preflight failed: required table ${tableName} is missing.`
+      );
+    }
+  }
+
+  const parentColumnChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "employees",
+          columnName:
+            "id",
+          dataType:
+            "int",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "users",
+          columnName:
+            "id",
+          dataType:
+            "int",
+          nullable:
+            false,
+        }
+      ),
+
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "deployment_assignments",
+          columnName:
+            "id",
+          dataType:
+            "int",
+          nullable:
+            false,
+        }
+      ),
+    ]);
+
+  if (
+    parentColumnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    throw new Error(
+      "Employee workforce workflow migration preflight failed: employee/user/deployment parent IDs do not match the expected signed INT contract."
+    );
+  }
+
+  const targetColumns = [
+    "date_hired",
+    "position",
+    "employment_status",
+    "workforce_status",
+  ];
+
+  for (
+    const columnName of
+      targetColumns
+  ) {
+    if (
+      await columnExists(
+        connection,
+        "employees",
+        columnName
+      )
+    ) {
+      throw new Error(
+        `Employee workforce workflow migration preflight failed: employees.${columnName} already exists but the complete workflow schema was not detected. Stop and inspect the partial schema before continuing.`
+      );
+    }
+  }
+
+  /*
+   * The employee-level position backfill relies on one real Active
+   * deployment assignment per employee. Reject inconsistent source
+   * data before running any workflow DDL.
+   */
+  const [multipleActiveAssignments] =
+    await connection.query(
+      `
+      SELECT
+        employee_id,
+        COUNT(*) AS active_assignments
+      FROM deployment_assignments
+      WHERE status = 'Active'
+      GROUP BY employee_id
+      HAVING COUNT(*) > 1
+      LIMIT 1
+      `
+    );
+
+  if (
+    multipleActiveAssignments.length > 0
+  ) {
+    throw new Error(
+      "Employee workforce workflow migration preflight failed: an employee has more than one Active deployment assignment. Position backfill would not be deterministic."
+    );
+  }
+
+  const targetTables = [
+    "employee_employment_history",
+    "deployment_attempts",
+  ];
+
+  for (
+    const tableName of
+      targetTables
+  ) {
+    if (
+      await tableExists(
+        connection,
+        tableName
+      )
+    ) {
+      throw new Error(
+        `Employee workforce workflow migration preflight failed: ${tableName} already exists but the complete workflow schema was not detected. Stop and inspect the partial schema before continuing.`
+      );
+    }
+  }
+
+  /*
+   * Current legacy status values outside the known set are
+   * left untouched by the SQL itself, but surface them here
+   * so an operator cannot accidentally normalize an unknown
+   * production state without inspection.
+   */
+  const [unknownLegacyStatuses] =
+    await connection.query(
+      `
+      SELECT
+        status,
+        COUNT(*) AS records
+      FROM employees
+      WHERE COALESCE(TRIM(status), '') <> ''
+        AND LOWER(
+              REPLACE(
+                TRIM(status),
+                ' ',
+                ''
+              )
+            ) NOT IN (
+              'deployed',
+              'floating/standby',
+              'floating',
+              'standby',
+              'inactive'
+            )
+      GROUP BY status
+      ORDER BY status
+      `
+    );
+
+  if (
+    unknownLegacyStatuses.length > 0
+  ) {
+    const values =
+      unknownLegacyStatuses
+        .map(
+          (row) =>
+            `${row.status} (${row.records})`
+        )
+        .join(", ");
+
+    throw new Error(
+      `Employee workforce workflow migration preflight failed: unexpected legacy employee status values were found: ${values}. Review them before continuing.`
+    );
+  }
+}
 
 async function kpiSeverityDecaySchemaIsApplied(connection) {
   const expected = new Map([
@@ -3634,6 +6114,64 @@ async function runMigrations() {
         );
 
         continue;
+      }
+
+      if (
+        typeof migration.recoverPartial ===
+        "function"
+      ) {
+        const recovered =
+          await migration.recoverPartial(
+            connection,
+            {
+              databaseFamily,
+              repositorySql,
+              executableSql,
+            }
+          );
+
+        if (
+          recovered
+        ) {
+          const verificationChecker =
+            migration.verifyApplied ||
+            migration.isApplied;
+
+          const recoveredSuccessfully =
+            await verificationChecker(
+              connection
+            );
+
+          if (
+            !recoveredSuccessfully
+          ) {
+            throw new Error(
+              `Migration recovery completed without producing its required end-state: ${migration.name}`
+            );
+          }
+
+          await recordMigration(
+            connection,
+            {
+              migrationName:
+                migration.name,
+
+              checksum,
+
+              executionMode:
+                "executed",
+            }
+          );
+
+          executedCount +=
+            1;
+
+          console.log(
+            `PASS    ${migration.name}`
+          );
+
+          continue;
+        }
       }
 
       if (

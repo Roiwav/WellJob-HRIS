@@ -15,11 +15,14 @@ const TONE_STYLES = {
       "text-emerald-800 dark:text-emerald-200",
     muted:
       "text-emerald-700/80 dark:text-emerald-200/80",
-    bar: "bg-emerald-500",
+    bar:
+      "bg-emerald-500",
     badge:
       "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
-    iconComponent: FiCheckCircle,
+    iconComponent:
+      FiCheckCircle,
   },
+
   blue: {
     wrapper:
       "border-blue-200 bg-blue-50 dark:border-blue-500/30 dark:bg-blue-500/10",
@@ -29,11 +32,14 @@ const TONE_STYLES = {
       "text-blue-800 dark:text-blue-200",
     muted:
       "text-blue-700/80 dark:text-blue-200/80",
-    bar: "bg-blue-500",
+    bar:
+      "bg-blue-500",
     badge:
       "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
-    iconComponent: FiActivity,
+    iconComponent:
+      FiActivity,
   },
+
   amber: {
     wrapper:
       "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
@@ -43,11 +49,14 @@ const TONE_STYLES = {
       "text-amber-800 dark:text-amber-200",
     muted:
       "text-amber-700/80 dark:text-amber-200/80",
-    bar: "bg-amber-500",
+    bar:
+      "bg-amber-500",
     badge:
       "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
-    iconComponent: FiInfo,
+    iconComponent:
+      FiInfo,
   },
+
   red: {
     wrapper:
       "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10",
@@ -57,23 +66,33 @@ const TONE_STYLES = {
       "text-red-800 dark:text-red-200",
     muted:
       "text-red-700/80 dark:text-red-200/80",
-    bar: "bg-red-500",
+    bar:
+      "bg-red-500",
     badge:
       "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
-    iconComponent: FiAlertTriangle,
+    iconComponent:
+      FiAlertTriangle,
   },
 };
 
-function getTone(tone) {
+function getTone(
+  tone
+) {
   return (
-    TONE_STYLES[tone] ||
+    TONE_STYLES[
+      tone
+    ] ||
     TONE_STYLES.blue
   );
 }
 
-function getSafeScore(value) {
+function getSafeScore(
+  value
+) {
   const numericScore =
-    Number(value);
+    Number(
+      value
+    );
 
   if (
     !Number.isFinite(
@@ -100,7 +119,9 @@ export default function WorkforceHealthBanner({
   }
 
   const tone =
-    getTone(health.tone);
+    getTone(
+      health.tone
+    );
 
   const HealthIcon =
     tone.iconComponent;
@@ -121,7 +142,10 @@ export default function WorkforceHealthBanner({
                 "string" &&
               reason.trim()
           )
-          .slice(0, 3)
+          .slice(
+            0,
+            3
+          )
       : [];
 
   return (
@@ -135,7 +159,9 @@ export default function WorkforceHealthBanner({
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone.icon}`}
             aria-hidden="true"
           >
-            <HealthIcon size={18} />
+            <HealthIcon
+              size={18}
+            />
           </div>
 
           <div className="min-w-0">
@@ -145,7 +171,7 @@ export default function WorkforceHealthBanner({
                 className={`text-sm font-extrabold ${tone.text}`}
               >
                 {health.title ||
-                  "Workforce Health"}
+                  "Workforce Status"}
               </h2>
 
               <span
@@ -166,10 +192,11 @@ export default function WorkforceHealthBanner({
         </div>
 
         <div className="xl:col-span-4">
-          {reasons.length > 0 ? (
+          {reasons.length >
+          0 ? (
             <div
               className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1"
-              aria-label="Workforce health factors"
+              aria-label="Factors affecting workforce status"
             >
               {reasons.map(
                 (
@@ -187,7 +214,7 @@ export default function WorkforceHealthBanner({
             </div>
           ) : (
             <div className="rounded-xl bg-white/60 px-3 py-2 text-xs text-slate-600 dark:bg-slate-950/25 dark:text-slate-300">
-              No active workforce concern is currently contributing to the health score.
+              No current workforce concern is affecting the overall status.
             </div>
           )}
         </div>
@@ -195,7 +222,7 @@ export default function WorkforceHealthBanner({
         <div className="xl:col-span-3">
           <div className="mb-2 flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300">
             <span>
-              Workforce Health Score
+              Workforce Status Score
             </span>
 
             <span>
@@ -205,7 +232,7 @@ export default function WorkforceHealthBanner({
 
           <div
             role="progressbar"
-            aria-label="Workforce health score"
+            aria-label="Workforce status score"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={
@@ -216,13 +243,14 @@ export default function WorkforceHealthBanner({
             <div
               className={`h-full rounded-full transition-[width] duration-300 ${tone.bar}`}
               style={{
-                width: `${healthScore}%`,
+                width:
+                  `${healthScore}%`,
               }}
             />
           </div>
 
           <p className="mt-2 text-[11px] leading-5 text-slate-600/80 dark:text-slate-300/80">
-            Based on incident severity, active-case aging, compliance indicators, and deployment utilization.
+            Based on incident severity, active case age, compliance status, and workforce utilization.
           </p>
         </div>
       </div>

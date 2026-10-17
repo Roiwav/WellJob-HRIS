@@ -40,6 +40,56 @@ import { useKPIDecisionLatestQuery } from "../hooks/useKPIDecisionQueries";
 
 const AUTO_REFRESH_INTERVAL_MS = false;
 
+const KPI_REPORT_TIME_ZONE =
+  "Asia/Manila";
+
+function formatKpiFetchedAt(
+  value
+) {
+  if (!value) {
+    return "";
+  }
+
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(
+          value
+        );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone:
+        KPI_REPORT_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "short",
+      day:
+        "2-digit",
+      hour:
+        "numeric",
+      minute:
+        "2-digit",
+      second:
+        "2-digit",
+      hour12:
+        true,
+    }
+  ).format(
+    date
+  );
+}
+
 const TABS = [
   {
     id: "overview",
@@ -632,10 +682,8 @@ export default function KPIReports() {
 
           <span>
             Updated{" "}
-            {new Date(
+            {formatKpiFetchedAt(
               kpiData.fetchedAt
-            ).toLocaleString(
-              "en-PH"
             )}
           </span>
         </div>

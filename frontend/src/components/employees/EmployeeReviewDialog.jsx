@@ -9,6 +9,7 @@ import {
   getDocumentPreviewType,
   getDocumentPreviewUrl,
   getSelectedDocuments,
+  normalizeEmployeeDocumentNumber,
 } from "../../utils/employees/employeeFormHelpers";
 import { fetchEmployeeDocumentPreview } from "../../utils/employees/employeeDocumentPreview";
 import Button from "../ui/Button";
@@ -99,13 +100,17 @@ function PersistedDocumentPreview({ document }) {
           return;
         }
 
+        console.error(
+          "Employee document preview failed:",
+          error
+        );
+
         setPreview({
           url: "",
           type: "",
           loading: false,
           error:
-            error?.message ||
-            "Unable to load this document preview.",
+            "Unable to open this document. Please try again.",
         });
       }
     }
@@ -127,7 +132,7 @@ function PersistedDocumentPreview({ document }) {
         className="mt-3 text-xs text-slate-500 dark:text-slate-400"
         role="status"
       >
-        Loading protected document preview...
+        Loading document preview...
       </p>
     );
   }
@@ -146,7 +151,7 @@ function PersistedDocumentPreview({ document }) {
   if (!preview.url) {
     return (
       <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-        No file preview available.
+        Preview unavailable.
       </p>
     );
   }
@@ -213,7 +218,57 @@ export default function EmployeeReviewDialog({
   onConfirm,
 }) {
   const isEditMode = mode === "edit";
-  const isDeployed = formData?.status === "Deployed";
+
+  const workforceStatus =
+    String(
+      formData?.workforceStatus ||
+      formData?.workforce_status ||
+      formData?.status ||
+      "Floating / Standby"
+    ).trim();
+
+  const isPooling =
+    workforceStatus ===
+    "Floating / Standby";
+
+  const isForDeployment =
+    workforceStatus ===
+    "For Deployment";
+
+  const isDeployed =
+    workforceStatus ===
+    "Deployed";
+
+  const workforceStatusLabel =
+    isPooling
+      ? "Floating / Standby"
+      : isDeployed && !isEditMode
+        ? "Deployed"
+        : workforceStatus;
+
+  const companyLabel =
+    isDeployed
+      ? "Client Company"
+      : isForDeployment
+        ? "Scheduled Client Company"
+        : "Designated Client Company";
+
+  const positionLabel =
+    isDeployed
+      ? "Position"
+      : isForDeployment
+        ? "Scheduled Position"
+        : "Designated Position";
+
+  const deploymentStartValue =
+    isDeployed
+      ? (
+          formData?.contractStart ||
+          "-"
+        )
+      : isForDeployment
+        ? "Pending arrival confirmation"
+        : "Not yet deployed";
 
   const [
     acknowledgedWarning,
@@ -289,7 +344,9 @@ export default function EmployeeReviewDialog({
             disabled={isSaving}
             onClick={handleClose}
           >
-            Back to Edit
+            {isEditMode
+              ? "Back to Edit"
+              : "Back to Form"}
           </Button>
 
           <Button
@@ -343,15 +400,10 @@ export default function EmployeeReviewDialog({
                     : "Ready for Confirmation"}
                 </StatusPill>
 
-                {isEditMode && (
-                  <StatusPill tone="indigo">
-                    Edit Mode
-                  </StatusPill>
-                )}
               </div>
 
               <p className="mt-2 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                Confirm the employee details and submitted documents before completing this action.
+                Confirm the employee details, deployment information, and submitted documents before completing this action.
               </p>
             </div>
 
@@ -436,36 +488,72 @@ export default function EmployeeReviewDialog({
             />
 
             <ReviewBox
-              label="Employment Status"
-              value={formData?.status || "-"}
-            />
-
-            <ReviewBox
-              label="Company"
+              label="Date Hired"
               value={
-                isDeployed
-                  ? formData?.company || "-"
-                  : "Not Assigned"
+                formData?.dateHired ||
+                formData?.date_hired ||
+                "-"
               }
             />
 
             <ReviewBox
-              label="Position"
+              label="Workforce Status"
               value={
-                isDeployed
-                  ? formData?.position || "-"
-                  : "Not Assigned"
+                workforceStatusLabel
               }
             />
 
             <ReviewBox
-              label="Start Date"
+              label={
+                companyLabel
+              }
               value={
-                isDeployed
-                  ? formData?.contractStart || "-"
-                  : "Not Applicable"
+                formData?.company ||
+                "-"
               }
             />
+
+            <ReviewBox
+              label={
+                positionLabel
+              }
+              value={
+                formData?.position ||
+                "-"
+              }
+            />
+
+            <ReviewBox
+              label="Deployment Start"
+              value={
+                deploymentStartValue
+              }
+            />
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+          <div className="flex gap-3">
+            <FiCheck
+              aria-hidden="true"
+              className="mt-0.5 shrink-0"
+            />
+
+            <div>
+              <p className="font-bold">
+                Deployment Information
+              </p>
+
+              <p className="mt-1 leading-5">
+                {isPooling
+                  ? "This employee remains Floating / Standby with the designated client company and position until deployment is scheduled."
+                  : isForDeployment
+                    ? "Deployment is already scheduled. The deployment begins after the HR Coordinator confirms the employee's arrival."
+                    : isEditMode
+                      ? "This employee is deployed. Client company and position follow the active deployment assignment."
+                      : "This employee will be recorded as deployed using the actual deployment start date."}
+              </p>
+            </div>
           </div>
         </section>
 
@@ -481,7 +569,7 @@ export default function EmployeeReviewDialog({
               </h3>
 
               <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                Review selected files and expiration information.
+                Review selected files, document numbers, and expiration details.
               </p>
             </div>
           </div>
@@ -501,6 +589,20 @@ export default function EmployeeReviewDialog({
                 const hasMissingDate =
                   isExpirable &&
                   !document.expirationDate;
+
+                const requiresDocumentNumber =
+                  Boolean(
+                    document.requiresDocumentNumber
+                  );
+
+                const documentNumber =
+                  normalizeEmployeeDocumentNumber(
+                    document.documentNumber
+                  );
+
+                const documentNumberLabel =
+                  document.documentNumberLabel ||
+                  "Document Number";
 
                 const isRisky = [
                   "Expired",
@@ -523,6 +625,18 @@ export default function EmployeeReviewDialog({
                             ? `Expires: ${document.expirationDate || "-"}`
                             : "Permanent document"}
                         </p>
+
+                        {requiresDocumentNumber && (
+                          <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              {documentNumberLabel}
+                            </p>
+
+                            <p className="mt-1 break-all text-sm font-bold text-slate-900 dark:text-slate-100">
+                              {documentNumber || "Not yet recorded"}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       <StatusPill

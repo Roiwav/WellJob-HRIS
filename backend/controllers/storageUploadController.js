@@ -62,7 +62,19 @@ const MAX_EMPLOYEE_DOCUMENTS =
 const MAX_INCIDENT_EVIDENCE_FILES =
   10;
 
-const MAX_INITIAL_NTE_FILES = 1;
+/*
+ * Add Incident and workflow proof now share the same
+ * 10-evidence ceiling.
+ *
+ * The Add Incident UI may combine:
+ * - desktop/laptop-selected files
+ * - phone-captured images
+ *
+ * The final request must still contain no more than
+ * 10 Incident evidence items total.
+ */
+const MAX_INCIDENT_CREATE_EVIDENCE_FILES =
+  10;
 
 
 class UploadAuthorizationError
@@ -447,7 +459,7 @@ function sendControllerError(
  * Route roles remain:
  *
  * HR_MANAGER
- * HR_STAFF
+ * HR_COORDINATOR
  */
 exports.createEmployeeDocumentUploadAuthorizations =
   async (
@@ -563,6 +575,9 @@ exports.createEmployeeDocumentUploadAuthorizations =
  *   "files": [...]
  * }
  *
+ * Up to 10 evidence files may be authorized for one
+ * Add Incident request.
+ *
  * The target employee ID becomes part of every
  * signed descriptor.
  *
@@ -606,7 +621,7 @@ exports.createIncidentEvidenceUploadAuthorizations =
           req.body?.files,
           {
             maxFiles:
-              MAX_INITIAL_NTE_FILES,
+              MAX_INCIDENT_CREATE_EVIDENCE_FILES,
 
             actor:
               req.user,

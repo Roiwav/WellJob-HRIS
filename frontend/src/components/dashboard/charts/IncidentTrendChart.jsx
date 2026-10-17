@@ -118,7 +118,7 @@ function ComparisonLegend({
   return (
     <div
       className="flex flex-wrap items-center gap-2"
-      aria-label="Incident trend comparison years"
+      aria-label="Incident comparison years"
     >
       {years.map(
         (year) => {
@@ -159,8 +159,8 @@ function ComparisonLegend({
               <span>
                 {year}{" "}
                 {isSelected
-                  ? "Selected"
-                  : "Previous"}
+                  ? "Selected Year"
+                  : "Previous Year"}
               </span>
             </span>
           );
@@ -191,11 +191,11 @@ function EmptyChartState() {
     <div className="flex h-[230px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 text-center dark:border-slate-700 dark:bg-slate-950/40">
       <div>
         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          No incident activity data
+          No Incident Activity Available
         </p>
 
         <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-          No incident reports are available for the selected historical period.
+          No incident reports are available for the selected period.
         </p>
       </div>
     </div>
@@ -331,17 +331,17 @@ export default function IncidentTrendChart({
             id="incident-trend-title"
             className="text-base font-bold text-slate-900 dark:text-white"
           >
-            Incident Reports Trend
+            Incident Trend
           </h3>
 
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Monthly incident-report movement compared with the previous available year.
+            Monthly incident reports compared with the previous available year.
           </p>
         </div>
 
         <div className="grid shrink-0 grid-cols-2 gap-2">
           <SummaryChip
-            label="Reports in Scope"
+            label="Incident Reports"
             value={totalReports}
           />
 
@@ -366,14 +366,14 @@ export default function IncidentTrendChart({
           />
         ) : (
           <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Selected historical period
+            Selected period
           </span>
         )}
 
         {isCurrentYear &&
           currentMonthLabel && (
             <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-              * Current month is still in progress.
+              * Current month is still in progress and may change.
             </span>
           )}
       </div>
@@ -465,7 +465,7 @@ export default function IncidentTrendChart({
                         dataKey={
                           year
                         }
-                        name={`${year} Incidents`}
+                        name={`${year} Incident Reports`}
                         stroke={
                           style.stroke
                         }
@@ -494,7 +494,7 @@ export default function IncidentTrendChart({
                 <Line
                   type="monotone"
                   dataKey="value"
-                  name="Incidents"
+                  name="Incident Reports"
                   stroke={
                     SELECTED_LINE_COLOR
                   }

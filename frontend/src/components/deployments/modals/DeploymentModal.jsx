@@ -4,7 +4,6 @@ import {
   FiCalendar,
   FiCheckCircle,
   FiMapPin,
-  FiShield,
   FiUser,
   FiX,
 } from "react-icons/fi";
@@ -15,64 +14,263 @@ import IconButton from "../../ui/IconButton";
 
 import {
   formatLongDisplayDate,
+  getDeploymentDisplayStatus,
   getDeploymentTimelineInfo,
   getStatusBadgeClass,
   normalizeDeploymentStatus,
 } from "../../../utils/deployments/deploymentHelpers";
 
-import { DeploymentInfoCard } from "../shared/DeploymentModalUI";
-
 const STATUS_MESSAGES = {
-  Active: {
+  Deployed: {
     icon: FiCheckCircle,
-    className: "text-green-600 dark:text-green-300",
-    message: "Deployment is active and ongoing",
+    className:
+      "text-emerald-600 dark:text-emerald-300",
+    message:
+      "This employee is currently deployed.",
   },
+
   Completed: {
     icon: FiCheckCircle,
-    className: "text-blue-600 dark:text-blue-300",
-    message: "Deployment has been completed",
+    className:
+      "text-blue-600 dark:text-blue-300",
+    message:
+      "This deployment has been completed.",
   },
-  Cancelled: {
+
+  Resigned: {
     icon: FiAlertTriangle,
-    className: "text-red-600 dark:text-red-300",
-    message: "Deployment has been cancelled",
+    className:
+      "text-sky-600 dark:text-sky-300",
+    message:
+      "The employee resigned and this deployment has ended.",
   },
-  Pending: {
+
+  Terminated: {
     icon: FiAlertTriangle,
-    className: "text-amber-600 dark:text-amber-300",
-    message: "Deployment is awaiting action",
+    className:
+      "text-rose-600 dark:text-rose-300",
+    message:
+      "The employee's employment was terminated and this deployment has ended.",
+  },
+
+  AWOL: {
+    icon: FiAlertTriangle,
+    className:
+      "text-orange-600 dark:text-orange-300",
+    message:
+      "This deployment ended due to AWOL.",
+  },
+
+  "Other Separation": {
+    icon: FiAlertTriangle,
+    className:
+      "text-slate-600 dark:text-slate-300",
+    message:
+      "This deployment ended for another recorded separation reason.",
+  },
+
+  Ended: {
+    icon: FiAlertTriangle,
+    className:
+      "text-slate-600 dark:text-slate-300",
+    message:
+      "This deployment has ended.",
+  },
+
+  "For Deployment": {
+    icon: FiAlertTriangle,
+    className:
+      "text-amber-600 dark:text-amber-300",
+    message:
+      "This deployment is awaiting arrival confirmation.",
   },
 };
 
-function getEmployeeInitials(employeeName) {
+function getEmployeeInitials(
+  employeeName
+) {
   return (
-    String(employeeName || "D")
+    String(
+      employeeName ||
+        "D"
+    )
       .split(" ")
       .filter(Boolean)
       .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join("") || "D"
+      .map(
+        (part) =>
+          part[0]?.toUpperCase()
+      )
+      .join("") ||
+    "D"
   );
 }
 
-function DeploymentStatusMessage({ status }) {
-  const config = STATUS_MESSAGES[status];
+function getCompactDisplayStatus(
+  internalStatus,
+  separationReason,
+  separationRemarks
+) {
+  if (
+    internalStatus ===
+    "Active"
+  ) {
+    return "Deployed";
+  }
+
+  const resolvedStatus =
+    getDeploymentDisplayStatus(
+      internalStatus,
+      separationReason,
+      separationRemarks
+    );
+
+  if (
+    resolvedStatus ===
+      "Separated" ||
+    resolvedStatus ===
+      "Cancelled"
+  ) {
+    return "Ended";
+  }
+
+  if (
+    resolvedStatus ===
+    "Pending"
+  ) {
+    return "For Deployment";
+  }
+
+  return (
+    resolvedStatus ||
+    "Ended"
+  );
+}
+
+function getEmployeePosition(
+  deployment
+) {
+  return (
+    deployment?.position ||
+    deployment?.jobTitle ||
+    deployment?.job_title ||
+    "Not recorded"
+  );
+}
+
+function cleanSeparationRemarks(
+  value
+) {
+  const cleaned =
+    String(
+      value ||
+        ""
+    )
+      .replace(
+        /^\[Other Separation\]\s*/i,
+        ""
+      )
+      .trim();
+
+  return (
+    cleaned ||
+    "Not provided"
+  );
+}
+
+function CompactInfoItem({
+  icon,
+  label,
+  value,
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3 dark:border-slate-800 dark:bg-slate-950/35">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 shrink-0 text-slate-400">
+          {icon}
+        </span>
+
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+            {label}
+          </p>
+
+          <p
+            title={String(
+              value ||
+                "-"
+            )}
+            className="mt-1 break-words text-sm font-semibold leading-5 text-slate-800 dark:text-slate-100"
+          >
+            {value ||
+              "-"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeploymentStatusMessage({
+  status,
+}) {
+  const config =
+    STATUS_MESSAGES[
+      status
+    ];
 
   if (!config) {
     return null;
   }
 
-  const StatusIcon = config.icon;
+  const StatusIcon =
+    config.icon;
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 text-xs ${config.className}`}
+      className={`inline-flex items-center gap-1.5 text-xs font-medium ${config.className}`}
     >
-      <StatusIcon size={14} aria-hidden="true" />
+      <StatusIcon
+        size={13}
+        aria-hidden="true"
+      />
       {config.message}
     </span>
   );
+}
+
+function isAttentionStatus(
+  status
+) {
+  return [
+    "Resigned",
+    "Terminated",
+    "AWOL",
+    "Other Separation",
+    "Ended",
+  ].includes(
+    status
+  );
+}
+
+function getStatusNoticeClass(
+  status
+) {
+  if (
+    status ===
+    "Terminated"
+  ) {
+    return "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300";
+  }
+
+  if (
+    status ===
+    "AWOL"
+  ) {
+    return "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-500/25 dark:bg-orange-500/10 dark:text-orange-300";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300";
 }
 
 export default function DeploymentModal({
@@ -83,12 +281,37 @@ export default function DeploymentModal({
     return null;
   }
 
-  const status = normalizeDeploymentStatus(
-    deployment.status
-  );
+  const internalStatus =
+    normalizeDeploymentStatus(
+      deployment.status
+    );
+
+  const separationReason =
+    deployment.separationReason ||
+    deployment.separation_reason ||
+    deployment.endReason ||
+    deployment.end_reason ||
+    "";
+
+  const separationRemarks =
+    deployment.separationRemarks ||
+    deployment.separation_remarks ||
+    deployment.endRemarks ||
+    deployment.end_remarks ||
+    "";
+
+  const displayStatus =
+    getCompactDisplayStatus(
+      internalStatus,
+      separationReason,
+      separationRemarks
+    );
 
   const employeeName =
-    deployment.employee || "Deployment";
+    deployment.employee ||
+    deployment.employeeName ||
+    deployment.employee_name ||
+    "Deployment";
 
   const employeeId =
     deployment.employeeId ||
@@ -97,7 +320,14 @@ export default function DeploymentModal({
     "-";
 
   const employeeInitials =
-    getEmployeeInitials(employeeName);
+    getEmployeeInitials(
+      employeeName
+    );
+
+  const employeePosition =
+    getEmployeePosition(
+      deployment
+    );
 
   const deploymentStartDate =
     deployment.contractStart ||
@@ -107,6 +337,17 @@ export default function DeploymentModal({
     deployment.separationDate ||
     deployment.contractEnd;
 
+  const hasSeparationDate =
+    Boolean(
+      separationDate &&
+      separationDate !==
+        "-"
+    );
+
+  const hasEnded =
+    internalStatus !==
+    "Active";
+
   const timelineInfo =
     getDeploymentTimelineInfo(
       deploymentStartDate,
@@ -114,66 +355,76 @@ export default function DeploymentModal({
     );
 
   const isAttention =
-    status === "Cancelled" ||
-    status === "Pending";
+    isAttentionStatus(
+      displayStatus
+    );
 
-  const handleClose = () => {
-    close?.();
-  };
+  const handleClose =
+    () => {
+      close?.();
+    };
 
   return (
     <Dialog
       open
       onClose={handleClose}
       title={`${employeeName} deployment record`}
-      description="View deployment assignment, timeline, employment status, and separation details."
-      size="xl"
-      height="xl"
+      description="Employee deployment information."
+      size="lg"
       showHeader={false}
       showCloseButton={false}
       closeOnOverlay
       closeOnEscape
       scrollBody={false}
-      bodyClassName="min-h-0 flex-1 p-0"
+      bodyClassName="p-0"
     >
-      <div className="flex h-full min-h-0 flex-col">
-        <header className="shrink-0 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4 dark:border-white/10 dark:from-slate-900 dark:to-slate-900 sm:px-6 sm:py-5 lg:px-8">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-4">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xl font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+      <div className="flex min-h-0 flex-col">
+        <header className="shrink-0 border-b border-slate-200 px-4 py-3.5 dark:border-slate-800 sm:px-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-sm font-black text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
                 {employeeInitials}
               </div>
 
               <div className="min-w-0">
-                <h2 className="truncate text-2xl font-bold text-gray-900 dark:text-white">
+                <h2 className="truncate text-lg font-bold leading-tight text-slate-900 dark:text-white">
                   {employeeName}
                 </h2>
 
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-200">
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     {employeeId}
                   </span>
 
                   <span
                     className={[
-                      "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                      getStatusBadgeClass(status),
-                    ].join(" ")}
+                      "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold",
+                      getStatusBadgeClass(
+                        internalStatus,
+                        separationReason,
+                        separationRemarks
+                      ),
+                    ].join(
+                      " "
+                    )}
                   >
-                    {status === "Cancelled" && (
+                    {isAttention && (
                       <FiAlertTriangle
-                        className="text-sm"
+                        size={11}
                         aria-hidden="true"
                       />
                     )}
 
-                    {status}
+                    {displayStatus}
                   </span>
 
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300">
-                    {deployment.employmentType ||
-                      "Permanent"}
-                  </span>
+                  {deployment.employmentType && (
+                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      {
+                        deployment.employmentType
+                      }
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -182,174 +433,203 @@ export default function DeploymentModal({
               label="Close deployment details"
               title="Close"
               variant="ghost"
-              size="md"
+              size="sm"
               onClick={handleClose}
             >
-              <FiX aria-hidden="true" />
+              <FiX
+                aria-hidden="true"
+              />
             </IconButton>
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-5 text-gray-900 dark:text-white sm:px-6 sm:py-6 lg:px-8">
-          {isAttention && (
-            <div
-              className={[
-                "rounded-2xl border p-5",
-                status === "Cancelled"
-                  ? "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
-                  : "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
-              ].join(" ")}
-            >
-              <div className="flex items-start gap-3">
-                <FiAlertTriangle
-                  className="mt-0.5 shrink-0"
-                  size={18}
-                  aria-hidden="true"
-                />
+        <div className="max-h-[68vh] space-y-3.5 overflow-y-auto px-4 py-4 text-slate-900 dark:text-white sm:px-5">
+          <section>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <CompactInfoItem
+                icon={
+                  <FiCalendar
+                    size={14}
+                    aria-hidden="true"
+                  />
+                }
+                label="Deployment Date"
+                value={
+                  formatLongDisplayDate(
+                    deploymentStartDate
+                  )
+                }
+              />
 
-                <div>
-                  <p className="font-semibold">
-                    Deployment Status Notice
-                  </p>
+              <CompactInfoItem
+                icon={
+                  <FiBriefcase
+                    size={14}
+                    aria-hidden="true"
+                  />
+                }
+                label="Position"
+                value={
+                  employeePosition
+                }
+              />
 
-                  <p className="mt-1 text-sm">
-                    {status === "Cancelled"
-                      ? "This deployment has been cancelled and is no longer active."
-                      : "This deployment is pending further action."}
-                  </p>
+              <CompactInfoItem
+                icon={
+                  <FiBriefcase
+                    size={14}
+                    aria-hidden="true"
+                  />
+                }
+                label="Client Company"
+                value={
+                  deployment.company ||
+                  "Not recorded"
+                }
+              />
+
+              <CompactInfoItem
+                icon={
+                  <FiMapPin
+                    size={14}
+                    aria-hidden="true"
+                  />
+                }
+                label="Client Site"
+                value={
+                  deployment.location ||
+                  "Not recorded"
+                }
+              />
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 dark:border-slate-800 dark:bg-slate-900/60">
+            <div className="flex items-start gap-2.5">
+              <FiCalendar
+                className="mt-0.5 shrink-0 text-slate-400"
+                size={14}
+                aria-hidden="true"
+              />
+
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                  Deployment Period
+                </p>
+
+                <p className="mt-1 text-sm font-semibold leading-5 text-slate-700 dark:text-slate-200">
+                  {timelineInfo}
+                </p>
+
+                <div className="mt-1.5">
+                  <DeploymentStatusMessage
+                    status={
+                      displayStatus
+                    }
+                  />
                 </div>
               </div>
             </div>
-          )}
-
-          <section>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Deployment Overview
-            </h3>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <DeploymentInfoCard
-                icon={
-                  <FiUser
-                    size={16}
-                    aria-hidden="true"
-                  />
-                }
-                label="Employee"
-                value={employeeName}
-              />
-
-              <DeploymentInfoCard
-                icon={
-                  <FiBriefcase
-                    size={16}
-                    aria-hidden="true"
-                  />
-                }
-                label="Company"
-                value={deployment.company}
-              />
-
-              <DeploymentInfoCard
-                icon={
-                  <FiMapPin
-                    size={16}
-                    aria-hidden="true"
-                  />
-                }
-                label="Location"
-                value={deployment.location}
-              />
-            </div>
           </section>
 
-          <section>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Deployment Information
-            </h3>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <DeploymentInfoCard
-                icon={
-                  <FiCalendar
-                    size={16}
-                    aria-hidden="true"
-                  />
-                }
-                label="Deployment Start Date"
-                value={formatLongDisplayDate(
-                  deploymentStartDate
-                )}
-              />
-
-              <DeploymentInfoCard
-                icon={
-                  <FiCalendar
-                    size={16}
-                    aria-hidden="true"
-                  />
-                }
-                label="Separation Date"
-                value={
-                  separationDate &&
-                  separationDate !== "-"
-                    ? formatLongDisplayDate(
-                        separationDate
-                      )
-                    : "Not separated"
-                }
-              />
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-              <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                Timeline Summary
+          {hasEnded && (
+            <section>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+                  Separation Details
+                </h3>
               </div>
 
-              <p className="text-base font-medium">
-                {timelineInfo}
-              </p>
-            </div>
-          </section>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <CompactInfoItem
+                  icon={
+                    <FiCalendar
+                      size={14}
+                      aria-hidden="true"
+                    />
+                  }
+                  label="Separation Date"
+                  value={
+                    hasSeparationDate
+                      ? formatLongDisplayDate(
+                          separationDate
+                        )
+                      : "Not recorded"
+                  }
+                />
 
-          <section>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Current Status
-            </h3>
+                <CompactInfoItem
+                  icon={
+                    <FiAlertTriangle
+                      size={14}
+                      aria-hidden="true"
+                    />
+                  }
+                  label="Separation Reason"
+                  value={
+                    separationReason ||
+                    displayStatus ||
+                    "Ended"
+                  }
+                />
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900/40">
-              <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                <FiShield
-                  size={16}
+                {separationRemarks && (
+                  <div className="sm:col-span-2">
+                    <CompactInfoItem
+                      icon={
+                        <FiUser
+                          size={14}
+                          aria-hidden="true"
+                        />
+                      }
+                      label="Remarks"
+                      value={
+                        cleanSeparationRemarks(
+                          separationRemarks
+                        )
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {isAttention && (
+            <div
+              className={[
+                "rounded-xl border px-3.5 py-2.5",
+                getStatusNoticeClass(
+                  displayStatus
+                ),
+              ].join(
+                " "
+              )}
+            >
+              <div className="flex items-start gap-2">
+                <FiAlertTriangle
+                  className="mt-0.5 shrink-0"
+                  size={14}
                   aria-hidden="true"
                 />
 
-                <span className="text-sm">
-                  Deployment Status
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <span
-                  className={[
-                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-                    getStatusBadgeClass(status),
-                  ].join(" ")}
-                >
-                  {status}
-                </span>
-
-                <DeploymentStatusMessage
-                  status={status}
-                />
+                <p className="text-xs font-medium leading-5">
+                  {
+                    STATUS_MESSAGES[
+                      displayStatus
+                    ]?.message ||
+                    "This deployment has ended."
+                  }
+                </p>
               </div>
             </div>
-          </section>
+          )}
         </div>
 
-        <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 bg-white px-4 py-4 dark:border-white/10 dark:bg-slate-900 sm:px-6 lg:px-8">
+        <footer className="flex shrink-0 justify-end border-t border-slate-200 px-4 py-3 dark:border-slate-800 sm:px-5">
           <Button
             variant="secondary"
+            size="sm"
             onClick={handleClose}
           >
             Close

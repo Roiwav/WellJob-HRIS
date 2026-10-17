@@ -23,6 +23,13 @@ const STATUS_CONFIG = {
       "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
   },
 
+  "for deployment": {
+    label: "For Deployment",
+    icon: FiClock,
+    className:
+      "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300",
+  },
+
   editable: {
     label: "Editable",
     icon: FiCheckCircle,
@@ -90,7 +97,49 @@ const STATUS_CONFIG = {
     label: "Completed",
     icon: FiCheckCircle,
     className:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
+      "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300",
+  },
+
+  resigned: {
+    label: "Resigned",
+    icon: FiMinusCircle,
+    className:
+      "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-300",
+  },
+
+  terminated: {
+    label: "Terminated",
+    icon: FiXCircle,
+    className:
+      "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300",
+  },
+
+  awol: {
+    label: "AWOL",
+    icon: FiAlertTriangle,
+    className:
+      "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/15 dark:text-orange-300",
+  },
+
+  separated: {
+    label: "Separated",
+    icon: FiMinusCircle,
+    className:
+      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  },
+
+  ended: {
+    label: "Ended",
+    icon: FiMinusCircle,
+    className:
+      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  },
+
+  "other separation": {
+    label: "Other Separation",
+    icon: FiMinusCircle,
+    className:
+      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
   },
 
   rejected: {
@@ -100,11 +149,23 @@ const STATUS_CONFIG = {
       "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300",
   },
 
+  /*
+   * Legacy compatibility only.
+   *
+   * Some existing backend/database workflows can still return
+   * "Cancelled". We intentionally do not expose that wording
+   * through this shared badge anymore. Domain-specific screens
+   * should map to Resigned, Terminated, AWOL, Separated, or
+   * another accurate outcome before rendering whenever possible.
+   *
+   * If an unmigrated legacy value reaches StatusBadge directly,
+   * the neutral fallback shown to the user is "Ended".
+   */
   cancelled: {
-    label: "Cancelled",
-    icon: FiXCircle,
+    label: "Ended",
+    icon: FiMinusCircle,
     className:
-      "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300",
+      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
   },
 
   warning: {
@@ -156,6 +217,15 @@ function normalizeStatusKey(status) {
   }
 
   if (
+    value === "for deployment" ||
+    value === "for_deployment" ||
+    value === "scheduled deployment" ||
+    value === "scheduled for deployment"
+  ) {
+    return "for deployment";
+  }
+
+  if (
     value === "on leave" ||
     value === "leave"
   ) {
@@ -167,6 +237,33 @@ function normalizeStatusKey(status) {
     value === "archived"
   ) {
     return "archived";
+  }
+
+  if (
+    value === "resignation" ||
+    value === "resigned"
+  ) {
+    return "resigned";
+  }
+
+  if (
+    value === "termination" ||
+    value === "terminated"
+  ) {
+    return "terminated";
+  }
+
+  if (
+    value === "other separation"
+  ) {
+    return "other separation";
+  }
+
+  if (
+    value === "canceled" ||
+    value === "cancelled"
+  ) {
+    return "cancelled";
   }
 
   return value;

@@ -4,18 +4,20 @@
  * MESSENGER - CHAT CONTEXT
  * ==================================================
  *
- * Vercel-safe Messenger notification state.
+ * Shared Messenger notification and realtime state.
  *
- * Realtime transport:
- * - No persistent Socket.IO client is created here.
- * - Unread state and lightweight notification metadata
- *   are refreshed through authenticated REST polling.
+ * Transport strategy:
+ * - One authenticated Socket.IO connection is created
+ *   for the signed-in account when live transport is
+ *   available.
+ * - REST polling remains active as a reliable fallback.
  * - Aiven remains the source of truth.
  *
  * Security:
  * - Uses the existing WELLJOB authentication token.
  * - Never exposes message bodies in toast notifications.
  * - Ignores stale responses after account/session changes.
+ * - Socket authentication is refreshed by the backend.
  */
 
 import {
@@ -29,22 +31,36 @@ import {
 } from "react";
 
 import { Link } from "react-router-dom";
+import {
+  io as createSocket,
+} from "socket.io-client";
 
 import { useAuth } from "./useAuth";
 
 import {
+  CHAT_SERVER_URL,
   chatApi,
   getChatToken,
 } from "../services/chatApi";
 
 const CHAT_NOTIFICATION_POLL_MS = 5000;
+const CHAT_SOCKET_TIMEOUT_MS = 5000;
+const CHAT_SOCKET_RECONNECT_ATTEMPTS = 5;
 
 const ChatContext = createContext(null);
 
 function normalizeUnread(value) {
-  const count = Number(value ?? 0);
+  const count =
+    Number(
+      value ?? 0
+    );
 
-  return Number.isSafeInteger(count) && count >= 0
+  return (
+    Number.isSafeInteger(
+      count
+    ) &&
+    count >= 0
+  )
     ? count
     : 0;
 }
@@ -56,26 +72,32 @@ function threadTimestamp(thread) {
     thread?.createdAt;
 
   const time =
-    new Date(value || 0)
-      .getTime();
+    new Date(
+      value || 0
+    ).getTime();
 
-  return Number.isFinite(time)
+  return Number.isFinite(
+    time
+  )
     ? time
     : 0;
 }
 
 function threadTitle(thread) {
-  if (thread?.kind === "group") {
+  if (
+    thread?.kind ===
+    "group"
+  ) {
     return String(
       thread?.name ||
-      "Group conversation"
+        "Group chat"
     ).trim();
   }
 
   return String(
     thread?.partner?.fullName ||
-    thread?.partner?.username ||
-    "a WELLJOB user"
+      thread?.partner?.username ||
+      "a team member"
   ).trim();
 }
 
@@ -83,13 +105,23 @@ function snapshotThreads(threads) {
   const snapshot =
     new Map();
 
-  for (const thread of threads) {
-    if (thread?.id == null) {
+  for (
+    const thread of
+    threads
+  ) {
+    if (
+      thread?.id ===
+        null ||
+      thread?.id ===
+        undefined
+    ) {
       continue;
     }
 
     snapshot.set(
-      String(thread.id),
+      String(
+        thread.id
+      ),
       {
         unreadCount:
           normalizeUnread(
@@ -107,38 +139,61 @@ function snapshotThreads(threads) {
   return snapshot;
 }
 
-export function ChatProvider({ children }) {
+export function ChatProvider({
+  children,
+}) {
   const { user } =
     useAuth();
 
   const currentUserId =
     Number(
       user?.id ??
-      0
+        0
     );
 
   const token =
     user
-      ? getChatToken(user)
+      ? getChatToken(
+          user
+        )
       : "";
 
   const isAuthenticated =
     Number.isSafeInteger(
       currentUserId
     ) &&
-    currentUserId > 0 &&
-    Boolean(token);
+    currentUserId >
+      0 &&
+    Boolean(
+      token
+    );
 
   const sessionKey =
     isAuthenticated
       ? `${currentUserId}:${token}`
       : null;
 
-  const [unreadCount, setUnreadCount] =
-    useState(0);
+  const [
+    unreadCount,
+    setUnreadCount,
+  ] = useState(0);
 
-  const [toast, setToast] =
-    useState(null);
+  const [
+    toast,
+    setToast,
+  ] = useState(null);
+
+  const [
+    socket,
+    setSocket,
+  ] = useState(null);
+
+  const [
+    realtimeMode,
+    setRealtimeMode,
+  ] = useState(
+    "polling"
+  );
 
   const unreadRequestIdRef =
     useRef(0);
@@ -146,11 +201,16 @@ export function ChatProvider({ children }) {
   const notificationRequestIdRef =
     useRef(0);
 
+  const unreadWriteGenerationRef =
+    useRef(0);
+
   const activeSessionRef =
     useRef(null);
 
   const threadSnapshotRef =
-    useRef(new Map());
+    useRef(
+      new Map()
+    );
 
   const snapshotReadyRef =
     useRef(false);
@@ -158,13 +218,18 @@ export function ChatProvider({ children }) {
   useEffect(() => {
     activeSessionRef.current =
       sessionKey;
-  }, [sessionKey]);
+  }, [
+    sessionKey,
+  ]);
 
   const refreshUnread =
     useCallback(
       async () => {
         const requestId =
           ++unreadRequestIdRef.current;
+
+        const unreadWriteGeneration =
+          ++unreadWriteGenerationRef.current;
 
         const requestedSession =
           sessionKey;
@@ -173,7 +238,9 @@ export function ChatProvider({ children }) {
           !isAuthenticated ||
           !requestedSession
         ) {
-          setUnreadCount(0);
+          setUnreadCount(
+            0
+          );
 
           return 0;
         }
@@ -187,6 +254,8 @@ export function ChatProvider({ children }) {
           if (
             requestId !==
               unreadRequestIdRef.current ||
+            unreadWriteGeneration !==
+              unreadWriteGenerationRef.current ||
             activeSessionRef.current !==
               requestedSession
           ) {
@@ -207,6 +276,8 @@ export function ChatProvider({ children }) {
           if (
             requestId !==
               unreadRequestIdRef.current ||
+            unreadWriteGeneration !==
+              unreadWriteGenerationRef.current ||
             activeSessionRef.current !==
               requestedSession
           ) {
@@ -234,6 +305,9 @@ export function ChatProvider({ children }) {
       } = {}) => {
         const requestId =
           ++notificationRequestIdRef.current;
+
+        const unreadWriteGeneration =
+          ++unreadWriteGenerationRef.current;
 
         const requestedSession =
           sessionKey;
@@ -269,11 +343,16 @@ export function ChatProvider({ children }) {
             return;
           }
 
-          setUnreadCount(
-            normalizeUnread(
-              unreadResult?.unreadCount
-            )
-          );
+          if (
+            unreadWriteGeneration ===
+              unreadWriteGenerationRef.current
+          ) {
+            setUnreadCount(
+              normalizeUnread(
+                unreadResult?.unreadCount
+              )
+            );
+          }
 
           const conversations =
             Array.isArray(
@@ -304,8 +383,12 @@ export function ChatProvider({ children }) {
                       );
 
                     if (
-                      currentUnread <= 0 ||
-                      thread?.id == null
+                      currentUnread <=
+                        0 ||
+                      thread?.id ===
+                        null ||
+                      thread?.id ===
+                        undefined
                     ) {
                       return false;
                     }
@@ -332,9 +415,16 @@ export function ChatProvider({ children }) {
                   }
                 )
                 .sort(
-                  (a, b) =>
-                    threadTimestamp(b) -
-                    threadTimestamp(a)
+                  (
+                    first,
+                    second
+                  ) =>
+                    threadTimestamp(
+                      second
+                    ) -
+                    threadTimestamp(
+                      first
+                    )
                 );
 
             const newest =
@@ -373,7 +463,7 @@ export function ChatProvider({ children }) {
           }
 
           console.error(
-            "CHAT NOTIFICATION POLL ERROR:",
+            "CHAT NOTIFICATION REFRESH ERROR:",
             error
           );
         }
@@ -384,11 +474,24 @@ export function ChatProvider({ children }) {
       ]
     );
 
+  /*
+   * ==================================================
+   * REST POLLING BASELINE + FALLBACK
+   * ==================================================
+   *
+   * Polling stays enabled even when live transport is
+   * connected so missed/reconnected events reconcile
+   * back to the database source of truth.
+   */
+
   useEffect(() => {
     unreadRequestIdRef.current +=
       1;
 
     notificationRequestIdRef.current +=
+      1;
+
+    unreadWriteGenerationRef.current +=
       1;
 
     threadSnapshotRef.current =
@@ -407,13 +510,17 @@ export function ChatProvider({ children }) {
             return;
           }
 
-          setToast(null);
+          setToast(
+            null
+          );
 
           if (
             !isAuthenticated ||
             !sessionKey
           ) {
-            setUnreadCount(0);
+            setUnreadCount(
+              0
+            );
           }
         },
         0
@@ -513,6 +620,275 @@ export function ChatProvider({ children }) {
     pollNotificationState,
   ]);
 
+  /*
+   * ==================================================
+   * SINGLE SHARED LIVE SOCKET
+   * ==================================================
+   *
+   * Messenger.jsx consumes this same socket instance.
+   * No second connection is created by page components.
+   *
+   * If the deployment environment does not support
+   * long-lived Socket.IO connections, connection failure
+   * silently falls back to the polling transport above.
+   */
+
+  useEffect(() => {
+    if (
+      !isAuthenticated ||
+      !sessionKey ||
+      !token
+    ) {
+      return undefined;
+    }
+
+    const requestedSession =
+      sessionKey;
+
+    let disposed =
+      false;
+
+    const client =
+      createSocket(
+        CHAT_SERVER_URL,
+        {
+          auth: {
+            token,
+          },
+
+          transports: [
+            "websocket",
+            "polling",
+          ],
+
+          timeout:
+            CHAT_SOCKET_TIMEOUT_MS,
+
+          reconnection:
+            true,
+
+          reconnectionAttempts:
+            CHAT_SOCKET_RECONNECT_ATTEMPTS,
+
+          reconnectionDelay:
+            1000,
+
+          reconnectionDelayMax:
+            5000,
+        }
+      );
+
+    const isCurrentSession =
+      () =>
+        !disposed &&
+        activeSessionRef.current ===
+          requestedSession;
+
+    const onConnect =
+      () => {
+        if (
+          !isCurrentSession()
+        ) {
+          client.disconnect();
+
+          return;
+        }
+
+        /*
+         * React state is updated from the actual
+         * external Socket.IO connection event, not
+         * synchronously from the effect body.
+         */
+        setSocket(
+          client
+        );
+
+        setRealtimeMode(
+          "live"
+        );
+
+        void pollNotificationState({
+          allowToast:
+            false,
+        });
+      };
+
+    const onDisconnect =
+      () => {
+        if (
+          !isCurrentSession()
+        ) {
+          return;
+        }
+
+        setSocket(
+          (current) =>
+            current ===
+            client
+              ? null
+              : current
+        );
+
+        setRealtimeMode(
+          "polling"
+        );
+      };
+
+    const onConnectError =
+      () => {
+        if (
+          !isCurrentSession()
+        ) {
+          return;
+        }
+
+        setSocket(
+          (current) =>
+            current ===
+            client
+              ? null
+              : current
+        );
+
+        setRealtimeMode(
+          "polling"
+        );
+      };
+
+    const onMessage =
+      ({
+        message,
+      } = {}) => {
+        if (
+          !isCurrentSession() ||
+          !message?.id
+        ) {
+          return;
+        }
+
+        /*
+         * Own sent messages do not create a notification.
+         * Incoming messages trigger an immediate REST
+         * reconciliation so unread count and toast state
+         * remain database-backed.
+         */
+        if (
+          Number(
+            message.senderId
+          ) !==
+          currentUserId
+        ) {
+          void pollNotificationState({
+            allowToast:
+              true,
+          });
+        }
+      };
+
+    const onRead =
+      (receipt = {}) => {
+        if (
+          !isCurrentSession() ||
+          Number(
+            receipt.readerId
+          ) !==
+            currentUserId
+        ) {
+          return;
+        }
+
+        void refreshUnread();
+      };
+
+    const onConversationChanged =
+      () => {
+        if (
+          !isCurrentSession()
+        ) {
+          return;
+        }
+
+        void pollNotificationState({
+          allowToast:
+            false,
+        });
+      };
+
+    client.on(
+      "connect",
+      onConnect
+    );
+
+    client.on(
+      "disconnect",
+      onDisconnect
+    );
+
+    client.on(
+      "connect_error",
+      onConnectError
+    );
+
+    client.on(
+      "chat:message",
+      onMessage
+    );
+
+    client.on(
+      "chat:read",
+      onRead
+    );
+
+    client.on(
+      "chat:changed",
+      onConversationChanged
+    );
+
+    return () => {
+      disposed =
+        true;
+
+      client.off(
+        "connect",
+        onConnect
+      );
+
+      client.off(
+        "disconnect",
+        onDisconnect
+      );
+
+      client.off(
+        "connect_error",
+        onConnectError
+      );
+
+      client.off(
+        "chat:message",
+        onMessage
+      );
+
+      client.off(
+        "chat:read",
+        onRead
+      );
+
+      client.off(
+        "chat:changed",
+        onConversationChanged
+      );
+
+      client.disconnect();
+    };
+  }, [
+    isAuthenticated,
+    sessionKey,
+    token,
+    currentUserId,
+    pollNotificationState,
+    refreshUnread,
+  ]);
+
   useEffect(() => {
     if (!toast) {
       return undefined;
@@ -521,7 +897,9 @@ export function ChatProvider({ children }) {
     const timeout =
       window.setTimeout(
         () => {
-          setToast(null);
+          setToast(
+            null
+          );
         },
         4500
       );
@@ -531,24 +909,35 @@ export function ChatProvider({ children }) {
         timeout
       );
     };
-  }, [toast]);
+  }, [
+    toast,
+  ]);
+
+  const activeSocket =
+    isAuthenticated &&
+    socket?.connected
+      ? socket
+      : null;
+
+  const effectiveRealtimeMode =
+    activeSocket
+      ? realtimeMode
+      : "polling";
 
   const value =
     useMemo(
       () => ({
         /*
-         * Retained as null for compatibility with any
-         * component that still reads context.socket.
-         *
-         * The Vercel production Messenger transport is
-         * REST polling, not a persistent process-local
-         * Socket.IO connection.
+         * One shared connected socket is exposed to
+         * Messenger. A disconnected/stale client is
+         * hidden so page components automatically
+         * continue through REST polling.
          */
         socket:
-          null,
+          activeSocket,
 
         realtimeMode:
-          "polling",
+          effectiveRealtimeMode,
 
         unreadCount,
 
@@ -559,6 +948,8 @@ export function ChatProvider({ children }) {
         user,
       }),
       [
+        activeSocket,
+        effectiveRealtimeMode,
         unreadCount,
         refreshUnread,
         currentUserId,
@@ -568,60 +959,65 @@ export function ChatProvider({ children }) {
 
   return (
     <ChatContext.Provider
-      value={value}
+      value={
+        value
+      }
     >
       {children}
 
-      {isAuthenticated && toast && (
-        <Link
-          to="/chat"
-          onClick={() => {
-            setToast(null);
-          }}
-          className="
-            fixed bottom-5 right-5
-            z-[1100]
-            w-[calc(100%-2.5rem)]
-            max-w-xs
-            rounded-2xl
-            border border-blue-200
-            bg-white
-            p-4
-            text-sm text-slate-900
-            shadow-xl
-            transition
-            hover:shadow-2xl
-            dark:border-slate-700
-            dark:bg-slate-900
-            dark:text-white
-          "
-          role="status"
-        >
-          <span
+      {isAuthenticated &&
+        toast && (
+          <Link
+            to="/chat"
+            onClick={() => {
+              setToast(
+                null
+              );
+            }}
             className="
-              block
-              font-semibold
+              fixed bottom-5 right-5
+              z-[1100]
+              w-[calc(100%-2.5rem)]
+              max-w-xs
+              rounded-2xl
+              border border-blue-200
+              bg-white
+              p-4
+              text-sm text-slate-900
+              shadow-xl
+              transition
+              hover:shadow-2xl
+              dark:border-slate-700
+              dark:bg-slate-900
+              dark:text-white
             "
+            role="status"
           >
-            {toast.isGroup
-              ? "New group message"
-              : "New chat message"}
-          </span>
+            <span
+              className="
+                block
+                font-semibold
+              "
+            >
+              {toast.isGroup
+                ? "New group message"
+                : "New message"}
+            </span>
 
-          <span
-            className="
-              mt-1
-              block
-              text-slate-600
-              dark:text-slate-300
-            "
-          >
-            {toast.isGroup
-              ? `In ${toast.title}`
-              : `From ${toast.title}`}
-          </span>
-        </Link>
-      )}
+            <span
+              className="
+                mt-1
+                block
+                text-slate-600
+                dark:text-slate-300
+              "
+            >
+              {toast.isGroup
+                ? `In ${toast.title}`
+                : `From ${toast.title}`}
+            </span>
+          </Link>
+        )}
     </ChatContext.Provider>
   );
 }

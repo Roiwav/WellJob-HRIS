@@ -2,7 +2,6 @@ import {
   FiAlertTriangle,
   FiCheckCircle,
   FiClipboard,
-  FiDatabase,
   FiMapPin,
   FiShield,
   FiTrendingUp,
@@ -14,32 +13,38 @@ const PRIORITY_STYLES = {
       "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
     badge:
       "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
-    row: "border-red-200/70 dark:border-red-500/30",
+    row:
+      "border-red-200/70 dark:border-red-500/30",
   },
   Medium: {
     icon:
       "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
     badge:
       "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
-    row: "border-amber-200/70 dark:border-amber-500/30",
+    row:
+      "border-amber-200/70 dark:border-amber-500/30",
   },
   Low: {
     icon:
       "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
     badge:
       "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
-    row: "border-blue-200/70 dark:border-blue-500/30",
+    row:
+      "border-blue-200/70 dark:border-blue-500/30",
   },
   Good: {
     icon:
       "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
     badge:
       "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
-    row: "border-emerald-200/70 dark:border-emerald-500/30",
+    row:
+      "border-emerald-200/70 dark:border-emerald-500/30",
   },
 };
 
-function getPriorityTone(priority) {
+function getPriorityTone(
+  priority
+) {
   return (
     PRIORITY_STYLES[
       priority
@@ -48,8 +53,11 @@ function getPriorityTone(priority) {
   );
 }
 
-function getModeLabel(mode) {
-  return mode === "preventive"
+function getModeLabel(
+  mode
+) {
+  return mode ===
+    "preventive"
     ? "Preventive"
     : "Corrective";
 }
@@ -68,12 +76,16 @@ function ActionTypeIcon({
 
     case "Compliance":
       return (
-        <FiShield size={size} />
+        <FiShield
+          size={size}
+        />
       );
 
     case "Deployment":
       return (
-        <FiMapPin size={size} />
+        <FiMapPin
+          size={size}
+        />
       );
 
     case "Trend":
@@ -109,16 +121,18 @@ function EmptyDataState() {
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
           aria-hidden="true"
         >
-          <FiDatabase size={17} />
+          <FiClipboard
+            size={17}
+          />
         </div>
 
         <div className="min-w-0">
           <p className="text-sm font-bold text-slate-900 dark:text-white">
-            No workforce data available yet
+            No Workforce Records Available
           </p>
 
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Workforce records are required before the system can generate HR action guidance.
+            Workforce records are needed before recommended HR actions can be prepared.
           </p>
         </div>
       </div>
@@ -134,16 +148,18 @@ function EmptyPriorityState() {
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
           aria-hidden="true"
         >
-          <FiCheckCircle size={17} />
+          <FiCheckCircle
+            size={17}
+          />
         </div>
 
         <div className="min-w-0">
           <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300">
-            No priority HR action required
+            No Priority HR Action Required
           </p>
 
           <p className="mt-1 text-xs leading-5 text-emerald-700/80 dark:text-emerald-300/80">
-            Current workforce indicators do not trigger a corrective or preventive action.
+            Current workforce records do not indicate a priority corrective or preventive action.
           </p>
         </div>
       </div>
@@ -173,7 +189,9 @@ function ActionRow({
           aria-hidden="true"
         >
           <ActionTypeIcon
-            type={action?.type}
+            type={
+              action?.type
+            }
           />
         </div>
 
@@ -194,7 +212,7 @@ function ActionRow({
 
           <h3 className="mt-2 line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">
             {action?.title ||
-              "HR Action"}
+              "Recommended HR Action"}
           </h3>
 
           <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-600 dark:text-slate-300">
@@ -220,7 +238,9 @@ export default function ExecutiveActionItems({
   actions = [],
 }) {
   const safeActions =
-    Array.isArray(actions)
+    Array.isArray(
+      actions
+    )
       ? actions.filter(
           Boolean
         )
@@ -247,7 +267,8 @@ export default function ExecutiveActionItems({
     ).length;
 
   const hasNoInsightData =
-    safeActions.length === 0;
+    safeActions.length ===
+    0;
 
   return (
     <section
@@ -270,7 +291,7 @@ export default function ExecutiveActionItems({
           </div>
 
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Recommended HR follow-up based on current workforce records and configured rules.
+            Recommended HR follow-up based on current workforce records and established HR rules.
           </p>
         </div>
 

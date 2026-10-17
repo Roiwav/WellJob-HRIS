@@ -1,4 +1,3 @@
-
 import { useMemo } from "react";
 import {
   FiAlertCircle,
@@ -22,7 +21,6 @@ const STATUS = {
 
 const INVESTIGATOR_ROLES = new Set([
   "HR_MANAGER",
-  "HR_STAFF",
   "HR_COORDINATOR",
 ]);
 
@@ -52,11 +50,10 @@ function normalizeIdentity(value) {
 }
 
 function normalizeRole(value) {
-  const role =
-    String(value ?? "")
-      .trim()
-      .toUpperCase()
-      .replace(/[\s-]+/g, "_");
+  const role = String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
 
   if (
     role === "SUPERADMIN" ||
@@ -159,7 +156,8 @@ function getInvestigatorValues(incident) {
     getLastActionType(incident);
 
   const lastActionValues =
-    lastActionType === "START_INVESTIGATION"
+    lastActionType ===
+    "START_INVESTIGATION"
       ? [
           incident?.lastActionById,
           incident?.last_action_by_id,
@@ -198,7 +196,8 @@ function getInvestigatorName(incident) {
     incident?.investigation?.started_by_name ||
     incident?.investigationStartedByName ||
     incident?.investigation_started_by_name ||
-    (lastActionType === "START_INVESTIGATION"
+    (lastActionType ===
+    "START_INVESTIGATION"
       ? incident?.lastActionByName ||
         incident?.last_action_by_name
       : "") ||
@@ -266,13 +265,19 @@ export default function ActionButtons({
   onReview,
 }) {
   const status =
-    normalizeStatus(incident?.status);
+    normalizeStatus(
+      incident?.status
+    );
 
   const currentRole =
-    normalizeRole(currentUser?.role);
+    normalizeRole(
+      currentUser?.role
+    );
 
   const isInvestigator =
-    INVESTIGATOR_ROLES.has(currentRole);
+    INVESTIGATOR_ROLES.has(
+      currentRole
+    );
 
   const canStartInvestigation =
     canUserStartInvestigation(
@@ -288,35 +293,47 @@ export default function ActionButtons({
 
   const isReviewer =
     isSuperAdmin ||
-    REVIEWER_ROLES.has(currentRole);
+    REVIEWER_ROLES.has(
+      currentRole
+    );
 
   const isHrCoordinator =
-    currentRole === "HR_COORDINATOR";
+    currentRole ===
+    "HR_COORDINATOR";
 
   const investigatorName =
-    getInvestigatorName(incident);
+    getInvestigatorName(
+      incident
+    );
 
   const currentUserAliases = useMemo(
-    () => buildUserAliases(currentUser),
+    () =>
+      buildUserAliases(
+        currentUser
+      ),
     [currentUser]
   );
 
   const investigatorValues = useMemo(
-    () => getInvestigatorValues(incident),
+    () =>
+      getInvestigatorValues(
+        incident
+      ),
     [incident]
   );
 
-  const currentUserIsInvestigator = useMemo(
-    () =>
-      hasAliasMatch(
+  const currentUserIsInvestigator =
+    useMemo(
+      () =>
+        hasAliasMatch(
+          currentUserAliases,
+          investigatorValues
+        ),
+      [
         currentUserAliases,
-        investigatorValues
-      ),
-    [
-      currentUserAliases,
-      investigatorValues,
-    ]
-  );
+        investigatorValues,
+      ]
+    );
 
   if (!incident) {
     return null;
@@ -324,22 +341,15 @@ export default function ActionButtons({
 
   /*
    * ==================================================
-   * OPTION A — HISTORICAL LIST ONLY
+   * HISTORICAL LIST-ONLY ACCESS
    * ==================================================
    *
-   * The backend may return an incident as a minimal
-   * historical list entry when the employee is no
-   * longer currently deployed at the HR Coordinator's
-   * assigned company.
+   * A coordinator may retain a minimal historical row
+   * after the employee is no longer currently deployed
+   * at the coordinator's assigned company.
    *
-   * Historical entries must remain visible in the
-   * Incidents table, but must not offer View Details.
-   *
-   * The backend remains responsible for enforcing
-   * access on direct detail and evidence requests.
-   *
-   * This UI condition only improves user experience;
-   * it is not a substitute for backend authorization.
+   * The backend remains authoritative for direct detail
+   * and evidence access.
    */
   const isRestrictedHistoricalIncident =
     isHrCoordinator &&
@@ -348,7 +358,9 @@ export default function ActionButtons({
       incident.canViewDetails === false
     );
 
-  if (isRestrictedHistoricalIncident) {
+  if (
+    isRestrictedHistoricalIncident
+  ) {
     return (
       <DisabledActionPill
         icon={
@@ -357,19 +369,25 @@ export default function ActionButtons({
             aria-hidden="true"
           />
         }
-        label="Historical · List only"
-        title="This incident remains in your company's historical list. Full details and evidence are unavailable because the employee is no longer currently deployed at your company."
+        label="Historical record"
+        title="This historical record remains visible for reference. Full case details and attachments are unavailable because the employee has transferred to another client company."
       />
     );
   }
 
   /*
-   * Authorized reviewers receive the review action
-   * only while the incident is waiting for review.
+   * ==================================================
+   * MANAGEMENT REVIEW
+   * ==================================================
+   *
+   * HR Manager and Super Admin may review cases only
+   * after canonical investigation proof has been
+   * submitted and the case is For Review.
    */
   if (
     isReviewer &&
-    status === STATUS.FOR_REVIEW
+    status ===
+      STATUS.FOR_REVIEW
   ) {
     return (
       <ActionButton
@@ -379,23 +397,38 @@ export default function ActionButtons({
             aria-hidden="true"
           />
         }
-        title="Review submitted case"
+        title="Review case"
         variant="review"
         onClick={() =>
-          onReview?.(incident)
+          onReview?.(
+            incident
+          )
         }
       />
     );
   }
 
   /*
-   * Only HR Manager / HR Staff may start an
-   * investigation.
+   * ==================================================
+   * START INVESTIGATION
+   * ==================================================
+   *
+   * The eligibility helper is the single frontend
+   * source of truth for whether Start Investigation
+   * should be exposed.
+   *
+   * Eligible operational investigators:
+   * - HR Manager
+   * - HR Coordinator
+   *
+   * HR Staff intentionally has no Incident operational
+   * authority.
    */
   if (
     isInvestigator &&
-    canStartInvestigation &&
-    status === STATUS.OPEN
+    status ===
+      STATUS.OPEN &&
+    canStartInvestigation
   ) {
     return (
       <ActionButton
@@ -408,19 +441,26 @@ export default function ActionButtons({
         title="Start investigation"
         variant="start"
         onClick={() =>
-          onStartReview?.(incident)
+          onStartReview?.(
+            incident
+          )
         }
       />
     );
   }
 
   /*
-   * Investigation proof submission remains available
-   * only to HR Manager / HR Staff.
+   * ==================================================
+   * RESOLUTION PROOF
+   * ==================================================
+   *
+   * Only the canonical investigator may submit or
+   * resubmit Resolution Proof.
    */
   if (
     isInvestigator &&
-    status === STATUS.INVESTIGATING
+    status ===
+      STATUS.INVESTIGATING
   ) {
     if (
       currentUserIsInvestigator &&
@@ -434,10 +474,12 @@ export default function ActionButtons({
               aria-hidden="true"
             />
           }
-          title="Submit or resubmit resolution proof"
+          title="Submit or update resolution proof"
           variant="resolve"
           onClick={() =>
-            onResolve?.(incident)
+            onResolve?.(
+              incident
+            )
           }
         />
       );
@@ -451,23 +493,26 @@ export default function ActionButtons({
             aria-hidden="true"
           />
         }
-        label={`Investigating by ${investigatorName}`}
-        title={`This case is already being investigated by ${investigatorName}.`}
+        label={`Under investigation by ${investigatorName}`}
+        title={`This case is currently being investigated by ${investigatorName}.`}
       />
     );
   }
 
   /*
-   * HR Staff waits for an authorized reviewer when
-   * an incident is already submitted for review.
+   * ==================================================
+   * WAITING FOR REVIEW
+   * ==================================================
    *
-   * HR Coordinator retains View Details for currently
-   * authorized, non-historical incidents.
+   * Non-reviewers cannot perform management review.
+   * HR Coordinator keeps View Details while the case
+   * remains within authorized non-historical scope.
    */
   if (
     !isReviewer &&
     !isHrCoordinator &&
-    status === STATUS.FOR_REVIEW
+    status ===
+      STATUS.FOR_REVIEW
   ) {
     return (
       <DisabledActionPill
@@ -477,15 +522,16 @@ export default function ActionButtons({
             aria-hidden="true"
           />
         }
-        label="Waiting for reviewer"
-        title="This case has already been submitted to an authorized reviewer."
+        label="Awaiting review"
+        title="This case has been submitted and is awaiting management review."
       />
     );
   }
 
   /*
-   * Default view action for currently authorized
-   * incidents and other eligible roles.
+   * ==================================================
+   * DEFAULT VIEW
+   * ==================================================
    */
   return (
     <ActionButton
@@ -496,13 +542,16 @@ export default function ActionButtons({
         />
       }
       title={
-        status === STATUS.CLOSED
-          ? "View closed incident details"
-          : "View incident details"
+        status ===
+        STATUS.CLOSED
+          ? "View closed case"
+          : "View case details"
       }
       variant="view"
       onClick={() =>
-        onView?.(incident)
+        onView?.(
+          incident
+        )
       }
     />
   );

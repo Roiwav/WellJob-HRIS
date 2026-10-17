@@ -876,6 +876,23 @@ exports.saveAttendance =
             });
         }
 
+        if (
+          status ===
+          "Unmarked"
+        ) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+
+              code:
+                "ATTENDANCE_STATUS_REQUIRED",
+
+              error:
+                `Employee ${employeeId} must have an attendance status before saving.`,
+            });
+        }
+
         seen.add(
           employeeId
         );
@@ -1762,7 +1779,23 @@ exports.getAttendancePerformance =
               SUM(
                 ae.attendance_status =
                   'Rest Day'
-              ) AS rest_day_count
+              ) AS rest_day_count,
+
+              SUM(
+                CASE
+                  WHEN NULLIF(
+                    TRIM(
+                      COALESCE(
+                        ae.note,
+                        ''
+                      )
+                    ),
+                    ''
+                  ) IS NOT NULL
+                    THEN 1
+                  ELSE 0
+                END
+              ) AS remarks_count
 
             FROM attendance_entries AS ae
 
@@ -1864,6 +1897,12 @@ exports.getAttendancePerformance =
               restDay:
                 Number(
                   row.rest_day_count ||
+                  0
+                ),
+
+              remarksCount:
+                Number(
+                  row.remarks_count ||
                   0
                 ),
 

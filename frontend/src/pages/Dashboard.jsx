@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/useAuth";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -32,10 +33,185 @@ import SeverityPieChart from "../components/dashboard/charts/SeverityPieChart";
 import CaseAgingChart from "../components/dashboard/charts/CaseAgingChart";
 const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 const DASHBOARD_API_URL = `${API_BASE}/dashboard/overview`;
+const DASHBOARD_MONTHLY_WORKFORCE_API_URL =
+  `${API_BASE}/dashboard/monthly-workforce`;
 const DATA_EVENT_SOURCE = "dashboard-page";
 const REQUEST_TIMEOUT_MS = 45 * 1000;
 const DATA_UPDATE_DEBOUNCE_MS = 300;
+
+const DASHBOARD_TIME_ZONE =
+  "Asia/Manila";
+
+const MILLISECONDS_PER_DAY =
+  24 * 60 * 60 * 1000;
+
 const activeRequests = new Map();
+
+function getManilaDateOnly(
+  value = new Date()
+) {
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(
+          value
+        );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          DASHBOARD_TIME_ZONE,
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      date
+    );
+
+  const values =
+    Object.fromEntries(
+      parts
+        .filter(
+          (part) =>
+            [
+              "year",
+              "month",
+              "day",
+            ].includes(
+              part.type
+            )
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ]
+        )
+    );
+
+  if (
+    !values.year ||
+    !values.month ||
+    !values.day
+  ) {
+    return "";
+  }
+
+  return (
+    `${values.year}-` +
+    `${values.month}-` +
+    `${values.day}`
+  );
+}
+
+function getManilaCurrentDateParts() {
+  const dateOnly =
+    getManilaDateOnly();
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(
+      dateOnly
+    );
+
+  if (!match) {
+    return {
+      dateOnly: "",
+      year: "",
+      month: 1,
+      day: 1,
+    };
+  }
+
+  return {
+    dateOnly,
+    year:
+      match[1],
+    month:
+      Number(
+        match[2]
+      ),
+    day:
+      Number(
+        match[3]
+      ),
+  };
+}
+
+function businessDateToDayIndex(
+  value
+) {
+  const normalized =
+    normalizeDateValue(
+      value
+    );
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(
+      normalized
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const year =
+    Number(
+      match[1]
+    );
+
+  const month =
+    Number(
+      match[2]
+    );
+
+  const day =
+    Number(
+      match[3]
+    );
+
+  const timestamp =
+    Date.UTC(
+      year,
+      month - 1,
+      day
+    );
+
+  const validationDate =
+    new Date(
+      timestamp
+    );
+
+  if (
+    validationDate.getUTCFullYear() !==
+      year ||
+    validationDate.getUTCMonth() !==
+      month - 1 ||
+    validationDate.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return Math.floor(
+    timestamp /
+      MILLISECONDS_PER_DAY
+  );
+}
+
 const monthList = [
   "Jan",
   "Feb",
@@ -49,6 +225,20 @@ const monthList = [
   "Oct",
   "Nov",
   "Dec",
+];
+const FULL_MONTH_LIST = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 const FORECAST_RANGES = [
   "weekly",
@@ -208,11 +398,11 @@ function normalizeBackendIncident(
   incident = {}
 ) {
   const date =
-    incident.reportedAt ||
-    incident.reported_at ||
-    incident.date ||
     incident.incidentDate ||
     incident.incident_date ||
+    incident.date ||
+    incident.reportedAt ||
+    incident.reported_at ||
     incident.createdAt ||
     incident.created_at ||
     new Date().toISOString();
@@ -267,6 +457,7 @@ async function requestJson(
     window.setTimeout(() => {
       controller.abort();
     }, REQUEST_TIMEOUT_MS);
+
   try {
     const response =
       await authenticatedFetch(url, {
@@ -279,16 +470,45 @@ async function requestJson(
           ...(options.headers || {}),
         },
       });
-    const data = await response
-      .json()
-      .catch(() => null);
+
+    const data =
+      await response
+        .json()
+        .catch(() => null);
+
     if (!response.ok) {
+      if (
+        response.status ===
+        401
+      ) {
+        throw new Error(
+          "Your sign-in session has expired. Please sign in again."
+        );
+      }
+
+      if (
+        response.status ===
+        403
+      ) {
+        throw new Error(
+          "You do not have permission to view this dashboard information."
+        );
+      }
+
+      if (
+        response.status ===
+        503
+      ) {
+        throw new Error(
+          "The system is currently under maintenance. Please try again later."
+        );
+      }
+
       throw new Error(
-        data?.error ||
-          data?.message ||
-          `Request failed with status ${response.status}`
+        "Unable to load the requested dashboard information. Please try again."
       );
     }
+
     return data;
   } catch (error) {
     if (
@@ -296,9 +516,10 @@ async function requestJson(
       "AbortError"
     ) {
       throw new Error(
-        "The server took too long to respond."
+        "The request took too long. Please try again."
       );
     }
+
     throw error;
   } finally {
     window.clearTimeout(
@@ -323,33 +544,53 @@ function normalizeDateValue(value) {
   if (!value) {
     return "";
   }
-  const date = new Date(value);
+
   if (
-    Number.isNaN(
-      date.getTime()
-    )
+    typeof value ===
+    "string"
   ) {
-    return String(value);
+    const normalized =
+      value.trim();
+
+    if (
+      /^\d{4}-\d{2}-\d{2}$/.test(
+        normalized
+      )
+    ) {
+      return normalized;
+    }
+
+    /*
+     * Business-date compatibility:
+     * preserve the stored calendar date for legacy
+     * timezone-less MySQL DATETIME strings instead
+     * of applying an unverified timezone shift.
+     */
+    if (
+      /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(
+        normalized
+      )
+    ) {
+      return normalized.slice(
+        0,
+        10
+      );
+    }
   }
-  const year =
-    date.getFullYear();
-  const month = String(
-    date.getMonth() + 1
-  ).padStart(2, "0");
-  const day = String(
-    date.getDate()
-  ).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+
+  return getManilaDateOnly(
+    value
+  );
 }
 function getRecordDate(record) {
   return (
+    record?.incidentDate ||
+    record?.incident_date ||
+    record?.date ||
     record?.reportedAt ||
     record?.reported_at ||
     record?.createdAt ||
     record?.created_at ||
-    record?.incidentDate ||
-    record?.incident_date ||
-    record?.date ||
     ""
   );
 }
@@ -392,7 +633,11 @@ function aggregateByMonth(
   isCurrentYear
 ) {
   const currentMonthIndex =
-    new Date().getMonth();
+    Math.max(
+      0,
+      getManilaCurrentDateParts()
+        .month - 1
+    );
   return monthList
     .map((month, index) => {
       const monthNumber =
@@ -499,17 +744,43 @@ function buildMultiYearMonthlyTrend({
     });
 }
 function formatLastUpdated(
-  date = new Date()
+  value = new Date()
 ) {
-  return date.toLocaleString(
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(
+          value
+        );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(
     "en-PH",
     {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+      timeZone:
+        DASHBOARD_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "long",
+      day:
+        "numeric",
+      hour:
+        "2-digit",
+      minute:
+        "2-digit",
+      hour12:
+        true,
     }
+  ).format(
+    date
   );
 }
 function getCaseAgeInDays(
@@ -518,29 +789,30 @@ function getCaseAgeInDays(
   if (!dateString) {
     return null;
   }
-  const incidentDate =
-    new Date(dateString);
+
+  const incidentDayIndex =
+    businessDateToDayIndex(
+      dateString
+    );
+
+  const todayDayIndex =
+    businessDateToDayIndex(
+      getManilaCurrentDateParts()
+        .dateOnly
+    );
+
   if (
-    Number.isNaN(
-      incidentDate.getTime()
-    )
+    incidentDayIndex ===
+      null ||
+    todayDayIndex ===
+      null
   ) {
     return null;
   }
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  incidentDate.setHours(
-    0,
-    0,
-    0,
-    0
-  );
-  const diffMs =
-    today.getTime() -
-    incidentDate.getTime();
-  return Math.floor(
-    diffMs /
-      (1000 * 60 * 60 * 24)
+
+  return (
+    todayDayIndex -
+    incidentDayIndex
   );
 }
 function isActiveIncident(status) {
@@ -627,6 +899,642 @@ function buildCaseAgingDistribution(
     value,
   }));
 }
+function normalizeMonthlyWorkforceBucket(
+  value = {}
+) {
+  return {
+    totalEmployees:
+      Number(
+        value?.totalEmployees
+      ) || 0,
+    deployed:
+      Number(
+        value?.deployed
+      ) || 0,
+    forDeployment:
+      Number(
+        value?.forDeployment
+      ) || 0,
+    floatingStandby:
+      Number(
+        value?.floatingStandby
+      ) || 0,
+    resigned:
+      Number(
+        value?.resigned
+      ) || 0,
+    terminated:
+      Number(
+        value?.terminated
+      ) || 0,
+    awol:
+      Number(
+        value?.awol
+      ) || 0,
+    otherSeparation:
+      Number(
+        value?.otherSeparation
+      ) || 0,
+  };
+}
+
+function normalizeMonthlyWorkforceReport(
+  payload = {}
+) {
+  const overall =
+    normalizeMonthlyWorkforceBucket(
+      payload?.overall ||
+        payload?.summary
+    );
+
+  const companies =
+    Array.isArray(
+      payload?.companies
+    )
+      ? payload.companies.map(
+          (company) => ({
+            company:
+              String(
+                company?.company ||
+                  "Unassigned"
+              ).trim() ||
+              "Unassigned",
+            ...normalizeMonthlyWorkforceBucket(
+              company
+            ),
+          })
+        )
+      : [];
+
+  return {
+    overall,
+    companies,
+    overallTotal:
+      normalizeMonthlyWorkforceBucket(
+        payload?.overallTotal ||
+          overall
+      ),
+    filters:
+      payload?.filters || {},
+    filterMeta: {
+      years:
+        Array.isArray(
+          payload?.filterMeta?.years
+        )
+          ? payload.filterMeta.years
+              .map(
+                (year) =>
+                  Number(
+                    year
+                  )
+              )
+              .filter(
+                Number.isInteger
+              )
+          : [],
+    },
+    meta: {
+      generatedAt:
+        payload?.meta
+          ?.generatedAt ||
+        new Date()
+          .toISOString(),
+      totalsMatch:
+        payload?.meta
+          ?.totalsMatch !==
+        false,
+    },
+  };
+}
+
+function getMonthlyWorkforcePeriodLabel(
+  selectedMonth,
+  selectedYear
+) {
+  const monthIndex =
+    Number(
+      selectedMonth
+    ) - 1;
+
+  const monthLabel =
+    FULL_MONTH_LIST[
+      monthIndex
+    ] ||
+    "Selected Month";
+
+  return `${monthLabel} ${selectedYear}`;
+}
+
+function getDashboardUserDisplayName(
+  user
+) {
+  return (
+    user?.full_name ||
+    user?.fullName ||
+    user?.fullname ||
+    user?.display_name ||
+    user?.displayName ||
+    user?.name ||
+    user?.username ||
+    "Authorized User"
+  );
+}
+
+function formatReportGeneratedAt(
+  value
+) {
+  if (!value) {
+    return formatLastUpdated();
+  }
+
+  let date = null;
+
+  if (
+    value instanceof Date
+  ) {
+    date = value;
+  } else if (
+    typeof value ===
+      "number"
+  ) {
+    const milliseconds =
+      value <
+      100000000000
+        ? value * 1000
+        : value;
+
+    date =
+      new Date(
+        milliseconds
+      );
+  } else {
+    const normalized =
+      String(
+        value
+      ).trim();
+
+    if (
+      /^\d{10,13}$/.test(
+        normalized
+      )
+    ) {
+      const numericValue =
+        Number(
+          normalized
+        );
+
+      const milliseconds =
+        numericValue <
+        100000000000
+          ? numericValue * 1000
+          : numericValue;
+
+      date =
+        new Date(
+          milliseconds
+        );
+    } else {
+      const timezoneLessMatch =
+        normalized.match(
+          /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?$/
+        );
+
+      if (
+        timezoneLessMatch
+      ) {
+        const millisecondsPart =
+          timezoneLessMatch[3]
+            ? `.${timezoneLessMatch[3].padEnd(
+                3,
+                "0"
+              )}`
+            : "";
+
+        date =
+          new Date(
+            `${timezoneLessMatch[1]}T${timezoneLessMatch[2]}${millisecondsPart}+08:00`
+          );
+      } else {
+        date =
+          new Date(
+            normalized
+          );
+      }
+    }
+  }
+
+  if (
+    !date ||
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return formatLastUpdated();
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone:
+        DASHBOARD_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "long",
+      day:
+        "numeric",
+      hour:
+        "2-digit",
+      minute:
+        "2-digit",
+      hour12:
+        true,
+    }
+  ).format(
+    date
+  );
+}
+
+function MonthlyWorkforceSummary({
+  report,
+  loading = false,
+  error = "",
+  selectedMonth,
+  selectedYear,
+}) {
+  const overall =
+    report?.overall ||
+    normalizeMonthlyWorkforceBucket();
+
+  const companies =
+    Array.isArray(
+      report?.companies
+    )
+      ? report.companies
+      : [];
+
+  const overallTotal =
+    report?.overallTotal ||
+    overall;
+
+  const periodLabel =
+    getMonthlyWorkforcePeriodLabel(
+      selectedMonth,
+      selectedYear
+    );
+
+  const summaryItems = [
+    {
+      label:
+        "Total Employees",
+      value:
+        overall.totalEmployees,
+      tone:
+        "slate",
+    },
+    {
+      label:
+        "Deployed",
+      value:
+        overall.deployed,
+      tone:
+        "emerald",
+    },
+    {
+      label:
+        "For Deployment",
+      value:
+        overall.forDeployment,
+      tone:
+        "indigo",
+    },
+    {
+      label:
+        "Floating / Standby",
+      value:
+        overall.floatingStandby,
+      tone:
+        "amber",
+    },
+    {
+      label:
+        "Resigned",
+      value:
+        overall.resigned,
+      tone:
+        "sky",
+    },
+    {
+      label:
+        "Terminated",
+      value:
+        overall.terminated,
+      tone:
+        "rose",
+    },
+    {
+      label:
+        "AWOL",
+      value:
+        overall.awol,
+      tone:
+        "orange",
+    },
+    {
+      label:
+        "Other Separation",
+      value:
+        overall.otherSeparation,
+      tone:
+        "violet",
+    },
+  ];
+
+  const toneClasses = {
+    slate:
+      "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-950/40",
+    emerald:
+      "border-emerald-200 bg-emerald-50 dark:border-emerald-500/25 dark:bg-emerald-500/10",
+    indigo:
+      "border-indigo-200 bg-indigo-50 dark:border-indigo-500/25 dark:bg-indigo-500/10",
+    amber:
+      "border-amber-200 bg-amber-50 dark:border-amber-500/25 dark:bg-amber-500/10",
+    sky:
+      "border-sky-200 bg-sky-50 dark:border-sky-500/25 dark:bg-sky-500/10",
+    rose:
+      "border-rose-200 bg-rose-50 dark:border-rose-500/25 dark:bg-rose-500/10",
+    orange:
+      "border-orange-200 bg-orange-50 dark:border-orange-500/25 dark:bg-orange-500/10",
+    violet:
+      "border-violet-200 bg-violet-50 dark:border-violet-500/25 dark:bg-violet-500/10",
+  };
+
+  return (
+    <section
+      aria-labelledby="monthly-workforce-summary-title"
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+    >
+      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 sm:px-6">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2
+              id="monthly-workforce-summary-title"
+              className="text-lg font-bold text-slate-900 dark:text-slate-100"
+            >
+              Monthly Workforce Summary
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Overall workforce counts by client company for {periodLabel}.
+            </p>
+          </div>
+
+          <span className="w-fit rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+            Month-End Snapshot
+          </span>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4 xl:grid-cols-8 sm:p-6">
+          {Array.from({
+            length:
+              8,
+          }).map(
+            (
+              _,
+              index
+            ) => (
+              <div
+                key={
+                  index
+                }
+                className="h-20 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800"
+              />
+            )
+          )}
+        </div>
+      ) : error ? (
+        <div className="p-5 sm:p-6">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300">
+            {error}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4 xl:grid-cols-8 sm:p-6">
+            {summaryItems.map(
+              (item) => (
+                <article
+                  key={
+                    item.label
+                  }
+                  className={`min-w-0 rounded-xl border px-3 py-3 ${toneClasses[
+                    item.tone
+                  ]}`}
+                >
+                  <p className="truncate text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {
+                      item.label
+                    }
+                  </p>
+
+                  <p className="mt-1.5 text-xl font-extrabold tabular-nums text-slate-900 dark:text-white">
+                    {
+                      item.value
+                    }
+                  </p>
+                </article>
+              )
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 dark:border-slate-800">
+            <div className="flex flex-col gap-1 px-5 py-4 sm:px-6">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Client Company Summary
+              </h3>
+
+              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                Workforce totals for each client company in the selected period.
+              </p>
+            </div>
+
+            <div className="max-h-[520px] overflow-auto">
+              <table className="w-full min-w-[1120px] text-left text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:bg-slate-800 dark:text-slate-300 dark:shadow-[0_1px_0_0_rgba(51,65,85,1)]">
+                  <tr>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wide">
+                      Client Company
+                    </th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
+                      Total
+                    </th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
+                      Deployed
+                    </th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
+                      For Deployment
+                    </th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
+                      Floating / Standby
+                    </th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
+                      Resigned
+                    </th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
+                      Terminated
+                    </th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
+                      AWOL
+                    </th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
+                      Other Separation
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100 text-slate-700 dark:divide-slate-800 dark:text-slate-200">
+                  {companies.length >
+                  0 ? (
+                    companies.map(
+                      (
+                        company
+                      ) => (
+                        <tr
+                          key={
+                            company.company
+                          }
+                          className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                        >
+                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
+                            {
+                              company.company
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {
+                              company.totalEmployees
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {
+                              company.deployed
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {
+                              company.forDeployment
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {
+                              company.floatingStandby
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {
+                              company.resigned
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {
+                              company.terminated
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {
+                              company.awol
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {
+                              company.otherSeparation
+                            }
+                          </td>
+                        </tr>
+                      )
+                    )
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={
+                          9
+                        }
+                        className="px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-400"
+                      >
+                        No workforce records are available for {periodLabel}.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+
+                {companies.length >
+                  0 && (
+                  <tfoot className="sticky bottom-0 bg-slate-100 font-bold text-slate-900 shadow-[0_-1px_0_0_rgba(226,232,240,1)] dark:bg-slate-800 dark:text-slate-100 dark:shadow-[0_-1px_0_0_rgba(51,65,85,1)]">
+                    <tr>
+                      <td className="px-4 py-3">
+                        OVERALL TOTAL
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {
+                          overallTotal.totalEmployees
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {
+                          overallTotal.deployed
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {
+                          overallTotal.forDeployment
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {
+                          overallTotal.floatingStandby
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {
+                          overallTotal.resigned
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {
+                          overallTotal.terminated
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {
+                          overallTotal.awol
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {
+                          overallTotal.otherSeparation
+                        }
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+
+            {!report?.meta
+              ?.totalsMatch && (
+              <div className="border-t border-amber-200 bg-amber-50 px-5 py-3 text-xs font-semibold text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300 sm:px-6">
+                Client company totals do not match the overall summary. Please refresh before exporting.
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function InsightCard({
   title,
   value,
@@ -723,16 +1631,16 @@ function PredictiveInsightsPanel({
               id="forecasting-panel-title"
               className="text-base font-extrabold text-slate-900 dark:text-white"
             >
-              Operational Forecast &amp; Next Steps
+              Workforce Forecast &amp; Recommended Actions
             </h2>
             <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Rule-based projection generated from current workforce and incident records.
+              Forecast based on current workforce and incident records.
             </p>
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <select
-            aria-label="Filter forecasts by violation category"
+            aria-label="Filter forecast by violation category"
             value={
               selectedCategory
             }
@@ -757,7 +1665,7 @@ function PredictiveInsightsPanel({
           <div
             className="flex shrink-0 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
             role="group"
-            aria-label="Forecast range"
+            aria-label="Forecast period"
           >
             {FORECAST_RANGES.map(
               (range) => {
@@ -805,10 +1713,10 @@ function PredictiveInsightsPanel({
           </div>
           <div>
             <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
-              No forecast threshold reached
+              No Forecast Alert
             </p>
             <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Current records do not yet meet the configured threshold for this category and time range.
+              Current records have not reached the level that would trigger a forecast alert for this category and period.
             </p>
           </div>
         </div>
@@ -868,7 +1776,7 @@ function PredictiveInsightsPanel({
                   </p>
                   <h3 className="mt-1.5 text-sm font-bold leading-5 text-slate-900 dark:text-white">
                     {prediction?.title ||
-                      "Operational Notice"}
+                      "Workforce Notice"}
                   </h3>
                   <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">
                     {isForecast && (
@@ -890,14 +1798,19 @@ function PredictiveInsightsPanel({
 }
 export default function Dashboard() {
   const navigate = useNavigate();
-  const currentDate =
-    new Date();
+
+  const {
+    user,
+  } = useAuth();
+
+  const currentDateParts =
+    getManilaCurrentDateParts();
+
   const currentYear =
-    currentDate
-      .getFullYear()
-      .toString();
+    currentDateParts.year;
+
   const currentMonth =
-    currentDate.getMonth() + 1;
+    currentDateParts.month;
   const [
     selectedYear,
     setSelectedYear,
@@ -923,6 +1836,24 @@ export default function Dashboard() {
     setFetchError,
   ] = useState("");
   const [
+    monthlyWorkforceLoading,
+    setMonthlyWorkforceLoading,
+  ] = useState(true);
+  const [
+    monthlyWorkforceError,
+    setMonthlyWorkforceError,
+  ] = useState("");
+  const [
+    monthlyWorkforceReport,
+    setMonthlyWorkforceReport,
+  ] = useState(() =>
+    normalizeMonthlyWorkforceReport()
+  );
+  const [
+    exportingPDF,
+    setExportingPDF,
+  ] = useState(false);
+  const [
     activeDrilldown,
     setActiveDrilldown,
   ] = useState(null);
@@ -932,6 +1863,8 @@ export default function Dashboard() {
   ] = useState(null);
   const isLoadingRef =
     useRef(false);
+  const monthlyWorkforceRequestIdRef =
+    useRef(0);
   const refreshTimerRef =
     useRef(null);
   const isMountedRef =
@@ -1096,8 +2029,7 @@ export default function Dashboard() {
           isMountedRef.current
         ) {
           setFetchError(
-            error?.message ||
-              "Unable to load dashboard data."
+            "Unable to load dashboard information. Please try again."
           );
         }
         return false;
@@ -1114,9 +2046,144 @@ export default function Dashboard() {
     },
     []
   );
+  const loadMonthlyWorkforce =
+    useCallback(
+      async ({
+        silent = false,
+        showError = true,
+      } = {}) => {
+        const requestId =
+          monthlyWorkforceRequestIdRef
+            .current +
+          1;
+
+        monthlyWorkforceRequestIdRef.current =
+          requestId;
+
+        if (
+          !silent &&
+          isMountedRef.current
+        ) {
+          setMonthlyWorkforceLoading(
+            true
+          );
+        }
+
+        if (
+          showError &&
+          isMountedRef.current
+        ) {
+          setMonthlyWorkforceError(
+            ""
+          );
+        }
+
+        try {
+          if (
+            Number(
+              selectedMonth
+            ) === 0
+          ) {
+            if (
+              isMountedRef.current &&
+              requestId ===
+                monthlyWorkforceRequestIdRef
+                  .current
+            ) {
+              setMonthlyWorkforceError(
+                ""
+              );
+
+              setMonthlyWorkforceLoading(
+                false
+              );
+            }
+
+            return true;
+          }
+
+          const params =
+            new URLSearchParams({
+              month:
+                String(
+                  Number(
+                    selectedMonth
+                  ) - 1
+                ),
+              year:
+                String(
+                  selectedYear
+                ),
+            });
+
+          const payload =
+            await requestJson(
+              `${DASHBOARD_MONTHLY_WORKFORCE_API_URL}?${params.toString()}`
+            );
+
+          if (
+            !isMountedRef.current ||
+            requestId !==
+              monthlyWorkforceRequestIdRef
+                .current
+          ) {
+            return false;
+          }
+
+          setMonthlyWorkforceReport(
+            normalizeMonthlyWorkforceReport(
+              payload
+            )
+          );
+
+          return true;
+        } catch (error) {
+          console.error(
+            "Dashboard monthly workforce fetch error:",
+            error
+          );
+
+          if (
+            showError &&
+            isMountedRef.current &&
+            requestId ===
+              monthlyWorkforceRequestIdRef
+                .current
+          ) {
+            setMonthlyWorkforceError(
+              "Unable to load the monthly workforce summary. Please try again."
+            );
+          }
+
+          return false;
+        } finally {
+          if (
+            isMountedRef.current &&
+            requestId ===
+              monthlyWorkforceRequestIdRef
+                .current
+          ) {
+            setMonthlyWorkforceLoading(
+              false
+            );
+          }
+        }
+      },
+      [
+        selectedMonth,
+        selectedYear,
+      ]
+    );
+
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    void loadMonthlyWorkforce();
+  }, [
+    loadMonthlyWorkforce,
+  ]);
   useEffect(() => {
     const scheduleRefresh = () => {
       if (
@@ -1128,10 +2195,16 @@ export default function Dashboard() {
       }
       refreshTimerRef.current =
         window.setTimeout(() => {
-          void loadData({
-            silent: true,
-            showError: false,
-          });
+          void Promise.all([
+            loadData({
+              silent: true,
+              showError: false,
+            }),
+            loadMonthlyWorkforce({
+              silent: true,
+              showError: false,
+            }),
+          ]);
         }, DATA_UPDATE_DEBOUNCE_MS);
     };
     const handleDataUpdated = (
@@ -1165,7 +2238,10 @@ export default function Dashboard() {
         handleDataUpdated
       );
     };
-  }, [loadData]);
+  }, [
+    loadData,
+    loadMonthlyWorkforce,
+  ]);
   const handleRefresh =
     useCallback(async () => {
       if (
@@ -1176,10 +2252,16 @@ export default function Dashboard() {
       }
       setRefreshing(true);
       try {
-        await loadData({
-          silent: true,
-          showError: true,
-        });
+        await Promise.all([
+          loadData({
+            silent: true,
+            showError: true,
+          }),
+          loadMonthlyWorkforce({
+            silent: true,
+            showError: true,
+          }),
+        ]);
       } finally {
         if (
           isMountedRef.current
@@ -1189,6 +2271,7 @@ export default function Dashboard() {
       }
     }, [
       loadData,
+      loadMonthlyWorkforce,
       refreshing,
     ]);
   const isCurrentYear =
@@ -1198,7 +2281,11 @@ export default function Dashboard() {
     useMemo(() => {
       const years = new Set([
         currentYear,
+        String(
+          selectedYear
+        ),
       ]);
+
       data.workforce.forEach(
         (item) => {
           if (item?.date) {
@@ -1208,6 +2295,7 @@ export default function Dashboard() {
           }
         }
       );
+
       data.incidents.forEach(
         (item) => {
           if (item?.date) {
@@ -1217,6 +2305,29 @@ export default function Dashboard() {
           }
         }
       );
+
+      (
+        monthlyWorkforceReport
+          ?.filterMeta?.years ||
+        []
+      ).forEach(
+        (year) => {
+          if (
+            Number.isInteger(
+              Number(
+                year
+              )
+            )
+          ) {
+            years.add(
+              String(
+                year
+              )
+            );
+          }
+        }
+      );
+
       return [...years].sort(
         (first, second) =>
           Number(second) -
@@ -1225,7 +2336,9 @@ export default function Dashboard() {
     }, [
       data.workforce,
       data.incidents,
+      monthlyWorkforceReport,
       currentYear,
+      selectedYear,
     ]);
   const availableMonths =
     useMemo(() => {
@@ -1451,13 +2564,10 @@ export default function Dashboard() {
       [reportScope.incidents]
     );
   const selectedPeriodLabel =
-    Number(selectedMonth) === 0
-      ? selectedYear
-      : `${
-          monthList[
-            selectedMonth - 1
-          ]
-        } ${selectedYear}`;
+    getMonthlyWorkforcePeriodLabel(
+      selectedMonth,
+      selectedYear
+    );
   const executiveActions =
     useMemo(() => {
       return buildExecutiveActionItems(
@@ -1642,8 +2752,7 @@ export default function Dashboard() {
           );
           if (isMountedRef.current) {
             setFetchError(
-              error?.message ||
-                "Unable to load employee details."
+              "Unable to load employee details. Please try again."
             );
           }
         }
@@ -1665,14 +2774,24 @@ export default function Dashboard() {
     useMemo(
       () =>
         incidentTrend.reduce(
-          (sum, item) =>
+          (
+            sum,
+            item
+          ) =>
             sum +
-            (Number(item?.value) ||
-              0),
+            (
+              Number(
+                item?.value
+              ) ||
+              0
+            ),
           0
         ),
-      [incidentTrend]
+      [
+        incidentTrend,
+      ]
     );
+
   const totalIncidentsForPeriod =
     reportScope.incidents.length;
   const peakDeploymentMonth =
@@ -1743,206 +2862,930 @@ export default function Dashboard() {
     }, [filteredSeverity]);
   const handleExportPDF =
     useCallback(() => {
-      const doc = new jsPDF();
-      doc.setFontSize(16);
-      doc.text(
-        "Welljob Solutions & General Services Inc.",
-        14,
-        18
+      const hasSpecificMonth =
+        Number(
+          selectedMonth
+        ) > 0;
+
+      if (
+        exportingPDF ||
+        (
+          hasSpecificMonth &&
+          monthlyWorkforceLoading
+        )
+      ) {
+        return;
+      }
+
+      if (
+        hasSpecificMonth &&
+        monthlyWorkforceError
+      ) {
+        setFetchError(
+          "Monthly workforce information is unavailable. Refresh the dashboard before exporting."
+        );
+        return;
+      }
+
+      if (
+        hasSpecificMonth &&
+        !monthlyWorkforceReport
+          ?.meta?.totalsMatch
+      ) {
+        setFetchError(
+          "Monthly workforce totals need to be refreshed before exporting."
+        );
+        return;
+      }
+
+      setExportingPDF(
+        true
       );
-      doc.setFontSize(12);
-      doc.text(
-        "Workforce Operations Dashboard Report",
-        14,
-        26
-      );
-      doc.text(
-        `Historical Analytics Scope: ${selectedPeriodLabel}`,
-        14,
-        34
-      );
-      doc.text(
-        `Generated: ${
-          lastUpdated ||
-          formatLastUpdated()
-        }`,
-        14,
-        42
-      );
-      autoTable(doc, {
-        startY: 52,
-        head: [
-          ["Metric", "Value"],
-        ],
-        body: [
-          [
-            "Total Employees",
-            currentKPIS.total,
-          ],
-          [
-            "Deployed Employees",
-            currentKPIS.deployed,
-          ],
-          [
-            "Available Workers",
-            currentKPIS.available,
-          ],
-          [
-            "Utilization Rate",
-            `${utilizationRate}%`,
-          ],
-          [
-            "Current Active Incidents",
-            currentKPIS.activeIncidents,
-          ],
-          [
-            "Expiring Documents",
-            currentKPIS.expiringDocs,
-          ],
-          [
-            "Incident Reports in Scope",
-            totalIncidentsForPeriod,
-          ],
-          [
-            "Total Year Incidents",
-            totalIncidentsForYear,
-          ],
-          [
-            "Peak Deployment Activity",
-            peakDeploymentMonth,
-          ],
-          [
-            "Highest Incident Activity",
-            highestIncidentMonth,
-          ],
-          [
-            "Most Common Severity in Scope",
-            topSeverity,
-          ],
-        ],
-        theme: "grid",
-        headStyles: {
-          fillColor: [
-            79,
-            70,
-            229,
-          ],
-        },
-      });
-      const firstTableFinalY =
-        doc.lastAutoTable?.finalY ||
-        52;
-      autoTable(doc, {
-        startY:
-          firstTableFinalY + 10,
-        head: [
-          [
-            "Priority",
-            "Type",
-            "Recommendation",
-            "Basis",
-          ],
-        ],
-        body:
-          executiveActions.length >
-          0
-            ? executiveActions.map(
-                (action) => [
-                  action?.priority ||
-                    "-",
-                  action?.type ||
-                    "-",
-                  action?.recommendation ||
-                    "-",
-                  action?.basis ||
-                    "-",
-                ]
-              )
-            : [
+
+      try {
+        if (
+          !hasSpecificMonth
+        ) {
+          const doc =
+            new jsPDF();
+
+          doc.setFontSize(
+            16
+          );
+
+          doc.text(
+            "Welljob Solutions & General Services Inc.",
+            14,
+            18
+          );
+
+          doc.setFontSize(
+            12
+          );
+
+          doc.text(
+            "Workforce Operations Dashboard Report",
+            14,
+            26
+          );
+
+          doc.text(
+            `Reporting Period: ${selectedPeriodLabel}`,
+            14,
+            34
+          );
+
+          doc.text(
+            `Generated: ${
+              lastUpdated ||
+              formatLastUpdated()
+            }`,
+            14,
+            42
+          );
+
+          autoTable(
+            doc,
+            {
+              startY:
+                52,
+              head: [
                 [
-                  "-",
-                  "No Alert",
-                  "No priority action item detected.",
-                  "-",
+                  "Metric",
+                  "Value",
                 ],
               ],
-        theme: "grid",
-        headStyles: {
-          fillColor: [
-            22,
-            163,
-            74,
-          ],
-        },
-        styles: {
-          fontSize: 8,
-        },
-        columnStyles: {
-          0: {
-            cellWidth: 24,
-          },
-          1: {
-            cellWidth: 28,
-          },
-          2: {
-            cellWidth: 78,
-          },
-          3: {
-            cellWidth: 52,
-          },
-        },
-      });
-      const secondTableFinalY =
-        doc.lastAutoTable?.finalY ||
-        firstTableFinalY + 10;
-      autoTable(doc, {
-        startY:
-          secondTableFinalY + 10,
-        head: [
-          [
-            "Month",
-            "Deployment",
-            "Incidents",
-          ],
-        ],
-        body: monthList.map(
-          (month) => {
-            const deployment =
-              workforceTrend.find(
-                (item) =>
-                  item.label ===
-                  month
-              );
-            const incident =
-              incidentTrend.find(
-                (item) =>
-                  item.label ===
-                  month
-              );
-            return [
-              month,
-              deployment?.value ??
-                0,
-              incident?.value ??
-                0,
-            ];
+              body: [
+                [
+                  "Total Employees",
+                  currentKPIS.total,
+                ],
+                [
+                  "Deployed Employees",
+                  currentKPIS.deployed,
+                ],
+                [
+                  "Available Workers",
+                  currentKPIS.available,
+                ],
+                [
+                  "Utilization Rate",
+                  `${utilizationRate}%`,
+                ],
+                [
+                  "Current Active Incidents",
+                  currentKPIS.activeIncidents,
+                ],
+                [
+                  "Expiring Documents",
+                  currentKPIS.expiringDocs,
+                ],
+                [
+                  "Incident Reports in Scope",
+                  totalIncidentsForPeriod,
+                ],
+                [
+                  "Total Year Incidents",
+                  totalIncidentsForYear,
+                ],
+                [
+                  "Peak Deployment Activity",
+                  peakDeploymentMonth,
+                ],
+                [
+                  "Highest Incident Activity",
+                  highestIncidentMonth,
+                ],
+                [
+                  "Most Common Severity in Scope",
+                  topSeverity,
+                ],
+              ],
+              theme:
+                "grid",
+              headStyles: {
+                fillColor: [
+                  79,
+                  70,
+                  229,
+                ],
+              },
+            }
+          );
+
+          const firstTableFinalY =
+            doc.lastAutoTable
+              ?.finalY ||
+            52;
+
+          autoTable(
+            doc,
+            {
+              startY:
+                firstTableFinalY +
+                10,
+              head: [
+                [
+                  "Priority",
+                  "Type",
+                  "Recommendation",
+                  "Basis",
+                ],
+              ],
+              body:
+                executiveActions.length >
+                0
+                  ? executiveActions.map(
+                      (action) => [
+                        action?.priority ||
+                          "-",
+                        action?.type ||
+                          "-",
+                        action?.recommendation ||
+                          "-",
+                        action?.basis ||
+                          "-",
+                      ]
+                    )
+                  : [
+                      [
+                        "-",
+                        "No Alert",
+                        "No priority action item detected.",
+                        "-",
+                      ],
+                    ],
+              theme:
+                "grid",
+              headStyles: {
+                fillColor: [
+                  22,
+                  163,
+                  74,
+                ],
+              },
+              styles: {
+                fontSize:
+                  8,
+              },
+              columnStyles: {
+                0: {
+                  cellWidth:
+                    24,
+                },
+                1: {
+                  cellWidth:
+                    28,
+                },
+                2: {
+                  cellWidth:
+                    78,
+                },
+                3: {
+                  cellWidth:
+                    52,
+                },
+              },
+            }
+          );
+
+          const secondTableFinalY =
+            doc.lastAutoTable
+              ?.finalY ||
+            firstTableFinalY +
+              10;
+
+          autoTable(
+            doc,
+            {
+              startY:
+                secondTableFinalY +
+                10,
+              head: [
+                [
+                  "Month",
+                  "Deployment",
+                  "Incidents",
+                ],
+              ],
+              body:
+                monthList.map(
+                  (month) => {
+                    const deployment =
+                      workforceTrend.find(
+                        (item) =>
+                          item.label ===
+                          month
+                      );
+
+                    const incident =
+                      incidentTrend.find(
+                        (item) =>
+                          item.label ===
+                          month
+                      );
+
+                    return [
+                      month,
+                      deployment?.value ??
+                        0,
+                      incident?.value ??
+                        0,
+                    ];
+                  }
+                ),
+              theme:
+                "striped",
+              headStyles: {
+                fillColor: [
+                  30,
+                  41,
+                  59,
+                ],
+              },
+            }
+          );
+
+          doc.save(
+            `Welljob_Dashboard_Report_${selectedYear}.pdf`
+          );
+
+          return;
+        }
+
+        const doc =
+          new jsPDF({
+            orientation:
+              "landscape",
+            unit:
+              "mm",
+            format:
+              "a4",
+          });
+
+        const pageWidth =
+          doc.internal
+            .pageSize
+            .getWidth();
+
+        const generatedBy =
+          getDashboardUserDisplayName(
+            user
+          );
+
+        const generatedRole =
+          String(
+            user?.role ||
+              "Authorized User"
+          )
+            .trim()
+            .replace(
+              /_/g,
+              " "
+            );
+
+        const generatedAt =
+          formatReportGeneratedAt(
+            monthlyWorkforceReport
+              ?.meta
+              ?.generatedAt
+          );
+
+        const overall =
+          monthlyWorkforceReport
+            ?.overall ||
+          normalizeMonthlyWorkforceBucket();
+
+        const companies =
+          Array.isArray(
+            monthlyWorkforceReport
+              ?.companies
+          )
+            ? monthlyWorkforceReport
+                .companies
+            : [];
+
+        const overallTotal =
+          monthlyWorkforceReport
+            ?.overallTotal ||
+          overall;
+
+        /*
+         * ==================================================
+         * PAGE 1 — MONTHLY WORKFORCE SUMMARY
+         * ==================================================
+         */
+        doc.setFont(
+          "helvetica",
+          "bold"
+        );
+
+        doc.setFontSize(
+          16
+        );
+
+        doc.text(
+          "Welljob Solutions & General Services Inc.",
+          14,
+          16
+        );
+
+        doc.setFontSize(
+          12
+        );
+
+        doc.text(
+          "Monthly Workforce Summary",
+          14,
+          24
+        );
+
+        doc.setFont(
+          "helvetica",
+          "normal"
+        );
+
+        doc.setFontSize(
+          9
+        );
+
+        doc.text(
+          `Reporting Period: ${selectedPeriodLabel}`,
+          14,
+          31
+        );
+
+        doc.text(
+          `Generated By: ${generatedBy}`,
+          14,
+          37
+        );
+
+        doc.text(
+          `Role: ${generatedRole}`,
+          14,
+          43
+        );
+
+        doc.text(
+          `Generated On: ${generatedAt}`,
+          pageWidth / 2,
+          31
+        );
+
+        doc.text(
+          "Scope: Overall workforce by client company",
+          pageWidth / 2,
+          37
+        );
+
+        autoTable(
+          doc,
+          {
+            startY:
+              50,
+            head: [
+              [
+                "Workforce Metric",
+                "Count",
+              ],
+            ],
+            body: [
+              [
+                "Total Employees",
+                overall.totalEmployees,
+              ],
+              [
+                "Deployed",
+                overall.deployed,
+              ],
+              [
+                "For Deployment",
+                overall.forDeployment,
+              ],
+              [
+                "Floating / Standby",
+                overall.floatingStandby,
+              ],
+              [
+                "Resigned",
+                overall.resigned,
+              ],
+              [
+                "Terminated",
+                overall.terminated,
+              ],
+              [
+                "AWOL",
+                overall.awol,
+              ],
+              [
+                "Other Separation",
+                overall.otherSeparation,
+              ],
+            ],
+            theme:
+              "grid",
+            headStyles: {
+              fillColor: [
+                79,
+                70,
+                229,
+              ],
+            },
+            styles: {
+              fontSize:
+                9,
+              cellPadding:
+                2.5,
+            },
+            columnStyles: {
+              0: {
+                cellWidth:
+                  70,
+              },
+              1: {
+                cellWidth:
+                  30,
+                halign:
+                  "right",
+              },
+            },
           }
-        ),
-        theme: "striped",
-        headStyles: {
-          fillColor: [
-            30,
-            41,
-            59,
-          ],
-        },
-      });
-      doc.save(
-        `Welljob_Dashboard_Report_${selectedPeriodLabel}.pdf`
-      );
+        );
+
+        const summaryFinalY =
+          doc.lastAutoTable
+            ?.finalY ||
+          50;
+
+        autoTable(
+          doc,
+          {
+            startY:
+              summaryFinalY +
+              8,
+            head: [
+              [
+                "Current KPI Summary",
+                "Value",
+              ],
+            ],
+            body: [
+              [
+                "Current Total Employees",
+                currentKPIS.total,
+              ],
+              [
+                "Current Deployed Employees",
+                currentKPIS.deployed,
+              ],
+              [
+                "Current Available Workers",
+                currentKPIS.available,
+              ],
+              [
+                "Current Utilization Rate",
+                `${utilizationRate}%`,
+              ],
+              [
+                "Current Active Incidents",
+                currentKPIS.activeIncidents,
+              ],
+              [
+                "Expiring Documents",
+                currentKPIS.expiringDocs,
+              ],
+              [
+                `Incident Reports (${selectedPeriodLabel})`,
+                totalIncidentsForPeriod,
+              ],
+              [
+                "Peak Deployment Activity",
+                peakDeploymentMonth,
+              ],
+              [
+                "Highest Incident Activity",
+                highestIncidentMonth,
+              ],
+              [
+                "Most Common Severity",
+                topSeverity,
+              ],
+            ],
+            theme:
+              "grid",
+            headStyles: {
+              fillColor: [
+                30,
+                41,
+                59,
+              ],
+            },
+            styles: {
+              fontSize:
+                8,
+              cellPadding:
+                2,
+            },
+            columnStyles: {
+              0: {
+                cellWidth:
+                  78,
+              },
+              1: {
+                cellWidth:
+                  42,
+              },
+            },
+          }
+        );
+
+        /*
+         * ==================================================
+         * PAGE 2 — COMPANY BREAKDOWN
+         * ==================================================
+         */
+        doc.addPage(
+          "a4",
+          "landscape"
+        );
+
+        doc.setFont(
+          "helvetica",
+          "bold"
+        );
+
+        doc.setFontSize(
+          14
+        );
+
+        doc.text(
+          "Client Company Summary",
+          14,
+          16
+        );
+
+        doc.setFont(
+          "helvetica",
+          "normal"
+        );
+
+        doc.setFontSize(
+          9
+        );
+
+        doc.text(
+          `Reporting Period: ${selectedPeriodLabel}`,
+          14,
+          23
+        );
+
+        autoTable(
+          doc,
+          {
+            startY:
+              29,
+            head: [
+              [
+                "Client Company",
+                "Total",
+                "Deployed",
+                "For Deployment",
+                "Floating / Standby",
+                "Resigned",
+                "Terminated",
+                "AWOL",
+                "Other Separation",
+              ],
+            ],
+            body: [
+              ...companies.map(
+                (company) => [
+                  company.company,
+                  company.totalEmployees,
+                  company.deployed,
+                  company.forDeployment,
+                  company.floatingStandby,
+                  company.resigned,
+                  company.terminated,
+                  company.awol,
+                  company.otherSeparation,
+                ]
+              ),
+              [
+                "OVERALL TOTAL",
+                overallTotal.totalEmployees,
+                overallTotal.deployed,
+                overallTotal.forDeployment,
+                overallTotal.floatingStandby,
+                overallTotal.resigned,
+                overallTotal.terminated,
+                overallTotal.awol,
+                overallTotal.otherSeparation,
+              ],
+            ],
+            theme:
+              "grid",
+            headStyles: {
+              fillColor: [
+                79,
+                70,
+                229,
+              ],
+              fontSize:
+                7.5,
+            },
+            styles: {
+              fontSize:
+                7.5,
+              cellPadding:
+                1.8,
+              valign:
+                "middle",
+            },
+            columnStyles: {
+              0: {
+                cellWidth:
+                  52,
+              },
+              1: {
+                halign:
+                  "right",
+              },
+              2: {
+                halign:
+                  "right",
+              },
+              3: {
+                halign:
+                  "right",
+              },
+              4: {
+                halign:
+                  "right",
+              },
+              5: {
+                halign:
+                  "right",
+              },
+              6: {
+                halign:
+                  "right",
+              },
+              7: {
+                halign:
+                  "right",
+              },
+              8: {
+                halign:
+                  "right",
+              },
+            },
+            didParseCell: (
+              hookData
+            ) => {
+              const isOverallTotal =
+                hookData.section ===
+                  "body" &&
+                hookData.row.index ===
+                  companies.length;
+
+              if (
+                isOverallTotal
+              ) {
+                hookData.cell.styles.fontStyle =
+                  "bold";
+
+                hookData.cell.styles.fillColor = [
+                  241,
+                  245,
+                  249,
+                ];
+              }
+            },
+          }
+        );
+
+        /*
+         * ==================================================
+         * PAGE 3 — MANAGEMENT ACTIONS
+         * ==================================================
+         */
+        doc.addPage(
+          "a4",
+          "landscape"
+        );
+
+        doc.setFont(
+          "helvetica",
+          "bold"
+        );
+
+        doc.setFontSize(
+          14
+        );
+
+        doc.text(
+          "Management Actions & Historical Activity",
+          14,
+          16
+        );
+
+        autoTable(
+          doc,
+          {
+            startY:
+              24,
+            head: [
+              [
+                "Priority",
+                "Type",
+                "Recommendation",
+                "Basis",
+              ],
+            ],
+            body:
+              executiveActions.length >
+              0
+                ? executiveActions.map(
+                    (action) => [
+                      action?.priority ||
+                        "-",
+                      action?.type ||
+                        "-",
+                      action?.recommendation ||
+                        "-",
+                      action?.basis ||
+                        "-",
+                    ]
+                  )
+                : [
+                    [
+                      "-",
+                      "No Alert",
+                      "No priority action item detected.",
+                      "-",
+                    ],
+                  ],
+            theme:
+              "grid",
+            headStyles: {
+              fillColor: [
+                22,
+                163,
+                74,
+              ],
+            },
+            styles: {
+              fontSize:
+                8,
+            },
+            columnStyles: {
+              0: {
+                cellWidth:
+                  24,
+              },
+              1: {
+                cellWidth:
+                  32,
+              },
+              2: {
+                cellWidth:
+                  112,
+              },
+              3: {
+                cellWidth:
+                  100,
+              },
+            },
+          }
+        );
+
+        const actionsFinalY =
+          doc.lastAutoTable
+            ?.finalY ||
+          24;
+
+        autoTable(
+          doc,
+          {
+            startY:
+              actionsFinalY +
+              8,
+            head: [
+              [
+                "Month",
+                "Deployment Activity",
+                "Incident Reports",
+              ],
+            ],
+            body:
+              monthList.map(
+                (month) => {
+                  const deployment =
+                    workforceTrend.find(
+                      (item) =>
+                        item.label ===
+                        month
+                    );
+
+                  const incident =
+                    incidentTrend.find(
+                      (item) =>
+                        item.label ===
+                        month
+                    );
+
+                  return [
+                    month,
+                    deployment?.value ??
+                      0,
+                    incident?.value ??
+                      0,
+                  ];
+                }
+              ),
+            theme:
+              "striped",
+            headStyles: {
+              fillColor: [
+                30,
+                41,
+                59,
+              ],
+            },
+            styles: {
+              fontSize:
+                8,
+            },
+          }
+        );
+
+        const safePeriod =
+          selectedPeriodLabel.replace(
+            /[^a-zA-Z0-9_-]+/g,
+            "_"
+          );
+
+        doc.save(
+          `Welljob_Dashboard_Report_${safePeriod}.pdf`
+        );
+      } finally {
+        setExportingPDF(
+          false
+        );
+      }
     }, [
+      exportingPDF,
+      monthlyWorkforceLoading,
+      monthlyWorkforceError,
+      monthlyWorkforceReport,
+      selectedMonth,
+      selectedYear,
       selectedPeriodLabel,
       lastUpdated,
+      user,
       currentKPIS,
       utilizationRate,
       totalIncidentsForPeriod,
@@ -1950,10 +3793,11 @@ export default function Dashboard() {
       peakDeploymentMonth,
       highestIncidentMonth,
       topSeverity,
+      executiveActions,
       workforceTrend,
       incidentTrend,
-      executiveActions,
     ]);
+
   if (loading) {
     return (
       <div
@@ -1969,9 +3813,7 @@ export default function Dashboard() {
           Loading dashboard...
         </p>
         <p className="text-xs text-slate-400">
-          Requests automatically stop
-          after 45 seconds if the server
-          does not respond.
+          Please wait while the latest workforce information is prepared.
         </p>
       </div>
     );
@@ -2021,7 +3863,7 @@ export default function Dashboard() {
                 Workforce Operations Dashboard
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">
-                Current workforce snapshot for deployment, availability, incidents, compliance, and HR monitoring.
+                Current workforce snapshot with monthly workforce reporting, deployment, incidents, compliance, and HR monitoring.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/70">
                 <span>
@@ -2031,7 +3873,7 @@ export default function Dashboard() {
                 </span>
 
                 <span className="font-semibold">
-                  Historical Analytics:{" "}
+                  Selected Period:{" "}
                   {
                     selectedPeriodLabel
                   }
@@ -2055,6 +3897,7 @@ export default function Dashboard() {
                 >
                   All Months
                 </option>
+
                 {availableMonths.map(
                   (month) => (
                     <option
@@ -2129,12 +3972,21 @@ export default function Dashboard() {
                   onClick={
                     handleExportPDF
                   }
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-600"
+                  disabled={
+                    exportingPDF ||
+                    monthlyWorkforceLoading ||
+                    Boolean(
+                      monthlyWorkforceError
+                    )
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <FiDownload
                     aria-hidden="true"
                   />
-                  Export PDF
+                  {exportingPDF
+                    ? "Exporting..."
+                    : "Export PDF"}
                 </button>
               </RoleGuard>
             </div>
@@ -2151,6 +4003,37 @@ export default function Dashboard() {
           handleOpenDrilldown
         }
       />
+      {Number(
+        selectedMonth
+      ) > 0 ? (
+        <MonthlyWorkforceSummary
+          report={
+            monthlyWorkforceReport
+          }
+          loading={
+            monthlyWorkforceLoading
+          }
+          error={
+            monthlyWorkforceError
+          }
+          selectedMonth={
+            selectedMonth
+          }
+          selectedYear={
+            selectedYear
+          }
+        />
+      ) : (
+        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-6">
+          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+            Monthly Workforce Summary
+          </h2>
+
+          <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            All Months is selected. The charts and trends below cover the full selected year. Select a specific month to view the month-end workforce summary by client company.
+          </p>
+        </section>
+      )}
       <WorkforceHealthBanner
         health={
           dashboardInsights.health
@@ -2179,7 +4062,7 @@ export default function Dashboard() {
             Period Highlights
           </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Historical summary for {selectedPeriodLabel}. Current workforce KPIs above remain a live snapshot.
+            Summary for {selectedPeriodLabel}. Current workforce KPIs above continue to show the latest available figures.
           </p>
         </div>
         <div
@@ -2227,11 +4110,11 @@ export default function Dashboard() {
               Trends &amp; Distribution
             </h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Historical analytics for {selectedPeriodLabel}: deployment activity, incident reports, severity, and active-case aging.
+              Yearly activity trends for {selectedYear}, with incident severity and case age for {selectedPeriodLabel}.
             </p>
           </div>
           <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-            Analytics Scope: {selectedPeriodLabel}
+            Selected Period: {selectedPeriodLabel}
           </span>
         </div>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">

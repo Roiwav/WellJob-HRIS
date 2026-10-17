@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import {
   Eye,
   EyeOff,
@@ -30,10 +33,82 @@ function normalizeIdentityInput(value) {
   return value.trim().replace(/\s+/g, " ");
 }
 
+function getSafeReturnPath(locationState) {
+  const from =
+    locationState?.from;
+
+  if (!from) {
+    return "";
+  }
+
+  if (
+    typeof from === "string"
+  ) {
+    const value =
+      from.trim();
+
+    if (
+      !value.startsWith("/") ||
+      value.startsWith("//") ||
+      value === "/login" ||
+      value.startsWith("/login?")
+    ) {
+      return "";
+    }
+
+    return value;
+  }
+
+  if (
+    typeof from !== "object"
+  ) {
+    return "";
+  }
+
+  const pathname =
+    String(
+      from.pathname || ""
+    ).trim();
+
+  if (
+    !pathname.startsWith("/") ||
+    pathname.startsWith("//") ||
+    pathname === "/login"
+  ) {
+    return "";
+  }
+
+  const search =
+    typeof from.search === "string" &&
+    (
+      from.search === "" ||
+      from.search.startsWith("?")
+    )
+      ? from.search
+      : "";
+
+  const hash =
+    typeof from.hash === "string" &&
+    (
+      from.hash === "" ||
+      from.hash.startsWith("#")
+    )
+      ? from.hash
+      : "";
+
+  return `${pathname}${search}${hash}`;
+}
+
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setUser } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
+
+  const returnPath =
+    getSafeReturnPath(
+      location.state
+    );
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -137,6 +212,13 @@ export default function Login() {
       if (normalizedUser.mustChangePassword) {
         navigate("/change-password", {
           replace: true,
+          state:
+            returnPath
+              ? {
+                  returnTo:
+                    returnPath,
+                }
+              : undefined,
         });
         return;
       }
@@ -150,7 +232,11 @@ export default function Login() {
       };
 
       navigate(
-        redirectByRole[normalizedUser.role] || "/",
+        returnPath ||
+          redirectByRole[
+            normalizedUser.role
+          ] ||
+          "/",
         {
           replace: true,
         }

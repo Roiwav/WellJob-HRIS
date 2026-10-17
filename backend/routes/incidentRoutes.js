@@ -25,6 +25,16 @@ const {
 } = require("../controllers/storageUploadController");
 
 const {
+  createIncidentPhoneCaptureSession,
+  getIncidentPhoneCapturePublicStatus,
+  createIncidentPhoneCaptureUploadAuthorization,
+  completeIncidentPhoneCaptureUpload,
+  getIncidentPhoneCaptureSession,
+  consumeIncidentPhoneCaptureSession,
+  cancelIncidentPhoneCaptureSession,
+} = require("../controllers/incidentPhoneCaptureController");
+
+const {
   verifyToken,
 } = require("../middleware/authMiddleware");
 
@@ -334,6 +344,211 @@ router.post(
   ),
   authorizeIncidentWorkflowScope,
   createIncidentWorkflowEvidenceUploadAuthorizations
+);
+
+/*
+ * ==================================================
+ * INCIDENT PHONE CAMERA — DESKTOP SESSION CREATE
+ * ==================================================
+ *
+ * Authenticated desktop-only endpoint.
+ *
+ * HR Manager and HR Coordinator may create a short-lived
+ * phone-camera capture session for either:
+ *
+ * - INCIDENT_CREATE
+ *   employee-bound Add Incident evidence
+ *
+ * - INCIDENT_WORKFLOW
+ *   incident/workflow-bound investigation or resolution
+ *   proof
+ *
+ * The controller remains authoritative for:
+ *
+ * - actor eligibility
+ * - employee/company deployment scope
+ * - incident workflow ownership/scope
+ * - supported workflow action
+ *
+ * The response contains:
+ * - opaque session ID
+ * - one-time high-entropy capture token
+ * - expiry
+ *
+ * The WELLJOB login JWT is never placed in the QR.
+ */
+router.post(
+  "/incident-evidence/phone-capture-sessions",
+  verifyToken,
+  authorizeRoles(
+    "HR_MANAGER",
+    "HR_COORDINATOR"
+  ),
+  createIncidentPhoneCaptureSession
+);
+
+/*
+ * ==================================================
+ * INCIDENT PHONE CAMERA — DESKTOP POLLING
+ * ==================================================
+ *
+ * Returns only sessions created by the current
+ * authenticated HR Manager / HR Coordinator.
+ *
+ * When the phone photo has completed upload, this
+ * endpoint returns:
+ *
+ * - temporary signed private preview URL
+ * - fresh WELLJOB direct-upload descriptor
+ *
+ * The descriptor is regenerated for the session's
+ * canonical purpose/context:
+ *
+ * - employee context for INCIDENT_CREATE
+ * - incident ID + workflow action for INCIDENT_WORKFLOW
+ *
+ * The descriptor remains bound to the current desktop
+ * WELLJOB actor/token version.
+ */
+router.get(
+  "/incident-evidence/phone-capture-sessions/:sessionId",
+  verifyToken,
+  authorizeRoles(
+    "HR_MANAGER",
+    "HR_COORDINATOR"
+  ),
+  getIncidentPhoneCaptureSession
+);
+
+/*
+ * ==================================================
+ * INCIDENT PHONE CAMERA — MARK USED
+ * ==================================================
+ *
+ * Call only after the desktop Incident save succeeds.
+ *
+ * This does not delete the Storage object because the
+ * successfully saved Incident now owns that evidence.
+ */
+router.post(
+  "/incident-evidence/phone-capture-sessions/:sessionId/consume",
+  verifyToken,
+  authorizeRoles(
+    "HR_MANAGER",
+    "HR_COORDINATOR"
+  ),
+  consumeIncidentPhoneCaptureSession
+);
+
+/*
+ * ==================================================
+ * INCIDENT PHONE CAMERA — CANCEL / CLEAN STAGED PHOTO
+ * ==================================================
+ *
+ * Intended when:
+ * - the unsaved Incident form is cancelled/closed
+ * - the phone-captured photo is removed before save
+ * - the user starts a new phone-capture session
+ *
+ * The controller refuses to delete a capture that has
+ * already been consumed by a successfully saved Incident.
+ */
+router.delete(
+  "/incident-evidence/phone-capture-sessions/:sessionId",
+  verifyToken,
+  authorizeRoles(
+    "HR_MANAGER",
+    "HR_COORDINATOR"
+  ),
+  cancelIncidentPhoneCaptureSession
+);
+
+/*
+ * ==================================================
+ * INCIDENT PHONE CAMERA — PUBLIC CAPTURE STATUS
+ * ==================================================
+ *
+ * CAPTURE-TOKEN ONLY.
+ *
+ * Deliberately does NOT use verifyToken because the
+ * phone is a capture-only companion and may not be
+ * logged in.
+ *
+ * SECURITY:
+ *
+ * The raw capture token is NOT placed in the backend
+ * URL path or query string.
+ *
+ * Required JSON body:
+ *
+ * {
+ *   "captureToken": "<opaque-token>"
+ * }
+ *
+ * Keeping the token in the request body prevents the
+ * normal backend request path/access log from recording
+ * the credential.
+ *
+ * The controller returns no employee, company, incident,
+ * user, or workflow data.
+ */
+router.post(
+  "/incident-evidence/phone-capture/status",
+  getIncidentPhoneCapturePublicStatus
+);
+
+/*
+ * ==================================================
+ * INCIDENT PHONE CAMERA — PUBLIC UPLOAD AUTHORIZATION
+ * ==================================================
+ *
+ * CAPTURE-TOKEN ONLY.
+ *
+ * Required JSON body:
+ *
+ * {
+ *   "captureToken": "<opaque-token>",
+ *   "file": {
+ *     "name": "...",
+ *     "type": "image/jpeg",
+ *     "size": 12345
+ *   }
+ * }
+ *
+ * The phone submits metadata for exactly one JPEG/PNG
+ * image. The backend validates the temporary capture
+ * session and creates a signed PUT URL for a
+ * server-generated private Supabase object path.
+ *
+ * The raw capture token remains outside the URL.
+ */
+router.post(
+  "/incident-evidence/phone-capture/upload-authorization",
+  createIncidentPhoneCaptureUploadAuthorization
+);
+
+/*
+ * ==================================================
+ * INCIDENT PHONE CAMERA — PUBLIC UPLOAD COMPLETE
+ * ==================================================
+ *
+ * CAPTURE-TOKEN ONLY.
+ *
+ * Required JSON body:
+ *
+ * {
+ *   "captureToken": "<opaque-token>"
+ * }
+ *
+ * After the phone PUTs the image directly to Supabase,
+ * this endpoint verifies the stored object's size and
+ * magic bytes before the desktop may receive it.
+ *
+ * The raw capture token remains outside the URL.
+ */
+router.post(
+  "/incident-evidence/phone-capture/complete",
+  completeIncidentPhoneCaptureUpload
 );
 
 /*

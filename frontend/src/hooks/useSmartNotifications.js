@@ -7,7 +7,9 @@ import {
 
 import {
   canViewSmartAlerts,
+  getSmartAlertEventTimestamp,
   requestSmartAlertJson,
+  sortSmartAlertsByRecency,
 } from "../utils/notifications/smartNotifications";
 
 const EMPTY_SUMMARY = {
@@ -18,13 +20,19 @@ const EMPTY_SUMMARY = {
   low: 0,
 };
 
-const DEFAULT_POLL_INTERVAL = 30000;
-const SMART_ALERT_MIN_REFRESH_GAP_MS = 10000;
+const DEFAULT_POLL_INTERVAL = 5000;
+const SMART_ALERT_MIN_REFRESH_GAP_MS = 1500;
 
 const sharedSmartAlertRequests =
   new Map();
 
 const sharedSmartAlertCaches =
+  new Map();
+
+const sharedSmartAlertPopupSessions =
+  new Map();
+
+const sharedSmartAlertConsumers =
   new Map();
 
 function normalizeIdentityPart(value) {
@@ -161,6 +169,10 @@ const SMART_ALERT_REFRESH_DOMAINS = new Set([
   "employees",
   "deployment",
   "deployments",
+  "compliance",
+  "document",
+  "documents",
+  "employee_documents",
   "dashboard",
 ]);
 
@@ -209,6 +221,376 @@ function isReadAlert(alert) {
     alert?.read === true ||
     Boolean(alert?.readAt)
   );
+}
+
+function isDismissedAlert(alert) {
+  return (
+    alert?.isDismissed === true ||
+    alert?.dismissed === true ||
+    Boolean(
+      alert?.dismissedAt
+    )
+  );
+}
+
+function getAlertTimestamp(alert) {
+  /*
+   * Keep popup ordering aligned with the same
+   * notification event timestamp source used by
+   * the Navbar and Notifications Center.
+   *
+   * This prevents a popup from falling back to a
+   * business date such as an Incident or Compliance
+   * expiration date when the backend already supplied
+   * the actual notification timestamp.
+   */
+  return getSmartAlertEventTimestamp(
+    alert
+  );
+}
+
+function getAlertPriorityRankValue(
+  alert
+) {
+  const directRank =
+    Number(
+      alert?.priorityRank
+    );
+
+  if (
+    Number.isFinite(
+      directRank
+    )
+  ) {
+    return directRank;
+  }
+
+  const priority =
+    String(
+      alert?.priority ||
+        ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (priority === "high") {
+    return 3;
+  }
+
+  if (priority === "medium") {
+    return 2;
+  }
+
+  return 1;
+}
+
+function isPopupEligibleAlert(
+  alert
+) {
+  return (
+    Boolean(
+      getAlertKey(alert)
+    ) &&
+    !isReadAlert(alert) &&
+    !isDismissedAlert(alert)
+  );
+}
+
+function getSharedPopupSessionState(
+  sessionKey
+) {
+  if (!sessionKey) {
+    return null;
+  }
+
+  let state =
+    sharedSmartAlertPopupSessions.get(
+      sessionKey
+    );
+
+  if (!state) {
+    state = {
+      initialized: false,
+      knownAlertKeys:
+        new Set(),
+      activePopupKey: "",
+    };
+
+    sharedSmartAlertPopupSessions.set(
+      sessionKey,
+      state
+    );
+  }
+
+  return state;
+}
+
+function clearSharedPopupAlert(
+  sessionKey,
+  alertKey = ""
+) {
+  const state =
+    sharedSmartAlertPopupSessions.get(
+      sessionKey
+    );
+
+  if (!state) {
+    return;
+  }
+
+  const normalizedKey =
+    String(
+      alertKey ||
+        ""
+    );
+
+  if (normalizedKey) {
+    state.knownAlertKeys.add(
+      normalizedKey
+    );
+  }
+
+  if (
+    !normalizedKey ||
+    state.activePopupKey ===
+      normalizedKey
+  ) {
+    state.activePopupKey = "";
+  }
+}
+
+function retainSharedSmartAlertSession(
+  sessionKey
+) {
+  if (!sessionKey) {
+    return;
+  }
+
+  const currentCount =
+    Number(
+      sharedSmartAlertConsumers.get(
+        sessionKey
+      ) ||
+        0
+    );
+
+  /*
+   * The first mounted consumer starts a fresh login/app
+   * session baseline for this account. Additional hook
+   * consumers share the same baseline and request cache.
+   */
+  if (currentCount === 0) {
+    sharedSmartAlertPopupSessions.delete(
+      sessionKey
+    );
+
+    invalidateSharedSmartAlertCache(
+      sessionKey
+    );
+  }
+
+  sharedSmartAlertConsumers.set(
+    sessionKey,
+    currentCount + 1
+  );
+}
+
+function releaseSharedSmartAlertSession(
+  sessionKey
+) {
+  if (!sessionKey) {
+    return;
+  }
+
+  const currentCount =
+    Number(
+      sharedSmartAlertConsumers.get(
+        sessionKey
+      ) ||
+        0
+    );
+
+  if (currentCount <= 1) {
+    sharedSmartAlertConsumers.delete(
+      sessionKey
+    );
+
+    sharedSmartAlertPopupSessions.delete(
+      sessionKey
+    );
+
+    invalidateSharedSmartAlertCache(
+      sessionKey
+    );
+
+    return;
+  }
+
+  sharedSmartAlertConsumers.set(
+    sessionKey,
+    currentCount - 1
+  );
+}
+
+function resolveSharedPopupAlert({
+  sessionKey,
+  alerts,
+  backendPopupAlert,
+}) {
+  const state =
+    getSharedPopupSessionState(
+      sessionKey
+    );
+
+  /*
+   * A trusted account identity is required to maintain
+   * a per-account popup baseline. Notification Center
+   * data still loads normally when this key is absent,
+   * but automatic popups stay suppressed.
+   */
+  if (!state) {
+    return null;
+  }
+
+  const combinedAlerts =
+    normalizeAlerts([
+      ...normalizeAlerts(alerts),
+      backendPopupAlert,
+    ]);
+
+  const alertsByKey =
+    new Map();
+
+  combinedAlerts.forEach(
+    (alert) => {
+      const alertKey =
+        getAlertKey(alert);
+
+      if (!alertKey) {
+        return;
+      }
+
+      alertsByKey.set(
+        alertKey,
+        alert
+      );
+    }
+  );
+
+  /*
+   * First successful load establishes the session
+   * baseline. Existing unread/history alerts remain
+   * available in the Notification Center but are never
+   * treated as newly-arrived toast popups.
+   */
+  if (!state.initialized) {
+    alertsByKey.forEach(
+      (
+        _alert,
+        alertKey
+      ) => {
+        state.knownAlertKeys.add(
+          alertKey
+        );
+      }
+    );
+
+    state.initialized = true;
+    state.activePopupKey = "";
+
+    return null;
+  }
+
+  /*
+   * Keep one currently-active popup stable across
+   * polling refreshes. This prevents a refresh from
+   * replacing or reopening the same notification.
+   */
+  if (state.activePopupKey) {
+    const activeAlert =
+      alertsByKey.get(
+        state.activePopupKey
+      );
+
+    if (
+      activeAlert &&
+      isPopupEligibleAlert(
+        activeAlert
+      )
+    ) {
+      return activeAlert;
+    }
+
+    state.activePopupKey = "";
+  }
+
+  const newlyDiscoveredAlerts =
+    [];
+
+  alertsByKey.forEach(
+    (
+      alert,
+      alertKey
+    ) => {
+      if (
+        state.knownAlertKeys.has(
+          alertKey
+        )
+      ) {
+        return;
+      }
+
+      state.knownAlertKeys.add(
+        alertKey
+      );
+
+      newlyDiscoveredAlerts.push(
+        alert
+      );
+    }
+  );
+
+  /*
+   * If several alerts arrive in one polling window,
+   * show at most one popup. All of them remain visible
+   * in the Notification Center, which prevents a
+   * frustrating popup cascade.
+   */
+  const nextPopup =
+    newlyDiscoveredAlerts
+      .filter(
+        isPopupEligibleAlert
+      )
+      .sort(
+        (a, b) => {
+          const timestampDiff =
+            getAlertTimestamp(b) -
+            getAlertTimestamp(a);
+
+          if (timestampDiff !== 0) {
+            return timestampDiff;
+          }
+
+          return (
+            getAlertPriorityRankValue(
+              b
+            ) -
+            getAlertPriorityRankValue(
+              a
+            )
+          );
+        }
+      )[0] ||
+    null;
+
+  if (nextPopup) {
+    state.activePopupKey =
+      getAlertKey(
+        nextPopup
+      );
+  }
+
+  return nextPopup;
 }
 
 function filterClearedAlerts(
@@ -260,7 +642,6 @@ export default function useSmartNotifications(
 
   const hasPolling =
     pollInterval > 0;
-
 
   const [alerts, setAlerts] =
     useState([]);
@@ -421,13 +802,24 @@ export default function useSmartNotifications(
             );
 
           const nextAlerts =
-            normalizeAlerts(
-              data?.alerts
+            sortSmartAlertsByRecency(
+              normalizeAlerts(
+                data?.alerts
+              )
             );
 
+          /*
+           * Keep the quick-list source aligned with the
+           * full alert collection instead of trusting a
+           * backend priority-sliced latestAlerts array.
+           * This prevents "2 unread" with an empty
+           * Unread tab when those unread items fall
+           * outside a priority-based slice.
+           */
           const nextLatestAlerts =
-            normalizeAlerts(
-              data?.latestAlerts
+            nextAlerts.slice(
+              0,
+              12
             );
 
           setAlerts(
@@ -438,9 +830,18 @@ export default function useSmartNotifications(
             nextLatestAlerts
           );
 
+          const nextPopupAlert =
+            resolveSharedPopupAlert({
+              sessionKey,
+              alerts:
+                nextAlerts,
+              backendPopupAlert:
+                data?.popupAlert ||
+                null,
+            });
+
           setPopupAlert(
-            data?.popupAlert ||
-              null
+            nextPopupAlert
           );
 
           setSummary({
@@ -450,13 +851,12 @@ export default function useSmartNotifications(
           });
 
           setUnreadCount(
-            Math.max(
-              0,
-              Number(
-                data?.unreadCount ||
-                  0
-              )
-            )
+            nextAlerts.filter(
+              (alert) =>
+                !isReadAlert(
+                  alert
+                )
+            ).length
           );
 
           return data;
@@ -467,8 +867,7 @@ export default function useSmartNotifications(
           );
 
           setError(
-            err?.message ||
-              "Unable to load smart alerts."
+            "Unable to load notifications. Please try again."
           );
 
           return null;
@@ -496,6 +895,31 @@ export default function useSmartNotifications(
 
         const normalizedKey =
           String(alertKey);
+
+        const currentTarget =
+          [
+            ...visibleAlerts,
+            ...visibleLatestAlerts,
+          ].find(
+            (alert) =>
+              getAlertKey(
+                alert
+              ) ===
+              normalizedKey
+          );
+
+        const wasUnread =
+          Boolean(
+            currentTarget &&
+            !isReadAlert(
+              currentTarget
+            )
+          );
+
+        clearSharedPopupAlert(
+          sessionKey,
+          normalizedKey
+        );
 
         setPopupAlert(
           (currentPopup) =>
@@ -542,14 +966,16 @@ export default function useSmartNotifications(
             )
         );
 
-        setUnreadCount(
-          (currentCount) =>
-            Math.max(
-              0,
-              currentCount -
-                1
-            )
-        );
+        if (wasUnread) {
+          setUnreadCount(
+            (currentCount) =>
+              Math.max(
+                0,
+                currentCount -
+                  1
+              )
+          );
+        }
 
         await requestSmartAlertJson(
           "/smart-alerts/read",
@@ -580,6 +1006,8 @@ export default function useSmartNotifications(
         canView,
         fetchAlerts,
         sessionKey,
+        visibleAlerts,
+        visibleLatestAlerts,
       ]
     );
 
@@ -599,31 +1027,44 @@ export default function useSmartNotifications(
         }
 
         const normalizedKey =
-          String(alertKey);
+          String(
+            alertKey
+          );
 
-        setClearedAlertKeys(
-          (currentKeys) => {
-            const nextKeys =
-              new Set(
-                currentKeys
-              );
+        /*
+         * Dismissing a toast is NOT the same as deleting
+         * a notification. Keep the record in All/history
+         * and only suppress this automatic popup.
+         */
+        clearSharedPopupAlert(
+          sessionKey,
+          normalizedKey
+        );
 
-            nextKeys.add(
+        setPopupAlert(
+          (currentPopup) =>
+            getAlertKey(
+              currentPopup
+            ) ===
               normalizedKey
-            );
-
-            return nextKeys;
-          }
+              ? null
+              : currentPopup
         );
 
         setAlerts(
           (currentAlerts) =>
-            currentAlerts.filter(
+            currentAlerts.map(
               (alert) =>
                 getAlertKey(
                   alert
-                ) !==
+                ) ===
                 normalizedKey
+                  ? {
+                      ...alert,
+                      isDismissed:
+                        true,
+                    }
+                  : alert
             )
         );
 
@@ -631,71 +1072,49 @@ export default function useSmartNotifications(
           (
             currentLatestAlerts
           ) =>
-            currentLatestAlerts.filter(
+            currentLatestAlerts.map(
               (alert) =>
                 getAlertKey(
                   alert
-                ) !==
+                ) ===
                 normalizedKey
+                  ? {
+                      ...alert,
+                      isDismissed:
+                        true,
+                    }
+                  : alert
             )
         );
 
-        setPopupAlert(
-          (currentPopup) =>
-            getAlertKey(
-              currentPopup
-            ) === normalizedKey
-              ? null
-              : currentPopup
+        await requestSmartAlertJson(
+          "/smart-alerts/dismiss",
+          {
+            method:
+              "POST",
+
+            body:
+              JSON.stringify({
+                alertKey:
+                  normalizedKey,
+              }),
+          }
         );
 
-        try {
-          await requestSmartAlertJson(
-            "/smart-alerts/dismiss",
-            {
-              method:
-                "POST",
-
-              body:
-                JSON.stringify({
-                  alertKey:
-                    normalizedKey,
-                }),
-            }
+        if (
+          refreshAfter
+        ) {
+          invalidateSharedSmartAlertCache(
+            sessionKey
           );
 
-          if (
-            refreshAfter
-          ) {
-            invalidateSharedSmartAlertCache(
-              sessionKey
-            );
+          await fetchAlerts({
+            silent: true,
+          });
 
-            await fetchAlerts({
-              silent: true,
-            });
-
-            emitSmartAlertsUpdated(
-              sessionKey
-            );
-          }
-        } catch (err) {
-          setClearedAlertKeys(
-            (currentKeys) => {
-              const nextKeys =
-                new Set(
-                  currentKeys
-                );
-
-              nextKeys.delete(
-                normalizedKey
-              );
-
-              return nextKeys;
-            }
+          emitSmartAlertsUpdated(
+            sessionKey
           );
-
-          throw err;
         }
       },
       [
@@ -705,6 +1124,12 @@ export default function useSmartNotifications(
       ]
     );
 
+  /*
+   * Backward-compatible alias retained for older
+   * consumers. "Clear Read" is no longer destructive:
+   * it now behaves as Mark All As Read so notification
+   * history always remains available.
+   */
   const clearReadAlerts =
     useCallback(async () => {
       if (
@@ -714,53 +1139,55 @@ export default function useSmartNotifications(
         return 0;
       }
 
-      const alertKeys =
-        readAlerts
-          .map((alert) =>
-            getAlertKey(alert)
+      const combinedAlerts = [
+        ...visibleAlerts,
+        ...visibleLatestAlerts,
+      ];
+
+      const unreadKeys =
+        Array.from(
+          new Set(
+            combinedAlerts
+              .filter(
+                (alert) =>
+                  !isReadAlert(
+                    alert
+                  )
+              )
+              .map(
+                getAlertKey
+              )
+              .filter(
+                Boolean
+              )
           )
-          .filter(Boolean);
+        );
 
       if (
-        alertKeys.length === 0
+        unreadKeys.length ===
+        0
       ) {
         return 0;
       }
 
-      setIsClearingRead(true);
-      setError("");
+      setIsClearingRead(
+        true
+      );
 
-      const keysToClear =
-        new Set(alertKeys);
-
-      setClearedAlertKeys(
-        (currentKeys) => {
-          const nextKeys =
-            new Set(
-              currentKeys
-            );
-
-          alertKeys.forEach(
-            (alertKey) => {
-              nextKeys.add(
-                alertKey
-              );
-            }
-          );
-
-          return nextKeys;
-        }
+      setError(
+        ""
       );
 
       setAlerts(
-        (currentAlerts) =>
-          currentAlerts.filter(
-            (alert) =>
-              !keysToClear.has(
-                getAlertKey(
-                  alert
-                )
-              )
+        (
+          currentAlerts
+        ) =>
+          currentAlerts.map(
+            (alert) => ({
+              ...alert,
+              isRead:
+                true,
+            })
           )
       );
 
@@ -768,44 +1195,40 @@ export default function useSmartNotifications(
         (
           currentLatestAlerts
         ) =>
-          currentLatestAlerts.filter(
-            (alert) =>
-              !keysToClear.has(
-                getAlertKey(
-                  alert
-                )
-              )
+          currentLatestAlerts.map(
+            (alert) => ({
+              ...alert,
+              isRead:
+                true,
+            })
           )
+      );
+
+      setUnreadCount(
+        0
+      );
+
+      clearSharedPopupAlert(
+        sessionKey
       );
 
       setPopupAlert(
-        (currentPopup) =>
-          keysToClear.has(
-            getAlertKey(
-              currentPopup
-            )
-          )
-            ? null
-            : currentPopup
+        null
       );
 
       try {
-        await Promise.all(
-          alertKeys.map(
-            (alertKey) =>
-              requestSmartAlertJson(
-                "/smart-alerts/dismiss",
-                {
-                  method:
-                    "POST",
+        await requestSmartAlertJson(
+          "/smart-alerts/read-all",
+          {
+            method:
+              "POST",
 
-                  body:
-                    JSON.stringify({
-                      alertKey,
-                    }),
-                }
-              )
-          )
+            body:
+              JSON.stringify({
+                alertKeys:
+                  unreadKeys,
+              }),
+          }
         );
 
         invalidateSharedSmartAlertCache(
@@ -820,30 +1243,11 @@ export default function useSmartNotifications(
           sessionKey
         );
 
-        return alertKeys.length;
+        return unreadKeys.length;
       } catch (err) {
         console.error(
-          "Clear read smart alerts error:",
+          "Mark all notifications as read error:",
           err
-        );
-
-        setClearedAlertKeys(
-          (currentKeys) => {
-            const nextKeys =
-              new Set(
-                currentKeys
-              );
-
-            alertKeys.forEach(
-              (alertKey) => {
-                nextKeys.delete(
-                  alertKey
-                );
-              }
-            );
-
-            return nextKeys;
-          }
         );
 
         await fetchAlerts({
@@ -851,20 +1255,22 @@ export default function useSmartNotifications(
         });
 
         setError(
-          err?.message ||
-            "Unable to clear read alerts."
+          "Unable to mark all notifications as read. Please try again."
         );
 
         throw err;
       } finally {
-        setIsClearingRead(false);
+        setIsClearingRead(
+          false
+        );
       }
     }, [
       canView,
       fetchAlerts,
       isClearingRead,
-      readAlerts,
       sessionKey,
+      visibleAlerts,
+      visibleLatestAlerts,
     ]);
 
   const markAllAsRead =
@@ -909,6 +1315,12 @@ export default function useSmartNotifications(
       );
 
       setUnreadCount(0);
+
+      clearSharedPopupAlert(
+        sessionKey
+      );
+
+      setPopupAlert(null);
 
       await requestSmartAlertJson(
         "/smart-alerts/read-all",
@@ -960,6 +1372,40 @@ export default function useSmartNotifications(
     );
 
   /*
+   * Keep per-account popup baselines isolated across
+   * login/logout/account switching while allowing every
+   * mounted notification consumer for the same account
+   * to share one baseline.
+   */
+  useEffect(() => {
+    setClearedAlertKeys(
+      new Set()
+    );
+
+    setPopupAlert(null);
+
+    if (
+      !canView ||
+      !sessionKey
+    ) {
+      return undefined;
+    }
+
+    retainSharedSmartAlertSession(
+      sessionKey
+    );
+
+    return () => {
+      releaseSharedSmartAlertSession(
+        sessionKey
+      );
+    };
+  }, [
+    canView,
+    sessionKey,
+  ]);
+
+  /*
    * One shared GET request is reused by every
    * mounted notification consumer.
    */
@@ -967,12 +1413,20 @@ export default function useSmartNotifications(
     void fetchAlerts();
 
     const requestSilentRefresh =
-      () => {
+      ({
+        force = false,
+      } = {}) => {
         if (
           document.visibilityState !==
           "visible"
         ) {
           return;
+        }
+
+        if (force) {
+          invalidateSharedSmartAlertCache(
+            sessionKey
+          );
         }
 
         void fetchAlerts({
@@ -990,10 +1444,9 @@ export default function useSmartNotifications(
           return;
         }
 
-        invalidateSharedSmartAlertCache(
-          sessionKey
-        );
-        requestSilentRefresh();
+        requestSilentRefresh({
+          force: true,
+        });
       };
 
     const handleSmartAlertsUpdated =
@@ -1024,12 +1477,23 @@ export default function useSmartNotifications(
           return;
         }
 
-        requestSilentRefresh();
+        requestSilentRefresh({
+          force: true,
+        });
+      };
+
+    const handleFocus =
+      () => {
+        requestSilentRefresh({
+          force: true,
+        });
       };
 
     const handleOnline =
       () => {
-        requestSilentRefresh();
+        requestSilentRefresh({
+          force: true,
+        });
       };
 
     let intervalId = null;
@@ -1057,6 +1521,11 @@ export default function useSmartNotifications(
       handleOnline
     );
 
+    window.addEventListener(
+      "focus",
+      handleFocus
+    );
+
     document.addEventListener(
       "visibilitychange",
       handleVisibilityChange
@@ -1076,6 +1545,11 @@ export default function useSmartNotifications(
       window.removeEventListener(
         "online",
         handleOnline
+      );
+
+      window.removeEventListener(
+        "focus",
+        handleFocus
       );
 
       document.removeEventListener(

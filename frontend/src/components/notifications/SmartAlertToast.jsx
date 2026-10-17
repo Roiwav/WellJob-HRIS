@@ -30,6 +30,32 @@ function normalizeValue(
     );
 }
 
+function isComplianceNotification(
+  alert
+) {
+  const sourceType =
+    String(
+      alert?.sourceType ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const purpose =
+    String(
+      alert?.notificationPurpose ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  return (
+    sourceType === "COMPLIANCE" ||
+    purpose === "COMPLIANCE_EXPIRED" ||
+    purpose === "COMPLIANCE_EXPIRING_SOON"
+  );
+}
+
 function formatRole(
   value
 ) {
@@ -48,6 +74,8 @@ function formatRole(
       "HR Manager",
     HR_STAFF:
       "HR Staff",
+    HR_COORDINATOR:
+      "HR Coordinator",
     SUPER_ADMIN:
       "Super Admin",
     IT_SUPPORT:
@@ -71,7 +99,7 @@ function formatActorIdentity({
     String(
       name || ""
     ).trim() ||
-    "Unknown User";
+    "Authorized user";
 
   const safeUsername =
     String(
@@ -102,6 +130,14 @@ function formatActorIdentity({
 function getAlertEvent(
   alert
 ) {
+  if (
+    isComplianceNotification(
+      alert
+    )
+  ) {
+    return "COMPLIANCE";
+  }
+
   const status =
     normalizeValue(
       alert?.status
@@ -178,6 +214,34 @@ function getEventConfig(
   priority
 ) {
   const configs = {
+    COMPLIANCE: {
+      eyebrow:
+        "Compliance Alert",
+      actorLabel:
+        "",
+      icon:
+        priority ===
+        "High"
+          ? FiAlertTriangle
+          : FiClock,
+      accent:
+        priority ===
+        "High"
+          ? "text-rose-600 dark:text-rose-300"
+          : "text-amber-600 dark:text-amber-300",
+      iconClass:
+        priority ===
+        "High"
+          ? "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"
+          : "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300",
+      border:
+        priority ===
+        "High"
+          ? "border-rose-200 dark:border-rose-500/30"
+          : "border-amber-200 dark:border-amber-500/30",
+      buttonClass:
+        "bg-indigo-600 text-white hover:bg-indigo-700",
+    },
     REPORTED: {
       eyebrow:
         "New Incident",
@@ -261,7 +325,7 @@ function getEventConfig(
           : priority ===
               "Medium"
             ? "Major Alert"
-            : "Smart Alert",
+            : "Notification",
       actorLabel:
         "Related user",
       icon:
@@ -389,13 +453,19 @@ export default function SmartAlertToast({
   const EventIcon =
     config.icon;
 
+  const showActor =
+    event !==
+    "COMPLIANCE";
+
   const actor =
-    formatActorIdentity(
-      getActorDetails(
-        alert,
-        event
-      )
-    );
+    showActor
+      ? formatActorIdentity(
+          getActorDetails(
+            alert,
+            event
+          )
+        )
+      : "";
 
   const recommendedAction =
     alert.recommendedAction ||
@@ -433,7 +503,7 @@ export default function SmartAlertToast({
 
                   <h3 className="mt-1 break-words text-sm font-extrabold text-slate-900 dark:text-white">
                     {alert.title ||
-                      "Smart Alert"}
+                      "Notification"}
                   </h3>
                 </div>
 
@@ -445,7 +515,7 @@ export default function SmartAlertToast({
                     )
                   }
                   className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-slate-800 dark:hover:text-white"
-                  aria-label="Dismiss smart alert"
+                  aria-label="Dismiss notification"
                 >
                   <FiX
                     aria-hidden="true"
@@ -461,26 +531,28 @@ export default function SmartAlertToast({
           </div>
 
           <div className="mt-3 grid gap-2">
-            <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs leading-5 dark:bg-slate-950/40">
-              <FiUser
-                className={`mt-0.5 shrink-0 ${config.accent}`}
-                aria-hidden="true"
-              />
+            {showActor && (
+              <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs leading-5 dark:bg-slate-950/40">
+                <FiUser
+                  className={`mt-0.5 shrink-0 ${config.accent}`}
+                  aria-hidden="true"
+                />
 
-              <div className="min-w-0">
-                <p
-                  className={`font-bold ${config.accent}`}
-                >
-                  {
-                    config.actorLabel
-                  }
-                </p>
+                <div className="min-w-0">
+                  <p
+                    className={`font-bold ${config.accent}`}
+                  >
+                    {
+                      config.actorLabel
+                    }
+                  </p>
 
-                <p className="mt-0.5 break-words font-semibold text-slate-700 dark:text-slate-200">
-                  {actor}
-                </p>
+                  <p className="mt-0.5 break-words font-semibold text-slate-700 dark:text-slate-200">
+                    {actor}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 dark:border-slate-700 dark:bg-slate-950/40">
               <p

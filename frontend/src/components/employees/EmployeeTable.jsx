@@ -1,5 +1,6 @@
 import {
   FiArchive,
+  FiBriefcase,
   FiEdit2,
   FiEye,
   FiSearch,
@@ -51,7 +52,93 @@ function getEmployeePosition(employee) {
       employee?.positionName ||
       employee?.position_name ||
       ""
-  ).trim() || "Not Assigned";
+  ).trim();
+}
+
+function getEmployeeWorkforceStatus(
+  employee
+) {
+  const status =
+    String(
+      employee?.workforceStatus ||
+      employee?.workforce_status ||
+      employee?.status ||
+      ""
+    ).trim();
+
+  return [
+    "Floating / Standby",
+    "For Deployment",
+    "Deployed",
+  ].includes(
+    status
+  )
+    ? status
+    : "Floating / Standby";
+}
+
+function getPlacementContextLabel(
+  workforceStatus,
+  field
+) {
+  if (
+    workforceStatus ===
+    "Deployed"
+  ) {
+    return field ===
+      "Position"
+      ? "Position"
+      : "";
+  }
+
+  if (
+    workforceStatus ===
+    "For Deployment"
+  ) {
+    return `Scheduled ${field}`;
+  }
+
+  return `Designated ${field}`;
+}
+
+function getWorkforceStatusNote(
+  workforceStatus
+) {
+  if (
+    workforceStatus ===
+    "Deployed"
+  ) {
+    return "Active deployment";
+  }
+
+  if (
+    workforceStatus ===
+    "For Deployment"
+  ) {
+    return "Awaiting arrival";
+  }
+
+  return "Pooling";
+}
+
+function getPlacementDisplayValue(
+  value,
+  fallback
+) {
+  const normalized =
+    String(
+      value || ""
+    ).trim();
+
+  if (
+    !normalized ||
+    normalized ===
+      "Not Assigned"
+  ) {
+    return fallback;
+  }
+
+  return normalized;
 }
 function getEmployeeKey(
   employee,
@@ -86,7 +173,7 @@ function EmployeeEmptyState({
         <EmptyState
           icon="search"
           title="No employee matched your search"
-          description={`No employee matched “${search}”. Try another name, employee number, company, or position.`}
+          description={`No employee matched “${search}”. Try another name, employee number, client company, or position.`}
         />
 
         <div className="flex flex-wrap justify-center gap-2">
@@ -126,7 +213,7 @@ function EmployeeEmptyState({
         <EmptyState
           icon="filter"
           title="No employees match these filters"
-          description="Employee records are available, but none match the selected employment, compliance, or position filters."
+          description="Employee records are available, but none match the selected workforce, compliance, or position filters."
         />
 
         {canClearFilters && (
@@ -175,6 +262,7 @@ export default function EmployeeTable({
   onClearFilters,
   openModal,
   onEdit,
+  onDeploymentAction,
   getComplianceStatus,
   onArchive,
   isSuperAdmin = false,
@@ -207,30 +295,42 @@ export default function EmployeeTable({
    * EMPLOYEE TABLE ACCESS
    * ==================================================
    *
-   * SUPER_ADMIN:
+   * HR STAFF:
+   * - may receive Edit action from Employees.jsx
+   * - may receive contextual Deployment action:
+   *   Floating / Standby -> Schedule for Deployment
+   *   For Deployment -> View Deployment Schedule
+   *
+   * HR MANAGER:
+   * - no routine employee editing
+   * - may receive Archive action
+   *
+   * SUPER ADMIN / HR COORDINATOR:
    * - view only
    *
-   * HR_COORDINATOR:
-   * - view only
-   *
-   * HR_MANAGER / HR_STAFF:
-   * - editing follows existing permissions
-   *
-   * HR_MANAGER:
-   * - archive follows existing permission
+   * Employees.jsx remains the primary role gate. These
+   * checks are defense in depth for table actions.
    */
-  const isReadOnly =
+  const isReadOnlyEmployeeMaintenance =
     isSuperAdmin ||
+    isHRManager ||
     isHRCoordinator;
+
   const canEdit =
-    !isReadOnly &&
+    !isReadOnlyEmployeeMaintenance &&
     typeof onEdit ===
       "function";
+
   const canArchive =
     isHRManager &&
-    !isReadOnly &&
     typeof onArchive ===
       "function";
+
+  const canUseDeploymentAction =
+    !isReadOnlyEmployeeMaintenance &&
+    typeof onDeploymentAction ===
+      "function";
+
   const recordCountLabel =
     safeTotalRecords >
     safeEmployees.length
@@ -254,8 +354,8 @@ export default function EmployeeTable({
           </h2>
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
             {isHRCoordinator
-              ? "View assigned-company employees, positions, employment status, and compliance condition."
-              : "View registered employees, employment status, company assignment, and compliance condition."}
+              ? "View assigned-company Deployed and For Deployment employees, positions, workforce status, and compliance status."
+              : "View registered employees, workforce status, client company assignment, and compliance status."}
           </p>
         </div>
         <span
@@ -315,7 +415,7 @@ export default function EmployeeTable({
                   scope="col"
                   className="px-5 py-3.5"
                 >
-                  Status
+                  Workforce Status
                 </th>
                 <th
                   scope="col"
@@ -345,14 +445,65 @@ export default function EmployeeTable({
                     getEmployeeDisplayName(
                       employee
                     );
+                  const workforceStatus =
+                    getEmployeeWorkforceStatus(
+                      employee
+                    );
+
                   const employeeCompany =
-                    getEmployeeCompany(
-                      employee
+                    getPlacementDisplayValue(
+                      getEmployeeCompany(
+                        employee
+                      ),
+                      "No company recorded"
                     );
+
                   const employeePosition =
-                    getEmployeePosition(
-                      employee
+                    getPlacementDisplayValue(
+                      getEmployeePosition(
+                        employee
+                      ),
+                      "No position recorded"
                     );
+
+                  const companyContextLabel =
+                    getPlacementContextLabel(
+                      workforceStatus,
+                      "Company"
+                    );
+
+                  const positionContextLabel =
+                    getPlacementContextLabel(
+                      workforceStatus,
+                      "Position"
+                    );
+
+                  const workforceStatusNote =
+                    getWorkforceStatusNote(
+                      workforceStatus
+                    );
+
+                  const canShowDeploymentAction =
+                    canUseDeploymentAction &&
+                    [
+                      "Floating / Standby",
+                      "For Deployment",
+                    ].includes(
+                      workforceStatus
+                    );
+
+                  const deploymentActionTitle =
+                    workforceStatus ===
+                    "For Deployment"
+                      ? "View deployment schedule"
+                      : "Schedule for deployment";
+
+                  const deploymentActionLabel =
+                    workforceStatus ===
+                    "For Deployment"
+                      ? `View deployment schedule for ${employeeName}`
+                      : `Schedule ${employeeName} for deployment`;
+
                   const complianceStatus =
                     normalizeComplianceStatus(
                       employee
@@ -390,42 +541,59 @@ export default function EmployeeTable({
                               employeeName
                             }
                           </p>
-                          {!isHRCoordinator && employee?.position && (
+                          {!isHRCoordinator && (
                             <p
-                              title={
-                                employee.position
-                              }
+                              title={`${positionContextLabel}: ${employeePosition}`}
                               className="mt-1 max-w-[260px] truncate text-xs text-slate-500 dark:text-slate-400"
                             >
-                              {
-                                employee.position
-                              }
+                              <span className="font-semibold">
+                                {positionContextLabel}:
+                              </span>{" "}
+                              {employeePosition}
                             </p>
                           )}
                         </div>
                       </td>
                       <td className="px-5 py-3.5 align-middle">
-                        <p
-                          title={
-                            isHRCoordinator
+                        <div className="min-w-0">
+                          <p
+                            title={
+                              isHRCoordinator
+                                ? employeePosition
+                                : employeeCompany
+                            }
+                            className="max-w-[240px] truncate text-sm font-medium text-slate-700 dark:text-slate-300"
+                          >
+                            {isHRCoordinator
                               ? employeePosition
-                              : employeeCompany
-                          }
-                          className="max-w-[240px] truncate text-sm font-medium text-slate-700 dark:text-slate-300"
-                        >
-                          {isHRCoordinator
-                            ? employeePosition
-                            : employeeCompany}
-                        </p>
+                              : employeeCompany}
+                          </p>
+
+                          {(isHRCoordinator
+                            ? positionContextLabel
+                            : companyContextLabel) && (
+                            <p className="mt-1 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                              {isHRCoordinator
+                                ? positionContextLabel
+                                : companyContextLabel}
+                            </p>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-3.5 align-middle">
-                        <StatusBadge
-                          status={
-                            employee
-                              ?.status ||
-                            "Floating / Standby"
-                          }
-                        />
+                        <div className="min-w-0">
+                          <StatusBadge
+                            status={
+                              workforceStatus
+                            }
+                          />
+
+                          <p className="mt-1.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                            {
+                              workforceStatusNote
+                            }
+                          </p>
+                        </div>
                       </td>
                       <td className="px-5 py-3.5 align-middle">
                         <ComplianceBadge
@@ -464,6 +632,27 @@ export default function EmployeeTable({
                               }
                             >
                               <FiEdit2
+                                aria-hidden="true"
+                              />
+                            </IconButton>
+                          )}
+                          {canShowDeploymentAction && (
+                            <IconButton
+                              label={
+                                deploymentActionLabel
+                              }
+                              title={
+                                deploymentActionTitle
+                              }
+                              variant="secondary"
+                              size="md"
+                              onClick={() =>
+                                onDeploymentAction(
+                                  employee
+                                )
+                              }
+                            >
+                              <FiBriefcase
                                 aria-hidden="true"
                               />
                             </IconButton>

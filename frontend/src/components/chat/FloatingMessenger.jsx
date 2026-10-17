@@ -2,6 +2,7 @@ import {
   Suspense,
   lazy,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -40,6 +41,8 @@ export default function FloatingMessenger() {
 
   const [isOpen, setIsOpen] = useState(false);
 
+  const messengerRef = useRef(null);
+
   const safeUnreadCount = Math.max(
     0,
     Number(unreadCount) || 0
@@ -52,7 +55,7 @@ export default function FloatingMessenger() {
 
   useEffect(() => {
     if (!isOpen) {
-      return;
+      return undefined;
     }
 
     function handleKeyDown(event) {
@@ -61,10 +64,55 @@ export default function FloatingMessenger() {
       }
     }
 
-    window.addEventListener("keydown", handleKeyDown);
+    function handlePointerDown(event) {
+      const messenger =
+        messengerRef.current;
+
+      if (!messenger) {
+        return;
+      }
+
+      const eventPath =
+        typeof event.composedPath ===
+        "function"
+          ? event.composedPath()
+          : [];
+
+      const clickedInside =
+        eventPath.includes(
+          messenger
+        ) ||
+        messenger.contains(
+          event.target
+        );
+
+      if (!clickedInside) {
+        setIsOpen(false);
+      }
+    }
+
+    window.addEventListener(
+      "keydown",
+      handleKeyDown
+    );
+
+    document.addEventListener(
+      "pointerdown",
+      handlePointerDown,
+      true
+    );
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
+
+      document.removeEventListener(
+        "pointerdown",
+        handlePointerDown,
+        true
+      );
     };
   }, [isOpen]);
 
@@ -74,7 +122,7 @@ export default function FloatingMessenger() {
         <div className="fixed bottom-5 right-5 z-[1160] sm:bottom-6 sm:right-6">
           <div className="group relative flex items-center">
             <div className="pointer-events-none absolute right-16 hidden whitespace-nowrap rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-900">
-              Open Messenger
+              Open Messages
             </div>
 
             <button
@@ -82,10 +130,10 @@ export default function FloatingMessenger() {
               onClick={() => {
                 setIsOpen(true);
               }}
-              aria-label="Open Messenger"
+              aria-label="Open Messages"
               aria-expanded={false}
               aria-controls="welljob-floating-messenger"
-              title="Messenger"
+              title="Messages"
               className="relative flex h-14 w-14 items-center justify-center rounded-full border border-blue-500/20 bg-blue-600 text-white shadow-lg shadow-blue-600/20 transition duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 dark:border-blue-400/20 dark:focus:ring-offset-slate-950"
             >
               <FiMessageCircle
@@ -105,6 +153,7 @@ export default function FloatingMessenger() {
 
       {isOpen && (
         <div
+          ref={messengerRef}
           id="welljob-floating-messenger"
           role="dialog"
           aria-modal="false"
@@ -134,11 +183,6 @@ export default function FloatingMessenger() {
                   size={20}
                   aria-hidden="true"
                 />
-
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-slate-50 bg-emerald-500 dark:border-slate-900"
-                  aria-hidden="true"
-                />
               </span>
 
               <div className="min-w-0">
@@ -147,7 +191,7 @@ export default function FloatingMessenger() {
                 </h2>
 
                 <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                  Private and group conversations
+                  Team messages and group chats
                 </p>
               </div>
             </div>
@@ -157,8 +201,8 @@ export default function FloatingMessenger() {
               onClick={() => {
                 setIsOpen(false);
               }}
-              aria-label="Close Messenger window"
-              title="Close Messenger"
+              aria-label="Close messages"
+              title="Close messages"
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-transparent text-slate-500 transition hover:border-slate-200 hover:bg-white hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-white"
             >
               <FiX
@@ -175,7 +219,7 @@ export default function FloatingMessenger() {
                   className="flex h-full items-center justify-center p-6 text-sm font-medium text-slate-500 dark:text-slate-400"
                   role="status"
                 >
-                  Loading Messenger...
+                  Loading messages...
                 </div>
               }
             >

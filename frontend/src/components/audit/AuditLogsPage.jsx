@@ -11,7 +11,6 @@ import {
   FiRefreshCw,
   FiShield,
 } from "react-icons/fi";
-
 import Button from "../ui/Button";
 import PageHeader from "../ui/PageHeader";
 import SearchInput from "../ui/SearchInput";
@@ -19,7 +18,6 @@ import FilterBar from "../ui/FilterBar";
 import LoadingSkeleton from "../ui/LoadingSkeleton";
 import EmptyState from "../ui/EmptyState";
 import ErrorState from "../ui/ErrorState";
-
 import authenticatedFetch from "../../utils/authenticatedFetch";
 import { API_BASE } from "../../config/api";
 
@@ -27,9 +25,15 @@ const AUDIT_LOGS_API_URL =
   `${API_BASE}/audit-logs`;
 
 const REQUEST_TIMEOUT_MS = 15000;
+
 const AUDIT_PAGE_SIZE = 25;
+
 const SEARCH_DEBOUNCE_MS = 350;
+
 const DATA_UPDATE_DEBOUNCE_MS = 300;
+
+const AUDIT_LOG_TIME_ZONE =
+  "Asia/Manila";
 
 const activeAuditRequests =
   new Map();
@@ -45,73 +49,50 @@ const ROLE_LABELS = {
 const ACTION_STYLE = {
   LOGIN:
     "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
-
   LOGIN_SUCCESS:
     "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
-
   LOGIN_FAILED:
     "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
-
   CREATE_USER:
     "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
-
   RESET_PASSWORD:
     "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
-
   CHANGE_PASSWORD:
     "bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300",
-
   TOGGLE_USER_STATUS:
     "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
-
   ADD_EMPLOYEE:
     "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
-
   CREATE_EMPLOYEE:
     "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
-
   EDIT_EMPLOYEE:
     "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
-
   UPDATE_EMPLOYEE:
     "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
-
   ARCHIVE_EMPLOYEE:
     "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
-
   RESTORE_EMPLOYEE:
     "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
-
   DELETE_EMPLOYEE:
     "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
-
   ADD_INCIDENT:
     "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
-
   CREATE_INCIDENT:
     "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
-
   UPDATE_INCIDENT:
     "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300",
-
   REVIEW_INCIDENT:
     "bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300",
-
   RESOLVE_INCIDENT:
     "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
-
   ADD_DEPLOYMENT:
     "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300",
-
   CREATE_DEPLOYMENT:
     "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300",
-
   UPDATE_DEPLOYMENT:
     "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
-
   CANCEL_DEPLOYMENT:
     "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
-
   COMPLETE_DEPLOYMENT:
     "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
 };
@@ -147,21 +128,17 @@ function getReadableAuditDescription(log) {
   const description = String(
     log?.description || ""
   ).trim();
-
   const actorName =
     getActorName(log);
-
   if (!description) {
     return "-";
   }
-
   const possiblePrefixes = [
     log?.username,
     log?.user_id,
   ]
     .filter(Boolean)
     .map(escapeRegExp);
-
   if (possiblePrefixes.length > 0) {
     const prefixRegex =
       new RegExp(
@@ -170,13 +147,11 @@ function getReadableAuditDescription(log) {
         )})\\s+`,
         "i"
       );
-
     return description.replace(
       prefixRegex,
       `${actorName} `
     );
   }
-
   return description;
 }
 
@@ -184,12 +159,10 @@ function getActionStyle(action) {
   if (!action) {
     return "bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-300";
   }
-
   const normalizedAction =
     String(action)
       .toUpperCase()
       .replace(/\s+/g, "_");
-
   return (
     ACTION_STYLE[normalizedAction] ||
     "bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-300"
@@ -200,7 +173,6 @@ function formatAction(action) {
   if (!action) {
     return "-";
   }
-
   return String(action)
     .replace(/_/g, " ")
     .split(" ")
@@ -213,15 +185,108 @@ function formatAction(action) {
     .join(" ");
 }
 
-function formatDate(date) {
-  if (!date) {
+function formatDate(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return "-";
   }
 
-  const parsedDate =
-    new Date(date);
+  let parsedDate = null;
 
   if (
+    value instanceof Date
+  ) {
+    parsedDate =
+      value;
+  } else if (
+    typeof value ===
+      "number"
+  ) {
+    const milliseconds =
+      value <
+      100000000000
+        ? value * 1000
+        : value;
+
+    parsedDate =
+      new Date(
+        milliseconds
+      );
+  } else {
+    const normalized =
+      String(
+        value
+      ).trim();
+
+    if (!normalized) {
+      return "-";
+    }
+
+    if (
+      /^\d{10,13}$/.test(
+        normalized
+      )
+    ) {
+      const numericValue =
+        Number(
+          normalized
+        );
+
+      const milliseconds =
+        numericValue <
+        100000000000
+          ? numericValue * 1000
+          : numericValue;
+
+      parsedDate =
+        new Date(
+          milliseconds
+        );
+    } else {
+      /*
+       * Compatibility rule for legacy timezone-less
+       * MySQL DATETIME values:
+       *
+       * Preserve the stored wall-clock value instead
+       * of applying an unverified blanket UTC/+08
+       * conversion. Absolute timestamps that already
+       * contain Z/offset information are converted to
+       * Asia/Manila normally below.
+       */
+      const timezoneLessMatch =
+        normalized.match(
+          /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?$/
+        );
+
+      if (
+        timezoneLessMatch
+      ) {
+        const millisecondsPart =
+          timezoneLessMatch[3]
+            ? `.${timezoneLessMatch[3].padEnd(
+                3,
+                "0"
+              )}`
+            : "";
+
+        parsedDate =
+          new Date(
+            `${timezoneLessMatch[1]}T${timezoneLessMatch[2]}${millisecondsPart}+08:00`
+          );
+      } else {
+        parsedDate =
+          new Date(
+            normalized
+          );
+      }
+    }
+  }
+
+  if (
+    !parsedDate ||
     Number.isNaN(
       parsedDate.getTime()
     )
@@ -229,15 +294,26 @@ function formatDate(date) {
     return "-";
   }
 
-  return parsedDate.toLocaleString(
+  return new Intl.DateTimeFormat(
     "en-PH",
     {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
+      timeZone:
+        AUDIT_LOG_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "short",
+      day:
+        "2-digit",
+      hour:
+        "2-digit",
+      minute:
+        "2-digit",
+      hour12:
+        true,
     }
+  ).format(
+    parsedDate
   );
 }
 
@@ -256,12 +332,10 @@ async function requestJson(
 ) {
   const controller =
     new AbortController();
-
   const timeoutId =
     window.setTimeout(() => {
       controller.abort();
     }, REQUEST_TIMEOUT_MS);
-
   try {
     const response =
       await authenticatedFetch(
@@ -278,12 +352,10 @@ async function requestJson(
           },
         }
       );
-
     const result =
       await response
         .json()
         .catch(() => null);
-
     if (!response.ok) {
       throw new Error(
         result?.error ||
@@ -291,7 +363,6 @@ async function requestJson(
           `Request failed with status ${response.status}`
       );
     }
-
     return result;
   } catch (error) {
     if (
@@ -302,7 +373,6 @@ async function requestJson(
         "The server took too long to respond. Check that the backend and database are running, then try again."
       );
     }
-
     throw error;
   } finally {
     window.clearTimeout(
@@ -327,18 +397,15 @@ function getSharedAuditRequest(
           );
         }
       );
-
     activeAuditRequests.set(
       url,
       requestPromise
     );
   }
-
   return activeAuditRequests.get(
     url
   );
 }
-
 
 function SummaryCard({
   icon,
@@ -352,16 +419,13 @@ function SummaryCard({
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-xl text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
           {icon}
         </div>
-
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             {label}
           </p>
-
           <p className="mt-1 text-2xl font-extrabold text-gray-900 dark:text-white">
             {value}
           </p>
-
           {helper && (
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {helper}
@@ -380,21 +444,16 @@ export default function AuditLogsPage({
 }) {
   const [logs, setLogs] =
     useState([]);
-
   const [search, setSearch] =
     useState("");
-
   const [
     debouncedSearch,
     setDebouncedSearch,
   ] = useState("");
-
   const [role, setRole] =
     useState("ALL");
-
   const [page, setPage] =
     useState(1);
-
   const [
     pagination,
     setPagination,
@@ -405,7 +464,6 @@ export default function AuditLogsPage({
     total: 0,
     totalPages: 1,
   });
-
   const [summary, setSummary] =
     useState({
       total: 0,
@@ -415,39 +473,28 @@ export default function AuditLogsPage({
       hrCoordinator: 0,
       itSupport: 0,
     });
-
   const [isLoading, setIsLoading] =
     useState(true);
-
   const [
     isRefreshing,
     setIsRefreshing,
   ] = useState(false);
-
   const [pageError, setPageError] =
     useState("");
-
   const isMountedRef =
     useRef(true);
-
   const requestIdRef =
     useRef(0);
-
   const searchTimerRef =
     useRef(null);
-
   const dataUpdateTimerRef =
     useRef(null);
-
   const initialLoadDoneRef =
     useRef(false);
-
   useEffect(() => {
     isMountedRef.current = true;
-
     return () => {
       isMountedRef.current = false;
-
       if (
         searchTimerRef.current
       ) {
@@ -455,7 +502,6 @@ export default function AuditLogsPage({
           searchTimerRef.current
         );
       }
-
       if (
         dataUpdateTimerRef.current
       ) {
@@ -465,7 +511,6 @@ export default function AuditLogsPage({
       }
     };
   }, []);
-
   useEffect(() => {
     if (
       searchTimerRef.current
@@ -474,18 +519,15 @@ export default function AuditLogsPage({
         searchTimerRef.current
       );
     }
-
     searchTimerRef.current =
       window.setTimeout(() => {
         setDebouncedSearch(
           String(search || "")
             .trim()
         );
-
         searchTimerRef.current =
           null;
       }, SEARCH_DEBOUNCE_MS);
-
     return () => {
       if (
         searchTimerRef.current
@@ -493,13 +535,11 @@ export default function AuditLogsPage({
         window.clearTimeout(
           searchTimerRef.current
         );
-
         searchTimerRef.current =
           null;
       }
     };
   }, [search]);
-
   const fetchLogs = useCallback(
     async ({
       showInitialLoading = false,
@@ -508,24 +548,20 @@ export default function AuditLogsPage({
     } = {}) => {
       const requestId =
         requestIdRef.current + 1;
-
       requestIdRef.current =
         requestId;
-
       if (
         showInitialLoading &&
         isMountedRef.current
       ) {
         setIsLoading(true);
       }
-
       if (
         showRefreshing &&
         isMountedRef.current
       ) {
         setIsRefreshing(true);
       }
-
       try {
         if (
           showError &&
@@ -533,12 +569,10 @@ export default function AuditLogsPage({
         ) {
           setPageError("");
         }
-
         const selectedCategory =
           String(category || "")
             .trim()
             .toUpperCase();
-
         const query =
           new URLSearchParams({
             view: "summary",
@@ -552,17 +586,14 @@ export default function AuditLogsPage({
               debouncedSearch,
             role,
           });
-
         const endpoint =
           `${AUDIT_LOGS_API_URL}/${encodeURIComponent(
             selectedCategory
           )}?${query.toString()}`;
-
         const result =
           await getSharedAuditRequest(
             endpoint
           );
-
         if (
           !isMountedRef.current ||
           requestId !==
@@ -570,36 +601,29 @@ export default function AuditLogsPage({
         ) {
           return false;
         }
-
         const nextLogs =
           Array.isArray(
             result?.records
           )
             ? result.records
             : [];
-
         const nextPagination =
           result?.pagination ||
           {};
-
         const nextSummary =
           result?.summary ||
           {};
-
         setLogs(nextLogs);
-
         setPagination({
           page:
             Number(
               nextPagination.page
             ) || page,
-
           pageSize:
             Number(
               nextPagination.pageSize
             ) ||
             AUDIT_PAGE_SIZE,
-
           total:
             Math.max(
               Number(
@@ -607,7 +631,6 @@ export default function AuditLogsPage({
               ) || 0,
               0
             ),
-
           totalPages:
             Math.max(
               Number(
@@ -616,7 +639,6 @@ export default function AuditLogsPage({
               1
             ),
         });
-
         setSummary({
           total:
             Math.max(
@@ -625,7 +647,6 @@ export default function AuditLogsPage({
               ) || 0,
               0
             ),
-
           superAdmin:
             Math.max(
               Number(
@@ -633,7 +654,6 @@ export default function AuditLogsPage({
               ) || 0,
               0
             ),
-
           hrManager:
             Math.max(
               Number(
@@ -641,7 +661,6 @@ export default function AuditLogsPage({
               ) || 0,
               0
             ),
-
           hrStaff:
             Math.max(
               Number(
@@ -649,7 +668,6 @@ export default function AuditLogsPage({
               ) || 0,
               0
             ),
-
           hrCoordinator:
             Math.max(
               Number(
@@ -657,7 +675,6 @@ export default function AuditLogsPage({
               ) || 0,
               0
             ),
-
           itSupport:
             Math.max(
               Number(
@@ -666,17 +683,14 @@ export default function AuditLogsPage({
               0
             ),
         });
-
         initialLoadDoneRef.current =
           true;
-
         return true;
       } catch (error) {
         console.error(
           "Fetch audit logs error:",
           error
         );
-
         if (
           showError &&
           isMountedRef.current &&
@@ -688,7 +702,6 @@ export default function AuditLogsPage({
               "Unable to load audit logs."
           );
         }
-
         return false;
       } finally {
         if (
@@ -699,7 +712,6 @@ export default function AuditLogsPage({
           if (showInitialLoading) {
             setIsLoading(false);
           }
-
           if (showRefreshing) {
             setIsRefreshing(false);
           }
@@ -713,14 +725,12 @@ export default function AuditLogsPage({
       role,
     ]
   );
-
   useEffect(() => {
     void fetchLogs({
       showInitialLoading:
         !initialLoadDoneRef.current,
     });
   }, [fetchLogs]);
-
   useEffect(() => {
     const handleDataUpdated = () => {
       if (
@@ -730,23 +740,19 @@ export default function AuditLogsPage({
           dataUpdateTimerRef.current
         );
       }
-
       dataUpdateTimerRef.current =
         window.setTimeout(() => {
           void fetchLogs({
             showError: false,
           });
-
           dataUpdateTimerRef.current =
             null;
         }, DATA_UPDATE_DEBOUNCE_MS);
     };
-
     window.addEventListener(
       "dataUpdated",
       handleDataUpdated
     );
-
     return () => {
       if (
         dataUpdateTimerRef.current
@@ -754,18 +760,15 @@ export default function AuditLogsPage({
         window.clearTimeout(
           dataUpdateTimerRef.current
         );
-
         dataUpdateTimerRef.current =
           null;
       }
-
       window.removeEventListener(
         "dataUpdated",
         handleDataUpdated
       );
     };
   }, [fetchLogs]);
-
   const uniqueUsers =
     useMemo(() => {
       const users = logs
@@ -778,12 +781,10 @@ export default function AuditLogsPage({
             .trim()
             .toLowerCase()
         );
-
       return new Set(
         users
       ).size;
     }, [logs]);
-
   const availableRoles =
     useMemo(() => {
       const roleCounts = {
@@ -795,11 +796,9 @@ export default function AuditLogsPage({
           summary.hrStaff,
         HR_COORDINATOR:
           summary.hrCoordinator,
-
         IT_SUPPORT:
           summary.itSupport,
       };
-
       return Object.keys(
         ROLE_LABELS
       ).filter(
@@ -809,17 +808,13 @@ export default function AuditLogsPage({
           ) > 0
       );
     }, [summary]);
-
   const hasSearch =
     Boolean(search.trim());
-
   const hasRoleFilter =
     role !== "ALL";
-
   const hasActiveFilters =
     hasSearch ||
     hasRoleFilter;
-
   const handleRefresh =
     useCallback(async () => {
       if (
@@ -828,7 +823,6 @@ export default function AuditLogsPage({
       ) {
         return;
       }
-
       await fetchLogs({
         showRefreshing: true,
       });
@@ -837,7 +831,6 @@ export default function AuditLogsPage({
       isLoading,
       isRefreshing,
     ]);
-
   const handleClearFilters =
     useCallback(() => {
       if (
@@ -846,17 +839,14 @@ export default function AuditLogsPage({
         window.clearTimeout(
           searchTimerRef.current
         );
-
         searchTimerRef.current =
           null;
       }
-
       setSearch("");
       setDebouncedSearch("");
       setRole("ALL");
       setPage(1);
     }, []);
-
   const emptyStateContent =
     useMemo(() => {
       if (
@@ -870,7 +860,6 @@ export default function AuditLogsPage({
             "Audit activity will appear here after authorized system actions are recorded.",
         };
       }
-
       if (hasSearch) {
         return {
           icon: "search",
@@ -880,7 +869,6 @@ export default function AuditLogsPage({
             "No audit logs matched the current search.",
         };
       }
-
       if (hasRoleFilter) {
         return {
           icon: "filter",
@@ -890,7 +878,6 @@ export default function AuditLogsPage({
             "Audit logs exist, but none match the selected role.",
         };
       }
-
       return {
         icon: "records",
         title:
@@ -903,7 +890,6 @@ export default function AuditLogsPage({
       hasSearch,
       summary.total,
     ]);
-
   return (
     <main className="min-w-0 space-y-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
@@ -945,7 +931,6 @@ export default function AuditLogsPage({
           </Button>
         }
       />
-
       {pageError && (
         <ErrorState
           compact
@@ -959,7 +944,6 @@ export default function AuditLogsPage({
           }
         />
       )}
-
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <SummaryCard
           icon={
@@ -971,7 +955,6 @@ export default function AuditLogsPage({
           value={summary.total}
           helper="All audit records"
         />
-
         <SummaryCard
           icon={
             <FiShield
@@ -984,7 +967,6 @@ export default function AuditLogsPage({
           }
           helper="Unique actors on this page"
         />
-
         <SummaryCard
           icon={
             <FiClock
@@ -998,7 +980,6 @@ export default function AuditLogsPage({
           helper="Records on this page"
         />
       </div>
-
       <FilterBar
         resultCount={
           pagination.total
@@ -1046,18 +1027,15 @@ export default function AuditLogsPage({
                 window.clearTimeout(
                   searchTimerRef.current
                 );
-
                 searchTimerRef.current =
                   null;
               }
-
               setSearch("");
               setDebouncedSearch("");
               setPage(1);
             }}
           />
         </div>
-
         <div className="min-w-0 xl:w-56">
           <label
             htmlFor={`audit-role-filter-${category}`}
@@ -1065,7 +1043,6 @@ export default function AuditLogsPage({
           >
             User Role
           </label>
-
           <select
             id={`audit-role-filter-${category}`}
             value={role}
@@ -1088,7 +1065,6 @@ export default function AuditLogsPage({
             <option value="ALL">
               All Roles
             </option>
-
             {availableRoles.map(
               (roleName) => (
                 <option
@@ -1111,7 +1087,6 @@ export default function AuditLogsPage({
           </select>
         </div>
       </FilterBar>
-
       {isLoading ? (
         <LoadingSkeleton
           rows={7}
@@ -1149,7 +1124,6 @@ export default function AuditLogsPage({
             <h2 className="text-lg font-extrabold text-gray-900 dark:text-white">
               Audit Records
             </h2>
-
             <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
               Review recorded
               system and
@@ -1157,7 +1131,6 @@ export default function AuditLogsPage({
               activity.
             </p>
           </header>
-
           <div className="max-h-[680px] overflow-auto">
             <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left text-sm">
               <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:bg-slate-800 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
@@ -1168,28 +1141,24 @@ export default function AuditLogsPage({
                   >
                     Date & Time
                   </th>
-
                   <th
                     scope="col"
                     className="px-6 py-4"
                   >
                     User
                   </th>
-
                   <th
                     scope="col"
                     className="px-6 py-4"
                   >
                     Role
                   </th>
-
                   <th
                     scope="col"
                     className="px-6 py-4"
                   >
                     Action
                   </th>
-
                   <th
                     scope="col"
                     className="px-6 py-4"
@@ -1198,7 +1167,6 @@ export default function AuditLogsPage({
                   </th>
                 </tr>
               </thead>
-
               <tbody className="divide-y divide-gray-100 text-gray-700 dark:divide-white/5 dark:text-gray-200">
                 {logs.map(
                   (
@@ -1209,12 +1177,10 @@ export default function AuditLogsPage({
                       getActorName(
                         log
                       );
-
                     const readableDescription =
                       getReadableAuditDescription(
                         log
                       );
-
                     return (
                       <tr
                         key={getLogKey(
@@ -1225,11 +1191,12 @@ export default function AuditLogsPage({
                       >
                         <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-300">
                           {formatDate(
-                            log?.created_at ||
+                            log?.createdAtTimestamp ??
+                              log?.created_at_timestamp ??
+                              log?.created_at ??
                               log?.createdAt
                           )}
                         </td>
-
                         <td className="px-6 py-4">
                           <div className="min-w-0">
                             <p className="max-w-[220px] truncate font-semibold text-gray-900 dark:text-white">
@@ -1237,7 +1204,6 @@ export default function AuditLogsPage({
                                 actorName
                               }
                             </p>
-
                             {log?.username &&
                               actorName !==
                                 log.username && (
@@ -1250,7 +1216,6 @@ export default function AuditLogsPage({
                               )}
                           </div>
                         </td>
-
                         <td className="whitespace-nowrap px-6 py-4">
                           <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             {ROLE_LABELS[
@@ -1263,7 +1228,6 @@ export default function AuditLogsPage({
                               )}
                           </span>
                         </td>
-
                         <td className="whitespace-nowrap px-6 py-4">
                           <span
                             className={[
@@ -1280,7 +1244,6 @@ export default function AuditLogsPage({
                             )}
                           </span>
                         </td>
-
                         <td className="min-w-[320px] px-6 py-4 leading-6 text-gray-600 dark:text-gray-300">
                           {
                             readableDescription
@@ -1295,7 +1258,6 @@ export default function AuditLogsPage({
           </div>
         </section>
       )}
-
       {pagination.total > 0 && (
         <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-950">
           <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -1313,7 +1275,6 @@ export default function AuditLogsPage({
             </span>{" "}
             matching audit log(s)
           </p>
-
           <div className="flex items-center gap-2">
             <Button
               variant="secondary"
@@ -1334,7 +1295,6 @@ export default function AuditLogsPage({
             >
               Previous
             </Button>
-
             <Button
               variant="secondary"
               size="sm"

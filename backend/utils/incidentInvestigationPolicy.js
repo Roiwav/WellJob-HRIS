@@ -6,10 +6,58 @@ const INVESTIGATOR_ROLES = new Set([
 ]);
 
 function normalizeRole(value) {
-  return String(value || "")
+  const role = String(value || "")
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, "_");
+
+  if (
+    [
+      "SUPERADMIN",
+      "SUPER_ADMIN",
+      "ADMIN",
+    ].includes(role)
+  ) {
+    return "SUPER_ADMIN";
+  }
+
+  if (
+    [
+      "HRMANAGER",
+      "HR_MANAGER",
+    ].includes(role)
+  ) {
+    return "HR_MANAGER";
+  }
+
+  if (
+    [
+      "HRSTAFF",
+      "HR_STAFF",
+    ].includes(role)
+  ) {
+    return "HR_STAFF";
+  }
+
+  if (
+    [
+      "HRCOORDINATOR",
+      "HR_COORDINATOR",
+    ].includes(role)
+  ) {
+    return "HR_COORDINATOR";
+  }
+
+  if (
+    [
+      "ITSUPPORT",
+      "IT_SUPPORT",
+    ].includes(role)
+  ) {
+    return "IT_SUPPORT";
+  }
+
+  return role;
 }
 
 function normalizeCompany(value) {
@@ -26,7 +74,7 @@ function normalizeStatus(value) {
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ");
 
-  if (normalized === "for review" || normalized === "resolved") {
+  if (normalized === "for review") {
     return "For Review";
   }
 
@@ -34,7 +82,10 @@ function normalizeStatus(value) {
     return "Investigating";
   }
 
-  if (normalized === "closed") {
+  if (
+    normalized === "closed" ||
+    normalized === "resolved"
+  ) {
     return "Closed";
   }
 
@@ -42,7 +93,9 @@ function normalizeStatus(value) {
 }
 
 function canonicalUserId(value) {
-  const normalized = String(value ?? "").trim();
+  const normalized = String(
+    value ?? ""
+  ).trim();
 
   if (!/^\d+$/.test(normalized)) {
     return null;
@@ -50,56 +103,152 @@ function canonicalUserId(value) {
 
   const id = Number(normalized);
 
-  return Number.isSafeInteger(id) && id > 0
+  return (
+    Number.isSafeInteger(id) &&
+    id > 0
+  )
     ? id
     : null;
 }
 
-function getIncidentCreator(incident = {}) {
+function firstCanonicalUserId(
+  ...values
+) {
+  for (const value of values) {
+    const id =
+      canonicalUserId(value);
+
+    if (id) {
+      return id;
+    }
+  }
+
+  return null;
+}
+
+function firstNonEmptyText(
+  ...values
+) {
+  for (const value of values) {
+    const text = String(
+      value ?? ""
+    ).trim();
+
+    if (text) {
+      return text;
+    }
+  }
+
+  return "";
+}
+
+function getIncidentCreator(
+  incident = {}
+) {
   return {
-    id: canonicalUserId(
-      incident.report_creator_id ??
-        incident.reportCreatorId ??
-        incident.created_by_id ??
-        incident.createdById
-    ),
+    id:
+      firstCanonicalUserId(
+        incident.report_creator_id,
+        incident.reportCreatorId,
+        incident.created_by_id,
+        incident.createdById,
+        incident.creator_user_id,
+        incident.creatorUserId,
+        incident.reported_by_user_id,
+        incident.reportedByUserId
+      ),
+
     username:
-      incident.report_creator_username ??
-      incident.reportCreatorUsername ??
-      incident.created_by_username ??
-      incident.createdByUsername ??
-      null,
+      firstNonEmptyText(
+        incident.report_creator_username,
+        incident.reportCreatorUsername,
+        incident.created_by_username,
+        incident.createdByUsername,
+        incident.creator_username,
+        incident.creatorUsername,
+        incident.reported_by_username,
+        incident.reportedByUsername
+      ) || null,
+
     name:
-      incident.report_creator_name ??
-      incident.reportCreatorName ??
-      incident.created_by_name ??
-      incident.createdByName ??
-      null,
-    role: normalizeRole(
-      incident.report_creator_role ??
-        incident.reportCreatorRole ??
-        incident.created_by_role ??
-        incident.createdByRole
-    ),
+      firstNonEmptyText(
+        incident.report_creator_name,
+        incident.reportCreatorName,
+        incident.created_by_name,
+        incident.createdByName,
+        incident.creator_name,
+        incident.creatorName,
+        incident.reported_by_name,
+        incident.reportedByName
+      ) || null,
+
+    role:
+      normalizeRole(
+        firstNonEmptyText(
+          incident.report_creator_role,
+          incident.reportCreatorRole,
+          incident.created_by_role,
+          incident.createdByRole,
+          incident.creator_role,
+          incident.creatorRole,
+          incident.reported_by_role,
+          incident.reportedByRole
+        )
+      ),
   };
 }
 
-function getReportingPath(incident = {}) {
-  const creatorRole =
-    getIncidentCreator(incident).role;
+function getReportingPath(
+  incident = {}
+) {
+  const explicitPath =
+    firstNonEmptyText(
+      incident.reporting_path,
+      incident.reportingPath
+    )
+      .toUpperCase()
+      .replace(/[\s-]+/g, "_");
 
-  if (creatorRole === "HR_COORDINATOR") {
+  if (
+    [
+      "ONSITE",
+      "MAIN_OFFICE",
+    ].includes(explicitPath)
+  ) {
+    return explicitPath;
+  }
+
+  const creatorRole =
+    getIncidentCreator(
+      incident
+    ).role;
+
+  if (
+    creatorRole ===
+    "HR_COORDINATOR"
+  ) {
     return "ONSITE";
   }
 
-  if (["HR_MANAGER", "HR_STAFF"].includes(creatorRole)) {
+  if (
+    [
+      "HR_MANAGER",
+      "HR_STAFF",
+    ].includes(
+      creatorRole
+    )
+  ) {
     return "MAIN_OFFICE";
   }
 
   return "UNKNOWN";
 }
 
-function reject(code, message, statusCode = 403) {
+function reject(
+  code,
+  message,
+  statusCode = 403
+) {
   return {
     allowed: false,
     code,
@@ -108,18 +257,112 @@ function reject(code, message, statusCode = 403) {
   };
 }
 
+function getActorUserId(
+  actor = {}
+) {
+  return firstCanonicalUserId(
+    actor.userId,
+    actor.user_id,
+    actor.id
+  );
+}
+
+function getActorAssignedCompany(
+  actor = {}
+) {
+  return normalizeCompany(
+    firstNonEmptyText(
+      actor.assignedCompany,
+      actor.assigned_company,
+      actor.company,
+      actor.companyName,
+      actor.company_name
+    )
+  );
+}
+
+function getIncidentCompany(
+  incident = {}
+) {
+  return normalizeCompany(
+    firstNonEmptyText(
+      incident.company,
+      incident.companyName,
+      incident.company_name
+    )
+  );
+}
+
+function hasInvestigationStarted(
+  incident = {}
+) {
+  return Boolean(
+    incident.investigation_started_at ||
+      incident.investigationStartedAt ||
+      incident.investigation?.started_at ||
+      incident.investigation?.startedAt
+  );
+}
+
+function getCanonicalInvestigatorId(
+  incident = {}
+) {
+  return firstCanonicalUserId(
+    incident.investigation_started_by_id,
+    incident.investigationStartedById,
+    incident.investigation?.started_by_id,
+    incident.investigation?.startedById
+  );
+}
+
+/**
+ * Determines whether the authenticated actor may claim an Open incident.
+ *
+ * Policy:
+ * - HR Manager:
+ *   - may claim their own HR Manager-created report;
+ *   - may claim HR Coordinator-created reports;
+ *   - may claim reliable legacy HR Staff-created reports;
+ *   - may NOT claim another HR Manager's manager-created report.
+ *
+ * - HR Coordinator:
+ *   - may claim an eligible incident only when the incident belongs to
+ *     the coordinator's assigned company.
+ *
+ * - HR Staff / Super Admin / IT Support:
+ *   - may not start investigations.
+ *
+ * Missing or unreliable canonical creator metadata fails closed.
+ */
 function evaluateStartInvestigation({
   actor = {},
   incident = {},
 } = {}) {
-  const role = normalizeRole(actor.role);
-  const actorId = canonicalUserId(
-    actor.userId ?? actor.id
-  );
-  const creator = getIncidentCreator(incident);
-  const reportingPath = getReportingPath(incident);
+  const role =
+    normalizeRole(
+      actor.role
+    );
 
-  if (!INVESTIGATOR_ROLES.has(role)) {
+  const actorId =
+    getActorUserId(
+      actor
+    );
+
+  const creator =
+    getIncidentCreator(
+      incident
+    );
+
+  const reportingPath =
+    getReportingPath(
+      incident
+    );
+
+  if (
+    !INVESTIGATOR_ROLES.has(
+      role
+    )
+  ) {
     return reject(
       "INVESTIGATOR_ROLE_REQUIRED",
       "Your role is not authorized to start incident investigations."
@@ -127,9 +370,12 @@ function evaluateStartInvestigation({
   }
 
   if (
-    normalizeStatus(incident.status) !== "Open" ||
-    incident.investigation_started_at ||
-    incident.investigationStartedAt
+    normalizeStatus(
+      incident.status
+    ) !== "Open" ||
+    hasInvestigationStarted(
+      incident
+    )
   ) {
     return reject(
       "INVESTIGATION_ALREADY_STARTED",
@@ -138,7 +384,12 @@ function evaluateStartInvestigation({
     );
   }
 
-  if (!creator.id || reportingPath === "UNKNOWN") {
+  if (
+    !creator.id ||
+    !creator.role ||
+    reportingPath ===
+      "UNKNOWN"
+  ) {
     return reject(
       "REPORT_CREATOR_UNVERIFIABLE",
       "Investigation eligibility cannot be verified because this incident has no canonical report creator record.",
@@ -146,16 +397,25 @@ function evaluateStartInvestigation({
     );
   }
 
-  if (role === "HR_COORDINATOR") {
-    const assignedCompany = normalizeCompany(
-      actor.assignedCompany ?? actor.assigned_company
-    );
-    const incidentCompany = normalizeCompany(incident.company);
+  if (
+    role ===
+    "HR_COORDINATOR"
+  ) {
+    const assignedCompany =
+      getActorAssignedCompany(
+        actor
+      );
+
+    const incidentCompany =
+      getIncidentCompany(
+        incident
+      );
 
     if (
       !assignedCompany ||
       !incidentCompany ||
-      assignedCompany !== incidentCompany
+      assignedCompany !==
+        incidentCompany
     ) {
       return reject(
         "INCIDENT_COMPANY_SCOPE_REQUIRED",
@@ -165,15 +425,38 @@ function evaluateStartInvestigation({
 
     return {
       allowed: true,
-      code: "ASSIGNED_COMPANY_COORDINATOR_ELIGIBLE",
+      code:
+        "ASSIGNED_COMPANY_COORDINATOR_ELIGIBLE",
       reportingPath,
       statusCode: 200,
     };
   }
 
-  if (role === "HR_MANAGER") {
-    if (creator.role === "HR_MANAGER") {
-      if (!actorId || actorId !== creator.id) {
+  /*
+   * HR Manager policy.
+   */
+  if (
+    role ===
+    "HR_MANAGER"
+  ) {
+    if (
+      !actorId
+    ) {
+      return reject(
+        "ACTOR_ID_REQUIRED",
+        "Investigation eligibility cannot be verified because your authenticated user identity is unavailable.",
+        409
+      );
+    }
+
+    if (
+      creator.role ===
+      "HR_MANAGER"
+    ) {
+      if (
+        actorId !==
+        creator.id
+      ) {
         return reject(
           "ORIGINAL_MANAGER_CREATOR_REQUIRED",
           "Only the HR Manager who created this report or a same-company HR Coordinator can start its investigation."
@@ -182,16 +465,25 @@ function evaluateStartInvestigation({
 
       return {
         allowed: true,
-        code: "ORIGINAL_MANAGER_CREATOR_ELIGIBLE",
+        code:
+          "ORIGINAL_MANAGER_CREATOR_ELIGIBLE",
         reportingPath,
         statusCode: 200,
       };
     }
 
-    if (["HR_COORDINATOR", "HR_STAFF"].includes(creator.role)) {
+    if (
+      [
+        "HR_COORDINATOR",
+        "HR_STAFF",
+      ].includes(
+        creator.role
+      )
+    ) {
       return {
         allowed: true,
-        code: "HR_MANAGER_ELIGIBLE",
+        code:
+          "HR_MANAGER_ELIGIBLE",
         reportingPath,
         statusCode: 200,
       };
@@ -204,27 +496,45 @@ function evaluateStartInvestigation({
   );
 }
 
+/**
+ * Only the canonical investigator may submit or resubmit Resolution Proof.
+ */
 function evaluateProofSubmission({
   actor = {},
   incident = {},
 } = {}) {
-  const role = normalizeRole(actor.role);
-  const actorId = canonicalUserId(
-    actor.userId ?? actor.id
-  );
-  const investigatorId = canonicalUserId(
-    incident.investigation_started_by_id ??
-      incident.investigationStartedById
-  );
+  const role =
+    normalizeRole(
+      actor.role
+    );
 
-  if (!INVESTIGATOR_ROLES.has(role)) {
+  const actorId =
+    getActorUserId(
+      actor
+    );
+
+  const investigatorId =
+    getCanonicalInvestigatorId(
+      incident
+    );
+
+  if (
+    !INVESTIGATOR_ROLES.has(
+      role
+    )
+  ) {
     return reject(
       "INVESTIGATOR_ROLE_REQUIRED",
       "Your role is not authorized to submit investigation proof."
     );
   }
 
-  if (normalizeStatus(incident.status) !== "Investigating") {
+  if (
+    normalizeStatus(
+      incident.status
+    ) !==
+    "Investigating"
+  ) {
     return reject(
       "INVESTIGATING_STATUS_REQUIRED",
       "Only an Investigating case can be submitted for review.",
@@ -232,7 +542,9 @@ function evaluateProofSubmission({
     );
   }
 
-  if (!investigatorId) {
+  if (
+    !investigatorId
+  ) {
     return reject(
       "INVESTIGATOR_ID_REQUIRED",
       "This case has no canonical assigned investigator.",
@@ -240,23 +552,36 @@ function evaluateProofSubmission({
     );
   }
 
-  if (!actorId || actorId !== investigatorId) {
+  if (
+    !actorId ||
+    actorId !==
+      investigatorId
+  ) {
     return reject(
       "ASSIGNED_INVESTIGATOR_REQUIRED",
       "Only the assigned investigator can submit or resubmit proof for this case."
     );
   }
 
-  if (role === "HR_COORDINATOR") {
-    const assignedCompany = normalizeCompany(
-      actor.assignedCompany ?? actor.assigned_company
-    );
-    const incidentCompany = normalizeCompany(incident.company);
+  if (
+    role ===
+    "HR_COORDINATOR"
+  ) {
+    const assignedCompany =
+      getActorAssignedCompany(
+        actor
+      );
+
+    const incidentCompany =
+      getIncidentCompany(
+        incident
+      );
 
     if (
       !assignedCompany ||
       !incidentCompany ||
-      assignedCompany !== incidentCompany
+      assignedCompany !==
+        incidentCompany
     ) {
       return reject(
         "INCIDENT_COMPANY_SCOPE_REQUIRED",
@@ -267,7 +592,8 @@ function evaluateProofSubmission({
 
   return {
     allowed: true,
-    code: "ASSIGNED_INVESTIGATOR_VERIFIED",
+    code:
+      "ASSIGNED_INVESTIGATOR_VERIFIED",
     statusCode: 200,
   };
 }

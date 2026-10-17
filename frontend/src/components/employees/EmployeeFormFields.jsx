@@ -27,6 +27,9 @@ const INPUT_CLASS_NAME =
 const ERROR_INPUT_CLASS_NAME =
   "border-red-500 focus:border-red-500 focus:ring-red-500/20 dark:border-red-500";
 
+const EMPLOYEE_TIME_ZONE =
+  "Asia/Manila";
+
 function getInputClassName(
   hasError = false,
   extraClassName = ""
@@ -62,6 +65,60 @@ function getOptionKey(
   )
     .trim()
     .toLowerCase()}`;
+}
+
+function getTodayDateInputValue() {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          EMPLOYEE_TIME_ZONE,
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      new Date()
+    );
+
+  const values =
+    Object.fromEntries(
+      parts
+        .filter(
+          (part) =>
+            [
+              "year",
+              "month",
+              "day",
+            ].includes(
+              part.type
+            )
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ]
+        )
+    );
+
+  if (
+    !values.year ||
+    !values.month ||
+    !values.day
+  ) {
+    return "";
+  }
+
+  return (
+    `${values.year}-` +
+    `${values.month}-` +
+    `${values.day}`
+  );
 }
 
 function getManagedOptionLabel(
@@ -109,9 +166,32 @@ export default function EmployeeFormFields({
   const isEditMode =
     mode === "edit";
 
+  const workforceStatus =
+    String(
+      formData?.workforceStatus ||
+      formData?.workforce_status ||
+      formData?.status ||
+      "Floating / Standby"
+    ).trim();
+
   const isDeployed =
-    formData?.status ===
+    workforceStatus ===
     "Deployed";
+
+  const isForDeployment =
+    workforceStatus ===
+    "For Deployment";
+
+  const isPooling =
+    workforceStatus ===
+    "Floating / Standby";
+
+  const placementLocked =
+    isEditMode &&
+    (
+      isDeployed ||
+      isForDeployment
+    );
 
   const selectedCompany =
     String(
@@ -125,12 +205,14 @@ export default function EmployeeFormFields({
 
   const companySelectDisabled =
     disabled ||
-    isLoadingCompanies;
+    isLoadingCompanies ||
+    placementLocked;
 
   const positionSelectDisabled =
     disabled ||
     isLoadingPositions ||
-    !selectedCompany;
+    !selectedCompany ||
+    placementLocked;
 
   const hasCompanyOptions =
     Array.isArray(
@@ -162,9 +244,8 @@ export default function EmployeeFormFields({
           </h3>
 
           <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
-            Employee ID is the
-            official unique
-            identifier.
+            Record employment details
+            and current workforce placement.
           </p>
         </div>
       </div>
@@ -199,9 +280,12 @@ export default function EmployeeFormFields({
         </FormField>
 
         <FormField
-          label="Employment Status"
+          label="Current Workforce Status"
           name="status"
           required
+          error={
+            errors?.status
+          }
         >
           {({
             id,
@@ -212,29 +296,45 @@ export default function EmployeeFormFields({
                 id={id}
                 name="status"
                 value={
-                  formData?.status ||
-                  "Deployed"
+                  workforceStatus
                 }
                 onChange={
                   onChange
                 }
                 disabled={
-                  disabled
+                  disabled ||
+                  isEditMode
+                }
+                aria-invalid={
+                  Boolean(
+                    errors?.status
+                  )
                 }
                 className={
                   getInputClassName(
-                    false,
+                    Boolean(
+                      errors?.status
+                    ),
                     "appearance-none pr-10"
                   )
                 }
                 {...fieldProps}
               >
-                <option value="Deployed">
-                  Deployed
+                <option value="Floating / Standby">
+                  Floating / Standby (Pooling)
                 </option>
 
-                <option value="Floating / Standby">
-                  Floating / Standby
+                {isEditMode &&
+                  isForDeployment && (
+                    <option value="For Deployment">
+                      For Deployment
+                    </option>
+                  )}
+
+                <option value="Deployed">
+                  {isEditMode
+                    ? "Deployed"
+                    : "Already Deployed"}
                 </option>
               </select>
 
@@ -298,335 +398,440 @@ export default function EmployeeFormFields({
           </FormField>
         </div>
 
-        {isDeployed ? (
-          <>
-            <div className="md:col-span-2">
-              <FormField
-                label="Company Assignment"
-                name="company"
-                required
-                error={
-                  errors?.company
+        <div className="md:col-span-2">
+          <FormField
+            label="Birthday"
+            name="birthday"
+            error={
+              errors?.birthday
+            }
+          >
+            {({
+              id,
+              ...fieldProps
+            }) => (
+              <input
+                id={id}
+                type="date"
+                name="birthday"
+                value={
+                  formData?.birthday ||
+                  ""
                 }
-              >
-                {({
-                  id,
-                  ...fieldProps
-                }) => (
-                  <div className="relative">
-                    <select
-                      id={id}
-                      name="company"
-                      value={
-                        selectedCompany
-                      }
-                      onChange={
-                        onChange
-                      }
-                      disabled={
-                        companySelectDisabled
-                      }
-                      aria-invalid={
-                        Boolean(
-                          errors?.company
-                        )
-                      }
-                      className={
-                        getInputClassName(
-                          Boolean(
-                            errors?.company
-                          ),
-                          "appearance-none pr-10"
-                        )
-                      }
-                      {...fieldProps}
-                    >
-                      <option value="">
-                        {isLoadingCompanies
-                          ? "Loading companies..."
-                          : hasCompanyOptions
-                            ? "Select client company"
-                            : "No active companies available"}
+                max={
+                  getTodayDateInputValue()
+                }
+                onChange={
+                  onChange
+                }
+                disabled={
+                  disabled
+                }
+                aria-invalid={
+                  Boolean(
+                    errors?.birthday
+                  )
+                }
+                className={
+                  getInputClassName(
+                    Boolean(
+                      errors?.birthday
+                    )
+                  )
+                }
+                {...fieldProps}
+              />
+            )}
+          </FormField>
+        </div>
+
+        <div className="md:col-span-2">
+          <FormField
+            label="Date Hired"
+            name="dateHired"
+            required
+            error={
+              errors?.dateHired ||
+              errors?.date_hired
+            }
+          >
+            {({
+              id,
+              ...fieldProps
+            }) => (
+              <input
+                id={id}
+                type="date"
+                name="dateHired"
+                value={
+                  formData?.dateHired ||
+                  formData?.date_hired ||
+                  ""
+                }
+                max={
+                  getTodayDateInputValue()
+                }
+                onChange={
+                  onChange
+                }
+                disabled={
+                  disabled
+                }
+                aria-invalid={
+                  Boolean(
+                    errors?.dateHired ||
+                    errors?.date_hired
+                  )
+                }
+                className={
+                  getInputClassName(
+                    Boolean(
+                      errors?.dateHired ||
+                      errors?.date_hired
+                    )
+                  )
+                }
+                {...fieldProps}
+              />
+            )}
+          </FormField>
+        </div>
+
+        <div className="md:col-span-2">
+          <FormField
+            label={
+              isDeployed
+                ? "Current Company"
+                : isForDeployment
+                  ? "Scheduled Company"
+                  : "Designated Company"
+            }
+            name="company"
+            required
+            error={
+              errors?.company
+            }
+          >
+            {({
+              id,
+              ...fieldProps
+            }) => (
+              <div className="relative">
+                <select
+                  id={id}
+                  name="company"
+                  value={
+                    selectedCompany
+                  }
+                  onChange={
+                    onChange
+                  }
+                  disabled={
+                    companySelectDisabled
+                  }
+                  aria-invalid={
+                    Boolean(
+                      errors?.company
+                    )
+                  }
+                  className={
+                    getInputClassName(
+                      Boolean(
+                        errors?.company
+                      ),
+                      "appearance-none pr-10"
+                    )
+                  }
+                  {...fieldProps}
+                >
+                  <option value="">
+                    {isLoadingCompanies
+                      ? "Loading companies..."
+                      : hasCompanyOptions
+                        ? "Select client company"
+                        : "No active companies available"}
+                  </option>
+
+                  {companyOptions.map(
+                    (
+                      option
+                    ) => (
+                      <option
+                        key={
+                          getOptionKey(
+                            option,
+                            "company"
+                          )
+                        }
+                        value={
+                          option.name
+                        }
+                      >
+                        {
+                          getManagedOptionLabel(
+                            option
+                          )
+                        }
                       </option>
+                    )
+                  )}
+                </select>
 
-                      {companyOptions.map(
-                        (
-                          option
-                        ) => (
-                          <option
-                            key={
-                              getOptionKey(
-                                option,
-                                "company"
-                              )
-                            }
-                            value={
-                              option.name
-                            }
-                          >
-                            {
-                              getManagedOptionLabel(
-                                option
-                              )
-                            }
-                          </option>
-                        )
-                      )}
-                    </select>
+                <FiChevronDown
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400"
+                />
+              </div>
+            )}
+          </FormField>
 
-                    <FiChevronDown
-                      aria-hidden="true"
-                      className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400"
-                    />
-                  </div>
-                )}
-              </FormField>
+          {!isLoadingCompanies &&
+            !hasCompanyOptions &&
+            !deploymentOptionsError && (
+              <p className="mt-2 flex items-start gap-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                <FiAlertTriangle
+                  aria-hidden="true"
+                  className="mt-0.5 shrink-0"
+                />
 
-              {!isLoadingCompanies &&
-                !hasCompanyOptions &&
-                !deploymentOptionsError && (
-                  <p className="mt-2 flex items-start gap-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
-                    <FiAlertTriangle
-                      aria-hidden="true"
-                      className="mt-0.5 shrink-0"
-                    />
+                <span>
+                  No active client company
+                  is currently available.
+                </span>
+              </p>
+            )}
+        </div>
 
-                    <span>
-                      No active client
-                      company is currently
-                      available for new
-                      deployment
-                      assignments.
-                    </span>
-                  </p>
-                )}
-            </div>
+        <div className="md:col-span-2">
+          <FormField
+            label={
+              isDeployed
+                ? "Current Position"
+                : isForDeployment
+                  ? "Scheduled Position"
+                  : "Designated Position"
+            }
+            name="position"
+            required
+            error={
+              errors?.position
+            }
+          >
+            {({
+              id,
+              ...fieldProps
+            }) => (
+              <div className="relative">
+                <select
+                  id={id}
+                  name="position"
+                  value={
+                    selectedPosition
+                  }
+                  onChange={
+                    onChange
+                  }
+                  disabled={
+                    positionSelectDisabled
+                  }
+                  aria-invalid={
+                    Boolean(
+                      errors?.position
+                    )
+                  }
+                  className={
+                    getInputClassName(
+                      Boolean(
+                        errors?.position
+                      ),
+                      "appearance-none pr-10"
+                    )
+                  }
+                  {...fieldProps}
+                >
+                  <option value="">
+                    {!selectedCompany
+                      ? "Select a company first"
+                      : isLoadingPositions
+                        ? "Loading positions..."
+                        : hasPositionOptions
+                          ? "Select position"
+                          : "No active positions available"}
+                  </option>
 
-            <div className="md:col-span-2">
-              <FormField
-                label="Position"
-                name="position"
-                required
-                error={
-                  errors?.position
-                }
-              >
-                {({
-                  id,
-                  ...fieldProps
-                }) => (
-                  <div className="relative">
-                    <select
-                      id={id}
-                      name="position"
-                      value={
-                        selectedPosition
-                      }
-                      onChange={
-                        onChange
-                      }
-                      disabled={
-                        positionSelectDisabled
-                      }
-                      aria-invalid={
-                        Boolean(
-                          errors?.position
-                        )
-                      }
-                      className={
-                        getInputClassName(
-                          Boolean(
-                            errors?.position
-                          ),
-                          "appearance-none pr-10"
-                        )
-                      }
-                      {...fieldProps}
-                    >
-                      <option value="">
-                        {!selectedCompany
-                          ? "Select a company first"
-                          : isLoadingPositions
-                            ? "Loading positions..."
-                            : hasPositionOptions
-                              ? "Select position"
-                              : "No active positions available"}
+                  {positionOptions.map(
+                    (
+                      option
+                    ) => (
+                      <option
+                        key={
+                          getOptionKey(
+                            option,
+                            "position"
+                          )
+                        }
+                        value={
+                          option.name
+                        }
+                      >
+                        {
+                          getManagedOptionLabel(
+                            option
+                          )
+                        }
                       </option>
+                    )
+                  )}
+                </select>
 
-                      {positionOptions.map(
-                        (
-                          option
-                        ) => (
-                          <option
-                            key={
-                              getOptionKey(
-                                option,
-                                "position"
-                              )
-                            }
-                            value={
-                              option.name
-                            }
-                          >
-                            {
-                              getManagedOptionLabel(
-                                option
-                              )
-                            }
-                          </option>
-                        )
-                      )}
-                    </select>
+                <FiChevronDown
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400"
+                />
+              </div>
+            )}
+          </FormField>
 
-                    <FiChevronDown
-                      aria-hidden="true"
-                      className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400"
-                    />
-                  </div>
-                )}
-              </FormField>
+          {selectedCompany &&
+            !isLoadingPositions &&
+            !hasPositionOptions &&
+            !deploymentOptionsError && (
+              <p className="mt-2 flex items-start gap-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                <FiBriefcase
+                  aria-hidden="true"
+                  className="mt-0.5 shrink-0"
+                />
 
-              {selectedCompany &&
-                !isLoadingPositions &&
-                !hasPositionOptions &&
-                !deploymentOptionsError && (
-                  <p className="mt-2 flex items-start gap-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
-                    <FiBriefcase
-                      aria-hidden="true"
-                      className="mt-0.5 shrink-0"
-                    />
+                <span>
+                  No active position is
+                  configured for this company.
+                </span>
+              </p>
+            )}
+        </div>
 
-                    <span>
-                      No active position is
-                      configured for this
-                      company.
-                    </span>
-                  </p>
-                )}
-            </div>
-
-            <div className="md:col-span-2">
-              <FormField
-                label="Deployment Start Date"
-                name="contractStart"
-                required
-                error={
-                  errors?.contractStart
-                }
-              >
-                {({
-                  id,
-                  ...fieldProps
-                }) => (
-                  <input
-                    id={id}
-                    type="date"
-                    name="contractStart"
-                    value={
-                      formData?.contractStart ||
-                      ""
-                    }
-                    onChange={
-                      onChange
-                    }
-                    disabled={
-                      disabled
-                    }
-                    aria-invalid={
+        {isDeployed && (
+          <div className="md:col-span-2">
+            <FormField
+              label={
+                isEditMode
+                  ? "Deployment Start Date"
+                  : "Actual Deployment Start Date"
+              }
+              name="contractStart"
+              required
+              error={
+                errors?.contractStart
+              }
+            >
+              {({
+                id,
+                ...fieldProps
+              }) => (
+                <input
+                  id={id}
+                  type="date"
+                  name="contractStart"
+                  value={
+                    formData?.contractStart ||
+                    ""
+                  }
+                  onChange={
+                    onChange
+                  }
+                  disabled={
+                    disabled
+                  }
+                  aria-invalid={
+                    Boolean(
+                      errors?.contractStart
+                    )
+                  }
+                  className={
+                    getInputClassName(
                       Boolean(
                         errors?.contractStart
                       )
-                    }
-                    className={
-                      getInputClassName(
-                        Boolean(
-                          errors?.contractStart
-                        )
-                      )
-                    }
-                    {...fieldProps}
-                  />
-                )}
-              </FormField>
+                    )
+                  }
+                  {...fieldProps}
+                />
+              )}
+            </FormField>
+          </div>
+        )}
+
+        {deploymentOptionsError && (
+          <div
+            role="alert"
+            className="md:col-span-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+          >
+            <div className="flex items-start gap-3">
+              <FiAlertTriangle
+                aria-hidden="true"
+                className="mt-0.5 shrink-0"
+              />
+
+              <div>
+                <p className="font-extrabold">
+                  Company and position
+                  options unavailable
+                </p>
+
+                <p className="mt-1 leading-6">
+                  {
+                    deploymentOptionsError
+                  }
+                </p>
+              </div>
             </div>
+          </div>
+        )}
 
-            {deploymentOptionsError && (
-              <div
-                role="alert"
-                className="md:col-span-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
-              >
-                <div className="flex items-start gap-3">
-                  <FiAlertTriangle
-                    aria-hidden="true"
-                    className="mt-0.5 shrink-0"
-                  />
+        {isEditMode &&
+          (
+            companyOptions.some(
+              (
+                option
+              ) =>
+                option?.isHistorical &&
+                option?.name ===
+                  selectedCompany
+            ) ||
+            positionOptions.some(
+              (
+                option
+              ) =>
+                option?.isHistorical &&
+                option?.name ===
+                  selectedPosition
+            )
+          ) && (
+            <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              <div className="flex items-start gap-3">
+                <FiInfo
+                  aria-hidden="true"
+                  className="mt-0.5 shrink-0"
+                />
 
-                  <div>
-                    <p className="font-extrabold">
-                      Deployment options
-                      unavailable
-                    </p>
+                <div>
+                  <p className="font-extrabold">
+                    Existing assignment
+                  </p>
 
-                    <p className="mt-1 leading-6">
-                      {
-                        deploymentOptionsError
-                      }
-                    </p>
-                  </div>
+                  <p className="mt-1 leading-6">
+                    The current company or
+                    position is inactive in
+                    System Configuration.
+                    You may keep the existing
+                    value unchanged.
+                  </p>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {isEditMode &&
-              (
-                companyOptions.some(
-                  (
-                    option
-                  ) =>
-                    option?.isHistorical &&
-                    option?.name ===
-                      selectedCompany
-                ) ||
-                positionOptions.some(
-                  (
-                    option
-                  ) =>
-                    option?.isHistorical &&
-                    option?.name ===
-                      selectedPosition
-                )
-              ) && (
-                <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-                  <div className="flex items-start gap-3">
-                    <FiInfo
-                      aria-hidden="true"
-                      className="mt-0.5 shrink-0"
-                    />
-
-                    <div>
-                      <p className="font-extrabold">
-                        Historical deployment
-                        assignment
-                      </p>
-
-                      <p className="mt-1 leading-6">
-                        The employee&apos;s
-                        current company or
-                        position is no longer
-                        active in System
-                        Configuration. You may
-                        keep the existing
-                        assignment unchanged,
-                        but a new assignment
-                        must use active company
-                        and position options.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-          </>
-        ) : (
+        {isPooling && (
           <div className="md:col-span-2 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
             <div className="flex items-start gap-3">
               <FiInfo
@@ -636,21 +841,94 @@ export default function EmployeeFormFields({
 
               <div>
                 <p className="font-extrabold">
-                  Floating / Standby
-                  Employee
+                  Floating / Standby (Pooling)
                 </p>
 
                 <p className="mt-1 leading-6">
-                  Company assignment,
-                  position, and deployment
-                  start date are not
-                  required until the
-                  employee is deployed.
+                  Set the designated company
+                  and position now. Actual
+                  deployment starts after
+                  scheduling and arrival
+                  confirmation.
                 </p>
               </div>
             </div>
           </div>
         )}
+
+        {!isEditMode &&
+          isDeployed && (
+            <div className="md:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+              <div className="flex items-start gap-3">
+                <FiInfo
+                  aria-hidden="true"
+                  className="mt-0.5 shrink-0"
+                />
+
+                <div>
+                  <p className="font-extrabold">
+                    Existing deployed employee
+                  </p>
+
+                  <p className="mt-1 leading-6">
+                    Use the employee&apos;s
+                    actual company, position,
+                    and historical deployment
+                    start date.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+        {isEditMode &&
+          isForDeployment && (
+            <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              <div className="flex items-start gap-3">
+                <FiAlertTriangle
+                  aria-hidden="true"
+                  className="mt-0.5 shrink-0"
+                />
+
+                <div>
+                  <p className="font-extrabold">
+                    Deployment already scheduled
+                  </p>
+
+                  <p className="mt-1 leading-6">
+                    Withdraw the schedule before
+                    changing the designated company
+                    or position.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+        {isEditMode &&
+          isDeployed && (
+            <div className="md:col-span-2 rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-white/10 dark:bg-slate-800 dark:text-gray-300">
+              <div className="flex items-start gap-3">
+                <FiBriefcase
+                  aria-hidden="true"
+                  className="mt-0.5 shrink-0"
+                />
+
+                <div>
+                  <p className="font-extrabold">
+                    Active deployment
+                  </p>
+
+                  <p className="mt-1 leading-6">
+                    Company and position follow
+                    the active assignment. End
+                    the assignment before a
+                    transfer or reassignment.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
         {duplicateEmployee && (
           <div

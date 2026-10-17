@@ -161,6 +161,76 @@ function normalizeDate(value) {
   );
 }
 
+function normalizeEpochMilliseconds(
+  value
+) {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return 0;
+  }
+
+  const numericValue =
+    Number(
+      value
+    );
+
+  if (
+    Number.isFinite(
+      numericValue
+    ) &&
+    numericValue > 0
+  ) {
+    return numericValue <
+      100000000000
+      ? numericValue *
+          1000
+      : numericValue;
+  }
+
+  return 0;
+}
+
+function timestampToIsoString(
+  value
+) {
+  const timestamp =
+    normalizeEpochMilliseconds(
+      value
+    );
+
+  if (!timestamp) {
+    return null;
+  }
+
+  return new Date(
+    timestamp
+  ).toISOString();
+}
+
+function getDatabaseEventDateTime(
+  timestampValue,
+  rawValue = null
+) {
+  /*
+   * Prefer a numeric epoch calculated by MySQL itself.
+   *
+   * This bypasses mysql2/Node Date timezone conversion,
+   * which can shift a database workflow timestamp by
+   * eight hours when the DB/session and Node process use
+   * different timezone assumptions.
+   */
+  return (
+    timestampToIsoString(
+      timestampValue
+    ) ||
+    rawValue ||
+    null
+  );
+}
+
 function normalizeStatus(value) {
   const status =
     String(value || "")
@@ -1210,6 +1280,18 @@ function serializeEvidenceItem(
 function serializeTimelineItem(
   item
 ) {
+  const createdAtTimestamp =
+    normalizeEpochMilliseconds(
+      item.created_at_timestamp ??
+        item.createdAtTimestamp
+    );
+
+  const createdAt =
+    getDatabaseEventDateTime(
+      createdAtTimestamp,
+      item.created_at
+    );
+
   return {
     id:
       item.id,
@@ -1267,11 +1349,15 @@ function serializeTimelineItem(
       item.created_by_role ||
       null,
 
-    createdAt:
-      item.created_at,
+    createdAt,
 
     created_at:
-      item.created_at,
+      createdAt,
+
+    createdAtTimestamp,
+
+    created_at_timestamp:
+      createdAtTimestamp,
   };
 }
 
@@ -1283,7 +1369,11 @@ async function getTimelineByIncidentId(
       .promise()
       .query(
         `
-        SELECT *
+        SELECT
+          incident_timeline.*,
+          UNIX_TIMESTAMP(
+            incident_timeline.created_at
+          ) * 1000 AS created_at_timestamp
         FROM incident_timeline
         WHERE incident_id = ?
         ORDER BY
@@ -1312,7 +1402,11 @@ async function getTimelineByIncidentIds(
       .promise()
       .query(
         `
-        SELECT *
+        SELECT
+          incident_timeline.*,
+          UNIX_TIMESTAMP(
+            incident_timeline.created_at
+          ) * 1000 AS created_at_timestamp
         FROM incident_timeline
         WHERE incident_id IN (?)
         ORDER BY
@@ -1553,13 +1647,56 @@ function serializeIncident(
         )
       : "";
 
+  /*
+   * Normalize all workflow timestamps before building
+   * nested workflow objects.
+   *
+   * These values are referenced by investigation,
+   * resolution, and review below, so they must be
+   * initialized first.
+   */
+  const incidentCreatedAt =
+    getDatabaseEventDateTime(
+      incident.created_at_timestamp,
+      incident.created_at
+    );
+
+  const incidentUpdatedAt =
+    getDatabaseEventDateTime(
+      incident.updated_at_timestamp,
+      incident.updated_at
+    );
+
+  const lastActionAt =
+    getDatabaseEventDateTime(
+      incident.last_action_at_timestamp,
+      incident.last_action_at
+    );
+
+  const investigationStartedAt =
+    getDatabaseEventDateTime(
+      incident.investigation_started_at_timestamp,
+      incident.investigation_started_at
+    );
+
+  const resolutionSubmittedAt =
+    getDatabaseEventDateTime(
+      incident.resolution_submitted_at_timestamp,
+      incident.resolution_submitted_at
+    );
+
+  const reviewedAt =
+    getDatabaseEventDateTime(
+      incident.reviewed_at_timestamp,
+      incident.reviewed_at
+    );
+
   const investigation =
     incident
       .investigation_started_at
       ? {
           startedAt:
-            incident
-              .investigation_started_at,
+            investigationStartedAt,
 
           startedById:
             incident
@@ -1591,8 +1728,7 @@ function serializeIncident(
     hasResolutionSubmission
       ? {
           submittedAt:
-            incident
-              .resolution_submitted_at,
+            resolutionSubmittedAt,
 
           submittedById:
             incident
@@ -1624,8 +1760,7 @@ function serializeIncident(
     incident.reviewed_at ||
     incident.review_decision
       ? {
-          reviewedAt:
-            incident.reviewed_at,
+          reviewedAt,
 
           reviewedById:
             incident
@@ -1717,7 +1852,7 @@ function serializeIncident(
         .incident_date,
 
     reportedAt:
-      incident.created_at ||
+      incidentCreatedAt ||
       incident
         .incident_date,
 
@@ -1821,14 +1956,22 @@ function serializeIncident(
         : null,
 
     investigationStartedAt:
-      incident
-        .investigation_started_at ||
+      investigationStartedAt ||
       null,
 
     investigation_started_at:
-      incident
-        .investigation_started_at ||
+      investigationStartedAt ||
       null,
+
+    investigationStartedAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.investigation_started_at_timestamp
+      ),
+
+    investigation_started_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.investigation_started_at_timestamp
+      ),
 
     investigationStartedById:
       incident
@@ -1861,14 +2004,22 @@ function serializeIncident(
       null,
 
     resolutionSubmittedAt:
-      incident
-        .resolution_submitted_at ||
+      resolutionSubmittedAt ||
       null,
 
     resolution_submitted_at:
-      incident
-        .resolution_submitted_at ||
+      resolutionSubmittedAt ||
       null,
+
+    resolutionSubmittedAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.resolution_submitted_at_timestamp
+      ),
+
+    resolution_submitted_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.resolution_submitted_at_timestamp
+      ),
 
     resolutionSubmittedById:
       incident
@@ -1901,12 +2052,22 @@ function serializeIncident(
       null,
 
     reviewedAt:
-      incident.reviewed_at ||
+      reviewedAt ||
       null,
 
     reviewed_at:
-      incident.reviewed_at ||
+      reviewedAt ||
       null,
+
+    reviewedAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.reviewed_at_timestamp
+      ),
+
+    reviewed_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.reviewed_at_timestamp
+      ),
 
     reviewedById:
       incident
@@ -1959,16 +2120,36 @@ function serializeIncident(
       null,
 
     createdAt:
-      incident.created_at,
+      incidentCreatedAt,
 
     created_at:
-      incident.created_at,
+      incidentCreatedAt,
+
+    createdAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.created_at_timestamp
+      ),
+
+    created_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.created_at_timestamp
+      ),
 
     updatedAt:
-      incident.updated_at,
+      incidentUpdatedAt,
 
     updated_at:
-      incident.updated_at,
+      incidentUpdatedAt,
+
+    updatedAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.updated_at_timestamp
+      ),
+
+    updated_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.updated_at_timestamp
+      ),
 
     lastActionById:
       incident
@@ -2011,14 +2192,22 @@ function serializeIncident(
       null,
 
     lastActionAt:
-      incident
-        .last_action_at ||
+      lastActionAt ||
       null,
 
     last_action_at:
-      incident
-        .last_action_at ||
+      lastActionAt ||
       null,
+
+    lastActionAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.last_action_at_timestamp
+      ),
+
+    last_action_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.last_action_at_timestamp
+      ),
 
     evidence:
       evidence.map(
@@ -2317,6 +2506,31 @@ async function getIncidentWithEvidence(
       `
       SELECT
         i.*,
+
+        UNIX_TIMESTAMP(
+          i.created_at
+        ) * 1000 AS created_at_timestamp,
+
+        UNIX_TIMESTAMP(
+          i.updated_at
+        ) * 1000 AS updated_at_timestamp,
+
+        UNIX_TIMESTAMP(
+          i.last_action_at
+        ) * 1000 AS last_action_at_timestamp,
+
+        UNIX_TIMESTAMP(
+          i.investigation_started_at
+        ) * 1000 AS investigation_started_at_timestamp,
+
+        UNIX_TIMESTAMP(
+          i.resolution_submitted_at
+        ) * 1000 AS resolution_submitted_at_timestamp,
+
+        UNIX_TIMESTAMP(
+          i.reviewed_at
+        ) * 1000 AS reviewed_at_timestamp,
+
         ${getCreateIncidentActorSelect("i")},
         e.name AS employeeNameFromEmployee,
         e.company AS employeeCompany,
@@ -2604,6 +2818,91 @@ function normalizeIncidentSummarySearch(
     );
 }
 
+function normalizeIncidentFilterMonth(
+  value
+) {
+  const parsed =
+    Number.parseInt(
+      String(
+        value ?? ""
+      ).trim(),
+      10
+    );
+
+  return (
+    Number.isInteger(
+      parsed
+    ) &&
+    parsed >= 1 &&
+    parsed <= 12
+  )
+    ? parsed
+    : null;
+}
+
+function normalizeIncidentFilterYear(
+  value
+) {
+  const parsed =
+    Number.parseInt(
+      String(
+        value ?? ""
+      ).trim(),
+      10
+    );
+
+  return (
+    Number.isInteger(
+      parsed
+    ) &&
+    parsed >= 1900 &&
+    parsed <= 9999
+  )
+    ? parsed
+    : null;
+}
+
+function formatIncidentFilterDate(
+  year,
+  month = 1,
+  day = 1
+) {
+  return [
+    String(year).padStart(
+      4,
+      "0"
+    ),
+    String(month).padStart(
+      2,
+      "0"
+    ),
+    String(day).padStart(
+      2,
+      "0"
+    ),
+  ].join("-");
+}
+
+function getNextIncidentFilterMonth(
+  year,
+  month
+) {
+  if (month === 12) {
+    return {
+      year:
+        year + 1,
+      month:
+        1,
+    };
+  }
+
+  return {
+    year,
+    month:
+      month + 1,
+  };
+}
+
 function buildIncidentSummaryFilters(
   query = {},
   {
@@ -2679,6 +2978,148 @@ function buildIncidentSummaryFilters(
 
     params.push(
       severity.toLowerCase()
+    );
+  }
+
+  /*
+   * ==================================================
+   * VIOLATION TYPE FILTER
+   * ==================================================
+   *
+   * The Incident page and PDF report both use this
+   * shared filter builder, so one exact violation
+   * selection produces the same authoritative dataset
+   * for:
+   *
+   * - paginated Incident records
+   * - pagination totals
+   * - Incident PDF export
+   * - PDF frequency / summary calculations
+   *
+   * The selected value comes from the same configured
+   * violation policy used by Add Incident Report.
+   *
+   * Matching is exact after trimming and is
+   * case-insensitive. "ALL" means no violation filter.
+   */
+  const requestedViolation =
+    String(
+      query.violationType ||
+      query.violation_type ||
+      query.violation ||
+      query.violationFilter ||
+      query.violation_filter ||
+      "ALL"
+    ).trim();
+
+  const normalizedViolation =
+    requestedViolation
+      .toLowerCase();
+
+  if (
+    normalizedViolation &&
+    normalizedViolation !==
+      "all"
+  ) {
+    conditions.push(
+      "LOWER(TRIM(COALESCE(i.violation_type, ''))) = ?"
+    );
+
+    params.push(
+      normalizedViolation
+    );
+  }
+
+  /*
+   * ==================================================
+   * INCIDENT DATE MONTH / YEAR FILTER
+   * ==================================================
+   *
+   * Reporting period is based on the actual
+   * incidents.incident_date field — never created_at.
+   *
+   * Supported combinations:
+   *
+   * - Month + Year:
+   *   exact calendar month in the selected year
+   *
+   * - Year only:
+   *   all incidents in that calendar year
+   *
+   * - Month only:
+   *   that calendar month across available years
+   *
+   * Range predicates are used whenever Year is present
+   * so MySQL can use an incident_date index efficiently.
+   */
+  const requestedMonth =
+    normalizeIncidentFilterMonth(
+      query.month ||
+      query.incidentMonth ||
+      query.incident_month
+    );
+
+  const requestedYear =
+    normalizeIncidentFilterYear(
+      query.year ||
+      query.incidentYear ||
+      query.incident_year
+    );
+
+  if (
+    requestedYear &&
+    requestedMonth
+  ) {
+    const nextMonth =
+      getNextIncidentFilterMonth(
+        requestedYear,
+        requestedMonth
+      );
+
+    conditions.push(
+      "i.incident_date >= ? AND i.incident_date < ?"
+    );
+
+    params.push(
+      formatIncidentFilterDate(
+        requestedYear,
+        requestedMonth,
+        1
+      ),
+      formatIncidentFilterDate(
+        nextMonth.year,
+        nextMonth.month,
+        1
+      )
+    );
+  } else if (
+    requestedYear
+  ) {
+    conditions.push(
+      "i.incident_date >= ? AND i.incident_date < ?"
+    );
+
+    params.push(
+      formatIncidentFilterDate(
+        requestedYear,
+        1,
+        1
+      ),
+      formatIncidentFilterDate(
+        requestedYear + 1,
+        1,
+        1
+      )
+    );
+  } else if (
+    requestedMonth
+  ) {
+    conditions.push(
+      "MONTH(i.incident_date) = ?"
+    );
+
+    params.push(
+      requestedMonth
     );
   }
 
@@ -2949,6 +3390,22 @@ exports.getIncidentReport =
             coordinatorCompany ||
             null,
         },
+
+        filters: {
+          month:
+            normalizeIncidentFilterMonth(
+              req.query?.month ||
+              req.query?.incidentMonth ||
+              req.query?.incident_month
+            ),
+
+          year:
+            normalizeIncidentFilterYear(
+              req.query?.year ||
+              req.query?.incidentYear ||
+              req.query?.incident_year
+            ),
+        },
       });
     } catch (error) {
       console.error(
@@ -3052,6 +3509,7 @@ exports.getIncidents =
         const [
           [countRows],
           [caseCountRows],
+          [incidentYearRows],
         ] =
           await Promise.all([
             db
@@ -3143,6 +3601,42 @@ exports.getIncidents =
                       )}`
                     : ""
                 }
+                `,
+                coordinatorCompany
+                  ? [
+                      coordinatorCompany,
+                    ]
+                  : []
+              ),
+
+            /*
+             * Available Incident Years are scoped to
+             * the authenticated user's visible incident
+             * collection and are based on incident_date.
+             *
+             * They intentionally do not depend on the
+             * current search / severity / violation /
+             * month filters so the Year picker remains
+             * stable while users refine a report.
+             */
+            db
+              .promise()
+              .query(
+                `
+                SELECT DISTINCT
+                  YEAR(i.incident_date) AS incident_year
+                FROM incidents i
+                WHERE
+                  i.incident_date IS NOT NULL
+                  ${
+                    coordinatorCompany
+                      ? `AND ${buildIncidentCompanyScopeCondition(
+                          "i"
+                        )}`
+                      : ""
+                  }
+                ORDER BY
+                  incident_year DESC
                 `,
                 coordinatorCompany
                   ? [
@@ -3309,6 +3803,20 @@ exports.getIncidents =
                 caseCounts.closed_count ||
                 0
               ),
+          },
+
+          filterMeta: {
+            years:
+              incidentYearRows
+                .map(
+                  (row) =>
+                    Number(
+                      row.incident_year
+                    )
+                )
+                .filter(
+                  Number.isInteger
+                ),
           },
         });
       }
@@ -3489,6 +3997,31 @@ exports.getIncidentsByEmployee =
             `
             SELECT
               i.*,
+
+              UNIX_TIMESTAMP(
+                i.created_at
+              ) * 1000 AS created_at_timestamp,
+
+              UNIX_TIMESTAMP(
+                i.updated_at
+              ) * 1000 AS updated_at_timestamp,
+
+              UNIX_TIMESTAMP(
+                i.last_action_at
+              ) * 1000 AS last_action_at_timestamp,
+
+              UNIX_TIMESTAMP(
+                i.investigation_started_at
+              ) * 1000 AS investigation_started_at_timestamp,
+
+              UNIX_TIMESTAMP(
+                i.resolution_submitted_at
+              ) * 1000 AS resolution_submitted_at_timestamp,
+
+              UNIX_TIMESTAMP(
+                i.reviewed_at
+              ) * 1000 AS reviewed_at_timestamp,
+
               e.name AS employeeNameFromEmployee,
               e.company AS employeeCompany,
               e.status AS employeeStatus
@@ -3868,9 +4401,9 @@ exports.createIncident =
           req
         );
 
-      if (evidenceFiles.length > 1) {
+      if (evidenceFiles.length > 10) {
         return res.status(400).json({
-          error: "A maximum of one initial NTE may be attached.",
+          error: "A maximum of 10 Incident Evidence files may be attached.",
         });
       }
 
@@ -4614,6 +5147,16 @@ exports.updateIncidentStatus =
         actionType ===
           WORKFLOW_ACTION
             .SUBMIT_INVESTIGATION;
+
+      if (
+        isProofSubmission &&
+        evidenceFiles.length > 10
+      ) {
+        rejectLockedWorkflow(
+          400,
+          "A maximum of 10 proof files may be attached."
+        );
+      }
 
       if (
         isProofSubmission

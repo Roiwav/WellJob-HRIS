@@ -98,7 +98,7 @@ function ComparisonLegend({
   return (
     <div
       className="flex flex-wrap items-center gap-2"
-      aria-label="Deployment activity comparison years"
+      aria-label="Deployment comparison years"
     >
       {years.map(
         (year) => {
@@ -130,8 +130,8 @@ function ComparisonLegend({
               <span>
                 {year}{" "}
                 {isSelected
-                  ? "Selected"
-                  : "Previous"}
+                  ? "Selected Year"
+                  : "Previous Year"}
               </span>
             </span>
           );
@@ -146,11 +146,11 @@ function EmptyChartState() {
     <div className="flex h-[230px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 text-center dark:border-slate-700 dark:bg-slate-950/40">
       <div>
         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          No deployment activity data
+          No Deployment Activity Available
         </p>
 
         <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-          No deployment records are available for the selected historical period.
+          No deployment records are available for the selected period.
         </p>
       </div>
     </div>
@@ -305,11 +305,11 @@ export default function DeploymentTrendChart({
             id="deployment-trend-title"
             className="text-base font-bold text-slate-900 dark:text-white"
           >
-            Deployment Activity Trend
+            Deployment Trend
           </h3>
 
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Monthly deployment activity shown as a volume trend against the previous available year.
+            Monthly deployment activity compared with the previous available year.
           </p>
         </div>
 
@@ -317,8 +317,8 @@ export default function DeploymentTrendChart({
           <SummaryChip
             label={
               isCurrentYear
-                ? "Peak Complete Month"
-                : "Peak Month"
+                ? "Highest Completed Month"
+                : "Highest Month"
             }
             value={
               peakRow
@@ -328,7 +328,7 @@ export default function DeploymentTrendChart({
           />
 
           <SummaryChip
-            label="Latest Complete"
+            label="Latest Completed Month"
             value={
               latestCompleteRow
                 ? `${latestCompleteRow.label} · ${latestValue}`
@@ -348,14 +348,14 @@ export default function DeploymentTrendChart({
           />
         ) : (
           <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Selected historical period
+            Selected period
           </span>
         )}
 
         {isCurrentYear &&
           currentMonthLabel && (
             <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-              * Current month is still in progress.
+              * Current month is still in progress and may change.
             </span>
           )}
       </div>
@@ -370,7 +370,7 @@ export default function DeploymentTrendChart({
               ? `Monthly deployment activity comparison for ${safeYears.join(
                   " and "
                 )}`
-              : "Monthly deployment activity area trend chart"
+              : "Monthly deployment activity trend chart"
           }
           className="mt-2 h-[230px] w-full text-slate-400 dark:text-slate-500"
         >
@@ -462,7 +462,7 @@ export default function DeploymentTrendChart({
                 dataKey={
                   selectedKey
                 }
-                name={`${selectedYear || "Selected"} Deployment`}
+                name={`${selectedYear || "Selected"} Deployment Activity`}
                 stroke={
                   SELECTED_AREA_COLOR
                 }
@@ -487,7 +487,7 @@ export default function DeploymentTrendChart({
                   dataKey={
                     previousYear
                   }
-                  name={`${previousYear} Deployment`}
+                  name={`${previousYear} Deployment Activity`}
                   stroke={
                     COMPARISON_LINE_COLOR
                   }

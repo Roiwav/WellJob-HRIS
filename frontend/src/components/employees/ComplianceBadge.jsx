@@ -7,26 +7,35 @@ import {
 
 const COMPLIANCE_CONFIG = {
   Complete: {
+    label: "Complete",
     icon: FiCheckCircle,
     className:
       "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
   },
+
   Incomplete: {
+    label: "Incomplete",
     icon: FiAlertTriangle,
     className:
       "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
   },
+
   "Expiring Soon": {
+    label: "Expiring Soon",
     icon: FiAlertTriangle,
     className:
       "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
   },
+
   Expired: {
+    label: "Expired",
     icon: FiXCircle,
     className:
       "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300",
   },
+
   "No Data": {
+    label: "No Records",
     icon: FiMinusCircle,
     className:
       "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
@@ -63,14 +72,30 @@ const SIZE_CLASSES = {
   lg: "px-3.5 py-2 text-sm",
 };
 
-function normalizeComplianceStatus(status) {
-  const normalizedStatus = String(status || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ");
+function normalizeComplianceStatus(
+  status
+) {
+  const normalizedStatus =
+    String(
+      status || ""
+    )
+      .trim()
+      .toLowerCase()
+      .replace(
+        /[_-]+/g,
+        " "
+      )
+      .replace(
+        /\s+/g,
+        " "
+      );
 
-  return STATUS_ALIASES[normalizedStatus] || "No Data";
+  return (
+    STATUS_ALIASES[
+      normalizedStatus
+    ] ||
+    "No Data"
+  );
 }
 
 export default function ComplianceBadge({
@@ -79,15 +104,30 @@ export default function ComplianceBadge({
   icon = true,
   className = "",
 }) {
-  const normalizedStatus = normalizeComplianceStatus(status);
-  const config = COMPLIANCE_CONFIG[normalizedStatus];
-  const Icon = config.icon;
+  const normalizedStatus =
+    normalizeComplianceStatus(
+      status
+    );
+
+  const config =
+    COMPLIANCE_CONFIG[
+      normalizedStatus
+    ];
+
+  const Icon =
+    config.icon;
+
+  const displayLabel =
+    config.label;
 
   return (
     <span
+      title={`Compliance: ${displayLabel}`}
+      aria-label={`Compliance status: ${displayLabel}`}
       className={[
         "inline-flex w-fit items-center gap-1.5 rounded-full border font-bold",
-        SIZE_CLASSES[size] || SIZE_CLASSES.md,
+        SIZE_CLASSES[size] ||
+          SIZE_CLASSES.md,
         config.className,
         className,
       ]
@@ -101,7 +141,9 @@ export default function ComplianceBadge({
         />
       )}
 
-      <span>{normalizedStatus}</span>
+      <span>
+        {displayLabel}
+      </span>
     </span>
   );
 }

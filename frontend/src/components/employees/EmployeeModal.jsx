@@ -1,23 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   FiAlertTriangle,
   FiBriefcase,
   FiCalendar,
   FiCheckCircle,
+  FiChevronDown,
   FiClock,
+  FiDownload,
   FiEye,
   FiFileText,
+  FiPrinter,
   FiShield,
   FiX,
 } from "react-icons/fi";
+import welljobLogoUrl from "../../assets/Logo.png";
 import {
   getDaysUntilExpiration,
-  normalizeEmployeeStatus,
 } from "../../utils/employees/employeeHelpers";
 import {
   calculateSeveritySnapshot,
 } from "../../utils/kpi/severityDecayHelpers";
 import {
+  normalizeEmployeeDocumentNumber,
   parseEmployeeDocuments,
 } from "../../utils/employees/employeeFormHelpers";
 import authenticatedFetch from "../../utils/authenticatedFetch";
@@ -32,6 +38,15 @@ import {
   getDocumentStatus as getExpirationStatus,
 } from "./employeeConstants";
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
+const EMPLOYEE_TIME_ZONE = "Asia/Manila";
+
+const DOCUMENT_OPTIONS_BY_NAME = new Map(
+  DOCUMENT_OPTIONS.map((option) => [
+    option.name,
+    option,
+  ])
+);
+
 const EXPIRABLE_DOCUMENT_NAMES = new Set(
   DOCUMENT_OPTIONS
     .filter(({ expirable }) => expirable)
@@ -68,8 +83,16 @@ const STATUS_CLASSES = {
     "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
   Inactive:
     "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  Active:
+    "border border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300",
+  Resigned:
+    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  Terminated:
+    "border border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300",
   Deployed:
     "border border-indigo-200/80 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
+  "For Deployment":
+    "border border-sky-200/80 bg-sky-50 text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300",
   "Floating / Standby":
     "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
   Open:
@@ -135,17 +158,182 @@ function formatIncidentId(id) {
     ? value
     : `INC-${String(numericValue).padStart(4, "0")}`;
 }
+function normalizeEmployeeBusinessDate(
+  value
+) {
+  if (!value) {
+    return "";
+  }
+
+  if (
+    typeof value ===
+    "string"
+  ) {
+    const normalized =
+      value.trim();
+
+    if (
+      /^\d{4}-\d{2}-\d{2}$/.test(
+        normalized
+      )
+    ) {
+      return normalized;
+    }
+
+    if (
+      /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(
+        normalized
+      )
+    ) {
+      return normalized.slice(
+        0,
+        10
+      );
+    }
+  }
+
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(
+          value
+        );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          EMPLOYEE_TIME_ZONE,
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      date
+    );
+
+  const values =
+    Object.fromEntries(
+      parts
+        .filter(
+          (part) =>
+            [
+              "year",
+              "month",
+              "day",
+            ].includes(
+              part.type
+            )
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ]
+        )
+    );
+
+  if (
+    !values.year ||
+    !values.month ||
+    !values.day
+  ) {
+    return "";
+  }
+
+  return (
+    `${values.year}-` +
+    `${values.month}-` +
+    `${values.day}`
+  );
+}
+
 function formatDate(value) {
-  if (!value) return "Not Set";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  if (!value) {
+    return "Not Set";
+  }
+
+  const dateOnly =
+    normalizeEmployeeBusinessDate(
+      value
+    );
+
+  if (!dateOnly) {
     return "Invalid date";
   }
-  return date.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+
+  const parsed =
+    new Date(
+      `${dateOnly}T00:00:00+08:00`
+    );
+
+  if (
+    Number.isNaN(
+      parsed.getTime()
+    )
+  ) {
+    return "Invalid date";
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone:
+        EMPLOYEE_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "long",
+      day:
+        "numeric",
+    }
+  ).format(
+    parsed
+  );
+}
+
+function formatEmployeeReportGeneratedAt() {
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone:
+        EMPLOYEE_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "short",
+      day:
+        "2-digit",
+      hour:
+        "numeric",
+      minute:
+        "2-digit",
+      second:
+        "2-digit",
+      hour12:
+        true,
+    }
+  ).format(
+    new Date()
+  );
+}
+
+function getEmployeeReportFilenameDate() {
+  return normalizeEmployeeBusinessDate(
+    new Date()
+  );
 }
 function normalizeIncidentStatus(status) {
   const value = String(status || "")
@@ -182,25 +370,6 @@ function getDaysLabel(expirationDate) {
   return `Expires in ${daysRemaining} day${
     daysRemaining === 1 ? "" : "s"
   }`;
-}
-function getOverallCompliance(documents) {
-  if (!documents.length) {
-    return "No Data";
-  }
-  const statuses = documents.map(({ status }) => status);
-  if (statuses.includes("Expired")) {
-    return "Expired";
-  }
-  if (statuses.includes("Expiring Soon")) {
-    return "Expiring Soon";
-  }
-  if (statuses.includes("No Data")) {
-    return "Incomplete";
-  }
-  if (statuses.every((status) => status === "Valid")) {
-    return "Valid";
-  }
-  return "Incomplete";
 }
 function getKPILevel(severityScore, totalIncidents) {
   if (severityScore >= 8) {
@@ -314,6 +483,1119 @@ function getEmployeeName(employee) {
     "Employee"
   );
 }
+
+function cleanReportValue(
+  value,
+  fallback = "-"
+) {
+  const normalized =
+    String(
+      value ?? ""
+    ).trim();
+
+  return normalized ||
+    fallback;
+}
+
+function normalizeUserRole(value) {
+  return String(
+    value || ""
+  )
+    .trim()
+    .toUpperCase()
+    .replace(
+      /[\s-]+/g,
+      "_"
+    );
+}
+
+function getReportGeneratedBy(
+  user
+) {
+  const firstName =
+    cleanReportValue(
+      user?.first_name ||
+        user?.firstName,
+      ""
+    );
+
+  const lastName =
+    cleanReportValue(
+      user?.last_name ||
+        user?.lastName,
+      ""
+    );
+
+  const composedName =
+    [
+      firstName,
+      lastName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+  return cleanReportValue(
+    user?.full_name ||
+      user?.fullName ||
+      composedName ||
+      user?.name,
+    "Authorized User"
+  );
+}
+
+function sanitizeReportFilePart(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .trim()
+    .replace(
+      /[^a-z0-9_-]+/gi,
+      "_"
+    )
+    .replace(
+      /^_+|_+$/g,
+      ""
+    )
+    .slice(
+      0,
+      80
+    ) ||
+    "Employee";
+}
+
+function fileToDataUrl(
+  blob
+) {
+  return new Promise(
+    (
+      resolve,
+      reject
+    ) => {
+      const reader =
+        new FileReader();
+
+      reader.onload =
+        () =>
+          resolve(
+            String(
+              reader.result ||
+                ""
+            )
+          );
+
+      reader.onerror =
+        () =>
+          reject(
+            new Error(
+              "Unable to read Welljob logo."
+            )
+          );
+
+      reader.readAsDataURL(
+        blob
+      );
+    }
+  );
+}
+
+async function loadEmployeeReportLogoDataUrl() {
+  try {
+    const response =
+      await fetch(
+        welljobLogoUrl
+      );
+
+    if (!response.ok) {
+      return "";
+    }
+
+    const blob =
+      await response.blob();
+
+    return await fileToDataUrl(
+      blob
+    );
+  } catch {
+    /*
+     * The employee report remains available even if
+     * the bundled logo cannot be decoded by the browser.
+     */
+    return "";
+  }
+}
+
+function getEmployeeReportIncidentDate(
+  incident
+) {
+  const value =
+    incident?.date ||
+    incident?.incidentDate ||
+    incident?.incident_date ||
+    incident?.reportedAt ||
+    incident?.reported_at ||
+    incident?.createdAt ||
+    incident?.created_at;
+
+  if (!value) {
+    return "-";
+  }
+
+  const dateOnly =
+    normalizeEmployeeBusinessDate(
+      value
+    );
+
+  if (!dateOnly) {
+    return cleanReportValue(
+      value
+    );
+  }
+
+  const parsed =
+    new Date(
+      `${dateOnly}T00:00:00+08:00`
+    );
+
+  if (
+    Number.isNaN(
+      parsed.getTime()
+    )
+  ) {
+    return cleanReportValue(
+      value
+    );
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone:
+        EMPLOYEE_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "short",
+      day:
+        "2-digit",
+    }
+  ).format(
+    parsed
+  );
+}
+
+function getEmployeeReportIncidentDetails(
+  incident
+) {
+  const description =
+    cleanReportValue(
+      incident?.description,
+      ""
+    );
+
+  const sanction =
+    cleanReportValue(
+      incident?.sanction ||
+        incident?.policySanction ||
+        incident?.policy_sanction ||
+        incident?.actionTaken ||
+        incident?.action_taken,
+      "For HR Review"
+    );
+
+  return [
+    description
+      ? `Description: ${description}`
+      : "",
+    `Sanction: ${sanction}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function addEmployeeReportFooters(
+  doc
+) {
+  const pageCount =
+    doc.internal
+      .getNumberOfPages();
+
+  for (
+    let pageNumber = 1;
+    pageNumber <=
+    pageCount;
+    pageNumber += 1
+  ) {
+    doc.setPage(
+      pageNumber
+    );
+
+    const pageWidth =
+      doc.internal.pageSize
+        .getWidth();
+
+    const pageHeight =
+      doc.internal.pageSize
+        .getHeight();
+
+    doc.setFontSize(
+      7
+    );
+
+    doc.setFont(
+      undefined,
+      "normal"
+    );
+
+    doc.setTextColor(
+      100
+    );
+
+    doc.text(
+      `Employee Profile Report | Page ${pageNumber} of ${pageCount}`,
+      pageWidth - 14,
+      pageHeight - 7,
+      {
+        align:
+          "right",
+      }
+    );
+  }
+}
+
+async function buildEmployeeProfilePdf({
+  employee,
+  employeeIncidents,
+  user,
+  isHRCoordinator,
+}) {
+  const doc =
+    new jsPDF({
+      orientation:
+        "portrait",
+      unit:
+        "mm",
+      format:
+        "a4",
+    });
+
+  const logoDataUrl =
+    await loadEmployeeReportLogoDataUrl();
+
+  if (logoDataUrl) {
+    try {
+      doc.addImage(
+        logoDataUrl,
+        "PNG",
+        14,
+        9,
+        18,
+        18
+      );
+    } catch {
+      /*
+       * Keep report generation resilient if the
+       * browser cannot decode the bundled image.
+       */
+    }
+  }
+
+  const employeeName =
+    getEmployeeName(
+      employee
+    );
+
+  const employeeId =
+    getEmployeeId(
+      employee
+    );
+
+  const workforceStatus =
+    getEmployeeWorkforceStatus(
+      employee
+    );
+
+  const employmentStatus =
+    getEmployeeEmploymentStatus(
+      employee,
+      workforceStatus
+    );
+
+  const workforceLabel =
+    getWorkforceStatusLabel(
+      workforceStatus
+    );
+
+  const birthday =
+    getEmployeeBirthday(
+      employee
+    );
+
+  const age =
+    getEmployeeAge(
+      birthday
+    );
+
+  const dateHired =
+    getEmployeeDateHired(
+      employee
+    );
+
+  const deploymentDate =
+    getEmployeeDeploymentDate(
+      employee,
+      workforceStatus
+    );
+
+  const company =
+    cleanReportValue(
+      employee?.company,
+      "Not recorded"
+    );
+
+  const position =
+    cleanReportValue(
+      employee?.position ||
+        employee?.jobTitle ||
+        employee?.job_title ||
+        employee?.jobPosition ||
+        employee?.job_position,
+      "Not recorded"
+    );
+
+  const companyLabel =
+    "Client Company";
+
+  const positionLabel =
+    "Position";
+
+  const generatedBy =
+    getReportGeneratedBy(
+      user
+    );
+
+  const pageWidth =
+    doc.internal.pageSize
+      .getWidth();
+
+  doc.setFontSize(
+    13
+  );
+
+  doc.setFont(
+    undefined,
+    "bold"
+  );
+
+  doc.setTextColor(
+    30,
+    41,
+    59
+  );
+
+  doc.text(
+    "WELLJOB SOLUTIONS & GENERAL SERVICES INC.",
+    38,
+    14
+  );
+
+  /*
+   * Keep the report title visually separate from the
+   * Welljob logo/company header. Centering it gives the
+   * document a clearer formal-report hierarchy.
+   */
+  doc.setFontSize(
+    14
+  );
+
+  doc.text(
+    "EMPLOYEE PROFILE REPORT",
+    pageWidth / 2,
+    31,
+    {
+      align:
+        "center",
+    }
+  );
+
+  doc.setFontSize(
+    8.5
+  );
+
+  doc.setFont(
+    undefined,
+    "normal"
+  );
+
+  doc.setTextColor(
+    71,
+    85,
+    105
+  );
+
+  doc.text(
+    `Generated by: ${generatedBy}`,
+    14,
+    43
+  );
+
+  doc.text(
+    `Generated on: ${formatEmployeeReportGeneratedAt()}`,
+    14,
+    48
+  );
+
+  doc.setFontSize(
+    11
+  );
+
+  doc.setFont(
+    undefined,
+    "bold"
+  );
+
+  doc.setTextColor(
+    15,
+    23,
+    42
+  );
+
+  doc.text(
+    "Employee Information",
+    14,
+    61
+  );
+
+  autoTable(
+    doc,
+    {
+      startY:
+        65,
+
+      /*
+       * Employee identity belongs in the profile table.
+       * The report header is reserved for report metadata
+       * such as generated-by and generated-on details.
+       */
+      body: [
+        [
+          "Employee Name",
+          employeeName,
+          "Employee ID",
+          employeeId ||
+            "-",
+        ],
+        [
+          "Employment Status",
+          employmentStatus ||
+            "Not recorded",
+          "Workforce Status",
+          workforceLabel,
+        ],
+        [
+          "Birthday",
+          birthday
+            ? formatDate(
+                birthday
+              )
+            : "Not yet recorded",
+          "Age",
+          age !== null
+            ? `${age} year${
+                age === 1
+                  ? ""
+                  : "s"
+              } old`
+            : "Not available",
+        ],
+        [
+          "Date Hired",
+          dateHired
+            ? formatDate(
+                dateHired
+              )
+            : "Not yet recorded",
+          companyLabel,
+          company,
+        ],
+        [
+          positionLabel,
+          position,
+          "Deployment Date",
+          workforceStatus ===
+            "Deployed"
+            ? (
+                deploymentDate
+                  ? formatDate(
+                      deploymentDate
+                    )
+                  : "Not recorded"
+              )
+            : "Not yet deployed",
+        ],
+      ],
+
+      theme:
+        "grid",
+
+      styles: {
+        fontSize: 8,
+        cellPadding: 2.6,
+        valign:
+          "middle",
+        lineColor: [
+          203,
+          213,
+          225,
+        ],
+        lineWidth: 0.15,
+      },
+
+      columnStyles: {
+        0: {
+          cellWidth: 31,
+          fontStyle:
+            "bold",
+          fillColor: [
+            248,
+            250,
+            252,
+          ],
+          textColor: [
+            51,
+            65,
+            85,
+          ],
+        },
+        1: {
+          cellWidth: 60,
+        },
+        2: {
+          cellWidth: 31,
+          fontStyle:
+            "bold",
+          fillColor: [
+            248,
+            250,
+            252,
+          ],
+          textColor: [
+            51,
+            65,
+            85,
+          ],
+        },
+        3: {
+          cellWidth: 60,
+        },
+      },
+    }
+  );
+
+  const incidentSectionY =
+    (
+      doc.lastAutoTable
+        ?.finalY ||
+      92
+    ) + 10;
+
+  doc.setFontSize(
+    11
+  );
+
+  doc.setFont(
+    undefined,
+    "bold"
+  );
+
+  doc.setTextColor(
+    15,
+    23,
+    42
+  );
+
+  doc.text(
+    "Incident History",
+    14,
+    incidentSectionY
+  );
+
+  doc.setFontSize(
+    7.5
+  );
+
+  doc.setFont(
+    undefined,
+    "normal"
+  );
+
+  doc.setTextColor(
+    71,
+    85,
+    105
+  );
+
+  doc.text(
+    isHRCoordinator
+      ? "Detailed incident records are limited to cases authorized for the coordinator's assigned company."
+      : "Incident records shown below are the authorized history available for this employee.",
+    14,
+    incidentSectionY +
+      5
+  );
+
+  const sortedIncidents =
+    (
+      Array.isArray(
+        employeeIncidents
+      )
+        ? [
+            ...employeeIncidents,
+          ]
+        : []
+    ).sort(
+      (
+        first,
+        second
+      ) =>
+        getIncidentTimestamp(
+          second
+        ) -
+        getIncidentTimestamp(
+          first
+        )
+    );
+
+  const incidentRows =
+    sortedIncidents.length >
+    0
+      ? sortedIncidents.map(
+          (incident) => [
+            formatIncidentId(
+              incident?.id
+            ),
+            getEmployeeReportIncidentDate(
+              incident
+            ),
+            cleanReportValue(
+              incident?.violation ||
+                incident?.violationType ||
+                incident?.violation_type,
+              "No violation type"
+            ),
+            cleanReportValue(
+              incident?.severity,
+              "Minor"
+            ),
+            cleanReportValue(
+              incident?.status,
+              "Open"
+            ),
+            getEmployeeReportIncidentDetails(
+              incident
+            ),
+          ]
+        )
+      : [[
+          "-",
+          "-",
+          "No authorized incident history found for this employee.",
+          "-",
+          "-",
+          "-",
+        ]];
+
+  autoTable(
+    doc,
+    {
+      startY:
+        incidentSectionY +
+        9,
+
+      margin: {
+        top: 18,
+        left: 14,
+        right: 14,
+        bottom: 14,
+      },
+
+      head: [[
+        "Incident ID",
+        "Date",
+        "Violation",
+        "Severity",
+        "Status",
+        "Details",
+      ]],
+
+      body:
+        incidentRows,
+
+      theme:
+        "grid",
+
+      styles: {
+        fontSize: 6.8,
+        cellPadding: 1.8,
+        overflow:
+          "linebreak",
+        valign:
+          "top",
+      },
+
+      headStyles: {
+        fillColor: [
+          30,
+          41,
+          59,
+        ],
+        fontSize: 7.5,
+      },
+
+      alternateRowStyles: {
+        fillColor: [
+          248,
+          250,
+          252,
+        ],
+      },
+
+      columnStyles: {
+        0: {
+          cellWidth: 20,
+        },
+        1: {
+          cellWidth: 22,
+        },
+        2: {
+          cellWidth: 37,
+        },
+        3: {
+          cellWidth: 17,
+        },
+        4: {
+          cellWidth: 18,
+        },
+        5: {
+          cellWidth: 68,
+        },
+      },
+
+      didDrawPage: (
+        data
+      ) => {
+        if (
+          data.pageNumber >
+          1
+        ) {
+          doc.setFontSize(
+            9
+          );
+
+          doc.setFont(
+            undefined,
+            "bold"
+          );
+
+          doc.setTextColor(
+            30,
+            41,
+            59
+          );
+
+          doc.text(
+            "Employee Incident History",
+            14,
+            10
+          );
+        }
+      },
+    }
+  );
+
+  /*
+   * SECURITY / PRIVACY:
+   *
+   * The PDF intentionally excludes:
+   * - Compliance Status
+   * - compliance document status
+   * - government reference/document numbers
+   * - compliance files
+   *
+   * Incident rows use only the already-authorized
+   * EmployeeModal incident dataset. No extra Incident
+   * request is performed for PDF generation.
+   */
+  addEmployeeReportFooters(
+    doc
+  );
+
+  return doc;
+}
+
+function getEmployeeBirthday(employee) {
+  return (
+    employee?.birthday ||
+    employee?.dateOfBirth ||
+    employee?.date_of_birth ||
+    ""
+  );
+}
+
+function getEmployeeDateHired(
+  employee
+) {
+  return String(
+    employee?.dateHired ||
+      employee?.date_hired ||
+      ""
+  ).trim();
+}
+
+function getEmployeeDeploymentDate(
+  employee,
+  workforceStatus
+) {
+  if (
+    workforceStatus !==
+    "Deployed"
+  ) {
+    return "";
+  }
+
+  return String(
+    employee?.contractStart ||
+      employee?.contract_start ||
+      employee?.deploymentStart ||
+      employee?.deployment_start ||
+      ""
+  ).trim();
+}
+
+function getEmployeeWorkforceStatus(
+  employee
+) {
+  const value =
+    String(
+      employee?.workforceStatus ||
+      employee?.workforce_status ||
+      employee?.status ||
+      ""
+    ).trim();
+
+  if (
+    [
+      "Floating / Standby",
+      "For Deployment",
+      "Deployed",
+    ].includes(
+      value
+    )
+  ) {
+    return value;
+  }
+
+  return "";
+}
+
+function getEmployeeEmploymentStatus(
+  employee,
+  workforceStatus
+) {
+  const value =
+    String(
+      employee?.employmentStatus ||
+      employee?.employment_status ||
+      ""
+    ).trim();
+
+  if (
+    [
+      "Active",
+      "Resigned",
+      "Terminated",
+    ].includes(
+      value
+    )
+  ) {
+    return value;
+  }
+
+  if (
+    [
+      "Floating / Standby",
+      "For Deployment",
+      "Deployed",
+    ].includes(
+      workforceStatus
+    )
+  ) {
+    return "Active";
+  }
+
+  if (
+    [
+      "Resigned",
+      "Terminated",
+    ].includes(
+      String(
+        employee?.status ||
+        ""
+      ).trim()
+    )
+  ) {
+    return String(
+      employee.status
+    ).trim();
+  }
+
+  return "";
+}
+
+function getWorkforceStatusLabel(
+  workforceStatus
+) {
+  return (
+    workforceStatus ||
+    "Not recorded"
+  );
+}
+
+function getPlacementWorkflowNote(
+  workforceStatus
+) {
+  if (
+    workforceStatus ===
+    "Deployed"
+  ) {
+    return "Currently deployed to the assigned client company.";
+  }
+
+  if (
+    workforceStatus ===
+    "For Deployment"
+  ) {
+    return "Deployment is scheduled and awaiting arrival confirmation by the HR Coordinator.";
+  }
+
+  if (
+    workforceStatus ===
+    "Floating / Standby"
+  ) {
+    return "The employee is Floating / Standby with a designated client company and position before deployment.";
+  }
+
+  return "Deployment information is not available.";
+}
+
+function getEmployeeAge(birthday) {
+  if (!birthday) {
+    return null;
+  }
+
+  const normalizedBirthday =
+    normalizeEmployeeBusinessDate(
+      birthday
+    );
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(
+      normalizedBirthday
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const birthYear =
+    Number(match[1]);
+
+  const birthMonth =
+    Number(match[2]);
+
+  const birthDay =
+    Number(match[3]);
+
+  const validationDate =
+    new Date(
+      Date.UTC(
+        birthYear,
+        birthMonth - 1,
+        birthDay
+      )
+    );
+
+  if (
+    validationDate.getUTCFullYear() !==
+      birthYear ||
+    validationDate.getUTCMonth() !==
+      birthMonth - 1 ||
+    validationDate.getUTCDate() !==
+      birthDay
+  ) {
+    return null;
+  }
+
+  const today =
+    normalizeEmployeeBusinessDate(
+      new Date()
+    );
+
+  const todayMatch =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(
+      today
+    );
+
+  if (!todayMatch) {
+    return null;
+  }
+
+  const currentYear =
+    Number(
+      todayMatch[1]
+    );
+
+  const currentMonth =
+    Number(
+      todayMatch[2]
+    );
+
+  const currentDay =
+    Number(
+      todayMatch[3]
+    );
+
+  let age =
+    currentYear -
+    birthYear;
+
+  const birthdayHasNotOccurredThisYear =
+    currentMonth <
+      birthMonth ||
+    (
+      currentMonth ===
+        birthMonth &&
+      currentDay <
+        birthDay
+    );
+
+  if (
+    birthdayHasNotOccurredThisYear
+  ) {
+    age -= 1;
+  }
+
+  if (
+    age < 0 ||
+    age > 150
+  ) {
+    return null;
+  }
+
+  return age;
+}
 function normalizeIncident(incident = {}) {
   const date =
     incident.reportedAt ||
@@ -389,11 +1671,37 @@ function normalizeDocument(document = {}) {
     document.expirationDate ||
     document.expiration_date ||
     "";
-  const file = buildDocumentFile(document);
-  const expirable = EXPIRABLE_DOCUMENT_NAMES.has(document.name);
+
+  const file =
+    buildDocumentFile(document);
+
+  const documentOption =
+    DOCUMENT_OPTIONS_BY_NAME.get(
+      document.name
+    );
+
+  const expirable =
+    EXPIRABLE_DOCUMENT_NAMES.has(
+      document.name
+    );
+
+  const documentNumber =
+    normalizeEmployeeDocumentNumber(
+      document.documentNumber ??
+        document.document_number
+    );
+
   return {
     ...document,
     expirationDate,
+    documentNumber,
+    documentNumberLabel:
+      documentOption?.documentNumberLabel ||
+      "Document Number",
+    requiresDocumentNumber:
+      Boolean(
+        documentOption?.requiresDocumentNumber
+      ),
     file,
     expirable,
     status: !file
@@ -501,17 +1809,87 @@ function parseHistoricalSummary(data, expectedEmployeeId) {
   }
   return validated;
 }
-export default function EmployeeModal({ employee, onClose }) {
+export default function EmployeeModal({
+  employee,
+  onClose,
+  initialOpenCompliance = false,
+  initialComplianceDocumentId = "",
+  initialComplianceDocumentName = "",
+}) {
   const { user } = useAuth();
+
+  const userRole =
+    normalizeUserRole(
+      user?.role
+    );
+
   const isHRCoordinator =
-    user?.role === "HR_COORDINATOR";
+    userRole ===
+    "HR_COORDINATOR";
+
+  const canExportEmployeeProfile =
+    [
+      "SUPER_ADMIN",
+      "HR_MANAGER",
+      "HR_STAFF",
+      "HR_COORDINATOR",
+    ].includes(
+      userRole
+    );
+
   const employeeName = getEmployeeName(employee);
   const employeeId = getEmployeeId(employee);
-  const employeeStatus = normalizeEmployeeStatus(employee?.status);
+
+  const complianceTargetDocumentId =
+    String(
+      initialComplianceDocumentId ??
+        ""
+    ).trim();
+
+  const complianceTargetDocumentName =
+    String(
+      initialComplianceDocumentName ??
+        ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const employeeBirthday = getEmployeeBirthday(employee);
+  const employeeAge = getEmployeeAge(employeeBirthday);
+  const employeeDateHired =
+    getEmployeeDateHired(
+      employee
+    );
+  const employeeWorkforceStatus =
+    getEmployeeWorkforceStatus(
+      employee
+    );
+  const employeeDeploymentDate =
+    getEmployeeDeploymentDate(
+      employee,
+      employeeWorkforceStatus
+    );
+  const employeeEmploymentStatus =
+    getEmployeeEmploymentStatus(
+      employee,
+      employeeWorkforceStatus
+    );
+  const employeeWorkforceStatusLabel =
+    getWorkforceStatusLabel(
+      employeeWorkforceStatus
+    );
   const hasEmployee = Boolean(employee);
   const [previewFile, setPreviewFile] = useState(null);
   const [previewLoadingId, setPreviewLoadingId] = useState(null);
   const [previewError, setPreviewError] = useState("");
+  const [isComplianceOpen, setIsComplianceOpen] =
+    useState(
+      Boolean(
+        initialOpenCompliance
+      )
+    );
+  const [reportAction, setReportAction] = useState("");
+  const [reportError, setReportError] = useState("");
   const [historyRequest, setHistoryRequest] = useState({
     employeeId: "",
     incidents: [],
@@ -526,6 +1904,7 @@ export default function EmployeeModal({ employee, onClose }) {
   });
   const previewControllerRef = useRef(null);
   const previewUrlRef = useRef("");
+  const complianceSectionRef = useRef(null);
   /*
    * ==================================================
    * COMPANY-SCOPED DETAILED INCIDENT HISTORY
@@ -600,7 +1979,7 @@ export default function EmployeeModal({ employee, onClose }) {
           incidents: [],
           loading: false,
           error:
-            "Unable to load the latest incident history from backend.",
+            "Unable to load the latest incident history.",
         });
       }
     }
@@ -707,6 +2086,58 @@ export default function EmployeeModal({ employee, onClose }) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!hasEmployee) {
+      return;
+    }
+
+    setIsComplianceOpen(
+      Boolean(
+        initialOpenCompliance
+      )
+    );
+  }, [
+    employeeId,
+    hasEmployee,
+    initialOpenCompliance,
+  ]);
+
+  useEffect(() => {
+    if (!isComplianceOpen) {
+      return undefined;
+    }
+
+    const scrollTimer =
+      window.setTimeout(() => {
+        const targetedDocument =
+          complianceSectionRef.current
+            ?.querySelector(
+              '[data-compliance-notification-target="true"]'
+            );
+
+        (
+          targetedDocument ||
+          complianceSectionRef.current
+        )?.scrollIntoView({
+          behavior: "smooth",
+          block:
+            targetedDocument
+              ? "center"
+              : "start",
+        });
+      }, 120);
+
+    return () => {
+      window.clearTimeout(
+        scrollTimer
+      );
+    };
+  }, [
+    complianceTargetDocumentId,
+    complianceTargetDocumentName,
+    isComplianceOpen,
+  ]);
   /*
    * ==================================================
    * DOCUMENT SUMMARY
@@ -946,24 +2377,33 @@ export default function EmployeeModal({ employee, onClose }) {
     recommendation,
     reason,
   } = decisionSupport;
-  const overallCompliance =
-    getOverallCompliance(documents);
   const hasAttentionNeeded =
     expired.length > 0 ||
     expiringSoon.length > 0 ||
     noData.length > 0;
   const companyDisplay =
-    employeeStatus === "Floating / Standby" ||
-    employeeStatus === "Inactive"
-      ? "Not Assigned"
-      : employee.company || "Not Assigned";
+    String(
+      employee?.company ||
+      ""
+    ).trim() ||
+    "Not recorded";
+
   const positionDisplay =
-    employeeStatus === "Deployed"
-      ? employee?.position ||
-        employee?.jobTitle ||
-        employee?.job_title ||
-        ""
-      : "";
+    String(
+      employee?.position ||
+      employee?.jobTitle ||
+      employee?.job_title ||
+      employee?.jobPosition ||
+      employee?.job_position ||
+      ""
+    ).trim() ||
+    "Not recorded";
+
+  const placementWorkflowNote =
+    getPlacementWorkflowNote(
+      employeeWorkforceStatus
+    );
+
   const employeeInitials =
     getEmployeeInitials(employeeName);
   /*
@@ -991,6 +2431,198 @@ export default function EmployeeModal({ employee, onClose }) {
     }
     return incidentSummary[field];
   };
+
+  const employeeReportReady =
+    canExportEmployeeProfile &&
+    historyAvailable &&
+    !historyLoading &&
+    !historyError;
+
+  const employeeReportDisabled =
+    !employeeReportReady ||
+    Boolean(
+      reportAction
+    );
+
+  const handleDownloadEmployeeReport =
+    async () => {
+      if (
+        !employeeReportReady
+      ) {
+        setReportError(
+          historyLoading
+            ? "Please wait until the employee incident history finishes loading."
+            : "Employee incident history is unavailable. A complete profile report cannot be generated."
+        );
+
+        return;
+      }
+
+      setReportError(
+        ""
+      );
+
+      setReportAction(
+        "download"
+      );
+
+      try {
+        const doc =
+          await buildEmployeeProfilePdf({
+            employee,
+            employeeIncidents,
+            user,
+            isHRCoordinator,
+          });
+
+        const safeName =
+          sanitizeReportFilePart(
+            employeeName
+          );
+
+        const safeId =
+          sanitizeReportFilePart(
+            employeeId ||
+              "No_ID"
+          );
+
+        const dateStamp =
+          getEmployeeReportFilenameDate();
+
+        doc.save(
+          `Welljob_Employee_Profile_${safeId}_${safeName}_${dateStamp}.pdf`
+        );
+      } catch (error) {
+        console.error(
+          "Employee profile PDF download failed:",
+          error
+        );
+
+        setReportError(
+          "Unable to generate the employee profile PDF."
+        );
+      } finally {
+        setReportAction(
+          ""
+        );
+      }
+    };
+
+  const handlePrintEmployeeReport =
+    async () => {
+      if (
+        !employeeReportReady
+      ) {
+        setReportError(
+          historyLoading
+            ? "Please wait until the employee incident history finishes loading."
+            : "Employee incident history is unavailable. A complete profile report cannot be generated."
+        );
+
+        return;
+      }
+
+      /*
+       * Open the print target immediately from the user
+       * click so browser popup blockers do not treat the
+       * later PDF navigation as an unsolicited popup.
+       */
+      const printWindow =
+        window.open(
+          "",
+          "_blank"
+        );
+
+      if (!printWindow) {
+        setReportError(
+          "The browser blocked the print window. Please allow pop-ups for this site and try again."
+        );
+
+        return;
+      }
+
+      printWindow.opener =
+        null;
+
+      printWindow.document.write(
+        "<!doctype html><html><head><title>Preparing Employee Profile Report</title></head><body style='font-family:Arial,sans-serif;padding:24px'>Preparing employee profile report...</body></html>"
+      );
+
+      setReportError(
+        ""
+      );
+
+      setReportAction(
+        "print"
+      );
+
+      try {
+        const doc =
+          await buildEmployeeProfilePdf({
+            employee,
+            employeeIncidents,
+            user,
+            isHRCoordinator,
+          });
+
+        if (
+          typeof doc.autoPrint ===
+          "function"
+        ) {
+          doc.autoPrint();
+        }
+
+        const blob =
+          doc.output(
+            "blob"
+          );
+
+        const blobUrl =
+          URL.createObjectURL(
+            blob
+          );
+
+        printWindow.location.replace(
+          blobUrl
+        );
+
+        window.setTimeout(
+          () => {
+            URL.revokeObjectURL(
+              blobUrl
+            );
+          },
+          60_000
+        );
+      } catch (error) {
+        console.error(
+          "Employee profile PDF print failed:",
+          error
+        );
+
+        printWindow.close();
+
+        setReportError(
+          "Unable to prepare the employee profile report for printing."
+        );
+      } finally {
+        setReportAction(
+          ""
+        );
+      }
+    };
+
+  const handleToggleCompliance = () => {
+    if (
+      typeof navigator !== "undefined" &&
+      typeof navigator.vibrate === "function"
+    ) {
+      navigator.vibrate(12);
+    }
+
+    setIsComplianceOpen((current) => !current);
+  };
+
   const handleCloseEmployee = () => {
     if (!previewFile) {
       onClose?.();
@@ -1041,9 +2673,14 @@ export default function EmployeeModal({ employee, onClose }) {
       ) {
         return;
       }
+
+      console.error(
+        "Employee document preview failed:",
+        error
+      );
+
       setPreviewError(
-        error?.message ||
-          "Unable to load this document preview."
+        "Unable to open this document. Please try again."
       );
     } finally {
       if (!controller.signal.aborted) {
@@ -1057,7 +2694,7 @@ export default function EmployeeModal({ employee, onClose }) {
         open={!previewFile}
         onClose={handleCloseEmployee}
         title={`${employeeName} employee record`}
-        description="View employee profile, compliance condition, incident history, and system recommendation."
+        description="View employee information, incidents, compliance records, and recommended actions."
         size="xl"
         height="xl"
         showHeader={false}
@@ -1076,18 +2713,74 @@ export default function EmployeeModal({ employee, onClose }) {
                   Employee Overview
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  Core employee assignment and compliance information.
+                  Employee identity and record overview.
                 </p>
               </div>
-              <IconButton
-                label="Close employee details"
-                title="Close"
-                variant="ghost"
-                size="md"
-                onClick={handleCloseEmployee}
-              >
-                <FiX aria-hidden="true" />
-              </IconButton>
+              <div className="flex shrink-0 items-center gap-1">
+                {canExportEmployeeProfile && (
+                  <>
+                    <IconButton
+                      label={`Download ${employeeName} employee profile PDF`}
+                      title={
+                        historyLoading
+                          ? "Incident history is still loading"
+                          : historyError
+                            ? "Incident history is unavailable"
+                            : reportAction === "download"
+                              ? "Generating PDF..."
+                              : "Download employee profile PDF"
+                      }
+                      variant="ghost"
+                      size="md"
+                      disabled={
+                        employeeReportDisabled
+                      }
+                      onClick={() =>
+                        void handleDownloadEmployeeReport()
+                      }
+                    >
+                      <FiDownload
+                        aria-hidden="true"
+                      />
+                    </IconButton>
+
+                    <IconButton
+                      label={`Print ${employeeName} employee profile`}
+                      title={
+                        historyLoading
+                          ? "Incident history is still loading"
+                          : historyError
+                            ? "Incident history is unavailable"
+                            : reportAction === "print"
+                              ? "Preparing print report..."
+                              : "Print employee profile"
+                      }
+                      variant="ghost"
+                      size="md"
+                      disabled={
+                        employeeReportDisabled
+                      }
+                      onClick={() =>
+                        void handlePrintEmployeeReport()
+                      }
+                    >
+                      <FiPrinter
+                        aria-hidden="true"
+                      />
+                    </IconButton>
+                  </>
+                )}
+
+                <IconButton
+                  label="Close employee details"
+                  title="Close"
+                  variant="ghost"
+                  size="md"
+                  onClick={handleCloseEmployee}
+                >
+                  <FiX aria-hidden="true" />
+                </IconButton>
+              </div>
             </div>
             <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1095,62 +2788,52 @@ export default function EmployeeModal({ employee, onClose }) {
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-xs font-bold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
                     {employeeInitials}
                   </div>
+
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-lg font-bold text-slate-900 dark:text-slate-100">
                         {employeeName}
                       </p>
+
                       <span className="inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         {employeeId || "-"}
                       </span>
                     </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300">
-                      <span className="inline-flex items-center gap-1.5 font-medium">
-                        <FiBriefcase aria-hidden="true" />
-                        {companyDisplay}
-                      </span>
-                      {positionDisplay && (
-                        <>
-                          <span className="text-slate-300 dark:text-slate-600">•</span>
-                          <span className="font-medium">{positionDisplay}</span>
-                        </>
-                      )}
-                      <span className="text-slate-300 dark:text-slate-600">•</span>
-                      <span className="inline-flex items-center gap-1.5 font-medium">
-                        <FiShield aria-hidden="true" />
-                        {employeeStatus}
-                      </span>
-                    </div>
+
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Employee record and workforce information
+                    </p>
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
+
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <StatusPill
                     className={getClassName(
                       STATUS_CLASSES,
-                      overallCompliance,
-                      "No Data"
+                      employeeEmploymentStatus,
+                      "Inactive"
                     )}
                     icon={
-                      ["Expired", "Expiring Soon"].includes(overallCompliance) ? (
-                        <FiAlertTriangle aria-hidden="true" />
-                      ) : null
+                      <FiShield aria-hidden="true" />
                     }
                   >
-                    Compliance: {overallCompliance}
+                    Employment:{" "}
+                    {employeeEmploymentStatus ||
+                      "Not recorded"}
                   </StatusPill>
+
                   <StatusPill
                     className={getClassName(
-                      RISK_CLASSES,
-                      displayedRiskLevel,
-                      "Unavailable"
+                      STATUS_CLASSES,
+                      employeeWorkforceStatus,
+                      "Floating / Standby"
                     )}
                     icon={
-                      riskLevel === "High Risk" && !incidentSummaryLoading ? (
-                        <FiAlertTriangle aria-hidden="true" />
-                      ) : null
+                      <FiBriefcase aria-hidden="true" />
                     }
                   >
-                    Risk: {displayedRiskLevel}
+                    Workforce:{" "}
+                    {employeeWorkforceStatusLabel}
                   </StatusPill>
                 </div>
               </div>
@@ -1173,44 +2856,87 @@ export default function EmployeeModal({ employee, onClose }) {
                   {previewError}
                 </AlertBox>
               )}
-              {hasAttentionNeeded && (
-                <div
-                  className={[
-                    "rounded-2xl border px-4 py-3",
-                    expired.length
-                      ? "border-rose-200 bg-rose-50 dark:border-rose-500/25 dark:bg-rose-500/10"
-                      : "border-amber-200 bg-amber-50 dark:border-amber-500/25 dark:bg-amber-500/10",
-                  ].join(" ")}
-                >
-                  <div className="flex items-start gap-3">
-                    <FiAlertTriangle
-                      aria-hidden="true"
-                      className={[
-                        "mt-0.5 shrink-0",
-                        expired.length
-                          ? "text-rose-600 dark:text-rose-300"
-                          : "text-amber-600 dark:text-amber-300",
-                      ].join(" ")}
-                    />
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                        Compliance attention needed
-                      </p>
-                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
-                        {expired.length > 0 && (
-                          <span>{expired.length} expired</span>
-                        )}
-                        {expiringSoon.length > 0 && (
-                          <span>{expiringSoon.length} expiring soon</span>
-                        )}
-                        {noData.length > 0 && (
-                          <span>{noData.length} missing file or date</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+
+              {reportError && (
+                <AlertBox tone="danger">
+                  {reportError}
+                </AlertBox>
               )}
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <SectionTitle
+                  title="Employee Information"
+                  description="Employment, personal, and workforce placement details."
+                />
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <InfoBox
+                    label="Birthday"
+                    value={
+                      employeeBirthday
+                        ? formatDate(
+                            employeeBirthday
+                          )
+                        : "Not yet recorded"
+                    }
+                  />
+
+                  <InfoBox
+                    label="Age"
+                    value={
+                      employeeAge !== null
+                        ? `${employeeAge} year${employeeAge === 1 ? "" : "s"} old`
+                        : "Not available"
+                    }
+                  />
+
+                  <InfoBox
+                    label="Date Hired"
+                    value={
+                      employeeDateHired
+                        ? formatDate(
+                            employeeDateHired
+                          )
+                        : "Not yet recorded"
+                    }
+                  />
+
+                  <InfoBox
+                    label="Client Company"
+                    value={
+                      companyDisplay
+                    }
+                  />
+
+                  <InfoBox
+                    label="Position"
+                    value={
+                      positionDisplay
+                    }
+                  />
+
+                  <InfoBox
+                    label="Deployment Date"
+                    value={
+                      employeeWorkforceStatus ===
+                        "Deployed"
+                        ? (
+                            employeeDeploymentDate
+                              ? formatDate(
+                                  employeeDeploymentDate
+                                )
+                              : "Not recorded"
+                          )
+                        : "Not yet deployed"
+                    }
+                  />
+                </div>
+
+                <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-xs leading-5 text-indigo-800 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-200">
+                  {placementWorkflowNote}
+                </div>
+              </section>
+
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <SectionTitle
                   title="Incident & KPI Summary"
@@ -1220,7 +2946,7 @@ export default function EmployeeModal({ employee, onClose }) {
                       : "Current incident totals and system-generated employee indicators."
                   }
                 />
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                   <StatBox
                     label="Total Incidents"
                     value={getDisplayedStatistic("total")}
@@ -1236,11 +2962,11 @@ export default function EmployeeModal({ employee, onClose }) {
                     valueClassName="text-emerald-600 dark:text-emerald-300"
                   />
                   <StatBox
-                    label="Active Score"
+                    label="Current Severity Score"
                     value={getDisplayedStatistic("activeSeverityScore")}
                   />
                   <StatBox
-                    label="Historical Score"
+                    label="Historical Severity Score"
                     value={getDisplayedStatistic("historicalSeverityScore")}
                   />
                   <StatBox
@@ -1274,8 +3000,8 @@ export default function EmployeeModal({ employee, onClose }) {
               </section>
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <SectionTitle
-                  title="System Recommendation"
-                  description="Decision-support guidance based on the incident indicators currently available."
+                  title="Recommended Action"
+                  description="Suggested action based on the available incident indicators. Final decisions remain with authorized HR management."
                 />
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
                   <StatusPill
@@ -1302,7 +3028,7 @@ export default function EmployeeModal({ employee, onClose }) {
                   }
                 />
                 {historyLoading ? (
-                  <EmptyBox text="Loading incident history from backend..." />
+                  <EmptyBox text="Loading incident history..." />
                 ) : historyError ? (
                   <EmptyBox text="Incident history is unavailable." />
                 ) : recentIncidents.length === 0 ? (
@@ -1374,126 +3100,277 @@ export default function EmployeeModal({ employee, onClose }) {
                   </div>
                 )}
               </section>
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <SectionTitle
-                  title="Compliance Documents"
-                  description="Uploaded compliance files and their current expiration condition."
-                />
-                {documents.length === 0 ? (
-                  <EmptyBox text="No compliance documents found for this employee." />
-                ) : (
-                  <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-                    {documents.map((document) => {
-                      const isExpired =
-                        document.status === "Expired";
-                      const isExpiringSoon =
-                        document.status === "Expiring Soon";
-                      const isNoData =
-                        document.status === "No Data";
-                      return (
-                        <article
-                          key={document.name}
-                          className="px-4 py-3"
-                        >
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                            <div className="flex min-w-0 items-start gap-3">
-                              <div
-                                className={[
-                                  "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
-                                  isExpired
-                                    ? "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300"
-                                    : isExpiringSoon
-                                      ? "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"
-                                      : isNoData
-                                        ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                                        : "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300",
-                                ].join(" ")}
-                              >
-                                <FiFileText
-                                  size={16}
-                                  aria-hidden="true"
-                                />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-semibold text-slate-900 dark:text-slate-100">
-                                  {document.name}
-                                </p>
-                                {document.expirable ? (
-                                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <FiCalendar aria-hidden="true" />
-                                      {document.expirationDate
-                                        ? formatDate(
-                                            document.expirationDate
-                                          )
-                                        : "Expiration not set"}
-                                    </span>
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <FiClock aria-hidden="true" />
-                                      {getDaysLabel(
-                                        document.expirationDate
-                                      )}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    Permanent compliance document
-                                  </p>
-                                )}
-                                {!document.file && (
-                                  <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-300">
-                                    No uploaded file found
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex shrink-0 flex-wrap items-center gap-2">
-                              <StatusPill
-                                className={getClassName(
-                                  STATUS_CLASSES,
-                                  document.status,
-                                  "No Data"
-                                )}
-                                icon={
-                                  isExpired ||
-                                  isExpiringSoon ||
-                                  isNoData ? (
-                                    <FiAlertTriangle aria-hidden="true" />
-                                  ) : (
-                                    <FiCheckCircle aria-hidden="true" />
-                                  )
-                                }
-                              >
-                                {document.status}
-                              </StatusPill>
-                              {document.file && (
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  leftIcon={
-                                    <FiEye aria-hidden="true" />
-                                  }
-                                  loading={
-                                    previewLoadingId ===
-                                    document.file.documentId
-                                  }
-                                  disabled={
-                                    previewLoadingId !== null
-                                  }
-                                  onClick={() =>
-                                    void handleViewDocument(
-                                      document.file
-                                    )
-                                  }
-                                >
-                                  View File
-                                </Button>
+              <section
+                ref={complianceSectionRef}
+                className="scroll-mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset dark:hover:bg-slate-800/50"
+                  aria-expanded={isComplianceOpen}
+                  aria-controls="employee-compliance-documents"
+                  onClick={handleToggleCompliance}
+                >
+                  <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Compliance Documents
+                  </span>
+
+                  <FiChevronDown
+                    aria-hidden="true"
+                    className={[
+                      "shrink-0 text-slate-500 transition-transform duration-200 dark:text-slate-400",
+                      isComplianceOpen ? "rotate-180" : "",
+                    ].join(" ")}
+                  />
+                </button>
+
+                {isComplianceOpen && (
+                  <div
+                    id="employee-compliance-documents"
+                    className="border-t border-slate-200 px-4 pb-4 pt-4 dark:border-slate-800"
+                  >
+                    <p className="mb-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      Document numbers, submitted files, and expiration details.
+                    </p>
+
+                    {hasAttentionNeeded && (
+                      <div
+                        className={[
+                          "mb-4 rounded-xl border px-4 py-3",
+                          expired.length
+                            ? "border-rose-200 bg-rose-50 dark:border-rose-500/25 dark:bg-rose-500/10"
+                            : "border-amber-200 bg-amber-50 dark:border-amber-500/25 dark:bg-amber-500/10",
+                        ].join(" ")}
+                      >
+                        <div className="flex items-start gap-3">
+                          <FiAlertTriangle
+                            aria-hidden="true"
+                            className={[
+                              "mt-0.5 shrink-0",
+                              expired.length
+                                ? "text-rose-600 dark:text-rose-300"
+                                : "text-amber-600 dark:text-amber-300",
+                            ].join(" ")}
+                          />
+
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                              Compliance Follow-up Needed
+                            </p>
+
+                            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+                              {expired.length > 0 && (
+                                <span>{expired.length} expired</span>
+                              )}
+
+                              {expiringSoon.length > 0 && (
+                                <span>{expiringSoon.length} expiring soon</span>
+                              )}
+
+                              {noData.length > 0 && (
+                                <span>{noData.length} missing file or date</span>
                               )}
                             </div>
                           </div>
-                        </article>
-                      );
-                    })}
+                        </div>
+                      </div>
+                    )}
+
+                    {documents.length === 0 ? (
+                      <EmptyBox text="No compliance documents are recorded for this employee." />
+                    ) : (
+                      <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                        {documents.map((document) => {
+                          const isExpired =
+                            document.status === "Expired";
+                          const isExpiringSoon =
+                            document.status === "Expiring Soon";
+                          const isNoData =
+                            document.status === "No Data";
+
+                          const documentId =
+                            String(
+                              document?.id ??
+                                document?.documentId ??
+                                document?.document_id ??
+                                ""
+                            ).trim();
+
+                          const documentName =
+                            String(
+                              document?.name ||
+                                ""
+                            )
+                              .trim()
+                              .toLowerCase();
+
+                          const isComplianceNotificationTarget =
+                            (
+                              Boolean(
+                                complianceTargetDocumentId
+                              ) &&
+                              documentId ===
+                                complianceTargetDocumentId
+                            ) ||
+                            (
+                              Boolean(
+                                complianceTargetDocumentName
+                              ) &&
+                              documentName ===
+                                complianceTargetDocumentName
+                            );
+
+                          return (
+                            <article
+                              key={document.name}
+                              data-compliance-notification-target={
+                                isComplianceNotificationTarget
+                                  ? "true"
+                                  : undefined
+                              }
+                              className={[
+                                "px-4 py-3 transition-colors",
+                                isComplianceNotificationTarget
+                                  ? isExpired
+                                    ? "bg-rose-50/80 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/10 dark:ring-rose-500/30"
+                                    : isExpiringSoon
+                                      ? "bg-amber-50/80 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:ring-amber-500/30"
+                                      : "bg-indigo-50/70 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-500/10 dark:ring-indigo-500/30"
+                                  : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                            >
+                              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                <div className="flex min-w-0 items-start gap-3">
+                                  <div
+                                    className={[
+                                      "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                                      isExpired
+                                        ? "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300"
+                                        : isExpiringSoon
+                                          ? "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"
+                                          : isNoData
+                                            ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                                            : "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300",
+                                    ].join(" ")}
+                                  >
+                                    <FiFileText
+                                      size={16}
+                                      aria-hidden="true"
+                                    />
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-slate-900 dark:text-slate-100">
+                                      {document.name}
+                                    </p>
+
+                                    {document.requiresDocumentNumber && (
+                                      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+                                        <span className="font-semibold text-slate-500 dark:text-slate-400">
+                                          {document.documentNumberLabel}:
+                                        </span>
+
+                                        <span
+                                          className={[
+                                            "break-all font-bold tabular-nums",
+                                            document.documentNumber
+                                              ? "text-slate-800 dark:text-slate-200"
+                                              : "text-amber-600 dark:text-amber-300",
+                                          ].join(" ")}
+                                        >
+                                          {document.documentNumber ||
+                                            "Not yet recorded"}
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {document.expirable ? (
+                                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                                        <span className="inline-flex items-center gap-1.5">
+                                          <FiCalendar aria-hidden="true" />
+                                          {document.expirationDate
+                                            ? formatDate(
+                                                document.expirationDate
+                                              )
+                                            : "Expiration not set"}
+                                        </span>
+
+                                        <span className="inline-flex items-center gap-1.5">
+                                          <FiClock aria-hidden="true" />
+                                          {getDaysLabel(
+                                            document.expirationDate
+                                          )}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        Permanent compliance document
+                                      </p>
+                                    )}
+
+                                    {!document.file && (
+                                      <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-300">
+                                        File not uploaded
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                  <StatusPill
+                                    className={getClassName(
+                                      STATUS_CLASSES,
+                                      document.status,
+                                      "No Data"
+                                    )}
+                                    icon={
+                                      isExpired ||
+                                      isExpiringSoon ||
+                                      isNoData ? (
+                                        <FiAlertTriangle aria-hidden="true" />
+                                      ) : (
+                                        <FiCheckCircle aria-hidden="true" />
+                                      )
+                                    }
+                                  >
+                                    {document.status ===
+                                    "No Data"
+                                      ? "Incomplete"
+                                      : document.status}
+                                  </StatusPill>
+
+                                  {document.file && (
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      leftIcon={
+                                        <FiEye aria-hidden="true" />
+                                      }
+                                      loading={
+                                        previewLoadingId ===
+                                        document.file.documentId
+                                      }
+                                      disabled={
+                                        previewLoadingId !== null
+                                      }
+                                      onClick={() =>
+                                        void handleViewDocument(
+                                          document.file
+                                        )
+                                      }
+                                    >
+                                      View File
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -1592,19 +3469,36 @@ function SectionTitle({
     </div>
   );
 }
-function StatBox({
+function InfoBox({
   label,
   value,
-  valueClassName = "text-slate-900 dark:text-slate-100",
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
       <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
         {label}
       </p>
+
+      <p className="mt-1 break-words text-sm font-bold text-slate-900 dark:text-slate-100">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function StatBox({
+  label,
+  value,
+  valueClassName = "text-slate-900 dark:text-slate-100",
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+      <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </p>
       <p
         className={[
-          "mt-1 text-xl font-bold tabular-nums",
+          "mt-1 break-words text-lg font-bold leading-tight tabular-nums sm:text-xl",
           valueClassName,
         ].join(" ")}
       >
@@ -1619,11 +3513,18 @@ function MetricBadgeBox({
   className,
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
       <p className="mb-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
         {label}
       </p>
-      <StatusPill className={className}>
+      <StatusPill
+        className={[
+          "max-w-full whitespace-normal break-words text-center leading-4",
+          className,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         {value}
       </StatusPill>
     </div>

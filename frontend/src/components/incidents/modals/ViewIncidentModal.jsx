@@ -102,15 +102,27 @@ function getValue(
   );
 }
 
-function getCaseAgeLabel(
+function getDayLabel(
   value
 ) {
-  const caseAge =
+  const days =
     Number(
       value || 0
     );
 
-  return `${caseAge} day(s)`;
+  return `${days} ${
+    days === 1
+      ? "day"
+      : "days"
+  }`;
+}
+
+function getCaseAgeLabel(
+  value
+) {
+  return getDayLabel(
+    value
+  );
 }
 
 function getSlaLabel(
@@ -124,7 +136,69 @@ function getSlaLabel(
     return "-";
   }
 
-  return `${value} day(s)`;
+  return getDayLabel(
+    value
+  );
+}
+
+function formatDateOnly(
+  value
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "-";
+  }
+
+  const normalized =
+    String(
+      value
+    ).trim();
+
+  const dateOnlyMatch =
+    normalized.match(
+      /^(\d{4})-(\d{2})-(\d{2})/
+    );
+
+  let date;
+
+  if (dateOnlyMatch) {
+    date =
+      new Date(
+        `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}T00:00:00+08:00`
+      );
+  } else {
+    date =
+      new Date(
+        value
+      );
+  }
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone:
+        "Asia/Manila",
+      month:
+        "short",
+      day:
+        "numeric",
+      year:
+        "numeric",
+    }
+  ).format(
+    date
+  );
 }
 
 function PillBadge({
@@ -250,6 +324,8 @@ export default function ViewIncidentModal({
     "-";
 
   const reportedAt =
+    incident.createdAtTimestamp ||
+    incident.created_at_timestamp ||
     incident.reportedAt ||
     incident.reported_at ||
     incident.createdAt ||
@@ -264,15 +340,13 @@ export default function ViewIncidentModal({
     incident.date ||
     reportedAt;
 
-  const location =
-    incident.location ||
-    "-";
-
   const investigation =
     incident.investigation ||
     null;
 
   const investigationStartedAt =
+    incident.investigationStartedAtTimestamp ||
+    incident.investigation_started_at_timestamp ||
     investigation?.startedAt ||
     incident.investigationStartedAt ||
     incident.investigation_started_at ||
@@ -282,18 +356,6 @@ export default function ViewIncidentModal({
     investigation?.startedByName ||
     incident.investigationStartedByName ||
     incident.investigation_started_by_name ||
-    "-";
-
-  const investigationStartedByUsername =
-    investigation?.startedByUsername ||
-    incident.investigationStartedByUsername ||
-    incident.investigation_started_by_username ||
-    "-";
-
-  const investigationStartedById =
-    investigation?.startedById ||
-    incident.investigationStartedById ||
-    incident.investigation_started_by_id ||
     "-";
 
   const hasInvestigation =
@@ -306,6 +368,8 @@ export default function ViewIncidentModal({
     null;
 
   const resolutionSubmittedAt =
+    incident.resolutionSubmittedAtTimestamp ||
+    incident.resolution_submitted_at_timestamp ||
     resolution?.submittedAt ||
     incident.resolutionSubmittedAt ||
     incident.resolution_submitted_at ||
@@ -315,18 +379,6 @@ export default function ViewIncidentModal({
     resolution?.submittedByName ||
     incident.resolutionSubmittedByName ||
     incident.resolution_submitted_by_name ||
-    "-";
-
-  const resolutionSubmittedByUsername =
-    resolution?.submittedByUsername ||
-    incident.resolutionSubmittedByUsername ||
-    incident.resolution_submitted_by_username ||
-    "-";
-
-  const resolutionSubmittedById =
-    resolution?.submittedById ||
-    incident.resolutionSubmittedById ||
-    incident.resolution_submitted_by_id ||
     "-";
 
   const hasResolution =
@@ -340,6 +392,8 @@ export default function ViewIncidentModal({
     null;
 
   const reviewedAt =
+    incident.reviewedAtTimestamp ||
+    incident.reviewed_at_timestamp ||
     review?.reviewedAt ||
     incident.reviewedAt ||
     incident.reviewed_at ||
@@ -349,18 +403,6 @@ export default function ViewIncidentModal({
     review?.reviewedByName ||
     incident.reviewedByName ||
     incident.reviewed_by_name ||
-    "-";
-
-  const reviewedByUsername =
-    review?.reviewedByUsername ||
-    incident.reviewedByUsername ||
-    incident.reviewed_by_username ||
-    "-";
-
-  const reviewedById =
-    review?.reviewedById ||
-    incident.reviewedById ||
-    incident.reviewed_by_id ||
     "-";
 
   const reviewDecision =
@@ -429,8 +471,8 @@ export default function ViewIncidentModal({
       }
       title={
         isStartReview
-          ? "Review Reported Incident"
-          : "Incident Case Details"
+          ? "Review Incident"
+          : "Case Details"
       }
       subtitle={`${incidentCode} • ${employeeName}`}
       color={
@@ -445,8 +487,8 @@ export default function ViewIncidentModal({
           {isStartReview && (
             <AlertBox
               type="warning"
-              title="Review before starting investigation"
-              message="Verify the employee, reporter, violation, case age, alerts, and incident details before proceeding."
+              title="Before You Start"
+              message="Review the case details below before starting the investigation."
             />
           )}
 
@@ -475,9 +517,6 @@ export default function ViewIncidentModal({
                   }
                 />
 
-                <span className="text-xs text-slate-500 dark:text-slate-400">
-                  Assessed incident seriousness
-                </span>
               </div>
             </HighlightCard>
 
@@ -487,7 +526,7 @@ export default function ViewIncidentModal({
                   aria-hidden="true"
                 />
               }
-              label="Case Status"
+              label="Status"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <PillBadge
@@ -505,14 +544,11 @@ export default function ViewIncidentModal({
                   }
                 />
 
-                <span className="text-xs text-slate-500 dark:text-slate-400">
-                  Current incident workflow stage
-                </span>
               </div>
             </HighlightCard>
           </div>
 
-          <InfoCard title="Incident Summary">
+          <InfoCard title="Case Summary">
             <Detail
               label="Incident ID"
               value={
@@ -549,14 +585,14 @@ export default function ViewIncidentModal({
             />
 
             <Detail
-              label="Policy Sanction"
+              label="Prescribed Sanction"
               value={
                 policySanction
               }
             />
 
             <Detail
-              label="Offense Count"
+              label="Offense Number"
               value={
                 Number(
                   incident.offenseCount ||
@@ -566,14 +602,14 @@ export default function ViewIncidentModal({
             />
 
             <Detail
-              label="Case Age"
+              label="Days Open"
               value={getCaseAgeLabel(
                 incident.caseAgeDays
               )}
             />
           </InfoCard>
 
-          <InfoCard title="Report Information">
+          <InfoCard title="Report Details">
             <Detail
               label="Reported By"
               value={
@@ -582,7 +618,7 @@ export default function ViewIncidentModal({
             />
 
             <Detail
-              label="Reported Date"
+              label="Reported On"
               value={formatDateTime(
                 reportedAt
               )}
@@ -590,27 +626,20 @@ export default function ViewIncidentModal({
 
             <Detail
               label="Incident Date"
-              value={formatDateTime(
+              value={formatDateOnly(
                 incidentDate
               )}
             />
 
             <Detail
-              label="Location"
-              value={
-                location
-              }
-            />
-
-            <Detail
-              label="SLA Target"
+              label="Target Resolution Period"
               value={getSlaLabel(
                 incident.slaDays
               )}
             />
 
             <Detail
-              label="Overdue"
+              label="Past Due"
               value={
                 incident.isOverdue
                   ? "Yes"
@@ -619,7 +648,7 @@ export default function ViewIncidentModal({
             />
           </InfoCard>
 
-          <InfoCard title="Incident Description">
+          <InfoCard title="Case Description">
             <div className="flex items-start gap-3">
               <FiFileText
                 className="mt-1 shrink-0 text-slate-400"
@@ -633,7 +662,7 @@ export default function ViewIncidentModal({
             </div>
           </InfoCard>
 
-          <InfoCard title="Initial NTE Attachment">
+          <InfoCard title="Initial Attachment">
             {incident.initialNte ||
             incident.initial_nte ? (
               <ProofList
@@ -643,12 +672,12 @@ export default function ViewIncidentModal({
                 ]}
               />
             ) : (
-              <EmptyWorkflowState message="No NTE was attached when this Incident was reported." />
+              <EmptyWorkflowState message="No file was attached when this incident was reported." />
             )}
           </InfoCard>
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <InfoCard title="Investigation Information">
+            <InfoCard title="Investigation Details">
               {hasInvestigation ? (
                 <>
                   <Detail
@@ -659,21 +688,7 @@ export default function ViewIncidentModal({
                   />
 
                   <Detail
-                    label="Username"
-                    value={
-                      investigationStartedByUsername
-                    }
-                  />
-
-                  <Detail
-                    label="User ID"
-                    value={
-                      investigationStartedById
-                    }
-                  />
-
-                  <Detail
-                    label="Date Started"
+                    label="Started On"
                     value={formatDateTime(
                       investigationStartedAt
                     )}
@@ -684,7 +699,7 @@ export default function ViewIncidentModal({
               )}
             </InfoCard>
 
-            <InfoCard title="Resolution Proof">
+            <InfoCard title="Submitted Resolution">
               {hasResolution ? (
                 <>
                   <Detail
@@ -695,28 +710,14 @@ export default function ViewIncidentModal({
                   />
 
                   <Detail
-                    label="Username"
-                    value={
-                      resolutionSubmittedByUsername
-                    }
-                  />
-
-                  <Detail
-                    label="User ID"
-                    value={
-                      resolutionSubmittedById
-                    }
-                  />
-
-                  <Detail
-                    label="Submitted Date"
+                    label="Submitted On"
                     value={formatDateTime(
                       resolutionSubmittedAt
                     )}
                   />
                 </>
               ) : (
-                <EmptyWorkflowState message="No resolution proof has been submitted yet." />
+                <EmptyWorkflowState message="No resolution has been submitted yet." />
               )}
             </InfoCard>
           </div>
@@ -729,7 +730,7 @@ export default function ViewIncidentModal({
             />
           )}
 
-          <InfoCard title="Review Information">
+          <InfoCard title="Review Details">
             {hasReview ? (
               <>
                 <Detail
@@ -740,21 +741,7 @@ export default function ViewIncidentModal({
                 />
 
                 <Detail
-                  label="Username"
-                  value={
-                    reviewedByUsername
-                  }
-                />
-
-                <Detail
-                  label="User ID"
-                  value={
-                    reviewedById
-                  }
-                />
-
-                <Detail
-                  label="Review Date"
+                  label="Reviewed On"
                   value={formatDateTime(
                     reviewedAt
                   )}
@@ -782,7 +769,7 @@ export default function ViewIncidentModal({
           </InfoCard>
 
           {isReturned && (
-            <InfoCard title="Reviewer Return Comment">
+            <InfoCard title="Reason for Return">
               <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
                 {reviewComments ||
                   "The case was returned for correction."}
@@ -790,16 +777,16 @@ export default function ViewIncidentModal({
             </InfoCard>
           )}
 
-          <InfoCard title="System Recommendation">
+          <InfoCard title="Recommendation">
             <p className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm font-semibold leading-6 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
               {incident.recommendation ||
-                "No recommendation generated."}
+                "No recommendation available."}
             </p>
           </InfoCard>
 
           {smartAlerts.length >
             0 && (
-            <InfoCard title="Smart Alerts">
+            <InfoCard title="Case Alerts">
               <div className="space-y-2">
                 {smartAlerts.map(
                   (
@@ -851,7 +838,7 @@ export default function ViewIncidentModal({
                 {status ===
                 "Open"
                   ? "Start Investigation"
-                  : "Investigation Already Started"}
+                  : "Investigation Started"}
               </Button>
             </ModalFooter>
           )}

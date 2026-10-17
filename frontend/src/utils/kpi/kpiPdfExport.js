@@ -1,6 +1,35 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+const KPI_REPORT_TIME_ZONE =
+  "Asia/Manila";
+
+function formatKpiReportGeneratedAt() {
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone:
+        KPI_REPORT_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "short",
+      day:
+        "2-digit",
+      hour:
+        "numeric",
+      minute:
+        "2-digit",
+      second:
+        "2-digit",
+      hour12:
+        true,
+    }
+  ).format(
+    new Date()
+  );
+}
+
 function getSafeArray(value) {
   return Array.isArray(value)
     ? value.filter(Boolean)
@@ -236,9 +265,7 @@ export function exportKPIReportPDF({
     "System User";
 
   const generatedOn =
-    new Date().toLocaleString(
-      "en-PH"
-    );
+    formatKpiReportGeneratedAt();
 
   const totalViolations =
     getTotal(

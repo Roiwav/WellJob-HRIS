@@ -477,26 +477,280 @@ function initChatSocket(
  * single-server deployment.
  */
 
+function getMessageDeliveryContext(
+  eventName,
+  payload
+) {
+  if (
+    eventName !==
+      "chat:message" ||
+    !payload?.message ||
+    payload.message.isSystem
+  ) {
+    return null;
+  }
+
+  const senderId =
+    normalizeUserId(
+      payload?.sender?.id ??
+        payload?.message?.senderId
+    );
+
+  const messageId =
+    normalizeUserId(
+      payload?.message?.id
+    );
+
+  const conversationId =
+    String(
+      payload?.message?.conversationId ||
+        ""
+    ).trim();
+
+  if (
+    !senderId ||
+    !messageId ||
+    !conversationId
+  ) {
+    return null;
+  }
+
+  return {
+    senderId,
+    messageId:
+      String(
+        messageId
+      ),
+    conversationId,
+  };
+}
+
+async function canReceiveGroupMessage(
+  userId,
+  payload
+) {
+  const conversationId =
+    String(
+      payload?.message?.conversationId ||
+        ""
+    );
+
+  if (
+    !/^g:[1-9]\d*$/.test(
+      conversationId
+    )
+  ) {
+    return true;
+  }
+
+  const groupId =
+    Number(
+      conversationId.slice(
+        2
+      )
+    );
+
+  const messageId =
+    normalizeUserId(
+      payload?.message?.id
+    );
+
+  if (
+    !Number.isSafeInteger(
+      groupId
+    ) ||
+    groupId <= 0 ||
+    !messageId
+  ) {
+    return false;
+  }
+
+  try {
+    const [membershipRows] =
+      await db
+        .promise()
+        .query(
+          `
+          SELECT 1
+          FROM chat_group_members
+          WHERE group_id = ?
+            AND user_id = ?
+            AND joined_after_message_id < ?
+          LIMIT 1
+          `,
+          [
+            groupId,
+            userId,
+            messageId,
+          ]
+        );
+
+    return (
+      membershipRows.length >
+      0
+    );
+  } catch (error) {
+    console.error(
+      "CHAT GROUP DELIVERY VALIDATION ERROR:",
+      error
+    );
+
+    return false;
+  }
+}
+
+async function emitToVerifiedUser(
+  userId,
+  eventName,
+  payload
+) {
+  if (!io) {
+    return 0;
+  }
+
+  const room =
+    roomForUser(
+      userId
+    );
+
+  const connectedSockets =
+    io.of("/").sockets;
+
+  if (
+    eventName ===
+      "chat:message" &&
+    !await canReceiveGroupMessage(
+      userId,
+      payload
+    )
+  ) {
+    return 0;
+  }
+
+  let deliveredSocketCount =
+    0;
+
+  for (
+    const socket of
+    connectedSockets.values()
+  ) {
+    const socketUserId =
+      normalizeUserId(
+        socket.data?.chatUser?.id
+      );
+
+    /*
+     * The socket must belong to the intended
+     * authenticated recipient.
+     */
+    if (
+      !socket.connected ||
+      socketUserId !==
+        userId ||
+      !socket.rooms.has(
+        room
+      )
+    ) {
+      continue;
+    }
+
+    /*
+     * Revalidate immediately before delivery.
+     *
+     * Revoked, expired, disabled, or otherwise
+     * invalid sessions fail closed.
+     */
+    const isAuthorized =
+      await revalidateSocket(
+        socket
+      );
+
+    if (!isAuthorized) {
+      continue;
+    }
+
+    const currentUserId =
+      normalizeUserId(
+        socket.data?.chatUser?.id
+      );
+
+    if (
+      !socket.connected ||
+      currentUserId !==
+        userId ||
+      !socket.rooms.has(
+        room
+      )
+    ) {
+      continue;
+    }
+
+    socket.emit(
+      eventName,
+      payload
+    );
+
+    deliveredSocketCount +=
+      1;
+  }
+
+  return deliveredSocketCount;
+}
+
+/*
+ * ==================================================
+ * PUBLISH EVENTS TO USERS
+ * ==================================================
+ *
+ * Called by chatRoutes.js after an authorized
+ * database operation succeeds.
+ *
+ * Delivery semantics:
+ *
+ * - "Sent" is established by the successful REST
+ *   message creation response.
+ *
+ * - "Delivered" is established here only when the
+ *   server actually emits the new chat:message event
+ *   to at least one currently connected, revalidated
+ *   recipient socket.
+ *
+ * - "Seen" remains controlled by the existing
+ *   chat:read workflow and persisted read state.
+ *
+ * Delivery receipts are real-time session state only.
+ * They are not persisted to MySQL in this phase.
+ */
+
 async function publishToUsers(
   userIds,
   eventName,
   payload
 ) {
   if (!io) {
-    return;
+    return {
+      deliveredUserIds:
+        [],
+      deliveredSocketCount:
+        0,
+    };
   }
 
   if (
-    !Array.isArray(userIds) ||
-    typeof eventName !== "string" ||
+    !Array.isArray(
+      userIds
+    ) ||
+    typeof eventName !==
+      "string" ||
     !eventName.trim()
   ) {
-    return;
+    return {
+      deliveredUserIds:
+        [],
+      deliveredSocketCount:
+        0,
+    };
   }
-
-  /*
-   * Remove duplicate and invalid user IDs.
-   */
 
   const uniqueUserIds =
     [
@@ -506,120 +760,109 @@ async function publishToUsers(
             normalizeUserId
           )
           .filter(
-            (id) =>
-              id !== null
+            (userId) =>
+              userId !==
+              null
           )
       ),
     ];
 
-  /*
-   * Access only actual local Socket instances.
-   *
-   * No RemoteSocket conversion is required.
-   */
+  const deliveredUserIds =
+    [];
 
-  const connectedSockets =
-    io.of("/").sockets;
+  let deliveredSocketCount =
+    0;
 
-  /*
-   * Deliver to each eligible recipient.
-   */
-
-  for (const userId of uniqueUserIds) {
-    const room =
-      roomForUser(userId);
-
-    for (
-      const socket of
-      connectedSockets.values()
-    ) {
-      const socketUserId =
-        normalizeUserId(
-          socket.data?.chatUser?.id
-        );
-
-      /*
-       * The socket must belong to the
-       * intended authenticated recipient.
-       */
-
-      if (
-        !socket.connected ||
-        socketUserId !== userId ||
-        !socket.rooms.has(room)
-      ) {
-        continue;
-      }
-
-      /*
-       * Revalidate the session before
-       * sending the event.
-       */
-
-      const isAuthorized =
-        await revalidateSocket(
-          socket
-        );
-
-      if (!isAuthorized) {
-        continue;
-      }
-
-      /*
-       * Confirm the socket is still connected
-       * to the intended user's private room.
-       */
-
-      const currentUserId =
-        normalizeUserId(
-          socket.data?.chatUser?.id
-        );
-
-      if (
-        !socket.connected ||
-        currentUserId !== userId ||
-        !socket.rooms.has(room)
-      ) {
-        continue;
-      }
-
-      /*
-       * A removed group member must not receive delayed group messages.
-       * Membership AND message visibility are rechecked immediately before
-       * sending a group message, even if an old recipient list was captured.
-       */
-      const groupMatch =
-        eventName === "chat:message" &&
-        typeof payload?.message?.conversationId === "string" &&
-        /^g:[1-9]\d*$/.test(payload.message.conversationId);
-
-      if (groupMatch) {
-        const groupId = Number(payload.message.conversationId.slice(2));
-        const messageId = Number(payload.message.id);
-        try {
-          const [membershipRows] = await db.promise().query(
-            `SELECT 1 FROM chat_group_members
-             WHERE group_id = ? AND user_id = ?
-               AND joined_after_message_id < ? LIMIT 1`,
-            [groupId, userId, messageId]
-          );
-          if (!membershipRows.length) continue;
-        } catch (error) {
-          console.error("CHAT GROUP DELIVERY VALIDATION ERROR:", error);
-          continue;
-        }
-      }
-
-      /*
-       * Send only to this verified socket.
-       */
-
-      socket.emit(
+  for (
+    const userId of
+    uniqueUserIds
+  ) {
+    const socketCount =
+      await emitToVerifiedUser(
+        userId,
         eventName,
         payload
       );
+
+    if (
+      socketCount >
+      0
+    ) {
+      deliveredUserIds.push(
+        userId
+      );
+
+      deliveredSocketCount +=
+        socketCount;
     }
   }
+
+  /*
+   * Server-generated real-time delivery receipt.
+   *
+   * Never trust a client to claim that another user
+   * received a message. A receipt is created only
+   * from the actual verified Socket.IO delivery path.
+   */
+  const deliveryContext =
+    getMessageDeliveryContext(
+      eventName,
+      payload
+    );
+
+  if (deliveryContext) {
+    const recipientUserIds =
+      uniqueUserIds.filter(
+        (userId) =>
+          userId !==
+          deliveryContext.senderId
+      );
+
+    const deliveredRecipientIds =
+      deliveredUserIds.filter(
+        (userId) =>
+          userId !==
+          deliveryContext.senderId
+      );
+
+    if (
+      deliveredRecipientIds.length >
+      0
+    ) {
+      const deliveryReceipt = {
+        conversationId:
+          deliveryContext.conversationId,
+
+        messageId:
+          deliveryContext.messageId,
+
+        deliveredAt:
+          new Date()
+            .toISOString(),
+
+        deliveredCount:
+          deliveredRecipientIds.length,
+
+        recipientCount:
+          recipientUserIds.length,
+
+        fullyDelivered:
+          deliveredRecipientIds.length >=
+          recipientUserIds.length,
+      };
+
+      await emitToVerifiedUser(
+        deliveryContext.senderId,
+        "chat:delivered",
+        deliveryReceipt
+      );
+    }
+  }
+
+  return {
+    deliveredUserIds,
+    deliveredSocketCount,
+  };
 }
 
 /*

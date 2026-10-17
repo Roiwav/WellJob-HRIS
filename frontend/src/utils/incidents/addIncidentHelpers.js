@@ -17,6 +17,9 @@ export const penaltyLevelStyle = {
 
 const ACTIVE_CASE_STATUSES = ["Open", "Investigating", "For Review"];
 
+const INCIDENT_TIME_ZONE =
+  "Asia/Manila";
+
 function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -51,6 +54,8 @@ function getIncidentDateValue(incident) {
     incident?.date ||
     incident?.incidentDate ||
     incident?.incident_date ||
+    incident?.createdAtTimestamp ||
+    incident?.created_at_timestamp ||
     incident?.createdAt ||
     incident?.created_at ||
     ""
@@ -63,6 +68,152 @@ function isClosedIncident(incident) {
 
 function isActiveIncident(incident) {
   return ACTIVE_CASE_STATUSES.includes(normalizeIncidentStatus(incident?.status));
+}
+
+function normalizeDateTimeTimestamp(value) {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return 0;
+  }
+
+  if (value instanceof Date) {
+    const timestamp = value.getTime();
+
+    return Number.isNaN(timestamp)
+      ? 0
+      : timestamp;
+  }
+
+  const normalized =
+    String(value).trim();
+
+  if (!normalized) {
+    return 0;
+  }
+
+  const numericValue =
+    Number(normalized);
+
+  if (
+    Number.isFinite(numericValue) &&
+    numericValue > 0
+  ) {
+    return numericValue < 100000000000
+      ? numericValue * 1000
+      : numericValue;
+  }
+
+  /*
+   * A date-only value is already a business calendar
+   * date. Interpret it at Manila midnight so another
+   * browser timezone cannot shift the calendar day.
+   */
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(normalized)
+  ) {
+    const parsed =
+      new Date(
+        `${normalized}T00:00:00+08:00`
+      ).getTime();
+
+    return Number.isNaN(parsed)
+      ? 0
+      : parsed;
+  }
+
+  /*
+   * Legacy MySQL DATETIME values may not contain an
+   * explicit timezone. These represent Welljob local
+   * business time, so attach the Manila offset before
+   * parsing.
+   */
+  const mysqlDateTimeMatch =
+    normalized.match(
+      /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?)$/
+    );
+
+  if (mysqlDateTimeMatch) {
+    const parsed =
+      new Date(
+        `${mysqlDateTimeMatch[1]}T${mysqlDateTimeMatch[2]}+08:00`
+      ).getTime();
+
+    return Number.isNaN(parsed)
+      ? 0
+      : parsed;
+  }
+
+  const parsed =
+    new Date(normalized).getTime();
+
+  return Number.isNaN(parsed)
+    ? 0
+    : parsed;
+}
+
+function getManilaDateParts(value) {
+  const timestamp =
+    normalizeDateTimeTimestamp(value);
+
+  if (!timestamp) {
+    return null;
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          INCIDENT_TIME_ZONE,
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      new Date(timestamp)
+    );
+
+  const values =
+    Object.fromEntries(
+      parts
+        .filter(
+          (part) =>
+            [
+              "year",
+              "month",
+              "day",
+            ].includes(part.type)
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ]
+        )
+    );
+
+  if (
+    !values.year ||
+    !values.month ||
+    !values.day
+  ) {
+    return null;
+  }
+
+  return {
+    year:
+      values.year,
+    month:
+      values.month,
+    day:
+      values.day,
+  };
 }
 
 export function generateIncidentId(existingIncidents = []) {
@@ -82,29 +233,83 @@ export function generateIncidentId(existingIncidents = []) {
   return `INC-${String(maxNumber + 1).padStart(4, "0")}`;
 }
 
-export function getDateOnly(isoDate) {
-  const date = new Date(isoDate);
+export function getDateOnly(value) {
+  /*
+   * Preserve an already-valid date-only business value
+   * exactly as supplied.
+   */
+  const normalized =
+    String(value ?? "").trim();
 
-  if (Number.isNaN(date.getTime())) {
-    return new Date().toISOString().split("T")[0];
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(normalized)
+  ) {
+    return normalized;
   }
 
-  return date.toISOString().split("T")[0];
+  /*
+   * Convert an absolute timestamp to its PHILIPPINE
+   * calendar date, never its UTC calendar date.
+   *
+   * Example:
+   * 2026-10-16T19:22:00.000Z
+   * = Oct 17, 2026 03:22 AM in Manila
+   * => 2026-10-17
+   */
+  const dateParts =
+    getManilaDateParts(value);
+
+  if (dateParts) {
+    return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+  }
+
+  /*
+   * Invalid/missing input falls back to the current
+   * Manila business date instead of UTC date.
+   */
+  const currentDateParts =
+    getManilaDateParts(
+      Date.now()
+    );
+
+  if (!currentDateParts) {
+    return "";
+  }
+
+  return `${currentDateParts.year}-${currentDateParts.month}-${currentDateParts.day}`;
 }
 
-export function formatDateTime(isoDate) {
-  if (!isoDate) return "-";
+export function formatDateTime(value) {
+  const timestamp =
+    normalizeDateTimeTimestamp(
+      value
+    );
 
-  const date = new Date(isoDate);
-  if (Number.isNaN(date.getTime())) return "-";
+  if (!timestamp) {
+    return "-";
+  }
 
-  return date.toLocaleString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone:
+        INCIDENT_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "short",
+      day:
+        "2-digit",
+      hour:
+        "numeric",
+      minute:
+        "2-digit",
+      hour12:
+        true,
+    }
+  ).format(
+    new Date(timestamp)
+  );
 }
 
 export function getOrdinalSuffix(number) {
@@ -153,8 +358,16 @@ export function getDuplicateIncidentCandidates(existingIncidents = [], formData)
       return sameEmployee && sameViolation && isActiveIncident(incident);
     })
     .sort((a, b) => {
-      const dateA = new Date(getIncidentDateValue(a)).getTime() || 0;
-      const dateB = new Date(getIncidentDateValue(b)).getTime() || 0;
+      const dateA =
+        normalizeDateTimeTimestamp(
+          getIncidentDateValue(a)
+        );
+
+      const dateB =
+        normalizeDateTimeTimestamp(
+          getIncidentDateValue(b)
+        );
+
       return dateB - dateA;
     });
 }
@@ -165,7 +378,18 @@ export function buildFinalIncident({
   existingIncidents = [],
 }) {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
-  const now = formData.reportedAt || new Date().toISOString();
+
+  /*
+   * reportedAt remains an absolute ISO instant.
+   * The business incident date is derived separately
+   * through getDateOnly(), which uses Asia/Manila.
+   *
+   * The backend still remains authoritative for the
+   * actual database created_at workflow timestamp.
+   */
+  const now =
+    formData.reportedAt ||
+    new Date().toISOString();
 
   const createdBy =
     user?.name ||

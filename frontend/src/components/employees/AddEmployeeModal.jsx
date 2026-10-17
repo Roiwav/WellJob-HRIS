@@ -3,6 +3,7 @@ import {
   FiAlertTriangle,
   FiInfo,
   FiUser,
+  FiX,
 } from "react-icons/fi";
 import useEmployeeForm from "../../hooks/employees/useEmployeeForm";
 import {
@@ -55,6 +56,7 @@ export default function AddEmployeeModal({
     handleNameBlur,
     handleDuplicateConfirmChange,
     handleDocumentCheck,
+    handleDocumentNumberChange,
     handleExpirationChange,
     handleFileSelect,
     handleDragEnter,
@@ -68,6 +70,37 @@ export default function AddEmployeeModal({
     employeeId: generatedId,
     employees,
   });
+
+  const workforceStatus =
+    String(
+      formData?.status ||
+        "Floating / Standby"
+    ).trim();
+
+  const isDeployed =
+    workforceStatus ===
+    "Deployed";
+
+  const isPooling =
+    workforceStatus ===
+    "Floating / Standby";
+
+  const workforceStatusLabel =
+    isPooling
+      ? "Floating / Standby"
+      : isDeployed
+        ? "Deployed"
+        : workforceStatus;
+
+  const companySummaryLabel =
+    isDeployed
+      ? "Client Company"
+      : "Designated Client Company";
+
+  const positionSummaryLabel =
+    isDeployed
+      ? "Position"
+      : "Designated Position";
   const handleClose = () => {
     if (
       isSaving ||
@@ -141,7 +174,7 @@ export default function AddEmployeeModal({
           handleClose
         }
         title="Add Employee Record"
-        description="Complete the employee information and review it before saving."
+        description="Record the employee's hiring details, client company, position, and documents."
         size="2xl"
         height="xl"
         showHeader={false}
@@ -157,7 +190,7 @@ export default function AddEmployeeModal({
         }
         scrollBody={false}
         bodyClassName="min-h-0 flex-1 p-0"
-        className="border-white/10"
+        className="border-white/10 max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:border-0"
       >
         <div className="flex h-full min-h-0 w-full overflow-hidden">
           <aside className="hidden w-80 shrink-0 overflow-y-auto border-r border-white/5 bg-gradient-to-b from-indigo-950 via-slate-900 to-slate-950 p-7 text-white lg:block">
@@ -173,11 +206,7 @@ export default function AddEmployeeModal({
                   New Employee
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-white/70">
-                  Register employee
-                  information, verify
-                  duplicate names, and
-                  attach compliance
-                  documents.
+                  Record hiring details, client company, position, and available documents.
                 </p>
               </div>
               <div className="mt-8 rounded-2xl bg-white/[0.07] p-4 ring-1 ring-white/10">
@@ -241,16 +270,10 @@ export default function AddEmployeeModal({
             </div>
           </aside>
           <section className="flex min-w-0 flex-1 flex-col">
-            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-5 sm:px-6 dark:border-white/10 dark:bg-slate-900">
+            <header className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 bg-white px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10 dark:bg-slate-900">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusPill tone="indigo">
-                    <FiUser
-                      aria-hidden="true"
-                    />
-                    Create Mode
-                  </StatusPill>
-                  {duplicateEmployee && (
+                {duplicateEmployee && (
+                  <div className="flex flex-wrap items-center gap-2">
                     <StatusPill
                       tone={
                         duplicateConfirmed
@@ -262,31 +285,40 @@ export default function AddEmployeeModal({
                         aria-hidden="true"
                       />
                       {duplicateConfirmed
-                        ? "Duplicate Verified"
+                        ? "Duplicate Confirmed"
                         : "Possible Duplicate"}
                     </StatusPill>
-                  )}
-                </div>
-                <h2 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">
-                  Add Employee Record
+                  </div>
+                )}
+                <h2 className="mt-2 text-xl font-extrabold text-gray-900 sm:mt-3 sm:text-2xl dark:text-white">
+                  Add Employee
                 </h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Complete the employee
-                  information and review
-                  it before saving.
+                <p className="mt-1 max-w-xl text-xs leading-5 text-gray-500 sm:text-sm dark:text-gray-400">
+                  Add the hiring and placement details now. Documents can be completed later.
                 </p>
               </div>
-              <Button
-                variant="secondary"
-                disabled={
-                  isSaving
-                }
-                onClick={
-                  handleClose
-                }
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={isSaving}
+                aria-label="Close add employee form"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 sm:hidden dark:border-white/10 dark:bg-slate-800 dark:text-gray-300 dark:hover:bg-slate-700"
               >
-                Close
-              </Button>
+                <FiX
+                  size={18}
+                  aria-hidden="true"
+                />
+              </button>
+
+              <div className="hidden sm:block">
+                <Button
+                  variant="secondary"
+                  disabled={isSaving}
+                  onClick={handleClose}
+                >
+                  Close
+                </Button>
+              </div>
             </header>
             <form
               onSubmit={
@@ -294,9 +326,29 @@ export default function AddEmployeeModal({
               }
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-6 sm:px-6">
-                <div className="space-y-6">
-                  <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-6 sm:py-6">
+                <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-6">
+                  <div className="grid grid-cols-2 gap-2 xl:hidden">
+                    <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                        Employee ID
+                      </p>
+                      <p className="mt-1 truncate text-sm font-extrabold text-gray-900 dark:text-white">
+                        {generatedId || "-"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                        Progress
+                      </p>
+                      <p className="mt-1 text-sm font-extrabold text-gray-900 dark:text-white">
+                        {completion}%
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
                     <main className="min-w-0">
                       <EmployeeFormFields
                         mode="add"
@@ -344,8 +396,8 @@ export default function AddEmployeeModal({
                         }
                       />
                     </main>
-                    <aside className="min-w-0 space-y-4">
-                      <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
+                    <aside className="hidden min-w-0 space-y-4 xl:block">
+                      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
                         <div className="mb-4 flex items-center gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
                             <FiInfo
@@ -357,8 +409,7 @@ export default function AddEmployeeModal({
                               Record Summary
                             </h3>
                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                              Live preview
-                              before review.
+                              Review the information before continuing.
                             </p>
                           </div>
                         </div>
@@ -380,39 +431,44 @@ export default function AddEmployeeModal({
                             }
                           />
                           <SummaryRow
-                            label="Status"
+                            label="Date Hired"
                             value={
-                              formData.status
+                              formData.dateHired ||
+                              formData.date_hired ||
+                              "-"
                             }
                           />
                           <SummaryRow
-                            label="Company"
+                            label="Workforce Status"
                             value={
-                              formData.status ===
-                              "Deployed"
-                                ? formData.company ||
-                                  "-"
-                                : "Not Assigned"
+                              workforceStatusLabel
                             }
                           />
                           <SummaryRow
-                            label="Position"
+                            label={
+                              companySummaryLabel
+                            }
                             value={
-                              formData.status ===
-                              "Deployed"
-                                ? formData.position ||
-                                  "-"
-                                : "Not Assigned"
+                              formData.company ||
+                              "-"
                             }
                           />
                           <SummaryRow
-                            label="Start Date"
+                            label={
+                              positionSummaryLabel
+                            }
                             value={
-                              formData.status ===
-                              "Deployed"
+                              formData.position ||
+                              "-"
+                            }
+                          />
+                          <SummaryRow
+                            label="Deployment Start"
+                            value={
+                              isDeployed
                                 ? formData.contractStart ||
                                   "-"
-                                : "Not Applicable"
+                                : "Not yet deployed"
                             }
                           />
                           <SummaryRow
@@ -426,14 +482,12 @@ export default function AddEmployeeModal({
                           <FiAlertTriangle
                             aria-hidden="true"
                           />
-                          HRIS Reminder
+                          Reminder
                         </div>
                         <p className="leading-5">
-                          Verify possible
-                          duplicate names
-                          through supporting
-                          documents before
-                          saving.
+                          {isPooling
+                            ? "Floating / Standby employees keep a designated client company and position until deployment is scheduled."
+                            : "For an employee who is already deployed, use the actual deployment start date."}
                         </p>
                       </div>
                     </aside>
@@ -460,6 +514,9 @@ export default function AddEmployeeModal({
                     onDocumentCheck={
                       handleDocumentCheck
                     }
+                    onDocumentNumberChange={
+                      handleDocumentNumberChange
+                    }
                     onExpirationChange={
                       handleExpirationChange
                     }
@@ -481,26 +538,25 @@ export default function AddEmployeeModal({
                   />
                 </div>
               </div>
-              <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:justify-end sm:px-6 dark:border-white/10 dark:bg-slate-900">
-                <Button
-                  variant="secondary"
-                  disabled={
-                    isSaving
-                  }
-                  onClick={
-                    handleClose
-                  }
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    isSaving
-                  }
-                >
-                  Review Employee
-                </Button>
+              <footer className="shrink-0 border-t border-gray-200 bg-white px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4 dark:border-white/10 dark:bg-slate-900">
+                <div className="mx-auto flex w-full max-w-7xl flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                  <Button
+                    variant="secondary"
+                    disabled={isSaving}
+                    onClick={handleClose}
+                    className="w-full sm:w-auto"
+                  >
+                    Cancel
+                  </Button>
+
+                  <Button
+                    type="submit"
+                    disabled={isSaving}
+                    className="w-full sm:w-auto"
+                  >
+                    Review Details
+                  </Button>
+                </div>
               </footer>
             </form>
           </section>

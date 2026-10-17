@@ -97,8 +97,46 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS employees (
   id INT NOT NULL AUTO_INCREMENT,
   name VARCHAR(255) DEFAULT NULL,
+  birthday DATE DEFAULT NULL,
+
+  /*
+   * Actual employment date with WellJob.
+   *
+   * This is intentionally separate from contractStart and from
+   * deployment_assignments.start_date, which represent deployment /
+   * assignment timing.
+   */
+  date_hired DATE DEFAULT NULL,
+
+  /*
+   * Employee-level designated/current client assignment.
+   *
+   * For Floating / Standby (Pooling), company + position represent
+   * the intended/designated placement before actual deployment.
+   *
+   * For Deployed employees, they mirror the current actual placement.
+   * Historical placements remain in deployment_assignments.
+   */
   company VARCHAR(255) DEFAULT NULL,
+  position VARCHAR(150) DEFAULT NULL,
+
+  /*
+   * Legacy compatibility field.
+   *
+   * Existing application code may still read/write this while the
+   * workflow migration is rolled out. New workflow code should use:
+   *
+   * employment_status:
+   *   Active | Resigned | Terminated
+   *
+   * workforce_status:
+   *   Floating / Standby | For Deployment | Deployed
+   */
   status VARCHAR(50) DEFAULT NULL,
+
+  employment_status VARCHAR(30) DEFAULT NULL,
+  workforce_status VARCHAR(30) DEFAULT NULL,
+
   contractStart DATE DEFAULT NULL,
   contractEnd DATE DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -119,6 +157,23 @@ CREATE TABLE IF NOT EXISTS employees (
 
   KEY idx_employees_created_at (
     created_at
+  ),
+
+  KEY idx_employees_date_hired (
+    date_hired
+  ),
+
+  KEY idx_employees_company_position (
+    company,
+    position
+  ),
+
+  KEY idx_employees_employment_status (
+    employment_status
+  ),
+
+  KEY idx_employees_workforce_status (
+    workforce_status
   )
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
@@ -187,6 +242,7 @@ CREATE TABLE IF NOT EXISTS employee_documents (
   id INT NOT NULL AUTO_INCREMENT,
   employee_id INT DEFAULT NULL,
   name VARCHAR(255) DEFAULT NULL,
+  document_number VARCHAR(64) DEFAULT NULL,
   expiration_date DATE DEFAULT NULL,
   file_path TEXT DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -203,6 +259,73 @@ CREATE TABLE IF NOT EXISTS employee_documents (
     name,
     employee_id
   )
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_general_ci;
+
+
+/*
+ * ================================================================
+ * 5A. EMPLOYEE MOBILE DOCUMENT HANDOFFS
+ * ================================================================
+ *
+ * Supports the secure "Continue on Phone" workflow used by
+ * authorized HR Staff when capturing employee compliance documents.
+ *
+ * Only the SHA-256 hash of the short-lived handoff token is stored.
+ * The raw token must never be persisted in this table.
+ * ================================================================
+ */
+CREATE TABLE IF NOT EXISTS employee_mobile_handoffs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+  token_hash CHAR(64)
+    CHARACTER SET ascii
+    COLLATE ascii_bin
+    NOT NULL,
+
+  employee_id INT NOT NULL,
+  created_by_user_id INT NOT NULL,
+
+  purpose VARCHAR(64)
+    NOT NULL
+    DEFAULT 'EMPLOYEE_DOCUMENT_CAPTURE',
+
+  expires_at DATETIME NOT NULL,
+  consumed_at DATETIME DEFAULT NULL,
+  revoked_at DATETIME DEFAULT NULL,
+
+  created_at TIMESTAMP NOT NULL
+    DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+
+  UNIQUE KEY uq_employee_mobile_handoffs_token_hash (
+    token_hash
+  ),
+
+  KEY idx_employee_mobile_handoffs_employee_expiry (
+    employee_id,
+    expires_at
+  ),
+
+  KEY idx_employee_mobile_handoffs_creator_employee_expiry (
+    created_by_user_id,
+    employee_id,
+    expires_at
+  ),
+
+  CONSTRAINT fk_employee_mobile_handoffs_employee
+    FOREIGN KEY (employee_id)
+    REFERENCES employees(id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+
+  CONSTRAINT fk_employee_mobile_handoffs_created_by
+    FOREIGN KEY (created_by_user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_general_ci;
@@ -285,6 +408,141 @@ CREATE TABLE IF NOT EXISTS deployment_assignments (
 
 /*
  * ================================================================
+ * 6A. DEPLOYMENT ATTEMPTS
+ * ================================================================
+ *
+ * Pre-deployment scheduling / arrival-confirmation layer.
+ *
+ * This table is intentionally separate from deployment_assignments.
+ *
+ * deployment_attempts:
+ *   - represents a scheduled deployment attempt before actual arrival
+ *   - snapshots the employee's designated company + position at scheduling
+ *   - preserves No Show / Withdrawn outcomes
+ *
+ * Floating / Standby (Pooling):
+ *   - employee-level company + position may already be designated
+ *   - No Show / Withdrawn returns workforce status to Floating / Standby
+ *   - employee-level company + position designation is retained
+ *
+ * deployment_assignments:
+ *   - represents ACTUAL deployment history
+ *   - start_date is the real deployment/arrival date
+ *
+ * Supported attempt states:
+ *   - For Deployment
+ *   - Deployed
+ *   - No Show
+ *   - Withdrawn
+ *
+ * One employee may have only one live For Deployment attempt.
+ * ================================================================
+ */
+CREATE TABLE IF NOT EXISTS deployment_attempts (
+  id INT NOT NULL AUTO_INCREMENT,
+
+  employee_id INT NOT NULL,
+
+  company VARCHAR(255) NOT NULL,
+
+  position VARCHAR(150) DEFAULT NULL,
+
+  scheduled_date DATE NOT NULL,
+
+  actual_arrival_date DATE DEFAULT NULL,
+
+  status VARCHAR(30) NOT NULL
+    DEFAULT 'For Deployment',
+
+  outcome_reason VARCHAR(100) DEFAULT NULL,
+
+  remarks TEXT DEFAULT NULL,
+
+  resolved_at DATETIME DEFAULT NULL,
+
+  created_by_user_id INT DEFAULT NULL,
+
+  resolved_by_user_id INT DEFAULT NULL,
+
+  deployment_assignment_id INT DEFAULT NULL,
+
+  pending_employee_id_guard INT
+    GENERATED ALWAYS AS (
+      CASE
+        WHEN status = 'For Deployment'
+          THEN employee_id
+        ELSE NULL
+      END
+    ) STORED,
+
+  created_at TIMESTAMP NOT NULL
+    DEFAULT CURRENT_TIMESTAMP,
+
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+
+  UNIQUE KEY uq_deployment_attempts_one_pending_employee (
+    pending_employee_id_guard
+  ),
+
+  UNIQUE KEY uq_deployment_attempts_assignment (
+    deployment_assignment_id
+  ),
+
+  KEY idx_deployment_attempts_employee_status (
+    employee_id,
+    status
+  ),
+
+  KEY idx_deployment_attempts_company_status (
+    company,
+    status
+  ),
+
+  KEY idx_deployment_attempts_scheduled_date (
+    scheduled_date
+  ),
+
+  KEY idx_deployment_attempts_created_by (
+    created_by_user_id
+  ),
+
+  KEY idx_deployment_attempts_resolved_by (
+    resolved_by_user_id
+  ),
+
+  CONSTRAINT fk_deployment_attempts_employee
+    FOREIGN KEY (employee_id)
+    REFERENCES employees(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_deployment_attempts_created_by
+    FOREIGN KEY (created_by_user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  CONSTRAINT fk_deployment_attempts_resolved_by
+    FOREIGN KEY (resolved_by_user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  CONSTRAINT fk_deployment_attempts_assignment
+    FOREIGN KEY (deployment_assignment_id)
+    REFERENCES deployment_assignments(id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_general_ci;
+
+
+/*
+ * ================================================================
  * 7. EMPLOYEE STATUS HISTORY
  * ================================================================
  */
@@ -327,6 +585,79 @@ CREATE TABLE IF NOT EXISTS employee_status_history (
     ON DELETE RESTRICT,
 
   CONSTRAINT fk_employee_status_history_changed_by
+    FOREIGN KEY (changed_by_user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_general_ci;
+
+
+/*
+ * ================================================================
+ * 7A. EMPLOYEE EMPLOYMENT STATUS HISTORY
+ * ================================================================
+ *
+ * employee_status_history remains the workforce-status history used
+ * by the legacy/current deployment lifecycle.
+ *
+ * This dedicated table records the separate employment dimension:
+ *   - Active
+ *   - Resigned
+ *   - Terminated
+ *
+ * Keeping the two histories separate prevents deployment/workforce
+ * states such as Deployed or Floating / Standby from being mixed with
+ * employment outcomes such as resignation or termination.
+ * ================================================================
+ */
+CREATE TABLE IF NOT EXISTS employee_employment_history (
+  id INT NOT NULL AUTO_INCREMENT,
+
+  employee_id INT NOT NULL,
+
+  from_status VARCHAR(30) DEFAULT NULL,
+
+  to_status VARCHAR(30) NOT NULL,
+
+  effective_at DATETIME NOT NULL
+    DEFAULT CURRENT_TIMESTAMP,
+
+  reason VARCHAR(100) DEFAULT NULL,
+
+  remarks TEXT DEFAULT NULL,
+
+  source_event VARCHAR(50) NOT NULL,
+
+  changed_by_user_id INT DEFAULT NULL,
+
+  created_at TIMESTAMP NOT NULL
+    DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+
+  KEY idx_employee_employment_history_employee_effective (
+    employee_id,
+    effective_at
+  ),
+
+  KEY idx_employee_employment_history_to_status_effective (
+    to_status,
+    effective_at
+  ),
+
+  KEY idx_employee_employment_history_source_event (
+    source_event
+  ),
+
+  CONSTRAINT fk_employee_employment_history_employee
+    FOREIGN KEY (employee_id)
+    REFERENCES employees(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_employee_employment_history_changed_by
     FOREIGN KEY (changed_by_user_id)
     REFERENCES users(id)
     ON UPDATE CASCADE

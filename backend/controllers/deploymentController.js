@@ -49,7 +49,25 @@ const COMPLETED_REASONS = new Set([
   "Transferred / Reassigned",
 ]);
 
-const CANCELLED_REASONS = new Set([
+/*
+ * IMPORTANT DOMAIN NOTE:
+ *
+ * Existing production deployment records use "Cancelled" as a
+ * legacy INTERNAL lifecycle value for employee-separation outcomes.
+ *
+ * We preserve that stored/API value for backward compatibility, but
+ * HR-facing messages and display values must describe the real outcome:
+ *
+ * - Resigned
+ * - AWOL
+ * - Terminated
+ * - Other Separation
+ * - Ended (safe fallback for incomplete legacy data)
+ */
+const LEGACY_SEPARATION_DEPLOYMENT_STATUS =
+  "Cancelled";
+
+const SEPARATION_REASONS = new Set([
   "Resigned",
   "AWOL",
   "Terminated",
@@ -65,27 +83,174 @@ const DEPLOYMENT_MUTATION_ROLES = new Set([
   "HR_STAFF",
 ]);
 
+const DEPLOYMENT_REPORT_ROLES = new Set([
+  "SUPER_ADMIN",
+  "HR_MANAGER",
+  "HR_STAFF",
+  "HR_COORDINATOR",
+]);
+
 const DEFAULT_DEPLOYMENT_PAGE_SIZE = 50;
 const MAX_DEPLOYMENT_PAGE_SIZE = 100;
+
+/*
+ * Business dates for Welljob must follow the
+ * Philippine calendar regardless of the MySQL
+ * session or Node host timezone.
+ *
+ * UTC_TIMESTAMP() is an absolute UTC reference.
+ * Converting that reference to +08:00 is safe here
+ * because the Philippines uses UTC+08:00 year-round.
+ */
+const MANILA_CURRENT_DATE_SQL =
+  "DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))";
 
 function normalizeDate(value) {
   if (!value) {
     return "-";
   }
 
-  const date = new Date(value);
-
   if (
-    Number.isNaN(
-      date.getTime()
-    )
+    typeof value ===
+    "string"
   ) {
-    return "-";
+    const normalized =
+      value.trim();
+
+    const dateOnlyMatch =
+      normalized.match(
+        /^(\d{4}-\d{2}-\d{2})$/
+      );
+
+    if (dateOnlyMatch) {
+      return dateOnlyMatch[1];
+    }
+
+    /*
+     * Preserve the stored calendar date for legacy
+     * timezone-less MySQL DATETIME fallbacks.
+     *
+     * Historical DATETIME semantics are mixed, so this
+     * function intentionally does not apply a blanket
+     * UTC or +08 conversion to those legacy values.
+     */
+    const mysqlDateTimeMatch =
+      normalized.match(
+        /^(\d{4}-\d{2}-\d{2})[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/
+      );
+
+    if (mysqlDateTimeMatch) {
+      return mysqlDateTimeMatch[1];
+    }
+
+    const parsed =
+      new Date(
+        normalized
+      );
+
+    if (
+      Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      return "-";
+    }
+
+    const parts =
+      new Intl.DateTimeFormat(
+        "en-CA",
+        {
+          timeZone:
+            "Asia/Manila",
+          year:
+            "numeric",
+          month:
+            "2-digit",
+          day:
+            "2-digit",
+        }
+      ).formatToParts(
+        parsed
+      );
+
+    const dateParts =
+      Object.fromEntries(
+        parts
+          .filter(
+            (part) =>
+              [
+                "year",
+                "month",
+                "day",
+              ].includes(
+                part.type
+              )
+          )
+          .map(
+            (part) => [
+              part.type,
+              part.value,
+            ]
+          )
+      );
+
+    if (
+      !dateParts.year ||
+      !dateParts.month ||
+      !dateParts.day
+    ) {
+      return "-";
+    }
+
+    return (
+      `${dateParts.year}-` +
+      `${dateParts.month}-` +
+      `${dateParts.day}`
+    );
   }
 
-  return date
-    .toISOString()
-    .slice(0, 10);
+  /*
+   * mysql2 may expose DATE values as JavaScript Date
+   * objects using the Node host's local timezone.
+   * Reading local calendar components preserves the
+   * original database DATE instead of converting it
+   * through UTC ISO first.
+   */
+  if (
+    value instanceof Date
+  ) {
+    if (
+      Number.isNaN(
+        value.getTime()
+      )
+    ) {
+      return "-";
+    }
+
+    const year =
+      value.getFullYear();
+
+    const month =
+      String(
+        value.getMonth() +
+          1
+      ).padStart(
+        2,
+        "0"
+      );
+
+    const day =
+      String(
+        value.getDate()
+      ).padStart(
+        2,
+        "0"
+      );
+
+    return `${year}-${month}-${day}`;
+  }
+
+  return "-";
 }
 
 function normalizeText(value) {
@@ -104,6 +269,138 @@ function normalizeNullableText(
   ).trim();
 
   return normalized || null;
+}
+
+function isLegacySeparationDeploymentStatus(
+  value
+) {
+  const normalized =
+    normalizeText(
+      value
+    );
+
+  return (
+    normalized ===
+      "cancelled" ||
+    normalized ===
+      "canceled"
+  );
+}
+
+function normalizeDeploymentLifecycleStatus(
+  value
+) {
+  const normalized =
+    normalizeText(
+      value
+    );
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (
+    normalized ===
+    "active"
+  ) {
+    return "Active";
+  }
+
+  if (
+    normalized ===
+    "completed"
+  ) {
+    return "Completed";
+  }
+
+  if (
+    normalized ===
+      "cancelled" ||
+    normalized ===
+      "canceled" ||
+    normalized ===
+      "separated" ||
+    normalized ===
+      "ended"
+  ) {
+    return LEGACY_SEPARATION_DEPLOYMENT_STATUS;
+  }
+
+  if (
+    normalized ===
+    "pending"
+  ) {
+    return "Pending";
+  }
+
+  return null;
+}
+
+function getDeploymentDisplayStatus(
+  status,
+  endReason,
+  endRemarks
+) {
+  const lifecycleStatus =
+    normalizeDeploymentLifecycleStatus(
+      status
+    );
+
+  if (
+    lifecycleStatus ===
+    "Active"
+  ) {
+    return "Deployed";
+  }
+
+  if (
+    lifecycleStatus ===
+    "Completed"
+  ) {
+    return "Completed";
+  }
+
+  if (
+    lifecycleStatus ===
+    "Pending"
+  ) {
+    return "For Deployment";
+  }
+
+  if (
+    !isLegacySeparationDeploymentStatus(
+      status
+    )
+  ) {
+    return (
+      normalizeNullableText(
+        status
+      ) ||
+      "Ended"
+    );
+  }
+
+  const reason =
+    normalizeNullableText(
+      endReason
+    );
+
+  if (
+    reason === "Resigned" ||
+    reason === "AWOL" ||
+    reason === "Terminated"
+  ) {
+    return reason;
+  }
+
+  /*
+   * Keep legacy/other separation reasons available in
+   * the detail fields, but never expose "Separated" or
+   * "Cancelled" as the visible deployment status.
+   */
+  void endRemarks;
+
+  return "Ended";
 }
 
 function normalizeRole(value) {
@@ -143,6 +440,16 @@ function canMutateDeployments(
   req
 ) {
   return DEPLOYMENT_MUTATION_ROLES.has(
+    normalizeRole(
+      req?.user?.role
+    )
+  );
+}
+
+function canExportDeploymentReport(
+  req
+) {
+  return DEPLOYMENT_REPORT_ROLES.has(
     normalizeRole(
       req?.user?.role
     )
@@ -241,8 +548,9 @@ function isCurrentlyDeployedEmployee(
 function getEmployeeStatus(
   deploymentStatus
 ) {
-  return deploymentStatus ===
-    "Cancelled"
+  return isLegacySeparationDeploymentStatus(
+    deploymentStatus
+  )
     ? "Inactive"
     : "Floating / Standby";
 }
@@ -294,6 +602,33 @@ function mapAssignment(row) {
   const company =
     row.company || "-";
 
+  const deploymentStatus =
+    row.deploymentStatus ||
+    "Active";
+
+  const endReason =
+    row.endReason || "";
+
+  const endRemarks =
+    row.endRemarks || "";
+
+  const displayStatus =
+    getDeploymentDisplayStatus(
+      deploymentStatus,
+      endReason,
+      endRemarks
+    );
+
+  const reportDate =
+    deploymentStatus ===
+      "Active"
+      ? row.startDate
+      : (
+          row.endDate ||
+          row.endedAt ||
+          row.startDate
+        );
+
   return {
     id:
       row.deploymentId,
@@ -323,9 +658,14 @@ function mapAssignment(row) {
         row.startDate
       ),
 
+    /*
+     * "status" remains the canonical lifecycle value used by existing
+     * frontend/backend flows. "displayStatus" is the HR-safe label.
+     */
     status:
-      row.deploymentStatus ||
-      "Active",
+      deploymentStatus,
+
+    displayStatus,
 
     employeeStatus:
       row.employeeStatus ||
@@ -344,14 +684,22 @@ function mapAssignment(row) {
         row.endDate
       ),
 
-    endReason:
-      row.endReason || "",
+    endReason,
 
-    endRemarks:
-      row.endRemarks || "",
+    endRemarks,
 
     contractEndedAt:
       row.endedAt || null,
+
+    reportDate:
+      normalizeDate(
+        reportDate
+      ),
+
+    eventDate:
+      normalizeDate(
+        reportDate
+      ),
 
     archived:
       Number(
@@ -409,37 +757,226 @@ function normalizeDeploymentSearch(
     );
 }
 
+function normalizeDeploymentReportStatus(
+  value
+) {
+  const normalized =
+    normalizeText(
+      value
+    );
+
+  if (
+    !normalized ||
+    normalized ===
+      "all" ||
+    normalized ===
+      "all statuses"
+  ) {
+    return null;
+  }
+
+  if (
+    [
+      "active",
+      "deployed",
+    ].includes(
+      normalized
+    )
+  ) {
+    return "Deployed";
+  }
+
+  if (
+    normalized ===
+    "completed"
+  ) {
+    return "Completed";
+  }
+
+  if (
+    normalized ===
+    "resigned"
+  ) {
+    return "Resigned";
+  }
+
+  if (
+    normalized ===
+    "terminated"
+  ) {
+    return "Terminated";
+  }
+
+  if (
+    normalized ===
+    "awol"
+  ) {
+    return "AWOL";
+  }
+
+  if (
+    [
+      "cancelled",
+      "canceled",
+      "separated",
+      "ended",
+      "other separation",
+    ].includes(
+      normalized
+    )
+  ) {
+    return "Ended";
+  }
+
+  return null;
+}
+
+function getDeploymentEventDateSql(
+  assignmentAlias = "da"
+) {
+  return `
+    CASE
+      WHEN ${assignmentAlias}.status = 'Active'
+        THEN ${assignmentAlias}.start_date
+      ELSE COALESCE(
+        ${assignmentAlias}.end_date,
+        DATE(${assignmentAlias}.ended_at),
+        ${assignmentAlias}.start_date
+      )
+    END
+  `;
+}
+
+function addDeploymentStatusFilter(
+  where,
+  params,
+  status,
+  assignmentAlias = "da"
+) {
+  if (!status) {
+    return;
+  }
+
+  if (
+    status ===
+    "Deployed"
+  ) {
+    where.push(
+      `${assignmentAlias}.status = 'Active'`
+    );
+
+    return;
+  }
+
+  if (
+    status ===
+    "Completed"
+  ) {
+    where.push(
+      `${assignmentAlias}.status = 'Completed'`
+    );
+
+    return;
+  }
+
+  if (
+    [
+      "Resigned",
+      "Terminated",
+      "AWOL",
+    ].includes(
+      status
+    )
+  ) {
+    where.push(`
+      ${assignmentAlias}.status = ?
+      AND LOWER(
+        TRIM(
+          COALESCE(
+            ${assignmentAlias}.end_reason,
+            ''
+          )
+        )
+      ) = ?
+    `);
+
+    params.push(
+      LEGACY_SEPARATION_DEPLOYMENT_STATUS,
+      status.toLowerCase()
+    );
+
+    return;
+  }
+
+  if (
+    status ===
+    "Ended"
+  ) {
+    where.push(`
+      ${assignmentAlias}.status = ?
+      AND LOWER(
+        TRIM(
+          COALESCE(
+            ${assignmentAlias}.end_reason,
+            ''
+          )
+        )
+      ) NOT IN (
+        'resigned',
+        'terminated',
+        'awol'
+      )
+    `);
+
+    params.push(
+      LEGACY_SEPARATION_DEPLOYMENT_STATUS
+    );
+  }
+}
+
 function buildDeploymentSummaryFilters({
   search,
+  status,
   month,
   year,
   coordinatorCompany = null,
 }) {
   const where = [
-    "e.archived = 0",
+    /*
+     * Preserve historical ended/completed deployment
+     * rows even when an employee is archived later.
+     * Active archived employees remain excluded.
+     */
+    "(e.archived = 0 OR da.status <> 'Active')",
   ];
 
   const params = [];
 
   /*
-   * HR Coordinator company filtering is based only
-   * on the authenticated server-side company scope.
+   * HR Coordinator scope is based on the deployment
+   * assignment's company, not the employee's current
+   * company. This is required so the assigned-company
+   * coordinator can report historical resignations,
+   * terminations, AWOL, completed, and ended records.
    */
   if (coordinatorCompany) {
     where.push(
       buildCoordinatorCompanyCondition(
         "da"
-      ),
-      buildCoordinatorCurrentEmployeeCondition(
-        "e"
       )
     );
 
     params.push(
-      coordinatorCompany,
       coordinatorCompany
     );
   }
+
+  addDeploymentStatusFilter(
+    where,
+    params,
+    status,
+    "da"
+  );
 
   const searchTerms =
     normalizeDeploymentSearch(
@@ -538,6 +1075,32 @@ function buildDeploymentSummaryFilters({
           )
         ) LIKE ?
 
+        OR LOWER(
+          CASE
+            WHEN da.status = 'Active'
+              THEN 'Deployed'
+            WHEN da.status = 'Completed'
+              THEN 'Completed'
+            WHEN da.status = 'Cancelled'
+              AND LOWER(
+                TRIM(
+                  COALESCE(
+                    da.end_reason,
+                    ''
+                  )
+                )
+              ) IN (
+                'resigned',
+                'terminated',
+                'awol'
+              )
+              THEN da.end_reason
+            WHEN da.status = 'Cancelled'
+              THEN 'Ended'
+            ELSE da.status
+          END
+        ) LIKE ?
+
         OR 'permanent' LIKE ?
 
         ${locationSql}
@@ -553,15 +1116,21 @@ function buildDeploymentSummaryFilters({
       pattern,
       pattern,
       pattern,
+      pattern,
       ...locationCompanies
     );
   }
+
+  const eventDateSql =
+    getDeploymentEventDateSql(
+      "da"
+    );
 
   if (
     month !== null
   ) {
     where.push(
-      "MONTH(da.start_date) = ?"
+      `MONTH(${eventDateSql}) = ?`
     );
 
     params.push(
@@ -573,7 +1142,7 @@ function buildDeploymentSummaryFilters({
     year !== null
   ) {
     where.push(
-      "YEAR(da.start_date) = ?"
+      `YEAR(${eventDateSql}) = ?`
     );
 
     params.push(
@@ -596,35 +1165,91 @@ function buildDeploymentSummary(
 ) {
   const companies =
     rows.map(
-      (row) => ({
-        company:
-          row.company ||
-          "-",
-
-        total:
+      (row) => {
+        const deployed =
           Number(
-            row.total ||
+            row.deployed ??
+              row.active ??
               0
-          ),
+          );
 
-        active:
-          Number(
-            row.active ||
-              0
-          ),
-
-        completed:
+        const completed =
           Number(
             row.completed ||
               0
-          ),
+          );
 
-        cancelled:
+        const resigned =
           Number(
-            row.cancelled ||
+            row.resigned ||
               0
-          ),
-      })
+          );
+
+        const terminated =
+          Number(
+            row.terminated_count ??
+              row.terminated ??
+              0
+          );
+
+        const awol =
+          Number(
+            row.awol ||
+              0
+          );
+
+        const ended =
+          Number(
+            row.ended ||
+              0
+          );
+
+        const separated =
+          Number(
+            row.separated ??
+              row.cancelled ??
+              (
+                resigned +
+                terminated +
+                awol +
+                ended
+              )
+          );
+
+        return {
+          company:
+            row.company ||
+            "-",
+
+          total:
+            Number(
+              row.total ||
+                0
+            ),
+
+          deployed,
+
+          /*
+           * Backward-compatible alias for the existing
+           * frontend summary card.
+           */
+          active:
+            deployed,
+
+          completed,
+          resigned,
+          terminated,
+          awol,
+          ended,
+          separated,
+
+          /*
+           * Temporary compatibility alias.
+           */
+          cancelled:
+            separated,
+        };
+      }
     );
 
   const totals =
@@ -636,11 +1261,29 @@ function buildDeploymentSummary(
         summary.totalDeployments +=
           company.total;
 
+        summary.deployedDeployments +=
+          company.deployed;
+
         summary.activeDeployments +=
           company.active;
 
         summary.completedDeployments +=
           company.completed;
+
+        summary.resignedDeployments +=
+          company.resigned;
+
+        summary.terminatedDeployments +=
+          company.terminated;
+
+        summary.awolDeployments +=
+          company.awol;
+
+        summary.endedDeployments +=
+          company.ended;
+
+        summary.separatedDeployments +=
+          company.separated;
 
         summary.cancelledDeployments +=
           company.cancelled;
@@ -651,10 +1294,28 @@ function buildDeploymentSummary(
         totalDeployments:
           0,
 
+        deployedDeployments:
+          0,
+
         activeDeployments:
           0,
 
         completedDeployments:
+          0,
+
+        resignedDeployments:
+          0,
+
+        terminatedDeployments:
+          0,
+
+        awolDeployments:
+          0,
+
+        endedDeployments:
+          0,
+
+        separatedDeployments:
           0,
 
         cancelledDeployments:
@@ -671,12 +1332,36 @@ function buildDeploymentSummary(
     totalCompanies:
       companies.length,
 
+    deployedDeployments:
+      totals.deployedDeployments,
+
+    /*
+     * Backward-compatible alias for existing clients.
+     */
     activeDeployments:
       totals.activeDeployments,
 
     completedDeployments:
       totals.completedDeployments,
 
+    resignedDeployments:
+      totals.resignedDeployments,
+
+    terminatedDeployments:
+      totals.terminatedDeployments,
+
+    awolDeployments:
+      totals.awolDeployments,
+
+    endedDeployments:
+      totals.endedDeployments,
+
+    separatedDeployments:
+      totals.separatedDeployments,
+
+    /*
+     * Temporary compatibility alias for existing clients.
+     */
     cancelledDeployments:
       totals.cancelledDeployments,
 
@@ -684,6 +1369,65 @@ function buildDeploymentSummary(
       companies[0] ||
       null,
   };
+}
+
+function buildDeploymentReportSummary(
+  deployments = []
+) {
+  const summary = {
+    totalRecords: 0,
+    deployed: 0,
+    completed: 0,
+    resigned: 0,
+    terminated: 0,
+    awol: 0,
+    ended: 0,
+  };
+
+  for (
+    const deployment of
+    deployments
+  ) {
+    summary.totalRecords +=
+      1;
+
+    switch (
+      deployment
+        ?.displayStatus
+    ) {
+      case "Deployed":
+        summary.deployed +=
+          1;
+        break;
+
+      case "Completed":
+        summary.completed +=
+          1;
+        break;
+
+      case "Resigned":
+        summary.resigned +=
+          1;
+        break;
+
+      case "Terminated":
+        summary.terminated +=
+          1;
+        break;
+
+      case "AWOL":
+        summary.awol +=
+          1;
+        break;
+
+      default:
+        summary.ended +=
+          1;
+        break;
+    }
+  }
+
+  return summary;
 }
 
 /*
@@ -1080,6 +1824,41 @@ exports.getDeployments = async (
           req.query?.search
         );
 
+      const requestedStatus =
+        normalizeNullableText(
+          req.query?.status
+        );
+
+      const status =
+        requestedStatus
+          ? normalizeDeploymentReportStatus(
+              requestedStatus
+            )
+          : null;
+
+      const isAllStatusFilter =
+        [
+          "all",
+          "all statuses",
+        ].includes(
+          normalizeText(
+            requestedStatus
+          )
+        );
+
+      if (
+        requestedStatus &&
+        !status &&
+        !isAllStatusFilter
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid deployment status filter.",
+          });
+      }
+
       const monthValue =
         String(
           req.query?.month ??
@@ -1157,6 +1936,7 @@ exports.getDeployments = async (
       } =
         buildDeploymentSummaryFilters({
           search,
+          status,
           month,
           year,
           coordinatorCompany,
@@ -1173,8 +1953,8 @@ exports.getDeployments = async (
           e.name AS employee,
           da.company,
           da.position,
-          da.start_date AS startDate,
-          da.end_date AS endDate,
+          DATE_FORMAT(da.start_date, '%Y-%m-%d') AS startDate,
+          DATE_FORMAT(da.end_date, '%Y-%m-%d') AS endDate,
           da.end_reason AS endReason,
           da.end_remarks AS endRemarks,
           da.status AS deploymentStatus,
@@ -1193,7 +1973,9 @@ exports.getDeployments = async (
         ${whereSql}
 
         ORDER BY
-          da.start_date DESC,
+          ${getDeploymentEventDateSql(
+            "da"
+          )} DESC,
           da.id DESC
 
         LIMIT ${pageSize}
@@ -1226,17 +2008,12 @@ exports.getDeployments = async (
             ${buildCoordinatorCompanyCondition(
               "da"
             )}
-            AND
-            ${buildCoordinatorCurrentEmployeeCondition(
-              "e"
-            )}
           `
           : "";
 
       const companyScopeParams =
         isHrCoordinator
           ? [
-              coordinatorCompany,
               coordinatorCompany,
             ]
           : [];
@@ -1258,7 +2035,7 @@ exports.getDeployments = async (
           SUM(
             da.status =
               'Active'
-          ) AS active,
+          ) AS deployed,
 
           SUM(
             da.status =
@@ -1268,7 +2045,63 @@ exports.getDeployments = async (
           SUM(
             da.status =
               'Cancelled'
-          ) AS cancelled
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  da.end_reason,
+                  ''
+                )
+              )
+            ) = 'resigned'
+          ) AS resigned,
+
+          SUM(
+            da.status =
+              'Cancelled'
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  da.end_reason,
+                  ''
+                )
+              )
+            ) = 'terminated'
+          ) AS terminated_count,
+
+          SUM(
+            da.status =
+              'Cancelled'
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  da.end_reason,
+                  ''
+                )
+              )
+            ) = 'awol'
+          ) AS awol,
+
+          SUM(
+            da.status =
+              'Cancelled'
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  da.end_reason,
+                  ''
+                )
+              )
+            ) NOT IN (
+              'resigned',
+              'terminated',
+              'awol'
+            )
+          ) AS ended,
+
+          SUM(
+            da.status =
+              'Cancelled'
+          ) AS separated
 
         FROM deployment_assignments AS da
 
@@ -1277,7 +2110,10 @@ exports.getDeployments = async (
             da.employee_id
 
         WHERE
-          e.archived = 0
+          (
+            e.archived = 0
+            OR da.status <> 'Active'
+          )
 
           ${companyScopeSql}
 
@@ -1300,7 +2136,9 @@ exports.getDeployments = async (
       const yearOptionsSql = `
         SELECT DISTINCT
           YEAR(
-            da.start_date
+            ${getDeploymentEventDateSql(
+              "da"
+            )}
           ) AS year
 
         FROM deployment_assignments AS da
@@ -1310,10 +2148,15 @@ exports.getDeployments = async (
             da.employee_id
 
         WHERE
-          e.archived = 0
+          (
+            e.archived = 0
+            OR da.status <> 'Active'
+          )
 
           AND
-          da.start_date
+          ${getDeploymentEventDateSql(
+            "da"
+          )}
             IS NOT NULL
 
           ${companyScopeSql}
@@ -1421,6 +2264,7 @@ exports.getDeployments = async (
 
         filters: {
           search,
+          status,
           month,
           year,
         },
@@ -1468,8 +2312,8 @@ exports.getDeployments = async (
             e.name AS employee,
             da.company,
             da.position,
-            da.start_date AS startDate,
-            da.end_date AS endDate,
+            DATE_FORMAT(da.start_date, '%Y-%m-%d') AS startDate,
+            DATE_FORMAT(da.end_date, '%Y-%m-%d') AS endDate,
             da.end_reason AS endReason,
             da.end_remarks AS endRemarks,
             da.status AS deploymentStatus,
@@ -1516,6 +2360,285 @@ exports.getDeployments = async (
       });
   }
 };
+
+/*
+ * ==================================================
+ * GET DEPLOYMENT PDF REPORT DATA
+ * ==================================================
+ *
+ * This endpoint returns the complete filtered dataset
+ * for PDF generation.
+ *
+ * HR Coordinator:
+ * - scope is locked to the authenticated assigned
+ *   company
+ * - historical completed/separation rows for that
+ *   company remain reportable
+ * - request query values cannot override company scope
+ *
+ * Reporting period:
+ * - Deployed uses deployment start_date
+ * - Completed / Resigned / Terminated / AWOL / Ended
+ *   use end_date, then ended_at, then start_date as a
+ *   safe legacy fallback
+ */
+exports.getDeploymentReport =
+  async (
+    req,
+    res
+  ) => {
+    if (
+      !canExportDeploymentReport(
+        req
+      )
+    ) {
+      return res
+        .status(403)
+        .json({
+          error:
+            "You are not allowed to export deployment reports.",
+        });
+    }
+
+    try {
+      const role =
+        normalizeRole(
+          req?.user?.role
+        );
+
+      const isHrCoordinator =
+        role ===
+        "HR_COORDINATOR";
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
+      const search =
+        normalizeDeploymentSearch(
+          req.query?.search
+        );
+
+      const requestedStatus =
+        normalizeNullableText(
+          req.query?.status
+        );
+
+      const status =
+        requestedStatus
+          ? normalizeDeploymentReportStatus(
+              requestedStatus
+            )
+          : null;
+
+      const isAllStatusFilter =
+        [
+          "all",
+          "all statuses",
+        ].includes(
+          normalizeText(
+            requestedStatus
+          )
+        );
+
+      if (
+        requestedStatus &&
+        !status &&
+        !isAllStatusFilter
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid deployment status filter.",
+          });
+      }
+
+      const monthValue =
+        String(
+          req.query?.month ??
+            ""
+        ).trim();
+
+      let month =
+        null;
+
+      if (monthValue) {
+        const parsedMonth =
+          Number.parseInt(
+            monthValue,
+            10
+          );
+
+        if (
+          !Number.isInteger(
+            parsedMonth
+          ) ||
+          parsedMonth < 0 ||
+          parsedMonth > 11
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "Deployment month must be between 0 and 11.",
+            });
+        }
+
+        month =
+          parsedMonth;
+      }
+
+      const yearValue =
+        String(
+          req.query?.year ??
+            ""
+        ).trim();
+
+      let year =
+        null;
+
+      if (yearValue) {
+        const parsedYear =
+          Number.parseInt(
+            yearValue,
+            10
+          );
+
+        if (
+          !Number.isInteger(
+            parsedYear
+          ) ||
+          parsedYear < 1900 ||
+          parsedYear > 2100
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "Invalid deployment year.",
+            });
+        }
+
+        year =
+          parsedYear;
+      }
+
+      const {
+        whereSql,
+        params,
+      } =
+        buildDeploymentSummaryFilters({
+          search,
+          status,
+          month,
+          year,
+          coordinatorCompany,
+        });
+
+      const [rows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              da.id AS deploymentId,
+              da.employee_id AS employeeId,
+              e.name AS employee,
+              da.company,
+              da.position,
+              DATE_FORMAT(da.start_date, '%Y-%m-%d') AS startDate,
+              DATE_FORMAT(da.end_date, '%Y-%m-%d') AS endDate,
+              da.end_reason AS endReason,
+              da.end_remarks AS endRemarks,
+              da.status AS deploymentStatus,
+              da.ended_at AS endedAt,
+              da.created_at AS createdAt,
+              da.updated_at AS updatedAt,
+              e.status AS employeeStatus,
+              e.archived
+
+            FROM deployment_assignments AS da
+
+            INNER JOIN employees AS e
+              ON e.id =
+                da.employee_id
+
+            ${whereSql}
+
+            ORDER BY
+              ${getDeploymentEventDateSql(
+                "da"
+              )} DESC,
+              da.id DESC
+            `,
+            params
+          );
+
+      const deployments =
+        rows.map(
+          mapAssignment
+        );
+
+      return res.json({
+        deployments,
+
+        total:
+          deployments.length,
+
+        summary:
+          buildDeploymentReportSummary(
+            deployments
+          ),
+
+        scope: {
+          role,
+
+          company:
+            coordinatorCompany ||
+            null,
+        },
+
+        filters: {
+          search,
+          status,
+          month,
+          year,
+        },
+
+        generatedAt:
+          new Date()
+            .toISOString(),
+      });
+    } catch (error) {
+      console.error(
+        "GET DEPLOYMENT REPORT ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to generate deployment report data.",
+        });
+    }
+  };
 
 /*
  * ==================================================
@@ -1573,7 +2696,6 @@ exports.updateDeploymentStatus =
         ""
       ).trim();
 
-
     if (
       !/^[1-9]\d*$/.test(
         normalizedDeploymentId
@@ -1587,12 +2709,10 @@ exports.updateDeploymentStatus =
         });
     }
 
-
     const canonicalDeploymentId =
       Number(
         normalizedDeploymentId
       );
-
 
     if (
       !Number.isSafeInteger(
@@ -1611,7 +2731,7 @@ exports.updateDeploymentStatus =
     if (
       ![
         "Completed",
-        "Cancelled",
+        LEGACY_SEPARATION_DEPLOYMENT_STATUS,
       ].includes(
         status
       )
@@ -1620,7 +2740,7 @@ exports.updateDeploymentStatus =
         .status(400)
         .json({
           error:
-            "Deployment status must be Completed or Cancelled.",
+            "Deployment update must be either Completed or an employee separation.",
         });
     }
 
@@ -1655,12 +2775,13 @@ exports.updateDeploymentStatus =
     }
 
     if (
-      status ===
-      "Cancelled"
+      isLegacySeparationDeploymentStatus(
+        status
+      )
     ) {
       if (
         !finalReason ||
-        !CANCELLED_REASONS.has(
+        !SEPARATION_REASONS.has(
           finalReason
         )
       ) {
@@ -1668,7 +2789,7 @@ exports.updateDeploymentStatus =
           .status(400)
           .json({
             error:
-              "Cancelled deployments require Resigned, AWOL, or Terminated.",
+              "Employee separation requires a reason of Resigned, AWOL, or Terminated.",
           });
       }
     }
@@ -1913,7 +3034,7 @@ exports.updateDeploymentStatus =
           .status(409)
           .json({
             error:
-              "Only an active deployment assignment can be completed or cancelled.",
+              "Only an active deployment assignment can be completed or ended through employee separation.",
           });
       }
 
@@ -1986,7 +3107,7 @@ exports.updateDeploymentStatus =
 
           SET
             end_date =
-              CURDATE(),
+              ${MANILA_CURRENT_DATE_SQL},
 
             end_reason = ?,
 
@@ -1995,7 +3116,7 @@ exports.updateDeploymentStatus =
             status = ?,
 
             ended_at =
-              NOW()
+              UTC_TIMESTAMP()
 
           WHERE
             id = ?
@@ -2010,7 +3131,6 @@ exports.updateDeploymentStatus =
             canonicalDeploymentId,
           ]
         );
-
 
       if (
         Number(
@@ -2038,14 +3158,14 @@ exports.updateDeploymentStatus =
             status = ?,
 
             contractEnd =
-              CURDATE(),
+              ${MANILA_CURRENT_DATE_SQL},
 
             contractEndReason = ?,
 
             contractEndRemarks = ?,
 
             contractEndedAt =
-              NOW()
+              UTC_TIMESTAMP()
 
           WHERE
             id = ?
@@ -2057,7 +3177,6 @@ exports.updateDeploymentStatus =
             employeeId,
           ]
         );
-
 
       if (
         Number(
@@ -2092,7 +3211,7 @@ exports.updateDeploymentStatus =
           ?,
           ?,
           ?,
-          NOW(),
+          UTC_TIMESTAMP(),
           ?,
           ?,
           'DEPLOYMENT_STATUS_UPDATED',
@@ -2108,6 +3227,13 @@ exports.updateDeploymentStatus =
           actorUserId,
         ]
       );
+
+      const deploymentDisplayStatus =
+        getDeploymentDisplayStatus(
+          status,
+          finalReason,
+          finalRemarks
+        );
 
       /*
        * Audit must succeed within the same
@@ -2142,7 +3268,7 @@ exports.updateDeploymentStatus =
             `${actor.fullName} updated deployment #${canonicalDeploymentId} for ` +
             `${employee.name} (Employee #${employeeId}, ` +
             `${activeAssignment.company || "Unknown Company"}) from ` +
-            `${activeAssignment.status} to ${status}. Employee status changed ` +
+            `${activeAssignment.status} to ${deploymentDisplayStatus}. Employee status changed ` +
             `from ${employee.status} to ${employeeStatus}. Reason: ` +
             `${finalReason}.${remarksAuditText}`,
         },
@@ -2165,9 +3291,10 @@ exports.updateDeploymentStatus =
           true,
 
         message:
-          status ===
-          "Cancelled"
-            ? "Deployment cancelled successfully."
+          isLegacySeparationDeploymentStatus(
+            status
+          )
+            ? "Employee separation recorded successfully."
             : "Deployment marked as completed successfully.",
 
         deploymentId:
@@ -2181,8 +3308,14 @@ exports.updateDeploymentStatus =
         company:
           activeAssignment.company,
 
+        /*
+         * deploymentStatus remains the backward-compatible internal
+         * lifecycle value. deploymentDisplayStatus is safe for UI.
+         */
         deploymentStatus:
           status,
+
+        deploymentDisplayStatus,
 
         employeeStatus,
 

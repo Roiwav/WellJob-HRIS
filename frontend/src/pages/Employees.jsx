@@ -5,20 +5,28 @@ import {
   useRef,
   useState,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import {
   FiArchive,
   FiBriefcase,
+  FiCalendar,
+  FiClock,
   FiPlus,
   FiRotateCcw,
+  FiSend,
   FiShield,
   FiUsers,
+  FiXCircle,
 } from "react-icons/fi";
 import axios from "axios";
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
 import { ROLES } from "../constants/roles";
 import { useAuth } from "../context/useAuth";
+import { API_BASE } from "../config/api";
 import AddEmployeeModal from "../components/employees/AddEmployeeModal";
 import EditEmployeeModal from "../components/employees/EditEmployeeModal";
 import EmployeeModal from "../components/employees/EmployeeModal";
@@ -37,10 +45,7 @@ import {
 } from "../utils/employees/employeeFormHelpers";
 import {
   COMPLIANCE_OPTIONS,
-  EMPLOYEE_SORT_OPTIONS,
-  EMPLOYEE_STATUS_OPTIONS,
   getComplianceStatus,
-  hasActiveEmployeeFilters,
 } from "../utils/employees/employeeHelpers";
 
 const DATA_EVENT_SOURCE =
@@ -58,6 +63,18 @@ const SEARCH_DEBOUNCE_MS =
 const EMPLOYEE_PAGE_SIZE =
   50;
 
+const DEPLOYMENT_ATTEMPT_API_URL =
+  `${API_BASE}/deployment-attempts`;
+
+const MOBILE_HANDOFF_SESSION_KEY =
+  "welljob_employee_mobile_handoff";
+
+const MOBILE_HANDOFF_SESSION_MAX_AGE_MS =
+  30 * 60 * 1000;
+
+const MOBILE_HANDOFF_PURPOSE =
+  "EMPLOYEE_DOCUMENT_CAPTURE";
+
 const EMPLOYEE_REFRESH_DOMAINS =
   new Set([
     "employees",
@@ -66,11 +83,32 @@ const EMPLOYEE_REFRESH_DOMAINS =
     "deployment",
   ]);
 
-const ACTIVE_STATUS_OPTIONS =
-  EMPLOYEE_STATUS_OPTIONS.filter(
-    ({ value }) =>
-      value !== "Inactive"
-  );
+const WORKFORCE_STATUS_OPTIONS = [
+  {
+    value:
+      "All",
+    label:
+      "All Workforce Statuses",
+  },
+  {
+    value:
+      "Floating / Standby",
+    label:
+      "Floating / Standby",
+  },
+  {
+    value:
+      "For Deployment",
+    label:
+      "For Deployment",
+  },
+  {
+    value:
+      "Deployed",
+    label:
+      "Deployed",
+  },
+];
 
 const SELECT_CLASS_NAME =
   "min-h-10 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 " +
@@ -151,6 +189,20 @@ function shouldRefreshEmployees(
   );
 }
 
+function normalizeEmployeePageRole(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .trim()
+    .toUpperCase()
+    .replace(
+      /[\s-]+/g,
+      "_"
+    );
+}
+
 function getEmployeeId(
   employee
 ) {
@@ -189,11 +241,404 @@ function getEmployeePosition(
   ).trim();
 }
 
+function getEmployeeCompany(
+  employee
+) {
+  return String(
+    employee?.company ||
+      employee?.clientCompany ||
+      employee?.client_company ||
+      employee?.companyName ||
+      employee?.company_name ||
+      ""
+  ).trim();
+}
+
+function getPhilippinesTodayISO() {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Manila",
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      new Date()
+    );
+
+  const values =
+    Object.fromEntries(
+      parts.map(
+        (part) => [
+          part.type,
+          part.value,
+        ]
+      )
+    );
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function getPhilippinesCurrentTimeISO() {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Manila",
+        hour:
+          "2-digit",
+        minute:
+          "2-digit",
+        hourCycle:
+          "h23",
+      }
+    ).formatToParts(
+      new Date()
+    );
+
+  const values =
+    Object.fromEntries(
+      parts.map(
+        (part) => [
+          part.type,
+          part.value,
+        ]
+      )
+    );
+
+  return `${values.hour}:${values.minute}`;
+}
+
+function formatWorkflowTime(
+  value
+) {
+  const normalized =
+    String(
+      value || ""
+    ).trim();
+
+  const match =
+    normalized.match(
+      /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/
+    );
+
+  if (!match) {
+    return "-";
+  }
+
+  const hour24 =
+    Number(
+      match[1]
+    );
+
+  const minute =
+    match[2];
+
+  const period =
+    hour24 >= 12
+      ? "PM"
+      : "AM";
+
+  const hour12 =
+    hour24 % 12 ||
+    12;
+
+  return `${hour12}:${minute} ${period}`;
+}
+
+function formatWorkflowDate(
+  value
+) {
+  const normalized =
+    String(
+      value || ""
+    ).trim();
+
+  if (!normalized) {
+    return "-";
+  }
+
+  const match =
+    normalized.match(
+      /^(\d{4})-(\d{2})-(\d{2})/
+    );
+
+  if (!match) {
+    return normalized;
+  }
+
+  const date =
+    new Date(
+      Date.UTC(
+        Number(
+          match[1]
+        ),
+        Number(
+          match[2]
+        ) - 1,
+        Number(
+          match[3]
+        )
+      )
+    );
+
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      month:
+        "short",
+      day:
+        "numeric",
+      year:
+        "numeric",
+      timeZone:
+        "UTC",
+    }
+  ).format(
+    date
+  );
+}
+
+function normalizeSmartAlertEmployeeTarget(
+  value
+) {
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
+    return null;
+  }
+
+  const employeeId =
+    Number(
+      value.employeeId ??
+        value.employee_id
+    );
+
+  if (
+    !Number.isSafeInteger(
+      employeeId
+    ) ||
+    employeeId <= 0 ||
+    value.openCompliance !==
+      true
+  ) {
+    return null;
+  }
+
+  const rawDocumentId =
+    Number(
+      value.documentId ??
+        value.document_id
+    );
+
+  const documentId =
+    Number.isSafeInteger(
+      rawDocumentId
+    ) &&
+    rawDocumentId > 0
+      ? rawDocumentId
+      : null;
+
+  const documentName =
+    String(
+      value.documentName ??
+        value.document_name ??
+        ""
+    ).trim();
+
+  const alertKey =
+    String(
+      value.alertKey ??
+        value.alert_key ??
+        ""
+    ).trim();
+
+  return {
+    employeeId,
+    openCompliance:
+      true,
+    documentId,
+    documentName,
+    alertKey,
+  };
+}
+
+function normalizeMobileHandoffTarget(
+  value
+) {
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
+    return null;
+  }
+
+  const employeeId =
+    Number(
+      value.employeeId
+    );
+
+  const purpose =
+    String(
+      value.purpose || ""
+    ).trim();
+
+  const resolvedAt =
+    Number(
+      value.resolvedAt
+    );
+
+  if (
+    !Number.isSafeInteger(
+      employeeId
+    ) ||
+    employeeId <= 0 ||
+    purpose !==
+      MOBILE_HANDOFF_PURPOSE ||
+    value.openCompliance !==
+      true ||
+    !Number.isFinite(
+      resolvedAt
+    ) ||
+    resolvedAt <= 0 ||
+    Date.now() -
+      resolvedAt >
+      MOBILE_HANDOFF_SESSION_MAX_AGE_MS
+  ) {
+    return null;
+  }
+
+  return {
+    employeeId,
+    purpose,
+    openCompliance:
+      true,
+    resolvedAt,
+  };
+}
+
+function readMobileHandoffSession() {
+  try {
+    const storedValue =
+      sessionStorage.getItem(
+        MOBILE_HANDOFF_SESSION_KEY
+      );
+
+    if (!storedValue) {
+      return null;
+    }
+
+    const parsedValue =
+      JSON.parse(
+        storedValue
+      );
+
+    const normalizedTarget =
+      normalizeMobileHandoffTarget(
+        parsedValue
+      );
+
+    if (!normalizedTarget) {
+      sessionStorage.removeItem(
+        MOBILE_HANDOFF_SESSION_KEY
+      );
+    }
+
+    return normalizedTarget;
+  } catch {
+    try {
+      sessionStorage.removeItem(
+        MOBILE_HANDOFF_SESSION_KEY
+      );
+    } catch {
+      // Browser storage may be unavailable.
+    }
+
+    return null;
+  }
+}
+
+function clearMobileHandoffSession() {
+  try {
+    sessionStorage.removeItem(
+      MOBILE_HANDOFF_SESSION_KEY
+    );
+  } catch {
+    // Browser storage may be unavailable.
+  }
+}
+
 function normalizeEmployee(
   employee = {}
 ) {
+  const workforceStatus =
+    String(
+      employee?.workforceStatus ||
+      employee?.workforce_status ||
+      (
+        [
+          "Floating / Standby",
+          "For Deployment",
+          "Deployed",
+        ].includes(
+          employee?.status
+        )
+          ? employee.status
+          : ""
+      )
+    ).trim();
+
+  const employmentStatus =
+    String(
+      employee?.employmentStatus ||
+      employee?.employment_status ||
+      ""
+    ).trim();
+
+  const dateHired =
+    String(
+      employee?.dateHired ||
+      employee?.date_hired ||
+      ""
+    ).trim();
+
   return {
     ...employee,
+
+    /*
+     * Keep canonical fields available in both camelCase
+     * and snake_case because the Employee UI is still
+     * being migrated component-by-component.
+     *
+     * `status` remains a compatibility display field on
+     * the active Employee page and mirrors canonical
+     * workforce status when available.
+     */
+    status:
+      workforceStatus ||
+      employee?.status ||
+      "",
+
+    workforceStatus,
+    workforce_status:
+      workforceStatus,
+
+    employmentStatus,
+    employment_status:
+      employmentStatus,
+
+    dateHired,
+    date_hired:
+      dateHired,
+
     documents:
       parseEmployeeDocuments(
         employee.documents
@@ -354,42 +799,1200 @@ function SelectFilter({
   );
 }
 
+function DeploymentSchedulingModal({
+  employee,
+  onClose,
+  onWorkflowUpdated,
+}) {
+  const employeeId =
+    getEmployeeId(
+      employee
+    );
+
+  const employeeName =
+    getEmployeeName(
+      employee
+    );
+
+  const employeeCompany =
+    getEmployeeCompany(
+      employee
+    );
+
+  const employeePosition =
+    getEmployeePosition(
+      employee
+    );
+
+  const workforceStatus =
+    String(
+      employee?.workforceStatus ||
+      employee?.workforce_status ||
+      employee?.status ||
+      ""
+    ).trim();
+
+  const isPendingSchedule =
+    workforceStatus ===
+    "For Deployment";
+
+  const [
+    scheduledDate,
+    setScheduledDate,
+  ] =
+    useState(
+      getPhilippinesTodayISO()
+    );
+
+  const [
+    scheduledTime,
+    setScheduledTime,
+  ] =
+    useState("");
+
+  const [
+    showScheduleRemarks,
+    setShowScheduleRemarks,
+  ] =
+    useState(false);
+
+  const [
+    scheduleRemarks,
+    setScheduleRemarks,
+  ] =
+    useState("");
+
+  const [
+    pendingAttempt,
+    setPendingAttempt,
+  ] =
+    useState(null);
+
+  const [
+    showWithdrawForm,
+    setShowWithdrawForm,
+  ] =
+    useState(false);
+
+  const [
+    withdrawReason,
+    setWithdrawReason,
+  ] =
+    useState("");
+
+  const [
+    withdrawRemarks,
+    setWithdrawRemarks,
+  ] =
+    useState("");
+
+  const [
+    isLoadingAttempt,
+    setIsLoadingAttempt,
+  ] =
+    useState(false);
+
+  const [
+    isSubmitting,
+    setIsSubmitting,
+  ] =
+    useState(false);
+
+  const [
+    modalError,
+    setModalError,
+  ] =
+    useState("");
+
+  const attemptAbortRef =
+    useRef(null);
+
+  const canSchedule =
+    Boolean(
+      employeeId &&
+      employeeCompany &&
+      employeePosition &&
+      scheduledDate &&
+      scheduledTime &&
+      workforceStatus ===
+        "Floating / Standby"
+    );
+
+  const loadPendingAttempt =
+    useCallback(
+      async () => {
+        if (
+          !employeeId ||
+          !isPendingSchedule
+        ) {
+          setPendingAttempt(
+            null
+          );
+          return;
+        }
+
+        attemptAbortRef
+          .current
+          ?.abort();
+
+        const controller =
+          new AbortController();
+
+        attemptAbortRef.current =
+          controller;
+
+        try {
+          setIsLoadingAttempt(
+            true
+          );
+
+          setModalError(
+            ""
+          );
+
+          const {
+            data,
+          } =
+            await axios.get(
+              DEPLOYMENT_ATTEMPT_API_URL,
+              {
+                timeout:
+                  REQUEST_TIMEOUT_MS,
+                signal:
+                  controller.signal,
+                headers:
+                  getAuthenticatedHeaders(),
+                params: {
+                  status:
+                    "For Deployment",
+                  employeeId,
+                  limit:
+                    10,
+                },
+              }
+            );
+
+          if (
+            controller.signal
+              .aborted
+          ) {
+            return;
+          }
+
+          const attempts =
+            Array.isArray(
+              data?.data
+            )
+              ? data.data
+              : [];
+
+          const exactAttempt =
+            attempts.find(
+              (
+                attempt
+              ) =>
+                String(
+                  attempt
+                    ?.employeeId ||
+                  attempt
+                    ?.employee_id ||
+                  ""
+                ) ===
+                String(
+                  employeeId
+                )
+            ) ||
+            null;
+
+          setPendingAttempt(
+            exactAttempt
+          );
+
+          if (
+            !exactAttempt
+          ) {
+            setModalError(
+              "No pending deployment schedule was found for this employee. Refresh the Employee page and try again."
+            );
+          }
+        } catch (
+          error
+        ) {
+          if (
+            isCanceledRequest(
+              error
+            )
+          ) {
+            return;
+          }
+
+          console.error(
+            "Load employee deployment schedule error:",
+            error
+          );
+
+          setModalError(
+            getEmployeeApiError(
+              error,
+              "Unable to load this employee's deployment schedule."
+            )
+          );
+        } finally {
+          if (
+            attemptAbortRef
+              .current ===
+            controller
+          ) {
+            attemptAbortRef.current =
+              null;
+
+            setIsLoadingAttempt(
+              false
+            );
+          }
+        }
+      },
+      [
+        employeeId,
+        isPendingSchedule,
+      ]
+    );
+
+  useEffect(
+    () => {
+      setModalError(
+        ""
+      );
+
+      setShowWithdrawForm(
+        false
+      );
+
+      setWithdrawReason(
+        ""
+      );
+
+      setWithdrawRemarks(
+        ""
+      );
+
+      setScheduleRemarks(
+        ""
+      );
+
+      setShowScheduleRemarks(
+        false
+      );
+
+      setScheduledDate(
+        getPhilippinesTodayISO()
+      );
+
+      setScheduledTime(
+        ""
+      );
+
+      if (
+        isPendingSchedule
+      ) {
+        void loadPendingAttempt();
+      } else {
+        setPendingAttempt(
+          null
+        );
+      }
+
+      return () => {
+        attemptAbortRef
+          .current
+          ?.abort();
+      };
+    },
+    [
+      employeeId,
+      isPendingSchedule,
+      loadPendingAttempt,
+    ]
+  );
+
+  const handleSchedule =
+    useCallback(
+      async () => {
+        if (
+          !canSchedule ||
+          isSubmitting
+        ) {
+          return;
+        }
+
+        const today =
+          getPhilippinesTodayISO();
+
+        if (
+          scheduledDate ===
+            today &&
+          scheduledTime <
+            getPhilippinesCurrentTimeISO()
+        ) {
+          setModalError(
+            "Expected arrival time cannot be earlier than the current Philippine time."
+          );
+
+          return;
+        }
+
+        try {
+          setIsSubmitting(
+            true
+          );
+
+          setModalError(
+            ""
+          );
+
+          const {
+            data,
+          } =
+            await axios.post(
+              `${EMPLOYEE_API_URL}/${encodeURIComponent(
+                employeeId
+              )}/deployment-attempts`,
+              {
+                scheduledDate,
+                scheduledTime,
+                remarks:
+                  scheduleRemarks.trim(),
+              },
+              {
+                timeout:
+                  REQUEST_TIMEOUT_MS,
+                headers:
+                  getAuthenticatedHeaders({
+                    "Content-Type":
+                      "application/json",
+                  }),
+              }
+            );
+
+          await onWorkflowUpdated?.({
+            action:
+              "SCHEDULE_DEPLOYMENT",
+            message:
+              data?.message ||
+              `${employeeName} was scheduled for ${formatWorkflowDate(
+                scheduledDate
+              )} at ${formatWorkflowTime(
+                scheduledTime
+              )}.`,
+          });
+
+          onClose?.();
+        } catch (
+          error
+        ) {
+          console.error(
+            "Schedule employee deployment error:",
+            error
+          );
+
+          setModalError(
+            getEmployeeApiError(
+              error,
+              "Failed to schedule the employee for deployment."
+            )
+          );
+        } finally {
+          setIsSubmitting(
+            false
+          );
+        }
+      },
+      [
+        canSchedule,
+        employeeId,
+        employeeName,
+        isSubmitting,
+        onClose,
+        onWorkflowUpdated,
+        scheduleRemarks,
+        scheduledDate,
+        scheduledTime,
+      ]
+    );
+
+  const handleWithdraw =
+    useCallback(
+      async () => {
+        const attemptId =
+          pendingAttempt
+            ?.attemptId ||
+          pendingAttempt
+            ?.id;
+
+        if (
+          !attemptId ||
+          !withdrawReason.trim() ||
+          isSubmitting
+        ) {
+          return;
+        }
+
+        try {
+          setIsSubmitting(
+            true
+          );
+
+          setModalError(
+            ""
+          );
+
+          const {
+            data,
+          } =
+            await axios.patch(
+              `${DEPLOYMENT_ATTEMPT_API_URL}/${encodeURIComponent(
+                attemptId
+              )}/withdraw`,
+              {
+                reason:
+                  withdrawReason.trim(),
+                remarks:
+                  withdrawRemarks.trim(),
+              },
+              {
+                timeout:
+                  REQUEST_TIMEOUT_MS,
+                headers:
+                  getAuthenticatedHeaders({
+                    "Content-Type":
+                      "application/json",
+                  }),
+              }
+            );
+
+          await onWorkflowUpdated?.({
+            action:
+              "WITHDRAW_DEPLOYMENT_ATTEMPT",
+            message:
+              data?.message ||
+              `${employeeName}'s deployment schedule was withdrawn.`,
+          });
+
+          onClose?.();
+        } catch (
+          error
+        ) {
+          console.error(
+            "Withdraw deployment schedule error:",
+            error
+          );
+
+          setModalError(
+            getEmployeeApiError(
+              error,
+              "Failed to withdraw the deployment schedule."
+            )
+          );
+        } finally {
+          setIsSubmitting(
+            false
+          );
+        }
+      },
+      [
+        employeeName,
+        isSubmitting,
+        onClose,
+        onWorkflowUpdated,
+        pendingAttempt,
+        withdrawReason,
+        withdrawRemarks,
+      ]
+    );
+
+  if (!employee) {
+    return null;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[1px]"
+      role="presentation"
+      onMouseDown={(
+        event
+      ) => {
+        if (
+          event.target ===
+            event.currentTarget &&
+          !isSubmitting
+        ) {
+          onClose?.();
+        }
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="employee-deployment-title"
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+      >
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+              <FiBriefcase
+                aria-hidden="true"
+              />
+            </span>
+
+            <div className="min-w-0">
+              <h2
+                id="employee-deployment-title"
+                className="text-base font-bold text-slate-900 dark:text-slate-100"
+              >
+                {isPendingSchedule
+                  ? "Deployment Schedule"
+                  : "Schedule for Deployment"}
+              </h2>
+
+              <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {isPendingSchedule
+                  ? "Review the employee's expected arrival date and time at the client site."
+                  : "Set the expected arrival date and time for this employee."}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            aria-label="Close deployment modal"
+            title="Close"
+            disabled={
+              isSubmitting
+            }
+            onClick={
+              onClose
+            }
+            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          >
+            <FiXCircle
+              size={20}
+              aria-hidden="true"
+            />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          {modalError && (
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300">
+              {modalError}
+            </div>
+          )}
+
+          {isPendingSchedule ? (
+            isLoadingAttempt ? (
+              <LoadingSkeleton
+                rows={4}
+                columns={2}
+                showHeader
+              />
+            ) : pendingAttempt ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-800 dark:bg-slate-950/40">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      Employee
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100">
+                      {employeeName}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      Workforce Status
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-indigo-600 dark:text-indigo-300">
+                      For Deployment
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      Company
+                    </label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        pendingAttempt
+                          ?.company ||
+                        employeeCompany
+                      }
+                      className={`${SELECT_CLASS_NAME} cursor-default bg-slate-50 dark:bg-slate-900`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      Position
+                    </label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        pendingAttempt
+                          ?.position ||
+                        employeePosition
+                      }
+                      className={`${SELECT_CLASS_NAME} cursor-default bg-slate-50 dark:bg-slate-900`}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      Expected Arrival Date
+                    </label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        formatWorkflowDate(
+                          pendingAttempt
+                            ?.scheduledDate
+                        )
+                      }
+                      className={`${SELECT_CLASS_NAME} cursor-default bg-slate-50 dark:bg-slate-900`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      Expected Arrival Time
+                    </label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        formatWorkflowTime(
+                          pendingAttempt
+                            ?.scheduledTime ??
+                          pendingAttempt
+                            ?.scheduled_time
+                        )
+                      }
+                      className={`${SELECT_CLASS_NAME} cursor-default bg-slate-50 dark:bg-slate-900`}
+                    />
+                  </div>
+                </div>
+
+                {pendingAttempt
+                  ?.remarks && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      Remarks
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-300">
+                      {
+                        pendingAttempt
+                          .remarks
+                      }
+                    </p>
+                  </div>
+                )}
+
+                {!showWithdrawForm ? (
+                  <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end dark:border-slate-800">
+                    <Button
+                      variant="secondary"
+                      disabled={
+                        isSubmitting
+                      }
+                      onClick={
+                        onClose
+                      }
+                    >
+                      Close
+                    </Button>
+
+                    <Button
+                      variant="warning"
+                      disabled={
+                        isSubmitting
+                      }
+                      onClick={() =>
+                        setShowWithdrawForm(
+                          true
+                        )
+                      }
+                    >
+                      Withdraw Schedule
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
+                    <div>
+                      <label
+                        htmlFor="deployment-withdraw-reason"
+                        className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200"
+                      >
+                        Withdrawal Reason
+                      </label>
+
+                      <input
+                        id="deployment-withdraw-reason"
+                        type="text"
+                        maxLength={100}
+                        value={
+                          withdrawReason
+                        }
+                        disabled={
+                          isSubmitting
+                        }
+                        placeholder="Enter the reason for withdrawal"
+                        onChange={(
+                          event
+                        ) =>
+                          setWithdrawReason(
+                            event.target
+                              .value
+                          )
+                        }
+                        className={
+                          SELECT_CLASS_NAME
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="deployment-withdraw-remarks"
+                        className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200"
+                      >
+                        Remarks (Optional)
+                      </label>
+
+                      <textarea
+                        id="deployment-withdraw-remarks"
+                        rows={3}
+                        maxLength={2000}
+                        value={
+                          withdrawRemarks
+                        }
+                        disabled={
+                          isSubmitting
+                        }
+                        placeholder="Add optional details..."
+                        onChange={(
+                          event
+                        ) =>
+                          setWithdrawRemarks(
+                            event.target
+                              .value
+                          )
+                        }
+                        className={`${SELECT_CLASS_NAME} min-h-[92px] resize-y`}
+                      />
+                    </div>
+
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                      <Button
+                        variant="secondary"
+                        disabled={
+                          isSubmitting
+                        }
+                        onClick={() => {
+                          setShowWithdrawForm(
+                            false
+                          );
+                          setWithdrawReason(
+                            ""
+                          );
+                          setWithdrawRemarks(
+                            ""
+                          );
+                        }}
+                      >
+                        Cancel
+                      </Button>
+
+                      <Button
+                        variant="warning"
+                        loading={
+                          isSubmitting
+                        }
+                        disabled={
+                          !withdrawReason.trim() ||
+                          isSubmitting
+                        }
+                        onClick={
+                          handleWithdraw
+                        }
+                      >
+                        Confirm Withdraw
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-800 dark:bg-slate-950/40">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Employee
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {employeeName}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Workforce Status
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+                    Floating / Standby
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="deployment-company-display"
+                    className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200"
+                  >
+                    Company
+                  </label>
+
+                  <input
+                    id="deployment-company-display"
+                    type="text"
+                    readOnly
+                    value={
+                      employeeCompany
+                    }
+                    placeholder="No client company assigned"
+                    className={`${SELECT_CLASS_NAME} cursor-default bg-slate-50 dark:bg-slate-900`}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="deployment-position-display"
+                    className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200"
+                  >
+                    Position
+                  </label>
+
+                  <input
+                    id="deployment-position-display"
+                    type="text"
+                    readOnly
+                    value={
+                      employeePosition
+                    }
+                    placeholder="No designated position"
+                    className={`${SELECT_CLASS_NAME} cursor-default bg-slate-50 dark:bg-slate-900`}
+                  />
+                </div>
+              </div>
+
+              {(
+                !employeeCompany ||
+                !employeePosition
+              ) && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300">
+                  Client Company and Position must be set on the employee record before deployment can be scheduled.
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="deployment-scheduled-date"
+                    className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200"
+                  >
+                    Expected Arrival Date
+                  </label>
+
+                  <div className="relative">
+                    <FiCalendar
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+
+                    <input
+                      id="deployment-scheduled-date"
+                      type="date"
+                      min={
+                        getPhilippinesTodayISO()
+                      }
+                      value={
+                        scheduledDate
+                      }
+                      disabled={
+                        isSubmitting
+                      }
+                      onChange={(
+                        event
+                      ) => {
+                        setScheduledDate(
+                          event.target
+                            .value
+                        );
+
+                        if (
+                          event.target
+                            .value !==
+                          getPhilippinesTodayISO()
+                        ) {
+                          setModalError(
+                            ""
+                          );
+                        }
+                      }}
+                      className={`${SELECT_CLASS_NAME} pl-10`}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="deployment-scheduled-time"
+                    className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200"
+                  >
+                    Expected Arrival Time
+                  </label>
+
+                  <div className="relative">
+                    <FiClock
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+
+                    <input
+                      id="deployment-scheduled-time"
+                      type="time"
+                      min={
+                        scheduledDate ===
+                        getPhilippinesTodayISO()
+                          ? getPhilippinesCurrentTimeISO()
+                          : undefined
+                      }
+                      value={
+                        scheduledTime
+                      }
+                      disabled={
+                        isSubmitting
+                      }
+                      onChange={(
+                        event
+                      ) => {
+                        setScheduledTime(
+                          event.target
+                            .value
+                        );
+
+                        setModalError(
+                          ""
+                        );
+                      }}
+                      className={`${SELECT_CLASS_NAME} pl-10`}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-xs leading-5 text-indigo-800 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-200">
+                The assigned HR Coordinator will use this schedule to prepare for the employee's arrival at the client site.
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/20">
+                <button
+                  type="button"
+                  disabled={
+                    isSubmitting
+                  }
+                  onClick={() => {
+                    setShowScheduleRemarks(
+                      (
+                        currentValue
+                      ) =>
+                        !currentValue
+                    );
+
+                    if (
+                      showScheduleRemarks
+                    ) {
+                      setScheduleRemarks(
+                        ""
+                      );
+                    }
+                  }}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-800/50"
+                >
+                  <span>
+                    Remarks (Optional)
+                  </span>
+
+                  <span
+                    aria-hidden="true"
+                    className="text-lg leading-none text-indigo-600 dark:text-indigo-300"
+                  >
+                    {showScheduleRemarks
+                      ? "−"
+                      : "+"}
+                  </span>
+                </button>
+
+                {showScheduleRemarks && (
+                  <div className="border-t border-slate-100 p-4 dark:border-slate-800">
+                    <textarea
+                      id="deployment-schedule-remarks"
+                      rows={3}
+                      maxLength={2000}
+                      value={
+                        scheduleRemarks
+                      }
+                      disabled={
+                        isSubmitting
+                      }
+                      placeholder="Add an optional note or instruction..."
+                      onChange={(
+                        event
+                      ) =>
+                        setScheduleRemarks(
+                          event.target
+                            .value
+                        )
+                      }
+                      className={`${SELECT_CLASS_NAME} min-h-[92px] resize-y`}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end dark:border-slate-800">
+                <Button
+                  variant="secondary"
+                  disabled={
+                    isSubmitting
+                  }
+                  onClick={
+                    onClose
+                  }
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  leftIcon={
+                    <FiSend
+                      aria-hidden="true"
+                    />
+                  }
+                  loading={
+                    isSubmitting
+                  }
+                  disabled={
+                    !canSchedule ||
+                    isSubmitting
+                  }
+                  onClick={
+                    handleSchedule
+                  }
+                >
+                  Confirm Schedule
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function Employees() {
   const navigate =
     useNavigate();
+
+  const location =
+    useLocation();
+
   const {
     user,
   } =
     useAuth();
+
+  const normalizedRole =
+    normalizeEmployeePageRole(
+      user?.role
+    );
+
+  const isHRStaff =
+    normalizedRole ===
+    normalizeEmployeePageRole(
+      ROLES.HR_STAFF
+    );
+
   const isSuperAdmin =
-    user?.role ===
-    ROLES.SUPER_ADMIN;
+    normalizedRole ===
+    normalizeEmployeePageRole(
+      ROLES.SUPER_ADMIN
+    );
+
   const isHRManager =
-    user?.role ===
-    ROLES.HR_MANAGER;
+    normalizedRole ===
+    normalizeEmployeePageRole(
+      ROLES.HR_MANAGER
+    );
+
   const isHRCoordinator =
-    user?.role ===
-    ROLES.HR_COORDINATOR;
+    normalizedRole ===
+    normalizeEmployeePageRole(
+      ROLES.HR_COORDINATOR
+    );
   /*
    * ==================================================
    * EMPLOYEE PAGE ACCESS
    * ==================================================
    *
-   * SUPER_ADMIN:
-   * - view only
+   * HR STAFF:
+   * - operational employee encoder/maintainer
+   * - add and edit employee records
+   * - maintain employee compliance documents
    *
-   * HR_COORDINATOR:
-   * - view assigned-company employees
-   * - view employee documents
-   * - no add
-   * - no edit
-   * - no archive
+   * HR MANAGER:
+   * - review employee records
+   * - archive separated/inactive employee records
+   * - no routine employee encoding or document mutation
    *
-   * Backend remains authoritative for company scope.
+   * SUPER ADMIN:
+   * - governance / view only on active Employee records
+   *
+   * HR COORDINATOR:
+   * - view Deployed and For Deployment employees within
+   *   the assigned-company backend scope
+   * - view authorized employee/compliance information
+   * - no employee encoding or archive authority
+   *
+   * Backend remains authoritative for role and company scope.
    */
-  const isReadOnlyEmployeeAccess =
-    isSuperAdmin ||
-    isHRCoordinator;
+  const canManageEmployeeRecords =
+    isHRStaff;
+
+  const canArchiveEmployeeRecords =
+    isHRManager;
+
   const assignedCompany =
     String(
       user?.assignedCompany ??
@@ -437,6 +2040,25 @@ export default function Employees() {
     setEditingEmployee,
   ] =
     useState(null);
+
+  const [
+    openComplianceOnEdit,
+    setOpenComplianceOnEdit,
+  ] =
+    useState(false);
+
+  const [
+    editComplianceTarget,
+    setEditComplianceTarget,
+  ] =
+    useState(null);
+
+  const [
+    viewComplianceTarget,
+    setViewComplianceTarget,
+  ] =
+    useState(null);
+
   const [
     viewEmployee,
     setViewEmployee,
@@ -463,6 +2085,16 @@ export default function Employees() {
   ] =
     useState("All");
   const [
+    filterCompany,
+    setFilterCompany,
+  ] =
+    useState("All");
+  const [
+    companyOptions,
+    setCompanyOptions,
+  ] =
+    useState([]);
+  const [
     filterCompliance,
     setFilterCompliance,
   ] =
@@ -477,13 +2109,6 @@ export default function Employees() {
     setKnownPositions,
   ] =
     useState([]);
-  const [
-    sortBy,
-    setSortBy,
-  ] =
-    useState(
-      "latest"
-    );
   const [
     successMessage,
     setSuccessMessage,
@@ -510,6 +2135,11 @@ export default function Employees() {
   ] =
     useState(false);
   const [
+    deploymentActionEmployee,
+    setDeploymentActionEmployee,
+  ] =
+    useState(null);
+  const [
     isArchiving,
     setIsArchiving,
   ] =
@@ -528,6 +2158,13 @@ export default function Employees() {
     useRef(null);
   const employeeFormMetaAbortRef =
     useRef(null);
+
+  const mobileHandoffHandledRef =
+    useRef(false);
+
+  const smartAlertTargetHandledRef =
+    useRef("");
+
   useEffect(
     () => {
       isMountedRef.current =
@@ -679,6 +2316,10 @@ export default function Employees() {
                       : debouncedSearch,
                   status:
                     filterStatus,
+                  company:
+                    isHRCoordinator
+                      ? "All"
+                      : filterCompany,
                   compliance:
                     filterCompliance,
                   ...(isHRCoordinator &&
@@ -689,8 +2330,6 @@ export default function Employees() {
                           filterPosition,
                       }
                     : {}),
-                  sort:
-                    sortBy,
                 },
               }
             );
@@ -712,6 +2351,41 @@ export default function Employees() {
               data?.pagination,
               page
             );
+
+          if (
+            !isHRCoordinator
+          ) {
+            const nextCompanies =
+              Array.isArray(
+                data?.filterMeta?.companies
+              )
+                ? data.filterMeta.companies
+                    .map(
+                      (company) =>
+                        String(
+                          company || ""
+                        ).trim()
+                    )
+                    .filter(Boolean)
+                : [];
+
+            setCompanyOptions(
+              nextCompanies
+            );
+
+            if (
+              filterCompany !== "All" &&
+              nextCompanies.length > 0 &&
+              !nextCompanies.includes(
+                filterCompany
+              )
+            ) {
+              setFilterCompany(
+                "All"
+              );
+            }
+          }
+
           if (
             isHRCoordinator
           ) {
@@ -820,12 +2494,12 @@ export default function Employees() {
       },
       [
         debouncedSearch,
+        filterCompany,
         filterCompliance,
         filterPosition,
         filterStatus,
         isHRCoordinator,
         page,
-        sortBy,
       ]
     );
   useEffect(
@@ -902,28 +2576,75 @@ export default function Employees() {
   const hasActiveFilters =
     useMemo(
       () =>
-        hasActiveEmployeeFilters({
-          search,
-          status:
-            filterStatus,
-          compliance:
-            filterCompliance,
-          sortBy,
-        }) ||
+        Boolean(
+          String(
+            search || ""
+          ).trim()
+        ) ||
+        filterStatus !==
+          "All" ||
+        filterCompliance !==
+          "All" ||
+        (
+          !isHRCoordinator &&
+          filterCompany !==
+            "All"
+        ) ||
         (
           isHRCoordinator &&
           filterPosition !==
             "All"
         ),
       [
+        filterCompany,
         filterCompliance,
         filterPosition,
         filterStatus,
         isHRCoordinator,
         search,
-        sortBy,
       ]
     );
+
+  const workforceStatusOptions =
+    useMemo(
+      () =>
+        isHRCoordinator
+          ? WORKFORCE_STATUS_OPTIONS.filter(
+              ({ value }) =>
+                value !==
+                "Floating / Standby"
+            )
+          : WORKFORCE_STATUS_OPTIONS,
+      [
+        isHRCoordinator,
+      ]
+    );
+
+  const companyFilterOptions =
+    useMemo(
+      () => [
+        {
+          value:
+            "All",
+          label:
+            "All Companies",
+        },
+        ...companyOptions.map(
+          (
+            company
+          ) => ({
+            value:
+              company,
+            label:
+              company,
+          })
+        ),
+      ],
+      [
+        companyOptions,
+      ]
+    );
+
   const positionOptions =
     useMemo(
       () => [
@@ -1066,12 +2787,12 @@ export default function Employees() {
       },
       []
     );
-  const handleComplianceChange =
+  const handleCompanyChange =
     useCallback(
       (
         value
       ) => {
-        setFilterCompliance(
+        setFilterCompany(
           value
         );
         setPage(
@@ -1080,12 +2801,13 @@ export default function Employees() {
       },
       []
     );
-  const handleSortChange =
+
+  const handleComplianceChange =
     useCallback(
       (
         value
       ) => {
-        setSortBy(
+        setFilterCompliance(
           value
         );
         setPage(
@@ -1115,14 +2837,14 @@ export default function Employees() {
         setFilterStatus(
           "All"
         );
+        setFilterCompany(
+          "All"
+        );
         setFilterCompliance(
           "All"
         );
         setFilterPosition(
           "All"
-        );
-        setSortBy(
-          "latest"
         );
         setPage(
           1
@@ -1148,6 +2870,32 @@ export default function Employees() {
         isRefreshingEmployees,
       ]
     );
+  const handleDeploymentWorkflowUpdated =
+    useCallback(
+      async ({
+        action,
+        message,
+      }) => {
+        setSuccessMessage(
+          message ||
+          "Deployment workflow updated successfully."
+        );
+
+        emitDataUpdated(
+          action ||
+          "DEPLOYMENT_WORKFLOW_UPDATED"
+        );
+
+        await fetchEmployees({
+          showError:
+            false,
+        });
+      },
+      [
+        fetchEmployees,
+      ]
+    );
+
   const fetchEmployeeById =
     useCallback(
       async (
@@ -1237,11 +2985,367 @@ export default function Employees() {
       },
       []
     );
+
+  /*
+   * ==================================================
+   * SMART ALERT EMPLOYEE DEEP LINK
+   * ==================================================
+   *
+   * Compliance Smart Alerts navigate to Employees with
+   * an employee-specific target in router state.
+   *
+   * HR Staff:
+   * - opens Edit Employee
+   * - opens the Compliance section
+   *
+   * HR Manager / Super Admin:
+   * - opens the exact employee in the view-only modal
+   * - opens the Compliance accordion
+   * - passes the exact document target for highlighting
+   *
+   * The one-time router state is cleared after the
+   * employee record is opened so browser Back/Forward
+   * navigation does not unexpectedly reopen the modal.
+   */
+  useEffect(
+    () => {
+      const alertTarget =
+        normalizeSmartAlertEmployeeTarget(
+          location.state
+            ?.smartAlertEmployeeTarget
+        );
+
+      if (!alertTarget) {
+        smartAlertTargetHandledRef.current =
+          "";
+        return;
+      }
+
+      const targetSignature =
+        alertTarget.alertKey ||
+        [
+          alertTarget.employeeId,
+          alertTarget.documentId ||
+            "",
+          alertTarget.documentName ||
+            "",
+        ].join(":");
+
+      if (
+        smartAlertTargetHandledRef.current ===
+        targetSignature
+      ) {
+        return;
+      }
+
+      smartAlertTargetHandledRef.current =
+        targetSignature;
+
+      if (
+        !isHRStaff &&
+        !isHRManager &&
+        !isSuperAdmin
+      ) {
+        navigate(
+          "/employees",
+          {
+            replace:
+              true,
+            state:
+              null,
+          }
+        );
+
+        return;
+      }
+
+      let isActive =
+        true;
+
+      const openSmartAlertEmployeeTarget =
+        async () => {
+          setPageError(
+            ""
+          );
+
+          const fullEmployee =
+            await fetchEmployeeById({
+              id:
+                alertTarget
+                  .employeeId,
+            });
+
+          if (
+            !isActive ||
+            !isMountedRef.current
+          ) {
+            return;
+          }
+
+          if (!fullEmployee) {
+            smartAlertTargetHandledRef.current =
+              "";
+            return;
+          }
+
+          setDeploymentActionEmployee(
+            null
+          );
+
+          if (isHRStaff) {
+            setViewEmployee(
+              null
+            );
+
+            setViewComplianceTarget(
+              null
+            );
+
+            setEditingEmployee(
+              fullEmployee
+            );
+
+            setGeneratedId(
+              getEmployeeId(
+                fullEmployee
+              )
+            );
+
+            setOpenComplianceOnEdit(
+              true
+            );
+
+            setEditComplianceTarget({
+              documentId:
+                alertTarget
+                  .documentId,
+
+              documentName:
+                alertTarget
+                  .documentName,
+            });
+
+            setShowEmployeeForm(
+              true
+            );
+          } else {
+            setShowEmployeeForm(
+              false
+            );
+
+            setEditingEmployee(
+              null
+            );
+
+            setGeneratedId(
+              ""
+            );
+
+            setOpenComplianceOnEdit(
+              false
+            );
+
+            setEditComplianceTarget(
+              null
+            );
+
+            setViewComplianceTarget({
+              openCompliance:
+                true,
+
+              documentId:
+                alertTarget
+                  .documentId,
+
+              documentName:
+                alertTarget
+                  .documentName,
+            });
+
+            setViewEmployee(
+              fullEmployee
+            );
+          }
+
+          navigate(
+            "/employees",
+            {
+              replace:
+                true,
+              state:
+                null,
+            }
+          );
+        };
+
+      void openSmartAlertEmployeeTarget();
+
+      return () => {
+        isActive =
+          false;
+      };
+    },
+    [
+      fetchEmployeeById,
+      isHRManager,
+      isHRStaff,
+      isSuperAdmin,
+      location.state,
+      navigate,
+    ]
+  );
+
+  useEffect(
+    () => {
+      if (
+        mobileHandoffHandledRef.current
+      ) {
+        return;
+      }
+
+      const stateTarget =
+        normalizeMobileHandoffTarget(
+          location.state
+            ?.mobileDocumentHandoff
+        );
+
+      const sessionTarget =
+        readMobileHandoffSession();
+
+      const handoffTarget =
+        stateTarget ||
+        sessionTarget;
+
+      if (!handoffTarget) {
+        if (
+          !isHRStaff
+        ) {
+          clearMobileHandoffSession();
+        }
+
+        return;
+      }
+
+      /*
+       * The mobile handoff route is already HR Staff
+       * only, but keep this check here as defense in
+       * depth in case stale sessionStorage survives an
+       * account switch in the same browser.
+       */
+      if (!isHRStaff) {
+        clearMobileHandoffSession();
+        mobileHandoffHandledRef.current =
+          true;
+        return;
+      }
+
+      mobileHandoffHandledRef.current =
+        true;
+
+      let isActive =
+        true;
+
+      const openMobileDocumentCapture =
+        async () => {
+          setPageError(
+            ""
+          );
+
+          const fullEmployee =
+            await fetchEmployeeById({
+              id:
+                handoffTarget
+                  .employeeId,
+            });
+
+          if (
+            !isActive ||
+            !isMountedRef.current
+          ) {
+            return;
+          }
+
+          if (!fullEmployee) {
+            /*
+             * Keep the session fallback when the
+             * detail request fails so a browser
+             * refresh can retry the already-resolved
+             * handoff target without reusing the QR.
+             */
+            mobileHandoffHandledRef.current =
+              false;
+            return;
+          }
+
+          setViewEmployee(
+            null
+          );
+
+          setViewComplianceTarget(
+            null
+          );
+
+          setEditingEmployee(
+            fullEmployee
+          );
+
+          setGeneratedId(
+            getEmployeeId(
+              fullEmployee
+            )
+          );
+
+          setOpenComplianceOnEdit(
+            true
+          );
+
+          setEditComplianceTarget(
+            null
+          );
+
+          setShowEmployeeForm(
+            true
+          );
+
+          clearMobileHandoffSession();
+
+          /*
+           * Remove the one-time navigation state after
+           * the target employee has been opened. This
+           * prevents accidental re-opening when the
+           * user later navigates back to Employees.
+           */
+          navigate(
+            "/employees",
+            {
+              replace:
+                true,
+              state:
+                null,
+            }
+          );
+        };
+
+      void openMobileDocumentCapture();
+
+      return () => {
+        isActive =
+          false;
+      };
+    },
+    [
+      fetchEmployeeById,
+      isHRStaff,
+      location.state,
+      navigate,
+    ]
+  );
+
   const handleOpenAddEmployee =
     useCallback(
       async () => {
         if (
-          isReadOnlyEmployeeAccess ||
+          !canManageEmployeeRecords ||
           isOpeningAddEmployee
         ) {
           return;
@@ -1299,6 +3403,11 @@ export default function Employees() {
           setEditingEmployee(
             null
           );
+
+          setEditComplianceTarget(
+            null
+          );
+
           setShowEmployeeForm(
             true
           );
@@ -1345,8 +3454,8 @@ export default function Employees() {
         }
       },
       [
+        canManageEmployeeRecords,
         isOpeningAddEmployee,
-        isReadOnlyEmployeeAccess,
       ]
     );
   const handleCloseEmployeeForm =
@@ -1355,9 +3464,19 @@ export default function Employees() {
         setShowEmployeeForm(
           false
         );
+
         setEditingEmployee(
           null
         );
+
+        setOpenComplianceOnEdit(
+          false
+        );
+
+        setEditComplianceTarget(
+          null
+        );
+
         setGeneratedId(
           ""
         );
@@ -1374,6 +3493,11 @@ export default function Employees() {
         ) {
           return;
         }
+
+        setViewComplianceTarget(
+          null
+        );
+
         const fullEmployee =
           await fetchEmployeeById(
             employee
@@ -1397,11 +3521,20 @@ export default function Employees() {
         employee
       ) => {
         if (
-          isReadOnlyEmployeeAccess ||
+          !canManageEmployeeRecords ||
           !employee
         ) {
           return;
         }
+
+        setViewEmployee(
+          null
+        );
+
+        setViewComplianceTarget(
+          null
+        );
+
         const fullEmployee =
           await fetchEmployeeById(
             employee
@@ -1412,31 +3545,87 @@ export default function Employees() {
         ) {
           return;
         }
+        setOpenComplianceOnEdit(
+          false
+        );
+
+        setEditComplianceTarget(
+          null
+        );
+
         setEditingEmployee(
           fullEmployee
         );
+
         setGeneratedId(
           getEmployeeId(
             fullEmployee
           )
         );
+
         setShowEmployeeForm(
           true
         );
       },
       [
+        canManageEmployeeRecords,
         fetchEmployeeById,
-        isReadOnlyEmployeeAccess,
       ]
     );
+  const handleDeploymentAction =
+    useCallback(
+      (
+        employee
+      ) => {
+        if (
+          !isHRStaff ||
+          !employee
+        ) {
+          return;
+        }
+
+        const workforceStatus =
+          String(
+            employee
+              ?.workforceStatus ||
+            employee
+              ?.workforce_status ||
+            employee
+              ?.status ||
+            ""
+          ).trim();
+
+        if (
+          ![
+            "Floating / Standby",
+            "For Deployment",
+          ].includes(
+            workforceStatus
+          )
+        ) {
+          return;
+        }
+
+        setPageError(
+          ""
+        );
+
+        setDeploymentActionEmployee(
+          employee
+        );
+      },
+      [
+        isHRStaff,
+      ]
+    );
+
   const handleOpenArchiveDialog =
     useCallback(
       (
         employee
       ) => {
         if (
-          isReadOnlyEmployeeAccess ||
-          !isHRManager ||
+          !canArchiveEmployeeRecords ||
           !employee ||
           isArchiving
         ) {
@@ -1450,9 +3639,8 @@ export default function Employees() {
         );
       },
       [
+        canArchiveEmployeeRecords,
         isArchiving,
-        isHRManager,
-        isReadOnlyEmployeeAccess,
       ]
     );
   const handleCloseArchiveDialog =
@@ -1480,8 +3668,7 @@ export default function Employees() {
         if (
           !employeeId ||
           isArchiving ||
-          isReadOnlyEmployeeAccess ||
-          !isHRManager
+          !canArchiveEmployeeRecords
         ) {
           return;
         }
@@ -1564,9 +3751,8 @@ export default function Employees() {
       [
         archiveTarget,
         fetchEmployees,
+        canArchiveEmployeeRecords,
         isArchiving,
-        isHRManager,
-        isReadOnlyEmployeeAccess,
       ]
     );
   const handleSaveSuccess =
@@ -1581,7 +3767,7 @@ export default function Employees() {
          * defense in depth.
          */
         if (
-          isReadOnlyEmployeeAccess
+          !canManageEmployeeRecords
         ) {
           handleCloseEmployeeForm();
           return;
@@ -1619,19 +3805,21 @@ export default function Employees() {
       },
       [
         fetchEmployees,
+        canManageEmployeeRecords,
         handleCloseEmployeeForm,
-        isReadOnlyEmployeeAccess,
         page,
       ]
     );
   const employeeDescription =
     isHRCoordinator
       ? assignedCompany
-        ? `Review employees assigned to ${assignedCompany}, including their position, deployment status, and compliance condition.`
-        : "Review employees under your assigned client company, including position, deployment status, and compliance condition."
+        ? `Review Deployed and For Deployment employees within ${assignedCompany}, including position and compliance status.`
+        : "Review Deployed and For Deployment employees within your assigned client company."
       : isSuperAdmin
-        ? "View employee records, deployment status, and compliance information. Super Admin access is view-only."
-        : "Manage employee records, workforce status, deployment information, and compliance documents.";
+        ? "Review employee records, workforce status, deployment details, and compliance status. Super Admin access is view-only."
+        : isHRManager
+          ? "Review employee records and archive separated or inactive employees. Employee record updates remain with HR Staff."
+          : "Manage employee records, hiring dates, workforce status, compliance documents, and deployment actions.";
   const archiveEmployeeId =
     getEmployeeId(
       archiveTarget
@@ -1692,7 +3880,7 @@ export default function Employees() {
                 Archived Employees
               </Button>
             )}
-            {!isReadOnlyEmployeeAccess && (
+            {canManageEmployeeRecords && (
               <RoleGuard
                 permission={
                   PERMISSIONS.CAN_ADD_EMPLOYEE
@@ -1741,7 +3929,7 @@ export default function Employees() {
                   {assignedCompany || "Assigned Client Company"}
                 </p>
                 <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  Showing employees available within your assigned company scope.
+                  Showing Deployed and For Deployment employees within your assigned client company.
                 </p>
               </div>
             </div>
@@ -1749,28 +3937,25 @@ export default function Employees() {
               <FiShield
                 aria-hidden="true"
               />
-              View-only access
+              View only
               <span aria-hidden="true">•</span>
-              {activeEmployeeCount} active employee(s)
+              {activeEmployeeCount} active{" "}
+              {activeEmployeeCount === 1
+                ? "employee"
+                : "employees"}
             </div>
           </div>
         </section>
       )}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
         <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
-          <div
-            className={
-              isHRCoordinator
-                ? "min-w-0 xl:col-span-3"
-                : "min-w-0 xl:col-span-4"
-            }
-          >
+          <div className="min-w-0 xl:col-span-4">
             <SearchInput
               label="Search Employees"
               placeholder={
                 isHRCoordinator
                   ? "Search by name or employee ID..."
-                  : "Search by name, employee ID, or company..."
+                  : "Search by name, employee ID, or client company..."
               }
               value={search}
               disabled={isLoadingEmployees}
@@ -1778,6 +3963,19 @@ export default function Employees() {
               onClear={handleClearSearch}
             />
           </div>
+
+          {!isHRCoordinator && (
+            <SelectFilter
+              id="employee-company-filter"
+              label="Client Company"
+              value={filterCompany}
+              options={companyFilterOptions}
+              disabled={isLoadingEmployees}
+              onChange={handleCompanyChange}
+              className="min-w-0 xl:col-span-3"
+            />
+          )}
+
           {isHRCoordinator && (
             <SelectFilter
               id="employee-position-filter"
@@ -1786,18 +3984,20 @@ export default function Employees() {
               options={positionOptions}
               disabled={isLoadingEmployees}
               onChange={handlePositionChange}
-              className="min-w-0 xl:col-span-2"
+              className="min-w-0 xl:col-span-3"
             />
           )}
+
           <SelectFilter
             id="employee-status-filter"
-            label="Employment Status"
+            label="Workforce Status"
             value={filterStatus}
-            options={ACTIVE_STATUS_OPTIONS}
+            options={workforceStatusOptions}
             disabled={isLoadingEmployees}
             onChange={handleStatusChange}
             className="min-w-0 xl:col-span-2"
           />
+
           <SelectFilter
             id="employee-compliance-filter"
             label="Compliance Status"
@@ -1805,19 +4005,6 @@ export default function Employees() {
             options={COMPLIANCE_OPTIONS}
             disabled={isLoadingEmployees}
             onChange={handleComplianceChange}
-            className={
-              isHRCoordinator
-                ? "min-w-0 xl:col-span-2"
-                : "min-w-0 xl:col-span-3"
-            }
-          />
-          <SelectFilter
-            id="employee-sort-filter"
-            label="Sort By"
-            value={sortBy}
-            options={EMPLOYEE_SORT_OPTIONS}
-            disabled={isLoadingEmployees}
-            onChange={handleSortChange}
             className="min-w-0 xl:col-span-3"
           />
         </div>
@@ -1827,7 +4014,7 @@ export default function Employees() {
               {matchingEmployeeCount}
             </span>
             <span>
-              {matchingEmployeeCount === 1 ? "employee" : "employees"} in this view
+              {matchingEmployeeCount === 1 ? "employee" : "employees"} shown
             </span>
             {debouncedSearch && debouncedSearch !== search.trim() && (
               <>
@@ -1852,11 +4039,11 @@ export default function Employees() {
       {pageError && (
         <ErrorState
           compact
-          title="Employee data error"
+          title="Unable to Load Employees"
           message={
             pageError
           }
-          retryLabel="Reload employees"
+          retryLabel="Try Again"
           onRetry={
             handleRefresh
           }
@@ -1886,6 +4073,11 @@ export default function Employees() {
               filterCompliance !==
                 "All" ||
               (
+                !isHRCoordinator &&
+                filterCompany !==
+                  "All"
+              ) ||
+              (
                 isHRCoordinator &&
                 filterPosition !==
                   "All"
@@ -1901,16 +4093,20 @@ export default function Employees() {
               handleViewEmployee
             }
             onEdit={
-              isReadOnlyEmployeeAccess
-                ? undefined
-                : handleEditEmployee
+              canManageEmployeeRecords
+                ? handleEditEmployee
+                : undefined
+            }
+            onDeploymentAction={
+              isHRStaff
+                ? handleDeploymentAction
+                : undefined
             }
             getComplianceStatus={
               getComplianceStatus
             }
             onArchive={
-              isHRManager &&
-              !isReadOnlyEmployeeAccess
+              canArchiveEmployeeRecords
                 ? handleOpenArchiveDialog
                 : undefined
             }
@@ -2024,7 +4220,23 @@ export default function Employees() {
           )}
         </>
       )}
-      {!isReadOnlyEmployeeAccess &&
+      {isHRStaff &&
+        deploymentActionEmployee && (
+        <DeploymentSchedulingModal
+          employee={
+            deploymentActionEmployee
+          }
+          onClose={() =>
+            setDeploymentActionEmployee(
+              null
+            )
+          }
+          onWorkflowUpdated={
+            handleDeploymentWorkflowUpdated
+          }
+        />
+      )}
+      {canManageEmployeeRecords &&
         showEmployeeForm &&
         !editingEmployee && (
         <AddEmployeeModal
@@ -2047,7 +4259,7 @@ export default function Employees() {
           }
         />
       )}
-      {!isReadOnlyEmployeeAccess &&
+      {canManageEmployeeRecords &&
         showEmployeeForm &&
         editingEmployee && (
         <EditEmployeeModal
@@ -2056,6 +4268,19 @@ export default function Employees() {
           }
           employees={
             employees
+          }
+          initialOpenCompliance={
+            openComplianceOnEdit
+          }
+          initialComplianceDocumentId={
+            editComplianceTarget
+              ?.documentId ||
+            ""
+          }
+          initialComplianceDocumentName={
+            editComplianceTarget
+              ?.documentName ||
+            ""
           }
           onClose={
             handleCloseEmployeeForm
@@ -2075,11 +4300,31 @@ export default function Employees() {
           employee={
             viewEmployee
           }
-          onClose={() =>
-            setViewEmployee(
-              null
+          initialOpenCompliance={
+            Boolean(
+              viewComplianceTarget
+                ?.openCompliance
             )
           }
+          initialComplianceDocumentId={
+            viewComplianceTarget
+              ?.documentId ||
+            ""
+          }
+          initialComplianceDocumentName={
+            viewComplianceTarget
+              ?.documentName ||
+            ""
+          }
+          onClose={() => {
+            setViewEmployee(
+              null
+            );
+
+            setViewComplianceTarget(
+              null
+            );
+          }}
         />
       )}
       <ConfirmDialog
@@ -2087,8 +4332,7 @@ export default function Employees() {
           Boolean(
             archiveTarget
           ) &&
-          isHRManager &&
-          !isReadOnlyEmployeeAccess
+          canArchiveEmployeeRecords
         }
         title="Archive Employee"
         tone="warning"
@@ -2130,7 +4374,7 @@ export default function Employees() {
           </strong>{" "}
           and removed from the
           active employee
-          management table. The
+          list. The
           historical record will
           remain available in
           Archived Employees.
@@ -2138,7 +4382,7 @@ export default function Employees() {
       </ConfirmDialog>
       {successMessage && (
         <SuccessToast
-          title="Employee record updated"
+          title="Update Completed"
           message={
             successMessage
           }

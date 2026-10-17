@@ -21,8 +21,31 @@ const STATUS_BADGE_CLASSES = {
     "border border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/20 dark:text-blue-300",
   Pending:
     "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300",
-  Cancelled:
+
+  /*
+   * User-facing separation states.
+   *
+   * The database may still store deployment_assignments.status
+   * as "Cancelled" for legacy compatibility, but HR-facing
+   * screens should present the actual separation outcome instead.
+   */
+  Resigned:
+    "border border-sky-200 bg-sky-100 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/20 dark:text-sky-300",
+  Terminated:
     "border border-red-200 bg-red-100 text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300",
+  AWOL:
+    "border border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/20 dark:text-orange-300",
+  "Other Separation":
+    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300",
+  Ended:
+    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300",
+
+  /*
+   * Kept only as an internal/legacy compatibility style.
+   * New UI code should prefer getDeploymentDisplayStatus().
+   */
+  Cancelled:
+    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300",
   Separated:
     "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-300",
 };
@@ -45,16 +68,164 @@ const CANCELLED_DEPLOYMENT_REASON_MAP = {
   Terminated: "Terminated",
 };
 
-function parseDate(dateValue) {
+const USER_FACING_SEPARATION_STATUS_BY_REASON = {
+  Resignation: "Resigned",
+  Resigned: "Resigned",
+  AWOL: "AWOL",
+  Termination: "Terminated",
+  Terminated: "Terminated",
+  "Other Separation": "Other Separation",
+};
+
+const DEPLOYMENT_TIME_ZONE =
+  "Asia/Manila";
+
+function getManilaDateOnly(
+  value
+) {
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(
+          value
+        );
+
   if (
-    !dateValue ||
-    dateValue === "-"
+    Number.isNaN(
+      date.getTime()
+    )
   ) {
+    return "";
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          DEPLOYMENT_TIME_ZONE,
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      date
+    );
+
+  const values =
+    Object.fromEntries(
+      parts
+        .filter(
+          (part) =>
+            [
+              "year",
+              "month",
+              "day",
+            ].includes(
+              part.type
+            )
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ]
+        )
+    );
+
+  if (
+    !values.year ||
+    !values.month ||
+    !values.day
+  ) {
+    return "";
+  }
+
+  return (
+    `${values.year}-` +
+    `${values.month}-` +
+    `${values.day}`
+  );
+}
+
+function normalizeDeploymentDateOnly(
+  value
+) {
+  if (
+    !value ||
+    value === "-"
+  ) {
+    return "";
+  }
+
+  if (
+    value instanceof Date
+  ) {
+    return getManilaDateOnly(
+      value
+    );
+  }
+
+  const normalized =
+    String(
+      value
+    ).trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  const strictDateMatch =
+    normalized.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+
+  if (
+    strictDateMatch
+  ) {
+    return strictDateMatch[0];
+  }
+
+  /*
+   * Preserve the stored calendar date for legacy
+   * timezone-less MySQL DATETIME values. Do not
+   * apply an unverified timezone shift to them.
+   */
+  const timezoneLessMatch =
+    normalized.match(
+      /^(\d{4}-\d{2}-\d{2})[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/
+    );
+
+  if (
+    timezoneLessMatch
+  ) {
+    return timezoneLessMatch[1];
+  }
+
+  return getManilaDateOnly(
+    normalized
+  );
+}
+
+function parseDeploymentBusinessDate(
+  value
+) {
+  const dateOnly =
+    normalizeDeploymentDateOnly(
+      value
+    );
+
+  if (!dateOnly) {
     return null;
   }
 
   const date =
-    new Date(dateValue);
+    new Date(
+      `${dateOnly}T00:00:00+08:00`
+    );
 
   return Number.isNaN(
     date.getTime()
@@ -67,6 +238,16 @@ function normalizeRemarks(value) {
   return String(
     value || ""
   ).trim();
+}
+
+function isOtherSeparationRemarks(
+  remarks
+) {
+  return normalizeRemarks(
+    remarks
+  ).startsWith(
+    "[Other Separation]"
+  );
 }
 
 export function getMonthOptions() {
@@ -88,13 +269,16 @@ export function getYearOptions(
         deployment?.createdAt ||
         deployment?.created_at;
 
-      const date =
-        parseDate(rawDate);
+      const dateOnly =
+        normalizeDeploymentDateOnly(
+          rawDate
+        );
 
-      if (date) {
+      if (dateOnly) {
         years.add(
-          String(
-            date.getFullYear()
+          dateOnly.slice(
+            0,
+            4
           )
         );
       }
@@ -124,6 +308,17 @@ export function getYearOptions(
   ];
 }
 
+/*
+ * Canonical INTERNAL deployment lifecycle normalization.
+ *
+ * IMPORTANT:
+ * "Cancelled" is intentionally preserved here because the current
+ * backend/database uses it as a compatibility lifecycle bucket for
+ * separation outcomes such as Resigned, AWOL, and Terminated.
+ *
+ * Do not use this function directly as the HR-facing label when an
+ * end reason is available. Use getDeploymentDisplayStatus() instead.
+ */
 export function normalizeDeploymentStatus(
   status
 ) {
@@ -179,11 +374,72 @@ export function normalizeDeploymentStatus(
   );
 }
 
+/*
+ * HR-facing deployment status.
+ *
+ * Current database compatibility:
+ *   status = "Cancelled", end_reason = "Resigned"
+ *     -> "Resigned"
+ *
+ *   status = "Cancelled", end_reason = "Terminated"
+ *     -> "Terminated"
+ *
+ *   status = "Cancelled", end_reason = "AWOL"
+ *     -> "AWOL"
+ *
+ *   status = "Cancelled", end_reason = "Terminated",
+ *   remarks prefixed with "[Other Separation]"
+ *     -> "Other Separation"
+ *
+ * If an old/unknown Cancelled record has no reliable reason,
+ * present the neutral label "Ended" instead of exposing the
+ * misleading legacy word "Cancelled".
+ */
+export function getDeploymentDisplayStatus(
+  status,
+  endReason = "",
+  endRemarks = ""
+) {
+  const normalizedStatus =
+    normalizeDeploymentStatus(
+      status
+    );
+
+  if (
+    normalizedStatus !==
+    "Cancelled"
+  ) {
+    return normalizedStatus;
+  }
+
+  if (
+    isOtherSeparationRemarks(
+      endRemarks
+    )
+  ) {
+    return "Other Separation";
+  }
+
+  const normalizedReason =
+    String(
+      endReason || ""
+    ).trim();
+
+  return (
+    USER_FACING_SEPARATION_STATUS_BY_REASON[
+      normalizedReason
+    ] ||
+    "Ended"
+  );
+}
+
 export function formatDisplayDate(
   dateValue
 ) {
   const date =
-    parseDate(dateValue);
+    parseDeploymentBusinessDate(
+      dateValue
+    );
 
   if (!date) {
     return (
@@ -194,13 +450,20 @@ export function formatDisplayDate(
     );
   }
 
-  return date.toLocaleDateString(
+  return new Intl.DateTimeFormat(
     "en-PH",
     {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
+      timeZone:
+        DEPLOYMENT_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "short",
+      day:
+        "numeric",
     }
+  ).format(
+    date
   );
 }
 
@@ -208,7 +471,9 @@ export function formatLongDisplayDate(
   dateValue
 ) {
   const date =
-    parseDate(dateValue);
+    parseDeploymentBusinessDate(
+      dateValue
+    );
 
   if (!date) {
     return (
@@ -219,80 +484,50 @@ export function formatLongDisplayDate(
     );
   }
 
-  return date.toLocaleDateString(
+  return new Intl.DateTimeFormat(
     "en-PH",
     {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
+      timeZone:
+        DEPLOYMENT_TIME_ZONE,
+      year:
+        "numeric",
+      month:
+        "long",
+      day:
+        "numeric",
     }
+  ).format(
+    date
   );
 }
 
 export function formatDateForInput(
   dateValue
 ) {
-  if (
-    !dateValue ||
-    dateValue === "-"
-  ) {
-    return "";
-  }
-
-  const rawValue =
-    String(
-      dateValue
-    ).trim();
-
-  const dateOnlyMatch =
-    rawValue.match(
-      /^(\d{4})-(\d{2})-(\d{2})/
-    );
-
-  if (dateOnlyMatch) {
-    return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}`;
-  }
-
-  const date =
-    parseDate(rawValue);
-
-  if (!date) {
-    return "";
-  }
-
-  const year =
-    date.getFullYear();
-
-  const month =
-    String(
-      date.getMonth() + 1
-    ).padStart(
-      2,
-      "0"
-    );
-
-  const day =
-    String(
-      date.getDate()
-    ).padStart(
-      2,
-      "0"
-    );
-
-  return `${year}-${month}-${day}`;
+  return normalizeDeploymentDateOnly(
+    dateValue
+  );
 }
 
+/*
+ * Badge styling accepts the internal status plus optional end metadata.
+ * Existing one-argument callers remain compatible.
+ */
 export function getStatusBadgeClass(
-  status
+  status,
+  endReason = "",
+  endRemarks = ""
 ) {
-  const normalizedStatus =
-    normalizeDeploymentStatus(
-      status
+  const displayStatus =
+    getDeploymentDisplayStatus(
+      status,
+      endReason,
+      endRemarks
     );
 
   return (
     STATUS_BADGE_CLASSES[
-      normalizedStatus
+      displayStatus
     ] ||
     DEFAULT_STATUS_BADGE_CLASS
   );
@@ -392,16 +627,21 @@ export function buildDeploymentStatusPayload({
   }
 
   /*
-   * "Other Separation" is an intentional UI
-   * option, but the backend lifecycle model
-   * accepts only the authoritative cancelled
-   * reasons:
+   * "Other Separation" remains a user-facing HR option.
+   *
+   * The current backend/database lifecycle model accepts
+   * only the legacy separation bucket:
+   *
+   *   status = "Cancelled"
+   *
+   * with these authoritative end reasons:
    *
    * - Resigned
    * - AWOL
    * - Terminated
    *
-   * Preserve the existing compatibility format:
+   * Therefore we preserve compatibility internally while
+   * preventing "Cancelled" from being shown to HR users.
    *
    * UI reason:
    *   Other Separation
@@ -412,9 +652,8 @@ export function buildDeploymentStatusPayload({
    * Remarks:
    *   [Other Separation] <details>
    *
-   * normalizeSeparationReason() already converts
-   * this representation back to "Other Separation"
-   * for display.
+   * normalizeSeparationReason() converts this representation
+   * back to "Other Separation" for forms/history.
    */
   if (
     reason ===

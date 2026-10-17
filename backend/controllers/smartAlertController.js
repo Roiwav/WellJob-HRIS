@@ -15,6 +15,7 @@ const ALERT_PRIORITY = {
 
 const ALLOWED_ROLES = new Set([
   "HR_MANAGER",
+  "HR_STAFF",
   "HR_COORDINATOR",
   "SUPER_ADMIN",
 ]);
@@ -23,6 +24,20 @@ const REVIEWER_ROLES = new Set([
   "HR_MANAGER",
   "SUPER_ADMIN",
 ]);
+
+const COMPLIANCE_ALERT_ROLES = new Set([
+  "SUPER_ADMIN",
+  "HR_MANAGER",
+  "HR_STAFF",
+]);
+
+const COMPLIANCE_EXPIRING_SOON_DAYS = 30;
+const COMPLIANCE_NOTIFICATION_HOUR_MANILA = 8;
+
+const MANILA_UTC_OFFSET_HOURS = 8;
+
+const MILLISECONDS_PER_DAY =
+  24 * 60 * 60 * 1000;
 
 function normalizeRole(value) {
   const role = String(value || "")
@@ -180,6 +195,159 @@ function toTimestamp(value) {
   )
     ? 0
     : timestamp;
+}
+
+function normalizeEpochMilliseconds(
+  value
+) {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return 0;
+  }
+
+  const numericValue =
+    Number(
+      value
+    );
+
+  if (
+    Number.isFinite(
+      numericValue
+    ) &&
+    numericValue > 0
+  ) {
+    return numericValue <
+      100000000000
+      ? numericValue *
+          1000
+      : numericValue;
+  }
+
+  return 0;
+}
+
+function timestampToIsoString(
+  timestamp
+) {
+  const normalizedTimestamp =
+    normalizeEpochMilliseconds(
+      timestamp
+    );
+
+  if (!normalizedTimestamp) {
+    return null;
+  }
+
+  return new Date(
+    normalizedTimestamp
+  ).toISOString();
+}
+
+/*
+ * Notification timestamps are separate from the
+ * business dates shown in Incident and Compliance
+ * records.
+ *
+ * For incident alerts, use the authoritative database
+ * event timestamp exposed as Unix milliseconds by SQL.
+ * This avoids Node/Vercel timezone interpretation from
+ * shifting MySQL timestamps.
+ *
+ * The legacy toTimestamp() helper remains unchanged
+ * because existing alert keys may already depend on it.
+ */
+function getIncidentNotificationTimestamp(
+  incident
+) {
+  const status =
+    normalizeStatus(
+      incident?.status
+    );
+
+  const fallback =
+    toTimestamp(
+      getIncidentDate(
+        incident
+      )
+    );
+
+  if (
+    status === "Closed" ||
+    isReturnedCase(
+      incident
+    )
+  ) {
+    return (
+      normalizeEpochMilliseconds(
+        incident?.reviewedAtTimestamp ??
+          incident?.reviewed_at_timestamp
+      ) ||
+      normalizeEpochMilliseconds(
+        incident?.lastActionAtTimestamp ??
+          incident?.last_action_at_timestamp
+      ) ||
+      normalizeEpochMilliseconds(
+        incident?.updatedAtTimestamp ??
+          incident?.updated_at_timestamp
+      ) ||
+      normalizeEpochMilliseconds(
+        incident?.createdAtTimestamp ??
+          incident?.created_at_timestamp
+      ) ||
+      fallback
+    );
+  }
+
+  if (
+    status === "For Review"
+  ) {
+    return (
+      normalizeEpochMilliseconds(
+        incident?.resolutionSubmittedAtTimestamp ??
+          incident?.resolution_submitted_at_timestamp
+      ) ||
+      normalizeEpochMilliseconds(
+        incident?.updatedAtTimestamp ??
+          incident?.updated_at_timestamp
+      ) ||
+      normalizeEpochMilliseconds(
+        incident?.createdAtTimestamp ??
+          incident?.created_at_timestamp
+      ) ||
+      fallback
+    );
+  }
+
+  if (
+    status === "Investigating"
+  ) {
+    return (
+      normalizeEpochMilliseconds(
+        incident?.investigationStartedAtTimestamp ??
+          incident?.investigation_started_at_timestamp
+      ) ||
+      normalizeEpochMilliseconds(
+        incident?.updatedAtTimestamp ??
+          incident?.updated_at_timestamp
+      ) ||
+      normalizeEpochMilliseconds(
+        incident?.createdAtTimestamp ??
+          incident?.created_at_timestamp
+      ) ||
+      fallback
+    );
+  }
+
+  return (
+    normalizeEpochMilliseconds(
+      incident?.createdAtTimestamp ??
+        incident?.created_at_timestamp
+    ) ||
+    fallback
+  );
 }
 
 function cleanAlertKey(value) {
@@ -480,6 +648,32 @@ function getReporterValues(
   ];
 }
 
+/*
+ * Canonical CREATE_INCIDENT ownership.
+ *
+ * Self-notification exclusion must use the canonical report
+ * creator captured from incident_timeline, not only the
+ * display/reporting name stored on the incident row.
+ *
+ * Keeping ID, username, and name aliases supports historical
+ * records while the canonical numeric users.id remains the
+ * strongest identity signal.
+ */
+function getReportCreatorValues(
+  incident
+) {
+  return [
+    incident.reportCreatorId,
+    incident.report_creator_id,
+
+    incident.reportCreatorUsername,
+    incident.report_creator_username,
+
+    incident.reportCreatorName,
+    incident.report_creator_name,
+  ].filter(Boolean);
+}
+
 function getInvestigatorValues(
   incident
 ) {
@@ -569,6 +763,1288 @@ function isReturnedCase(
     decision ===
       "rejected"
   );
+}
+
+function normalizeDeploymentAttemptStatus(
+  value
+) {
+  const normalized =
+    normalizeText(
+      value
+    );
+
+  if (
+    normalized ===
+      "for deployment"
+  ) {
+    return "For Deployment";
+  }
+
+  if (
+    normalized ===
+      "deployed"
+  ) {
+    return "Deployed";
+  }
+
+  if (
+    normalized ===
+      "no show"
+  ) {
+    return "No Show";
+  }
+
+  if (
+    normalized ===
+      "withdrawn"
+  ) {
+    return "Withdrawn";
+  }
+
+  return cleanValue(
+    value
+  );
+}
+
+function formatAlertDate(
+  value
+) {
+  const isoDate =
+    getDateOnlyIsoString(
+      value
+    );
+
+  if (!isoDate) {
+    return "-";
+  }
+
+  const [
+    year,
+    month,
+    day,
+  ] = isoDate
+    .split("-")
+    .map(Number);
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      month:
+        "short",
+      day:
+        "numeric",
+      year:
+        "numeric",
+      timeZone:
+        "UTC",
+    }
+  ).format(
+    date
+  );
+}
+
+function formatAlertTime(
+  value
+) {
+  const raw =
+    cleanValue(
+      value
+    );
+
+  if (!raw) {
+    return "";
+  }
+
+  const match =
+    raw.match(
+      /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/
+    );
+
+  if (!match) {
+    return "";
+  }
+
+  const hour24 =
+    Number(
+      match[1]
+    );
+
+  const minute =
+    match[2];
+
+  const suffix =
+    hour24 >= 12
+      ? "PM"
+      : "AM";
+
+  const hour12 =
+    hour24 % 12 ||
+    12;
+
+  return `${hour12}:${minute} ${suffix}`;
+}
+
+function normalizeDeploymentAttempt(
+  attempt = {}
+) {
+  const creatorName =
+    attempt.created_by_name ||
+    attempt.created_by_username ||
+    "";
+
+  const resolverName =
+    attempt.resolved_by_name ||
+    attempt.resolved_by_username ||
+    "";
+
+  return {
+    ...attempt,
+
+    attemptId:
+      attempt.attempt_id ??
+      attempt.id,
+
+    employeeId:
+      attempt.employee_id,
+
+    employeeName:
+      attempt.employee_name ||
+      "Unknown Employee",
+
+    company:
+      cleanValue(
+        attempt.company
+      ),
+
+    position:
+      cleanValue(
+        attempt.position
+      ),
+
+    scheduledDate:
+      attempt.scheduled_date ||
+      null,
+
+    scheduledTime:
+      cleanValue(
+        attempt.scheduled_time
+      ) ||
+      null,
+
+    actualArrivalDate:
+      attempt.actual_arrival_date ||
+      null,
+
+    status:
+      normalizeDeploymentAttemptStatus(
+        attempt.status
+      ),
+
+    outcomeReason:
+      cleanValue(
+        attempt.outcome_reason
+      ),
+
+    remarks:
+      cleanValue(
+        attempt.remarks
+      ),
+
+    createdAt:
+      attempt.created_at ||
+      null,
+
+    resolvedAt:
+      attempt.resolved_at ||
+      null,
+
+    createdByUserId:
+      attempt.created_by_user_id ||
+      null,
+
+    createdByName:
+      creatorName ||
+      "HR Staff",
+
+    createdByRole:
+      attempt.created_by_role
+        ? normalizeRole(
+            attempt.created_by_role
+          )
+        : "HR_STAFF",
+
+    resolvedByUserId:
+      attempt.resolved_by_user_id ||
+      null,
+
+    resolvedByName:
+      resolverName ||
+      "HR Coordinator",
+
+    resolvedByRole:
+      attempt.resolved_by_role
+        ? normalizeRole(
+            attempt.resolved_by_role
+          )
+        : "HR_COORDINATOR",
+  };
+}
+
+function buildDeploymentAlert(
+  attempt,
+  role
+) {
+  const status =
+    normalizeDeploymentAttemptStatus(
+      attempt?.status
+    );
+
+  const company =
+    cleanValue(
+      attempt?.company
+    ) ||
+    "the assigned client company";
+
+  const employeeName =
+    cleanValue(
+      attempt?.employeeName
+    ) ||
+    "Unknown Employee";
+
+  const scheduledDateLabel =
+    formatAlertDate(
+      attempt?.scheduledDate
+    );
+
+  const scheduledTimeLabel =
+    formatAlertTime(
+      attempt?.scheduledTime
+    );
+
+  if (
+    role ===
+      "HR_COORDINATOR" &&
+    status ===
+      "For Deployment"
+  ) {
+    const date =
+      attempt.createdAt ||
+      attempt.scheduledDate;
+
+    const timestamp =
+      toTimestamp(
+        date
+      );
+
+    return {
+      alertKey:
+        cleanAlertKey(
+          `DEPLOYMENT:${attempt.attemptId}:SCHEDULED:${timestamp}`
+        ),
+
+      sourceType:
+        "DEPLOYMENT",
+
+      priority:
+        ALERT_PRIORITY.MEDIUM,
+
+      priorityRank:
+        getPriorityRank(
+          ALERT_PRIORITY.MEDIUM
+        ),
+
+      title:
+        "Deployment Scheduled",
+
+      message:
+        scheduledTimeLabel
+          ? `${employeeName} is scheduled to arrive at ${company} on ${scheduledDateLabel} at ${scheduledTimeLabel}.`
+          : `${employeeName} is scheduled to arrive at ${company} on ${scheduledDateLabel}.`,
+
+      employee:
+        employeeName,
+
+      employeeId:
+        attempt.employeeId ||
+        null,
+
+      deploymentAttemptId:
+        attempt.attemptId ||
+        null,
+
+      company,
+
+      position:
+        attempt.position ||
+        "-",
+
+      status:
+        "For Deployment",
+
+      scheduledDate:
+        attempt.scheduledDate ||
+        null,
+
+      scheduledTime:
+        attempt.scheduledTime ||
+        null,
+
+      scheduledTimeLabel:
+        scheduledTimeLabel ||
+        null,
+
+      date,
+
+      timestamp,
+
+      route:
+        "/deployments",
+
+      action:
+        "view",
+
+      navigationAction:
+        "view",
+
+      notificationPurpose:
+        "DEPLOYMENT_SCHEDULED",
+
+      performedBy:
+        attempt.createdByName ||
+        "HR Staff",
+
+      performedByRole:
+        attempt.createdByRole ||
+        "HR_STAFF",
+
+      recommendedAction:
+        scheduledTimeLabel
+          ? `Expect the employee on ${scheduledDateLabel} at ${scheduledTimeLabel}, then confirm whether the employee arrives at the client site.`
+          : `Expect the employee on ${scheduledDateLabel}, then confirm whether the employee arrives at the client site.`,
+
+      reason:
+        "Generated because HR Staff scheduled this employee for deployment to your assigned client company.",
+    };
+  }
+
+  if (
+    ![
+      "SUPER_ADMIN",
+      "HR_MANAGER",
+      "HR_STAFF",
+    ].includes(
+      role
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    ![
+      "Deployed",
+      "No Show",
+    ].includes(
+      status
+    )
+  ) {
+    return null;
+  }
+
+  const date =
+    attempt.resolvedAt ||
+    attempt.actualArrivalDate ||
+    attempt.scheduledDate;
+
+  const timestamp =
+    toTimestamp(
+      date
+    );
+
+  if (
+    status ===
+      "Deployed"
+  ) {
+    return {
+      alertKey:
+        cleanAlertKey(
+          `DEPLOYMENT:${attempt.attemptId}:CONFIRMED:${timestamp}`
+        ),
+
+      sourceType:
+        "DEPLOYMENT",
+
+      priority:
+        ALERT_PRIORITY.LOW,
+
+      priorityRank:
+        getPriorityRank(
+          ALERT_PRIORITY.LOW
+        ),
+
+      title:
+        "Deployment Confirmed",
+
+      message:
+        `${employeeName} has reported to ${company} and is now Deployed.`,
+
+      employee:
+        employeeName,
+
+      employeeId:
+        attempt.employeeId ||
+        null,
+
+      deploymentAttemptId:
+        attempt.attemptId ||
+        null,
+
+      company,
+
+      position:
+        attempt.position ||
+        "-",
+
+      status:
+        "Deployed",
+
+      scheduledDate:
+        attempt.scheduledDate ||
+        null,
+
+      scheduledTime:
+        attempt.scheduledTime ||
+        null,
+
+      scheduledTimeLabel:
+        scheduledTimeLabel ||
+        null,
+
+      actualArrivalDate:
+        attempt.actualArrivalDate ||
+        null,
+
+      date,
+
+      timestamp,
+
+      route:
+        "/deployments",
+
+      action:
+        "view",
+
+      navigationAction:
+        "view",
+
+      notificationPurpose:
+        "DEPLOYMENT_CONFIRMED",
+
+      performedBy:
+        attempt.resolvedByName ||
+        "HR Coordinator",
+
+      performedByRole:
+        attempt.resolvedByRole ||
+        "HR_COORDINATOR",
+
+      recommendedAction:
+        "Review the confirmed deployment record for monitoring. No further arrival action is required.",
+
+      reason:
+        "Generated because the assigned HR Coordinator confirmed that the employee reported to the client site.",
+    };
+  }
+
+  return {
+    alertKey:
+      cleanAlertKey(
+        `DEPLOYMENT:${attempt.attemptId}:NO_SHOW:${timestamp}`
+      ),
+
+    sourceType:
+      "DEPLOYMENT",
+
+    priority:
+      ALERT_PRIORITY.MEDIUM,
+
+    priorityRank:
+      getPriorityRank(
+        ALERT_PRIORITY.MEDIUM
+      ),
+
+    title:
+      "Deployment No Show",
+
+    message:
+      `${employeeName} did not report to ${company} for the scheduled deployment and was returned to Floating / Standby.`,
+
+    employee:
+      employeeName,
+
+    employeeId:
+      attempt.employeeId ||
+      null,
+
+    deploymentAttemptId:
+      attempt.attemptId ||
+      null,
+
+    company,
+
+    position:
+      attempt.position ||
+      "-",
+
+    status:
+      "No Show",
+
+    scheduledDate:
+      attempt.scheduledDate ||
+      null,
+
+    scheduledTime:
+      attempt.scheduledTime ||
+      null,
+
+    scheduledTimeLabel:
+      scheduledTimeLabel ||
+      null,
+
+    date,
+
+    timestamp,
+
+    route:
+      "/deployments",
+
+    action:
+      "view",
+
+    navigationAction:
+      "view",
+
+    notificationPurpose:
+      "DEPLOYMENT_NO_SHOW",
+
+    performedBy:
+      attempt.resolvedByName ||
+      "HR Coordinator",
+
+    performedByRole:
+      attempt.resolvedByRole ||
+      "HR_COORDINATOR",
+
+    recommendedAction:
+      "Review the No Show record and coordinate any required follow-up before scheduling another deployment.",
+
+    reason:
+      "Generated because the assigned HR Coordinator recorded that the employee did not report for the scheduled deployment.",
+  };
+}
+
+function buildDeploymentAlerts({
+  deploymentAttempts,
+  role,
+  assignedCompany,
+}) {
+  if (
+    !Array.isArray(
+      deploymentAttempts
+    ) ||
+    deploymentAttempts.length ===
+      0
+  ) {
+    return [];
+  }
+
+  return deploymentAttempts
+    .filter(
+      (attempt) => {
+        const status =
+          normalizeDeploymentAttemptStatus(
+            attempt?.status
+          );
+
+        if (
+          role ===
+            "HR_COORDINATOR"
+        ) {
+          if (
+            status !==
+              "For Deployment"
+          ) {
+            return false;
+          }
+
+          const attemptCompany =
+            cleanValue(
+              attempt?.company
+            );
+
+          return (
+            Boolean(
+              assignedCompany &&
+              attemptCompany
+            ) &&
+            normalizeText(
+              assignedCompany
+            ) ===
+              normalizeText(
+                attemptCompany
+              )
+          );
+        }
+
+        return (
+          [
+            "SUPER_ADMIN",
+            "HR_MANAGER",
+            "HR_STAFF",
+          ].includes(
+            role
+          ) &&
+          [
+            "Deployed",
+            "No Show",
+          ].includes(
+            status
+          )
+        );
+      }
+    )
+    .map(
+      (attempt) =>
+        buildDeploymentAlert(
+          attempt,
+          role
+        )
+    )
+    .filter(Boolean);
+}
+
+function getDateOnlyParts(
+  value
+) {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const raw =
+    String(value).trim();
+
+  const match =
+    raw.match(
+      /^(\d{4})-(\d{2})-(\d{2})/
+    );
+
+  if (match) {
+    return {
+      year:
+        Number(match[1]),
+      month:
+        Number(match[2]),
+      day:
+        Number(match[3]),
+    };
+  }
+
+  const parsed =
+    value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (
+    Number.isNaN(
+      parsed.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  /*
+   * mysql2 represents a MySQL DATE as a JavaScript Date in the
+   * Node process timezone. Use the local calendar components here
+   * so the original database DATE is preserved instead of shifting
+   * backward when the process runs in Asia/Manila.
+   */
+  return {
+    year:
+      parsed.getFullYear(),
+    month:
+      parsed.getMonth() + 1,
+    day:
+      parsed.getDate(),
+  };
+}
+
+function getDateOnlyIsoString(
+  value
+) {
+  const parts =
+    getDateOnlyParts(
+      value
+    );
+
+  if (!parts) {
+    return "";
+  }
+
+  const year =
+    String(parts.year)
+      .padStart(4, "0");
+
+  const month =
+    String(parts.month)
+      .padStart(2, "0");
+
+  const day =
+    String(parts.day)
+      .padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getDateOnlyTimestamp(
+  value
+) {
+  const parts =
+    getDateOnlyParts(
+      value
+    );
+
+  if (!parts) {
+    return null;
+  }
+
+  return Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day
+  );
+}
+
+function getManilaTodayTimestamp(
+  referenceDate = new Date()
+) {
+  const formatter =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Manila",
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    );
+
+  const parts =
+    formatter.formatToParts(
+      referenceDate
+    );
+
+  const values =
+    Object.fromEntries(
+      parts.map(
+        (part) => [
+          part.type,
+          part.value,
+        ]
+      )
+    );
+
+  return Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day)
+  );
+}
+
+function getManilaBusinessTimeTimestamp({
+  year,
+  month,
+  day,
+  dayOffset = 0,
+  hour =
+    COMPLIANCE_NOTIFICATION_HOUR_MANILA,
+}) {
+  /*
+   * Asia/Manila is UTC+08:00 and does not observe DST.
+   *
+   * 2026-10-17 08:00 Asia/Manila
+   * = 2026-10-17 00:00 UTC.
+   */
+  return Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day) +
+      Number(dayOffset || 0),
+    Number(hour) -
+      MANILA_UTC_OFFSET_HOURS,
+    0,
+    0,
+    0
+  );
+}
+
+function getComplianceNaturalTriggerTimestamp(
+  expirationDate,
+  status
+) {
+  const parts =
+    getDateOnlyParts(
+      expirationDate
+    );
+
+  if (!parts) {
+    return 0;
+  }
+
+  if (
+    status === "Expired"
+  ) {
+    return getManilaBusinessTimeTimestamp({
+      ...parts,
+      dayOffset: 1,
+    });
+  }
+
+  if (
+    status === "Expiring Soon"
+  ) {
+    return getManilaBusinessTimeTimestamp({
+      ...parts,
+      dayOffset:
+        -COMPLIANCE_EXPIRING_SOON_DAYS,
+    });
+  }
+
+  return 0;
+}
+
+function getComplianceEffectiveTriggerTimestamp(
+  document,
+  status
+) {
+  const naturalTriggerTimestamp =
+    getComplianceNaturalTriggerTimestamp(
+      document?.expirationDate ||
+        document?.expiration_date,
+      status
+    );
+
+  if (!naturalTriggerTimestamp) {
+    return 0;
+  }
+
+  const documentCreatedTimestamp =
+    normalizeEpochMilliseconds(
+      document?.createdAtTimestamp ??
+        document?.created_at_timestamp
+    );
+
+  /*
+   * Catch-up rule:
+   * If HR creates/renews a document only after it is
+   * already inside the alert window, the notification
+   * starts when that new document record entered the
+   * system instead of being backdated.
+   */
+  return Math.max(
+    naturalTriggerTimestamp,
+    documentCreatedTimestamp ||
+      0
+  );
+}
+
+function getComplianceDaysUntilExpiration(
+  expirationDate,
+  referenceDate = new Date()
+) {
+  const expirationTimestamp =
+    getDateOnlyTimestamp(
+      expirationDate
+    );
+
+  if (
+    expirationTimestamp ===
+    null
+  ) {
+    return null;
+  }
+
+  const todayTimestamp =
+    getManilaTodayTimestamp(
+      referenceDate
+    );
+
+  return Math.round(
+    (
+      expirationTimestamp -
+      todayTimestamp
+    ) /
+      MILLISECONDS_PER_DAY
+  );
+}
+
+function getComplianceDocumentStatus(
+  document,
+  referenceDate = new Date()
+) {
+  const daysUntilExpiration =
+    getComplianceDaysUntilExpiration(
+      document?.expirationDate ||
+        document?.expiration_date,
+      referenceDate
+    );
+
+  if (
+    daysUntilExpiration ===
+    null
+  ) {
+    return null;
+  }
+
+  if (
+    daysUntilExpiration < 0
+  ) {
+    return "Expired";
+  }
+
+  if (
+    daysUntilExpiration <=
+    COMPLIANCE_EXPIRING_SOON_DAYS
+  ) {
+    return "Expiring Soon";
+  }
+
+  return null;
+}
+
+function normalizeComplianceDocument(
+  document = {}
+) {
+  return {
+    ...document,
+
+    documentId:
+      document.document_id ??
+      document.id,
+
+    employeeId:
+      document.employee_id ??
+      null,
+
+    employeeName:
+      document.employee_name ||
+      "Unknown Employee",
+
+    company:
+      cleanValue(
+        document.employee_company ||
+        document.company
+      ),
+
+    employeeStatus:
+      cleanValue(
+        document.employee_status
+      ),
+
+    employeeArchived:
+      document.employee_archived ===
+        true ||
+      Number(
+        document.employee_archived
+      ) === 1,
+
+    documentName:
+      cleanValue(
+        document.document_name ||
+        document.name
+      ) ||
+      "Compliance Document",
+
+    documentNumber:
+      cleanValue(
+        document.document_number
+      ),
+
+    expirationDate:
+      getDateOnlyIsoString(
+        document.expiration_date ||
+        document.expirationDate
+      ) ||
+      null,
+
+    createdAt:
+      document.document_created_at ||
+      document.created_at ||
+      null,
+
+    createdAtTimestamp:
+      normalizeEpochMilliseconds(
+        document.document_created_at_timestamp ??
+          document.created_at_timestamp
+      ),
+  };
+}
+
+function buildComplianceAlert(
+  document,
+  role,
+  referenceDate = new Date()
+) {
+  if (
+    !COMPLIANCE_ALERT_ROLES.has(
+      role
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    !document ||
+    document.employeeArchived
+  ) {
+    return null;
+  }
+
+  const status =
+    getComplianceDocumentStatus(
+      document,
+      referenceDate
+    );
+
+  if (!status) {
+    return null;
+  }
+
+  const expirationDate =
+    document.expirationDate;
+
+  const expirationTimestamp =
+    getDateOnlyTimestamp(
+      expirationDate
+    );
+
+  if (
+    expirationTimestamp ===
+    null
+  ) {
+    return null;
+  }
+
+  const isExpired =
+    status === "Expired";
+
+  /*
+   * Notification activation is separate from the
+   * compliance business date:
+   *
+   * - Expiring Soon:
+   *   30 days before expiry at 08:00 AM Asia/Manila.
+   * - Expired:
+   *   the day after expiry at 08:00 AM Asia/Manila.
+   * - Catch-up:
+   *   a newly recorded/renewed document that is already
+   *   inside the alert window starts at its actual
+   *   database creation time.
+   */
+  const triggerTimestamp =
+    getComplianceEffectiveTriggerTimestamp(
+      document,
+      status
+    );
+
+  if (!triggerTimestamp) {
+    return null;
+  }
+
+  const referenceTimestamp =
+    referenceDate instanceof Date
+      ? referenceDate.getTime()
+      : toTimestamp(
+          referenceDate
+        );
+
+  if (
+    referenceTimestamp <
+    triggerTimestamp
+  ) {
+    return null;
+  }
+
+  const notificationDate =
+    timestampToIsoString(
+      triggerTimestamp
+    );
+
+  const employeeName =
+    cleanValue(
+      document.employeeName
+    ) ||
+    "Unknown Employee";
+
+  const documentName =
+    cleanValue(
+      document.documentName
+    ) ||
+    "Compliance Document";
+
+  const expirationLabel =
+    formatAlertDate(
+      expirationDate
+    );
+
+  const priority =
+    isExpired
+      ? ALERT_PRIORITY.HIGH
+      : ALERT_PRIORITY.MEDIUM;
+
+  const statusToken =
+    isExpired
+      ? "EXPIRED"
+      : "EXPIRING_SOON";
+
+  return {
+    alertKey:
+      cleanAlertKey(
+        `COMPLIANCE:${document.documentId}:${statusToken}:${expirationDate}`
+      ),
+
+    sourceType:
+      "COMPLIANCE",
+
+    priority,
+
+    priorityRank:
+      getPriorityRank(
+        priority
+      ),
+
+    title:
+      isExpired
+        ? "Compliance Expired"
+        : "Compliance Expiring Soon",
+
+    message:
+      isExpired
+        ? `${employeeName}'s ${documentName} expired on ${expirationLabel}.`
+        : `${employeeName}'s ${documentName} will expire on ${expirationLabel}.`,
+
+    employee:
+      employeeName,
+
+    employeeId:
+      document.employeeId ||
+      null,
+
+    company:
+      document.company ||
+      "",
+
+    documentId:
+      document.documentId ||
+      null,
+
+    documentName,
+
+    documentNumber:
+      document.documentNumber ||
+      "",
+
+    expirationDate,
+
+    status,
+
+    complianceStatus:
+      status,
+
+    date:
+      notificationDate,
+
+    notificationGeneratedAt:
+      notificationDate,
+
+    timestamp:
+      triggerTimestamp,
+
+    route:
+      "/employees",
+
+    action:
+      "view",
+
+    navigationAction:
+      "view",
+
+    notificationPurpose:
+      isExpired
+        ? "COMPLIANCE_EXPIRED"
+        : "COMPLIANCE_EXPIRING_SOON",
+
+    performedBy:
+      "System",
+
+    performedByRole:
+      "SYSTEM",
+
+    recommendedAction:
+      isExpired
+        ? "Review the employee's compliance record and record the renewed document before treating the requirement as current."
+        : "Follow up with the employee and record the renewed document before the current requirement expires.",
+
+    reason:
+      isExpired
+        ? "Generated because the recorded compliance document is already past its expiration date."
+        : `Generated because the recorded compliance document will expire within ${COMPLIANCE_EXPIRING_SOON_DAYS} days.`,
+  };
+}
+
+function buildComplianceAlerts({
+  complianceDocuments,
+  role,
+  referenceDate = new Date(),
+}) {
+  if (
+    !COMPLIANCE_ALERT_ROLES.has(
+      role
+    ) ||
+    !Array.isArray(
+      complianceDocuments
+    ) ||
+    complianceDocuments.length ===
+      0
+  ) {
+    return [];
+  }
+
+  return complianceDocuments
+    .map(
+      (document) =>
+        buildComplianceAlert(
+          document,
+          role,
+          referenceDate
+        )
+    )
+    .filter(Boolean);
 }
 
 function normalizeEmployee(
@@ -816,6 +2292,16 @@ function normalizeIncident(
     created_at:
       incident.created_at,
 
+    createdAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.created_at_timestamp
+      ),
+
+    created_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.created_at_timestamp
+      ),
+
     updatedAt:
       incident.updated_at ||
       incident.created_at,
@@ -823,6 +2309,16 @@ function normalizeIncident(
     updated_at:
       incident.updated_at ||
       incident.created_at,
+
+    updatedAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.updated_at_timestamp
+      ),
+
+    updated_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.updated_at_timestamp
+      ),
 
     lastActionById:
       incident.last_action_by_id ||
@@ -864,6 +2360,16 @@ function normalizeIncident(
       incident.last_action_at ||
       null,
 
+    lastActionAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.last_action_at_timestamp
+      ),
+
+    last_action_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.last_action_at_timestamp
+      ),
+
     investigationStartedById:
       incident.investigation_started_by_id ||
       null,
@@ -903,6 +2409,16 @@ function normalizeIncident(
     investigation_started_at:
       incident.investigation_started_at ||
       null,
+
+    investigationStartedAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.investigation_started_at_timestamp
+      ),
+
+    investigation_started_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.investigation_started_at_timestamp
+      ),
 
     resolutionSubmittedById:
       incident.resolution_submitted_by_id ||
@@ -944,6 +2460,16 @@ function normalizeIncident(
       incident.resolution_submitted_at ||
       null,
 
+    resolutionSubmittedAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.resolution_submitted_at_timestamp
+      ),
+
+    resolution_submitted_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.resolution_submitted_at_timestamp
+      ),
+
     reviewedById:
       incident.reviewed_by_id ||
       null,
@@ -983,6 +2509,16 @@ function normalizeIncident(
     reviewed_at:
       incident.reviewed_at ||
       null,
+
+    reviewedAtTimestamp:
+      normalizeEpochMilliseconds(
+        incident.reviewed_at_timestamp
+      ),
+
+    reviewed_at_timestamp:
+      normalizeEpochMilliseconds(
+        incident.reviewed_at_timestamp
+      ),
 
     reviewDecision:
       incident.review_decision ||
@@ -1075,6 +2611,21 @@ function isAlertVisibleForCurrentUser(
       )
     );
 
+  /*
+   * The creator of a newly reported Incident must not
+   * receive a notification for their own CREATE_INCIDENT
+   * event. Use canonical creator metadata rather than
+   * reported_by display text so the rule works reliably
+   * across HR Manager and HR Coordinator accounts.
+   */
+  const isReportCreator =
+    hasAliasMatch(
+      aliases,
+      getReportCreatorValues(
+        incident
+      )
+    );
+
   const isInvestigator =
     hasAliasMatch(
       aliases,
@@ -1156,7 +2707,16 @@ function isAlertVisibleForCurrentUser(
     }
 
     if (status === "Open") {
-      return startPolicy.allowed;
+      /*
+       * Same-company coordinator peers may receive the
+       * actionable Start Investigation alert, but the
+       * coordinator who created the Incident must not
+       * receive a notification for their own report.
+       */
+      return (
+        !isReportCreator &&
+        startPolicy.allowed
+      );
     }
 
     return [
@@ -1180,6 +2740,20 @@ function isAlertVisibleForCurrentUser(
   if (
     status === "Open"
   ) {
+    /*
+     * CREATE_INCIDENT self-notification exclusion.
+     *
+     * The creator must not receive an alert for the
+     * Incident they just reported, even when that same
+     * user is otherwise eligible to start investigation.
+     *
+     * Other eligible peers keep their existing actionable
+     * or awareness notifications according to policy.
+     */
+    if (isReportCreator) {
+      return false;
+    }
+
     if (startPolicy.allowed) {
       return true;
     }
@@ -1647,15 +3221,31 @@ function buildIncidentAlert(
       role
     );
 
-  const date =
+  const sourceEventDate =
     getIncidentDate(
       incident
     );
 
-  const timestamp =
+  /*
+   * Preserve the historical alert-key timestamp so
+   * existing per-user read state does not reset when
+   * notification display timing is corrected.
+   */
+  const alertKeyTimestamp =
     toTimestamp(
-      date
+      sourceEventDate
     );
+
+  const timestamp =
+    getIncidentNotificationTimestamp(
+      incident
+    );
+
+  const date =
+    timestampToIsoString(
+      timestamp
+    ) ||
+    sourceEventDate;
 
   const status =
     normalizeStatus(
@@ -1688,7 +3278,7 @@ function buildIncidentAlert(
         }:${status}:${reviewDecision}:${
           incident.lastActionType ||
           ""
-        }:${timestamp}`
+        }:${alertKeyTimestamp}`
       ),
 
     sourceType:
@@ -1831,6 +3421,13 @@ function buildIncidentAlert(
       "",
 
     date,
+
+    notificationGeneratedAt:
+      date,
+
+    sourceEventDate:
+      sourceEventDate ||
+      null,
 
     timestamp,
 
@@ -2127,6 +3724,8 @@ async function fetchBaseData() {
     userNameMap,
     [incidentRows],
     [workflowEventRows],
+    [deploymentAttemptRows],
+    [complianceDocumentRows],
   ] =
     await Promise.all([
       getUserNameMap(),
@@ -2151,24 +3750,42 @@ async function fetchBaseData() {
             i.reported_by,
             i.incident_date,
             i.created_at,
+            UNIX_TIMESTAMP(i.created_at) * 1000
+              AS created_at_timestamp,
+
             i.updated_at,
+            UNIX_TIMESTAMP(i.updated_at) * 1000
+              AS updated_at_timestamp,
+
             i.last_action_by_id,
             i.last_action_by_username,
             i.last_action_by_name,
             i.last_action_type,
             i.last_action_at,
+            UNIX_TIMESTAMP(i.last_action_at) * 1000
+              AS last_action_at_timestamp,
+
             i.investigation_started_by_id,
             i.investigation_started_by_username,
             i.investigation_started_by_name,
             i.investigation_started_at,
+            UNIX_TIMESTAMP(i.investigation_started_at) * 1000
+              AS investigation_started_at_timestamp,
+
             i.resolution_submitted_by_id,
             i.resolution_submitted_by_username,
             i.resolution_submitted_by_name,
             i.resolution_submitted_at,
+            UNIX_TIMESTAMP(i.resolution_submitted_at) * 1000
+              AS resolution_submitted_at_timestamp,
+
             i.reviewed_by_id,
             i.reviewed_by_username,
             i.reviewed_by_name,
             i.reviewed_at,
+            UNIX_TIMESTAMP(i.reviewed_at) * 1000
+              AS reviewed_at_timestamp,
+
             i.review_decision,
             i.review_comments,
             ${getCreateIncidentActorSelect("i")},
@@ -2189,6 +3806,9 @@ async function fetchBaseData() {
             t.id AS workflow_event_id,
             t.action_type AS workflow_action_type,
             t.created_at AS workflow_event_at,
+            UNIX_TIMESTAMP(t.created_at) * 1000
+              AS workflow_event_timestamp,
+
             t.created_by_id AS workflow_actor_id,
             t.created_by_username AS workflow_actor_username,
             t.created_by_name AS workflow_actor_name,
@@ -2200,7 +3820,13 @@ async function fetchBaseData() {
             i.reported_by,
             i.incident_date,
             i.created_at,
+            UNIX_TIMESTAMP(i.created_at) * 1000
+              AS created_at_timestamp,
+
             i.updated_at,
+            UNIX_TIMESTAMP(i.updated_at) * 1000
+              AS updated_at_timestamp,
+
             e.id AS employeeRecordId,
             e.name AS employeeNameFromEmployee,
             e.company AS employeeCompany,
@@ -2215,6 +3841,133 @@ async function fetchBaseData() {
             'RETURN_INCIDENT',
             'CLOSE_INCIDENT'
           )
+        `),
+
+      db
+        .promise()
+        .query(`
+          SELECT
+            da.id AS attempt_id,
+            da.employee_id,
+            e.name AS employee_name,
+            da.company,
+            da.position,
+            da.scheduled_date,
+            da.scheduled_time,
+            da.actual_arrival_date,
+            da.status,
+            da.outcome_reason,
+            da.remarks,
+            da.created_by_user_id,
+            da.resolved_by_user_id,
+            da.created_at,
+            da.resolved_at,
+
+            creator.full_name AS created_by_name,
+            creator.username AS created_by_username,
+            creator.role AS created_by_role,
+
+            resolver.full_name AS resolved_by_name,
+            resolver.username AS resolved_by_username,
+            resolver.role AS resolved_by_role
+
+          FROM deployment_attempts da
+
+          LEFT JOIN employees e
+            ON e.id = da.employee_id
+
+          LEFT JOIN users creator
+            ON creator.id = da.created_by_user_id
+
+          LEFT JOIN users resolver
+            ON resolver.id = da.resolved_by_user_id
+
+          WHERE da.status IN (
+            'For Deployment',
+            'Deployed',
+            'No Show'
+          )
+        `),
+
+      /*
+       * Compliance Smart Alerts use authoritative
+       * employee_documents expiration data.
+       *
+       * Keep only the latest record for the same
+       * employee + document name so a renewed
+       * requirement does not leave an older expired
+       * row generating duplicate alerts.
+       */
+      db
+        .promise()
+        .query(`
+          SELECT
+            ed.id AS document_id,
+            ed.employee_id,
+            ed.name AS document_name,
+            ed.document_number,
+            ed.expiration_date,
+            ed.created_at AS document_created_at,
+            UNIX_TIMESTAMP(ed.created_at) * 1000
+              AS document_created_at_timestamp,
+
+            e.name AS employee_name,
+            e.company AS employee_company,
+            e.status AS employee_status,
+            e.archived AS employee_archived
+
+          FROM employee_documents ed
+
+          INNER JOIN employees e
+            ON e.id = ed.employee_id
+
+          WHERE
+            ed.expiration_date IS NOT NULL
+
+            AND COALESCE(
+              e.archived,
+              0
+            ) = 0
+
+            AND NOT EXISTS (
+              SELECT 1
+
+              FROM employee_documents newer_ed
+
+              WHERE
+                newer_ed.employee_id =
+                  ed.employee_id
+
+                AND LOWER(
+                  TRIM(
+                    COALESCE(
+                      newer_ed.name,
+                      ''
+                    )
+                  )
+                ) =
+                  LOWER(
+                    TRIM(
+                      COALESCE(
+                        ed.name,
+                        ''
+                      )
+                    )
+                  )
+
+                AND (
+                  newer_ed.created_at >
+                    ed.created_at
+
+                  OR (
+                    newer_ed.created_at =
+                      ed.created_at
+
+                    AND newer_ed.id >
+                      ed.id
+                  )
+                )
+            )
         `),
     ]);
 
@@ -2333,11 +4086,31 @@ async function fetchBaseData() {
             reviewed_at:
               event.workflow_event_at,
 
+            reviewedAtTimestamp:
+              normalizeEpochMilliseconds(
+                event.workflow_event_timestamp
+              ),
+
+            reviewed_at_timestamp:
+              normalizeEpochMilliseconds(
+                event.workflow_event_timestamp
+              ),
+
             lastActionAt:
               event.workflow_event_at,
 
             last_action_at:
               event.workflow_event_at,
+
+            lastActionAtTimestamp:
+              normalizeEpochMilliseconds(
+                event.workflow_event_timestamp
+              ),
+
+            last_action_at_timestamp:
+              normalizeEpochMilliseconds(
+                event.workflow_event_timestamp
+              ),
 
             lastActionType:
               event.workflow_action_type,
@@ -2371,12 +4144,24 @@ async function fetchBaseData() {
           };
         }
       ),
+
+    deploymentAttempts:
+      deploymentAttemptRows.map(
+        normalizeDeploymentAttempt
+      ),
+
+    complianceDocuments:
+      complianceDocumentRows.map(
+        normalizeComplianceDocument
+      ),
   };
 }
 
 function buildSmartAlerts({
   employees,
   incidents,
+  deploymentAttempts = [],
+  complianceDocuments = [],
   role,
   currentUserAliases,
   assignedCompany,
@@ -2497,23 +4282,34 @@ function buildSmartAlerts({
       visibleIncidents,
       role
     ),
+
+    ...buildDeploymentAlerts({
+      deploymentAttempts,
+      role,
+      assignedCompany,
+    }),
+
+    ...buildComplianceAlerts({
+      complianceDocuments,
+      role,
+    }),
   ];
 
   return alerts.sort(
     (a, b) => {
       if (
-        b.priorityRank !==
-        a.priorityRank
+        b.timestamp !==
+        a.timestamp
       ) {
         return (
-          b.priorityRank -
-          a.priorityRank
+          b.timestamp -
+          a.timestamp
         );
       }
 
       return (
-        b.timestamp -
-        a.timestamp
+        b.priorityRank -
+        a.priorityRank
       );
     }
   );
@@ -2804,6 +4600,8 @@ async function getVisibleAlertKeySetForRequest(
   const {
     employees,
     incidents,
+    deploymentAttempts,
+    complianceDocuments,
     userNameMap,
   } =
     await fetchBaseData();
@@ -2818,6 +4616,8 @@ async function getVisibleAlertKeySetForRequest(
     buildSmartAlerts({
       employees,
       incidents,
+      deploymentAttempts,
+      complianceDocuments,
       role,
       currentUserAliases,
       assignedCompany:
@@ -2899,6 +4699,8 @@ exports.getSmartAlerts =
       const {
         employees,
         incidents,
+        deploymentAttempts,
+        complianceDocuments,
         userNameMap,
       } =
         await fetchBaseData();
@@ -2926,6 +4728,8 @@ exports.getSmartAlerts =
         buildSmartAlerts({
           employees,
           incidents,
+          deploymentAttempts,
+          complianceDocuments,
           role,
 
           currentUserAliases,
@@ -3340,5 +5144,18 @@ if (
 ) {
   exports.__test = {
     buildSmartAlerts,
+    buildDeploymentAlerts,
+    buildDeploymentAlert,
+    normalizeDeploymentAttempt,
+    formatAlertTime,
+    buildComplianceAlerts,
+    buildComplianceAlert,
+    normalizeComplianceDocument,
+    getComplianceDocumentStatus,
+    getComplianceDaysUntilExpiration,
+    getComplianceNaturalTriggerTimestamp,
+    getComplianceEffectiveTriggerTimestamp,
+    getIncidentNotificationTimestamp,
+    normalizeEpochMilliseconds,
   };
 }

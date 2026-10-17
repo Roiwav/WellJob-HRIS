@@ -423,6 +423,34 @@ app.use(
 
 /*
  * ==================================================
+ * PUBLIC AVAILABILITY PROBE
+ * ==================================================
+ *
+ * This route intentionally runs AFTER the maintenance
+ * gate. In normal operation it returns 200 without
+ * requiring a login. When maintenance is enabled, or
+ * the maintenance state cannot be verified safely, the
+ * gate returns its existing fail-closed 503 response.
+ *
+ * The frontend uses this endpoint only to detect the
+ * global maintenance screen. It exposes no settings,
+ * account, or operational data.
+ */
+app.get(
+  "/api/system/availability",
+  (
+    req,
+    res
+  ) => {
+    return res.json({
+      available: true,
+    });
+  }
+);
+
+
+/*
+ * ==================================================
  * API ROUTES
  * ==================================================
  */

@@ -267,21 +267,16 @@ test(
 );
 
 test(
-  "Initial NTE authorization rejects more than one file before signing URLs",
+  "Initial Incident authorization accepts ten files and rejects an eleventh before signing URLs",
   async () => {
-    const harness = loadController(
+    const acceptedHarness = loadController(
       ownedIncident
     );
 
     try {
-      const response = createResponse();
-      const file = {
-        name: "initial-nte.pdf",
-        type: "application/pdf",
-        size: 1024,
-      };
+      const acceptedResponse = createResponse();
 
-      await harness.authorizeCreate(
+      await acceptedHarness.authorizeCreate(
         {
           user: {
             id: 11,
@@ -291,29 +286,70 @@ test(
           },
           body: {
             employeeId: 1500,
-            files: [
-              file,
-              {
-                ...file,
-                name: "second-nte.pdf",
-              },
-            ],
+            files: Array.from(
+              { length: 10 },
+              (_, index) => ({
+                name: `incident-evidence-${index + 1}.pdf`,
+                type: "application/pdf",
+                size: 1024,
+              })
+            ),
           },
         },
-        response
+        acceptedResponse
       );
 
-      assert.equal(response.statusCode, 400);
+      assert.equal(acceptedResponse.statusCode, 200);
+      assert.equal(acceptedResponse.body.uploads.length, 10);
       assert.equal(
-        response.body.code,
+        acceptedHarness.getSignedUploadCalls(),
+        10
+      );
+    } finally {
+      acceptedHarness.restore();
+    }
+
+    const rejectedHarness = loadController(
+      ownedIncident
+    );
+
+    try {
+      const rejectedResponse = createResponse();
+
+      await rejectedHarness.authorizeCreate(
+        {
+          user: {
+            id: 11,
+            userId: 11,
+            tokenVersion: 1,
+            role: "HR_MANAGER",
+          },
+          body: {
+            employeeId: 1500,
+            files: Array.from(
+              { length: 11 },
+              (_, index) => ({
+                name: `incident-evidence-${index + 1}.pdf`,
+                type: "application/pdf",
+                size: 1024,
+              })
+            ),
+          },
+        },
+        rejectedResponse
+      );
+
+      assert.equal(rejectedResponse.statusCode, 400);
+      assert.equal(
+        rejectedResponse.body.code,
         "TOO_MANY_FILES"
       );
       assert.equal(
-        harness.getSignedUploadCalls(),
+        rejectedHarness.getSignedUploadCalls(),
         0
       );
     } finally {
-      harness.restore();
+      rejectedHarness.restore();
     }
   }
 );

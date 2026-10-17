@@ -13,9 +13,82 @@ export const INITIAL_KPI_FILTERS = Object.freeze({
   riskLevel: "",
   kpiLevel: "",
 });
-
 const text = (value) => String(value ?? "").trim();
 const same = (a, b) => text(a).toLowerCase() === text(b).toLowerCase();
+
+const KPI_INCIDENT_TIME_ZONE =
+  "Asia/Manila";
+
+function dateToManilaDateOnly(
+  value
+) {
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(
+          value
+        );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          KPI_INCIDENT_TIME_ZONE,
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      date
+    );
+
+  const values =
+    Object.fromEntries(
+      parts
+        .filter(
+          (part) =>
+            [
+              "year",
+              "month",
+              "day",
+            ].includes(
+              part.type
+            )
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ]
+        )
+    );
+
+  if (
+    !values.year ||
+    !values.month ||
+    !values.day
+  ) {
+    return "";
+  }
+
+  return (
+    `${values.year}-` +
+    `${values.month}-` +
+    `${values.day}`
+  );
+}
 
 export function employeeIdOf(employee) {
   return text(employee?.id ?? employee?.employeeId ?? employee?.employee_id);
@@ -64,6 +137,7 @@ export function kpiLevelOf(employee) {
  * An incident penalty / severity score is NOT a positive job-performance score.
  * Verify that larger values mean better performance before presenting the ordering.
  */
+
 export function existingKpiScoreOf(employee) {
   const value = employee?.clientPerformanceScore ?? employee?.client_performance_score
     ?? employee?.performanceScore ?? employee?.performance_score;
@@ -74,20 +148,40 @@ export function existingKpiScoreOf(employee) {
 
 export function incidentDateOf(incident) {
   // Prefer the incident occurrence date. Some APIs only provide a reported date.
-  const value = incident?.incidentDate ?? incident?.incident_date
-    ?? incident?.date ?? incident?.reportedAt ?? incident?.reported_at;
-  if (!value) return "";
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? "" : value.toISOString().slice(0, 10);
+  const value =
+    incident?.incidentDate ??
+    incident?.incident_date ??
+    incident?.date ??
+    incident?.reportedAt ??
+    incident?.reported_at;
+
+  if (!value) {
+    return "";
   }
-  const match = text(value).match(/^\d{4}-\d{2}-\d{2}/);
-  return match ? match[0] : "";
+
+  if (
+    value instanceof Date
+  ) {
+    return dateToManilaDateOnly(
+      value
+    );
+  }
+
+  const match =
+    text(
+      value
+    ).match(
+      /^\d{4}-\d{2}-\d{2}/
+    );
+
+  return match
+    ? match[0]
+    : "";
 }
 
 export function incidentSeverityOf(incident) {
   return text(incident?.severity) || "Not specified";
 }
-
 function inPeriod(incident, filters) {
   if (!filters.startDate && !filters.endDate) return true;
   const date = incidentDateOf(incident);
@@ -97,7 +191,6 @@ function inPeriod(incident, filters) {
   if (filters.endDate && date > filters.endDate) return false;
   return true;
 }
-
 function isArchived(employee) {
   return employee?.archived === true || employee?.isArchived === true ||
     Number(employee?.archived) === 1 || Number(employee?.isArchived) === 1;
@@ -118,25 +211,21 @@ export function filterKpiRecords({ employees = [], incidents = [], filters = {},
     if (f.deploymentStatus && !same(deploymentStatusOf(employee), f.deploymentStatus)) return false;
     return true;
   });
-
   const rosterIds = new Set(roster.map(employeeIdOf).filter(Boolean));
   const periodIncidents = (Array.isArray(incidents) ? incidents : []).filter((incident) => {
     const employeeId = incidentEmployeeIdOf(incident);
     return Boolean(employeeId && rosterIds.has(employeeId) && inPeriod(incident, f));
   });
-
   // The period KPI must account for ALL incident severities.
   // Selecting "Critical" should not accidentally erase recorded minor/major incidents
   // from the KPI score and show a misleading risk level.
   const computed = buildKPIEmployees(roster, periodIncidents);
   if (!Array.isArray(computed)) throw new TypeError("buildKPIEmployees must return an array.");
-
   const rawById = new Map(roster.map((employee) => [employeeIdOf(employee), employee]));
   const matchingIncidents = f.severity
     ? periodIncidents.filter((incident) => same(incidentSeverityOf(incident), f.severity))
     : periodIncidents;
   const matchingEmployeeIds = new Set(matchingIncidents.map(incidentEmployeeIdOf));
-
   const filteredEmployees = computed
     .map((employee) => ({ ...rawById.get(employeeIdOf(employee)), ...employee }))
     .filter((employee) => {
@@ -145,7 +234,6 @@ export function filterKpiRecords({ employees = [], incidents = [], filters = {},
       if (f.kpiLevel && !same(kpiLevelOf(employee), f.kpiLevel)) return false;
       return true;
     });
-
   const selectedIds = new Set(filteredEmployees.map(employeeIdOf).filter(Boolean));
   return {
     employees: filteredEmployees,

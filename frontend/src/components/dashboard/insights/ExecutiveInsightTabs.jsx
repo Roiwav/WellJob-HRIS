@@ -1,19 +1,20 @@
 import { useState } from "react";
 import {
   FiCheckCircle,
+  FiChevronRight,
   FiClock,
-  FiExternalLink,
   FiFileText,
   FiMapPin,
 } from "react-icons/fi";
+
 const TABS = [
   {
     key: "riskSites",
-    label: "Risk Sites",
+    label: "Client Site Risk",
   },
   {
     key: "caseAging",
-    label: "Case Aging",
+    label: "Case Age",
   },
   {
     key: "compliance",
@@ -21,10 +22,13 @@ const TABS = [
   },
   {
     key: "positiveSignals",
-    label: "Positive Signals",
+    label: "Positive Indicators",
   },
 ];
-function InsightTabIcon({ tabKey }) {
+
+function InsightTabIcon({
+  tabKey,
+}) {
   switch (tabKey) {
     case "riskSites":
       return (
@@ -33,6 +37,7 @@ function InsightTabIcon({ tabKey }) {
           aria-hidden="true"
         />
       );
+
     case "caseAging":
       return (
         <FiClock
@@ -40,6 +45,7 @@ function InsightTabIcon({ tabKey }) {
           aria-hidden="true"
         />
       );
+
     case "compliance":
       return (
         <FiFileText
@@ -47,6 +53,7 @@ function InsightTabIcon({ tabKey }) {
           aria-hidden="true"
         />
       );
+
     case "positiveSignals":
       return (
         <FiCheckCircle
@@ -54,39 +61,66 @@ function InsightTabIcon({ tabKey }) {
           aria-hidden="true"
         />
       );
+
     default:
       return null;
   }
 }
+
 export default function ExecutiveInsightTabs({
   insights,
   onOpenDrilldown,
 }) {
-  const [activeTab, setActiveTab] =
-    useState("riskSites");
+  const [
+    activeTab,
+    setActiveTab,
+  ] = useState(
+    "riskSites"
+  );
+
   if (!insights) {
     return null;
   }
-  let activeContent = null;
-  if (activeTab === "riskSites") {
+
+  let activeContent =
+    null;
+
+  if (
+    activeTab ===
+    "riskSites"
+  ) {
     activeContent = (
       <RiskSitesPanel
-        riskSites={insights.riskSites}
+        riskSites={
+          insights.riskSites
+        }
         onOpen={() =>
-          onOpenDrilldown?.("riskSites")
+          onOpenDrilldown?.(
+            "riskSites"
+          )
         }
       />
     );
-  } else if (activeTab === "caseAging") {
+  } else if (
+    activeTab ===
+    "caseAging"
+  ) {
     activeContent = (
       <CaseAgingPanel
-        caseAging={insights.caseAging}
+        caseAging={
+          insights.caseAging
+        }
         onOpen={() =>
-          onOpenDrilldown?.("overdueCases")
+          onOpenDrilldown?.(
+            "overdueCases"
+          )
         }
       />
     );
-  } else if (activeTab === "compliance") {
+  } else if (
+    activeTab ===
+    "compliance"
+  ) {
     activeContent = (
       <CompliancePanel
         complianceBreakdown={
@@ -100,7 +134,8 @@ export default function ExecutiveInsightTabs({
       />
     );
   } else if (
-    activeTab === "positiveSignals"
+    activeTab ===
+    "positiveSignals"
   ) {
     activeContent = (
       <PositiveSignalsPanel
@@ -115,47 +150,63 @@ export default function ExecutiveInsightTabs({
       />
     );
   }
+
   return (
     <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
       <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 dark:border-white/10 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-            HR Operations Insight Center
+            Workforce Insights
           </h2>
+
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Drillable summaries for current client-site risk, active-case aging, compliance monitoring, and positive workforce indicators.
+            Review client site risk, active case age, compliance status, and positive workforce indicators.
           </p>
         </div>
+
         <div
           className="flex flex-wrap gap-2"
-          aria-label="Executive insight categories"
+          aria-label="Workforce insight categories"
         >
-          {TABS.map((tab) => {
-            const isActive =
-              activeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                aria-pressed={isActive}
-                onClick={() =>
-                  setActiveTab(tab.key)
-                }
-                className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-3 py-2 text-xs font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
-                  isActive
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                }`}
-              >
-                <InsightTabIcon
-                  tabKey={tab.key}
-                />
-                {tab.label}
-              </button>
-            );
-          })}
+          {TABS.map(
+            (tab) => {
+              const isActive =
+                activeTab ===
+                tab.key;
+
+              return (
+                <button
+                  key={
+                    tab.key
+                  }
+                  type="button"
+                  aria-pressed={
+                    isActive
+                  }
+                  onClick={() =>
+                    setActiveTab(
+                      tab.key
+                    )
+                  }
+                  className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-3 py-2 text-xs font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
+                    isActive
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  <InsightTabIcon
+                    tabKey={
+                      tab.key
+                    }
+                  />
+                  {tab.label}
+                </button>
+              );
+            }
+          )}
         </div>
       </div>
+
       <div
         className="p-5"
         aria-live="polite"
@@ -165,6 +216,7 @@ export default function ExecutiveInsightTabs({
     </section>
   );
 }
+
 function InsightEmptyState({
   title,
   description,
@@ -174,12 +226,14 @@ function InsightEmptyState({
       <p className="text-sm font-extrabold text-slate-800 dark:text-white">
         {title}
       </p>
+
       <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
         {description}
       </p>
     </div>
   );
 }
+
 function ViewButton({
   onClick,
   children = "View Details",
@@ -191,76 +245,107 @@ function ViewButton({
       className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-extrabold text-slate-700 transition hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:focus-visible:ring-offset-slate-900"
     >
       {children}
-      <FiExternalLink
-        size={13}
+
+      <FiChevronRight
+        size={14}
         aria-hidden="true"
       />
     </button>
   );
 }
+
 function RiskSitesPanel({
   riskSites = [],
   onOpen,
 }) {
-  const safeRiskSites = Array.isArray(
-    riskSites
-  )
-    ? riskSites
-    : [];
-  const topSites = safeRiskSites.slice(
-    0,
-    4
-  );
-  if (topSites.length === 0) {
+  const safeRiskSites =
+    Array.isArray(
+      riskSites
+    )
+      ? riskSites
+      : [];
+
+  const topSites =
+    safeRiskSites.slice(
+      0,
+      4
+    );
+
+  if (
+    topSites.length ===
+    0
+  ) {
     return (
       <InsightEmptyState
-        title="No client-site risk concentration detected"
-        description="Incident records do not show a concentrated risk pattern by company or deployment site."
+        title="No Concentrated Client Site Risk"
+        description="Current incident records do not show a concentrated risk pattern by client company or deployment site."
       />
     );
   }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {topSites.map((site, index) => (
-          <div
-            key={
-              site.company ||
-              `risk-site-${index}`
-            }
-            className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/30"
-          >
-            <p className="line-clamp-1 text-sm font-extrabold text-slate-900 dark:text-white">
-              {site.company ||
-                "Unassigned"}
-            </p>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-              <MiniMetric
-                label="Total"
-                value={site.total}
-              />
-              <MiniMetric
-                label="Critical"
-                value={site.critical}
-              />
-              <MiniMetric
-                label="Active"
-                value={site.active}
-              />
+        {topSites.map(
+          (
+            site,
+            index
+          ) => (
+            <div
+              key={
+                site.company ||
+                `risk-site-${index}`
+              }
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/30"
+            >
+              <p className="line-clamp-1 text-sm font-extrabold text-slate-900 dark:text-white">
+                {site.company ||
+                  "Unassigned"}
+              </p>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                <MiniMetric
+                  label="Total"
+                  value={
+                    site.total
+                  }
+                />
+
+                <MiniMetric
+                  label="Critical"
+                  value={
+                    site.critical
+                  }
+                />
+
+                <MiniMetric
+                  label="Active"
+                  value={
+                    site.active
+                  }
+                />
+              </div>
+
+              <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {site.recommendation ||
+                  "Continue regular site monitoring."}
+              </p>
             </div>
-            <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              {site.recommendation ||
-                "Continue regular site monitoring."}
-            </p>
-          </div>
-        ))}
+          )
+        )}
       </div>
-      <ViewButton onClick={onOpen}>
-        View Risk Sites
+
+      <ViewButton
+        onClick={
+          onOpen
+        }
+      >
+        View Client Site Risks
       </ViewButton>
     </div>
   );
 }
+
 function CaseAgingPanel({
   caseAging,
   onOpen,
@@ -268,114 +353,170 @@ function CaseAgingPanel({
   if (!caseAging) {
     return (
       <InsightEmptyState
-        title="No case-aging information available"
-        description="Case-aging metrics could not be generated from the current reporting data."
+        title="No Case Age Information Available"
+        description="There is not enough current case information to show case age totals."
       />
     );
   }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
         <MetricCard
           label="0–7 Days"
-          value={caseAging.zeroToSeven}
+          value={
+            caseAging.zeroToSeven
+          }
           tone="blue"
         />
+
         <MetricCard
           label="8–30 Days"
-          value={caseAging.eightToThirty}
+          value={
+            caseAging.eightToThirty
+          }
           tone="amber"
         />
+
         <MetricCard
           label="30+ Days"
-          value={caseAging.overThirty}
+          value={
+            caseAging.overThirty
+          }
           tone="red"
         />
       </div>
+
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/30 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
           {caseAging.recommendation ||
             "Continue regular case monitoring."}
         </p>
-        <ViewButton onClick={onOpen}>
-          View Overdue Cases
+
+        <ViewButton
+          onClick={
+            onOpen
+          }
+        >
+          View Older Active Cases
         </ViewButton>
       </div>
     </div>
   );
 }
+
 function CompliancePanel({
   complianceBreakdown = [],
   onOpen,
 }) {
   const safeComplianceBreakdown =
-    Array.isArray(complianceBreakdown)
+    Array.isArray(
+      complianceBreakdown
+    )
       ? complianceBreakdown
       : [];
+
   const topDocs =
-    safeComplianceBreakdown.slice(0, 4);
-  if (topDocs.length === 0) {
+    safeComplianceBreakdown.slice(
+      0,
+      4
+    );
+
+  if (
+    topDocs.length ===
+    0
+  ) {
     return (
       <InsightEmptyState
-        title="No compliance expiration concern"
-        description="No expiring document type was detected within the monitored period."
+        title="No Compliance Expiration Concern"
+        description="No document type is currently approaching expiration within the monitored period."
       />
     );
   }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {topDocs.map((doc, index) => (
-          <div
-            key={
-              doc.document ||
-              `compliance-document-${index}`
-            }
-            className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10"
-          >
-            <p className="line-clamp-1 text-sm font-extrabold text-amber-800 dark:text-amber-200">
-              {doc.document ||
-                "Compliance Document"}
-            </p>
-            <p className="mt-2 text-2xl font-black text-amber-700 dark:text-amber-300">
-              {Number(doc.count) || 0}
-            </p>
-            <p className="mt-1 text-xs leading-5 text-amber-700/80 dark:text-amber-200/80">
-              {doc.recommendation ||
-                "Follow up updated document submission."}
-            </p>
-          </div>
-        ))}
+        {topDocs.map(
+          (
+            doc,
+            index
+          ) => (
+            <div
+              key={
+                doc.document ||
+                `compliance-document-${index}`
+              }
+              className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10"
+            >
+              <p className="line-clamp-1 text-sm font-extrabold text-amber-800 dark:text-amber-200">
+                {doc.document ||
+                  "Compliance Document"}
+              </p>
+
+              <p className="mt-2 text-2xl font-black text-amber-700 dark:text-amber-300">
+                {Number(
+                  doc.count
+                ) || 0}
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-amber-700/80 dark:text-amber-200/80">
+                {doc.recommendation ||
+                  "Follow up on the updated document submission."}
+              </p>
+            </div>
+          )
+        )}
       </div>
-      <ViewButton onClick={onOpen}>
-        View Compliance Breakdown
+
+      <ViewButton
+        onClick={
+          onOpen
+        }
+      >
+        View Compliance Summary
       </ViewButton>
     </div>
   );
 }
+
 function PositiveSignalsPanel({
   positiveSignals = [],
   onOpen,
 }) {
   const safePositiveSignals =
-    Array.isArray(positiveSignals)
+    Array.isArray(
+      positiveSignals
+    )
       ? positiveSignals
       : [];
+
   const topSignals =
-    safePositiveSignals.slice(0, 4);
-  if (topSignals.length === 0) {
+    safePositiveSignals.slice(
+      0,
+      4
+    );
+
+  if (
+    topSignals.length ===
+    0
+  ) {
     return (
       <InsightEmptyState
-        title="No positive workforce signal detected"
-        description="The current reporting scope does not yet contain a qualifying positive workforce pattern."
+        title="No Positive Workforce Indicator Yet"
+        description="The selected period does not yet show a qualifying positive workforce pattern."
       />
     );
   }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {topSignals.map(
-          (signal, index) => (
+          (
+            signal,
+            index
+          ) => (
             <div
               key={
                 signal.title ||
@@ -392,14 +533,16 @@ function PositiveSignalsPanel({
                     size={17}
                   />
                 </div>
+
                 <div className="min-w-0">
                   <p className="line-clamp-2 text-sm font-extrabold text-emerald-800 dark:text-emerald-200">
                     {signal.title ||
-                      "Positive Signal"}
+                      "Positive Indicator"}
                   </p>
+
                   <p className="mt-2 line-clamp-3 text-xs leading-5 text-emerald-700/80 dark:text-emerald-200/80">
                     {signal.basis ||
-                      "A positive workforce indicator was detected."}
+                      "A positive workforce indicator was identified."}
                   </p>
                 </div>
               </div>
@@ -407,12 +550,18 @@ function PositiveSignalsPanel({
           )
         )}
       </div>
-      <ViewButton onClick={onOpen}>
-        View Positive Signals
+
+      <ViewButton
+        onClick={
+          onOpen
+        }
+      >
+        View Positive Indicators
       </ViewButton>
     </div>
   );
 }
+
 function MiniMetric({
   label,
   value,
@@ -420,14 +569,18 @@ function MiniMetric({
   return (
     <div className="rounded-xl bg-white px-2 py-2 dark:bg-slate-900">
       <p className="text-base font-black text-slate-900 dark:text-white">
-        {Number(value) || 0}
+        {Number(
+          value
+        ) || 0}
       </p>
+
       <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </p>
     </div>
   );
 }
+
 function MetricCard({
   label,
   value,
@@ -441,8 +594,11 @@ function MetricCard({
     red:
       "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
   };
+
   const toneClass =
-    tones[tone] || tones.blue;
+    tones[tone] ||
+    tones.blue;
+
   return (
     <div
       className={`rounded-2xl border p-4 ${toneClass}`}
@@ -450,8 +606,11 @@ function MetricCard({
       <p className="text-xs font-extrabold uppercase tracking-wide">
         {label}
       </p>
+
       <p className="mt-2 text-3xl font-black">
-        {Number(value) || 0}
+        {Number(
+          value
+        ) || 0}
       </p>
     </div>
   );

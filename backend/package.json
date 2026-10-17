@@ -10,7 +10,7 @@
     "db:setup": "node scripts/setupDatabase.cjs",
     "incident:assess-creator-compatibility": "node scripts/assessIncidentCreatorCompatibility.cjs",
     "test:incident:mysql": "node --test test/incidentFirstToStart.mysql.test.js",
-    "test": "node --test test/kpiSeverityDecay.test.js test/violationPolicyService.test.js test/companyDeactivationProtection.test.js test/attendanceRouteIsolation.test.js test/maintenanceAuditProtection.test.js test/databaseIntegrity.test.js test/productionHardening.test.js test/databasePoolPerformance.test.js test/incidentReviewPolicy.test.js test/incidentInvestigationPolicy.test.js test/incidentFirstToStart.test.js test/incidentNotificationPolicy.test.js test/incidentWorkflowUploadAuthorization.test.js test/incidentEmployeeHistoryAccess.test.js"
+    "test": "node --test test/kpiSeverityDecay.test.js test/violationPolicyService.test.js test/companyDeactivationProtection.test.js test/attendanceRouteIsolation.test.js test/maintenanceAuditProtection.test.js test/databaseIntegrity.test.js test/productionHardening.test.js test/databasePoolPerformance.test.js test/incidentReviewPolicy.test.js test/incidentInvestigationPolicy.test.js test/incidentFirstToStart.test.js test/incidentNotificationPolicy.test.js test/incidentWorkflowUploadAuthorization.test.js test/incidentEmployeeHistoryAccess.test.js test/mobileHandoffSecurityPolicy.test.js test/employeeWorkforceWorkflowMigration.test.js test/deploymentAttemptWorkflowPolicy.test.js"
   },
   "keywords": [],
   "author": "",

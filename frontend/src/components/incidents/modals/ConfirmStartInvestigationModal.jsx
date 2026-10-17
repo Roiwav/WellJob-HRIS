@@ -47,6 +47,51 @@ const STATUS_STYLE = {
     "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
 };
 
+function formatRoleLabel(
+  value
+) {
+  const normalized =
+    String(
+      value || ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const labels = {
+    SUPER_ADMIN:
+      "Super Admin",
+    HR_MANAGER:
+      "HR Manager",
+    HR_STAFF:
+      "HR Staff",
+    HR_COORDINATOR:
+      "HR Coordinator",
+    IT_SUPPORT:
+      "IT Support",
+  };
+
+  return (
+    labels[normalized] ||
+    String(
+      value || "-"
+    )
+      .trim()
+      .replace(
+        /_/g,
+        " "
+      )
+      .replace(
+        /\b\w/g,
+        (
+          letter
+        ) =>
+          letter.toUpperCase()
+      ) ||
+    "-"
+  );
+}
+
+
 function StatusPill({
   value,
   styles,
@@ -185,8 +230,9 @@ export default function ConfirmStartInvestigationModal({
     "-";
 
   const investigatorRole =
-    safeCurrentUser.role ||
-    "-";
+    formatRoleLabel(
+      safeCurrentUser.role
+    );
 
   return (
     <BaseModal
@@ -215,11 +261,11 @@ export default function ConfirmStartInvestigationModal({
 
             <div className="min-w-0">
               <p className="text-sm font-extrabold text-amber-900 dark:text-amber-200">
-                Confirm Investigation Assignment
+                Start Investigation?
               </p>
 
               <p className="mt-1 text-xs leading-5 text-amber-800 dark:text-amber-300">
-                Starting the investigation will move this case to Investigating and record the responsible user, role, date, and time in the case timeline.
+                This case will be marked as Investigating, and you will be assigned as the investigator.
               </p>
             </div>
           </div>
@@ -227,8 +273,8 @@ export default function ConfirmStartInvestigationModal({
 
         <AlertBox
           type="warning"
-          title="This action changes the case workflow"
-          message="Review the case and investigator details below before confirming."
+          title="Before You Continue"
+          message="Review the case details below, then confirm when you are ready to begin."
         />
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -269,7 +315,7 @@ export default function ConfirmStartInvestigationModal({
           </div>
         </div>
 
-        <InfoCard title="Case to Investigate">
+        <InfoCard title="Case Details">
           <Detail
             label="Incident ID"
             value={
@@ -300,7 +346,7 @@ export default function ConfirmStartInvestigationModal({
           />
         </InfoCard>
 
-        <InfoCard title="Initial NTE Attachment">
+        <InfoCard title="Initial Attachment">
           {safeIncident.initialNte ||
           safeIncident.initial_nte ? (
             <ProofList
@@ -311,7 +357,7 @@ export default function ConfirmStartInvestigationModal({
             />
           ) : (
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              No NTE was attached when this Incident was reported.
+              No file was attached when this incident was reported.
             </p>
           )}
         </InfoCard>
@@ -327,11 +373,11 @@ export default function ConfirmStartInvestigationModal({
 
             <div>
               <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                Investigation Responsibility
+                Assigned Investigator
               </h3>
 
               <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                The following user will be recorded as the investigator starting this case.
+                You will be assigned as the investigator for this case.
               </p>
             </div>
           </div>
@@ -343,21 +389,10 @@ export default function ConfirmStartInvestigationModal({
 
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               {investigatorRole}
-              {safeCurrentUser.username
-                ? ` • @${safeCurrentUser.username}`
-                : ""}
             </p>
           </div>
 
           <div className="mt-3 space-y-2">
-            <Detail
-              label="User ID"
-              value={
-                safeCurrentUser.id ||
-                safeCurrentUser.userId
-              }
-            />
-
             <Detail
               label="Date and Time"
               value={
@@ -401,7 +436,7 @@ export default function ConfirmStartInvestigationModal({
             }
           >
             {isSubmitting
-              ? "Starting Investigation..."
+              ? "Starting..."
               : "Start Investigation"}
           </Button>
         </ModalFooter>

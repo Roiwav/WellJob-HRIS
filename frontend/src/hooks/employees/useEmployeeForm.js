@@ -74,14 +74,21 @@ function valuesMatch(
   );
 }
 
+function getEmployeeWorkforceStatus(
+  employee
+) {
+  return String(
+    employee?.workforceStatus ||
+      employee?.workforce_status ||
+      employee?.status ||
+      ""
+  ).trim();
+}
+
 function getInitialEmployeeCompany(
   employee
 ) {
-  if (
-    !employee ||
-    employee?.status ===
-      "Floating / Standby"
-  ) {
+  if (!employee) {
     return "";
   }
 
@@ -94,11 +101,7 @@ function getInitialEmployeeCompany(
 function getInitialEmployeePosition(
   employee
 ) {
-  if (
-    !employee ||
-    employee?.status ===
-      "Floating / Standby"
-  ) {
+  if (!employee) {
     return "";
   }
 
@@ -316,6 +319,7 @@ export default function useEmployeeForm({
   initialEmployee = null,
   employeeId = "",
   employees = [],
+  initialShowDocuments = false,
 } = {}) {
   const [
     formData,
@@ -346,7 +350,36 @@ export default function useEmployeeForm({
     showDocuments,
     setShowDocuments,
   ] =
-    useState(false);
+    useState(
+      () =>
+        Boolean(
+          initialShowDocuments
+        )
+    );
+
+  /*
+   * Deep-linked Compliance notifications should render
+   * the document section open from the beginning.
+   *
+   * If the intent arrives after the first render
+   * (for example route state resolving into an already
+   * mounted modal), force it open directly instead of
+   * toggling. This avoids open -> closed races.
+   */
+  useEffect(
+    () => {
+      if (
+        initialShowDocuments
+      ) {
+        setShowDocuments(
+          true
+        );
+      }
+    },
+    [
+      initialShowDocuments,
+    ]
+  );
 
   const [
     duplicateConfirmed,
@@ -373,12 +406,9 @@ export default function useEmployeeForm({
     useState([]);
 
   /*
-   * Temporary compatibility state for the current
-   * autocomplete EmployeeFormFields implementation.
-   *
-   * Once EmployeeFormFields is converted to managed
-   * select fields, these suggestion handlers can be
-   * removed safely.
+   * Legacy compatibility state retained for callers
+   * that still consume the older autocomplete props.
+   * EmployeeFormFields now uses managed select fields.
    */
   const [
     showSuggestions,
@@ -459,13 +489,35 @@ export default function useEmployeeForm({
       ]
     );
 
+  const initialWorkforceStatus =
+    useMemo(
+      () =>
+        getEmployeeWorkforceStatus(
+          initialEmployee
+        ),
+      [
+        initialEmployee,
+      ]
+    );
+
+  const isEditPlacementLocked =
+    Boolean(
+      initialEmployee
+    ) &&
+    [
+      "For Deployment",
+      "Deployed",
+    ].includes(
+      initialWorkforceStatus
+    );
+
   /*
    * Active companies come from the backend master
    * table.
    *
-   * During Edit mode, the employee's current company
-   * is appended as a historical/current option when
-   * it has since been deactivated.
+   * During Edit mode, the employee's current/designated
+   * company is appended as a historical option when it
+   * has since been deactivated.
    */
   const visibleCompanyOptions =
     useMemo(
@@ -509,7 +561,7 @@ export default function useEmployeeForm({
   /*
    * Historical position preservation is only valid
    * while the employee remains on their original
-   * company assignment.
+   * current/designated company.
    *
    * If HR selects another company, only positions
    * returned from that active company are available.
@@ -570,11 +622,8 @@ export default function useEmployeeForm({
     );
 
   /*
-   * Compatibility alias used by the current
-   * EmployeeFormFields autocomplete.
-   *
-   * It now uses backend-managed companies instead of
-   * the removed hard-coded COMPANY_OPTIONS source.
+   * Compatibility alias retained for older consumers.
+   * Managed EmployeeFormFields uses companyOptions.
    */
   const filteredCompanies =
     useMemo(
@@ -629,7 +678,9 @@ export default function useEmployeeForm({
         );
 
         setShowDocuments(
-          false
+          Boolean(
+            initialShowDocuments
+          )
         );
 
         setDuplicateConfirmed(
@@ -664,7 +715,9 @@ export default function useEmployeeForm({
           ""
         );
       },
-      []
+      [
+        initialShowDocuments,
+      ]
     );
 
   /*
@@ -811,10 +864,6 @@ export default function useEmployeeForm({
       positionOptionsAbortRef.current =
         null;
 
-      const isDeployed =
-        formData?.status ===
-        "Deployed";
-
       const selectedCompany =
         String(
           formData?.company ||
@@ -822,7 +871,6 @@ export default function useEmployeeForm({
         ).trim();
 
       if (
-        !isDeployed ||
         !selectedCompany
       ) {
         setPositionOptions(
@@ -1291,6 +1339,9 @@ export default function useEmployeeForm({
               [`${documentName}_file`]:
                 "",
 
+              [`${documentName}_number`]:
+                "",
+
               general:
                 "",
             },
@@ -1319,6 +1370,36 @@ export default function useEmployeeForm({
           name ===
           "status"
         ) {
+          /*
+           * Edit Employee is not a workforce-transition
+           * endpoint. Existing records keep their current
+           * canonical workflow state here.
+           */
+          if (
+            initialEmployee
+          ) {
+            return;
+          }
+
+          /*
+           * New employee onboarding supports only:
+           * - Floating / Standby (Pooling)
+           * - Already Deployed
+           *
+           * For Deployment is created only by the
+           * deployment scheduling workflow.
+           */
+          if (
+            ![
+              "Floating / Standby",
+              "Deployed",
+            ].includes(
+              value
+            )
+          ) {
+            return;
+          }
+
           const isDeployed =
             value ===
             "Deployed";
@@ -1332,16 +1413,20 @@ export default function useEmployeeForm({
               status:
                 value,
 
+              /*
+               * Company + position are employee-level
+               * designation fields, so Pooling keeps them.
+               */
               company:
-                isDeployed
-                  ? currentData.company
-                  : "",
+                currentData.company,
 
               position:
-                isDeployed
-                  ? currentData.position
-                  : "",
+                currentData.position,
 
+              /*
+               * Actual deployment start applies only to
+               * an already/currently Deployed employee.
+               */
               contractStart:
                 isDeployed
                   ? currentData.contractStart
@@ -1355,6 +1440,9 @@ export default function useEmployeeForm({
             ) => ({
               ...currentErrors,
 
+              status:
+                "",
+
               company:
                 "",
 
@@ -1364,10 +1452,6 @@ export default function useEmployeeForm({
               contractStart:
                 "",
             })
-          );
-
-          setPositionOptions(
-            []
           );
 
           setShowSuggestions(
@@ -1385,6 +1469,18 @@ export default function useEmployeeForm({
           name ===
           "company"
         ) {
+          /*
+           * For Deployment and Deployed placement is
+           * controlled by the dedicated deployment
+           * workflow. Keep this hook fail-closed even
+           * if a programmatic event bypasses the UI.
+           */
+          if (
+            isEditPlacementLocked
+          ) {
+            return;
+          }
+
           setFormData(
             (
               currentData
@@ -1442,6 +1538,12 @@ export default function useEmployeeForm({
           name ===
           "position"
         ) {
+          if (
+            isEditPlacementLocked
+          ) {
+            return;
+          }
+
           setFormData(
             (
               currentData
@@ -1517,6 +1619,8 @@ export default function useEmployeeForm({
       },
       [
         clearFieldError,
+        initialEmployee,
+        isEditPlacementLocked,
       ]
     );
 
@@ -1540,10 +1644,8 @@ export default function useEmployeeForm({
     );
 
   /*
-   * Compatibility handlers for the current company
-   * autocomplete UI. The next EmployeeFormFields
-   * revision will replace this with a native managed
-   * company select.
+   * Compatibility handlers retained for older
+   * company-autocomplete consumers.
    */
   const handleCompanyFocus =
     useCallback(
@@ -1598,6 +1700,12 @@ export default function useEmployeeForm({
       (
         company
       ) => {
+        if (
+          isEditPlacementLocked
+        ) {
+          return;
+        }
+
         if (
           companyBlurTimerRef.current
         ) {
@@ -1662,7 +1770,9 @@ export default function useEmployeeForm({
           ""
         );
       },
-      []
+      [
+        isEditPlacementLocked,
+      ]
     );
 
   const handleDuplicateConfirmChange =
@@ -1724,6 +1834,11 @@ export default function useEmployeeForm({
                         ? document.expirationDate
                         : "",
 
+                    documentNumber:
+                      checked
+                        ? document.documentNumber
+                        : "",
+
                     file:
                       checked
                         ? document.file
@@ -1735,6 +1850,48 @@ export default function useEmployeeForm({
                         : "",
                   };
                 }
+              ),
+          })
+        );
+
+        clearDocumentError(
+          documentName
+        );
+
+        setSaveError(
+          ""
+        );
+      },
+      [
+        clearDocumentError,
+      ]
+    );
+
+  const handleDocumentNumberChange =
+    useCallback(
+      (
+        documentName,
+        documentNumber
+      ) => {
+        setFormData(
+          (
+            currentData
+          ) => ({
+            ...currentData,
+
+            documents:
+              currentData.documents.map(
+                (
+                  document
+                ) =>
+                  document.name ===
+                  documentName
+                    ? {
+                        ...document,
+
+                        documentNumber,
+                      }
+                    : document
               ),
           })
         );
@@ -1958,6 +2115,16 @@ export default function useEmployeeForm({
       ]
     );
 
+  const openDocuments =
+    useCallback(
+      () => {
+        setShowDocuments(
+          true
+        );
+      },
+      []
+    );
+
   const handleToggleDocuments =
     useCallback(
       () => {
@@ -2079,11 +2246,12 @@ export default function useEmployeeForm({
          * the backend when they are unchanged.
          */
         if (
-          formData.status ===
-            "Deployed" &&
           deploymentOptionsError
         ) {
-          const companyIsUnchangedHistorical =
+          const placementIsUnchangedHistorical =
+            Boolean(
+              initialEmployee
+            ) &&
             initialCompany &&
             initialPosition &&
             valuesMatch(
@@ -2096,7 +2264,7 @@ export default function useEmployeeForm({
             );
 
           if (
-            !companyIsUnchangedHistorical
+            !placementIsUnchangedHistorical
           ) {
             setSaveError(
               deploymentOptionsError
@@ -2161,8 +2329,7 @@ export default function useEmployeeForm({
     deploymentOptionsError,
 
     /*
-     * Temporary compatibility props for the current
-     * autocomplete EmployeeFormFields component.
+     * Legacy compatibility props for older consumers.
      */
     filteredCompanies,
     showSuggestions,
@@ -2187,12 +2354,14 @@ export default function useEmployeeForm({
     handleCompanySelect,
     handleDuplicateConfirmChange,
     handleDocumentCheck,
+    handleDocumentNumberChange,
     handleExpirationChange,
     handleFileSelect,
     handleDragEnter,
     handleDragOver,
     handleDragLeave,
     handleFileDrop,
+    openDocuments,
     handleToggleDocuments,
     handleSubmit,
     handleCloseReview,

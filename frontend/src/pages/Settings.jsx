@@ -82,7 +82,7 @@ function getAccountName(account) {
     account?.fullName ||
     account?.name ||
     account?.username ||
-    "Unknown User"
+    "Account holder"
   );
 }
 
@@ -293,15 +293,17 @@ function getApiError(
   fallbackMessage
 ) {
   if (error?.name === "AbortError") {
-    return "The server took too long to respond. Check that the backend and database are running, then try again.";
+    return "The system took too long to respond. Please check the connection and try again.";
   }
 
-  return (
-    error?.response?.data?.message ||
-    error?.response?.data?.error ||
-    error?.message ||
-    fallbackMessage
-  );
+  if (
+    error?.status === 401 ||
+    error?.response?.status === 401
+  ) {
+    return "Session expired. Please sign in again.";
+  }
+
+  return fallbackMessage;
 }
 
 async function requestJson(url, options = {}) {
@@ -329,11 +331,23 @@ async function requestJson(url, options = {}) {
       .catch(() => null);
 
     if (!response.ok) {
-      throw new Error(
-        data?.message ||
-          data?.error ||
-          `Request failed with status ${response.status}`
+      const requestError = new Error(
+        response.status === 401
+          ? "Session expired. Please sign in again."
+          : "The account request could not be completed."
       );
+
+      requestError.status =
+        response.status;
+
+      requestError.businessMessage =
+        String(
+          data?.message ||
+            data?.error ||
+            ""
+        ).trim();
+
+      throw requestError;
     }
 
     return data;

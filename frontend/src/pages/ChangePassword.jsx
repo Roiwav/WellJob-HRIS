@@ -18,7 +18,10 @@ import {
   FiX,
 } from "react-icons/fi";
 
-import { useNavigate } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import Dialog from "../components/ui/Dialog";
 import { API_BASE } from "../config/api";
@@ -80,10 +83,38 @@ function getDisplayName(user) {
   );
 }
 
+function getSafeReturnPath(locationState) {
+  const value =
+    String(
+      locationState?.returnTo ||
+        ""
+    ).trim();
+
+  if (
+    !value ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value === "/login" ||
+    value.startsWith("/login?") ||
+    value === "/change-password" ||
+    value.startsWith("/change-password?")
+  ) {
+    return "";
+  }
+
+  return value;
+}
+
 export default function ChangePassword() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, setUser } = useAuth();
   const modalButtonRef = useRef(null);
+
+  const returnPath =
+    getSafeReturnPath(
+      location.state
+    );
 
   const [currentPassword, setCurrentPassword] =
     useState("");
@@ -145,6 +176,13 @@ export default function ChangePassword() {
 
     navigate("/login", {
       replace: true,
+      state:
+        returnPath
+          ? {
+              from:
+                returnPath,
+            }
+          : undefined,
     });
   };
 
@@ -168,7 +206,10 @@ export default function ChangePassword() {
       return;
     }
 
-    navigate("/profile-settings");
+    navigate(
+      returnPath ||
+        "/profile-settings"
+    );
   };
 
   const validateFields = () => {
@@ -359,7 +400,9 @@ export default function ChangePassword() {
           className="mb-5 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-slate-600 transition hover:bg-white hover:text-indigo-700 hover:shadow-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-indigo-300"
         >
           <FiArrowLeft aria-hidden="true" />
-          Back to Profile Settings
+          {returnPath
+            ? "Back to Previous Task"
+            : "Back to Profile Settings"}
         </button>
 
         <div className="grid overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900 lg:grid-cols-[0.9fr_1.1fr]">
@@ -624,7 +667,9 @@ export default function ChangePassword() {
                 className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-300/40 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 <FiArrowLeft aria-hidden="true" />
-                Cancel and Return to Profile Settings
+                {returnPath
+                  ? "Cancel and Return to Previous Task"
+                  : "Cancel and Return to Profile Settings"}
               </button>
             </form>
           </section>

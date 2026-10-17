@@ -27,11 +27,32 @@ function formatCellValue(value) {
   }
 
   if (typeof value === "object") {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return "-";
-    }
+    const readableValues =
+      Object.values(value)
+        .filter(
+          (item) =>
+            item !== null &&
+            item !== undefined &&
+            item !== "" &&
+            typeof item !==
+              "object"
+        )
+        .map(
+          (item) =>
+            typeof item ===
+            "boolean"
+              ? item
+                ? "Yes"
+                : "No"
+              : String(item)
+        );
+
+    return readableValues.length >
+      0
+      ? readableValues.join(
+          ", "
+        )
+      : "-";
   }
 
   return String(value);
@@ -100,11 +121,11 @@ export default function DashboardDrilldownModal({
       onClose={handleClose}
       title={
         detail?.title ||
-        "Dashboard Details"
+        "Workforce Details"
       }
       description={
         detail?.description ||
-        "Review the selected dashboard records."
+        "Review the selected workforce records."
       }
       size="xl"
       tone="default"
@@ -125,7 +146,7 @@ export default function DashboardDrilldownModal({
               aria-hidden="true"
             />
 
-            Drilldown Details
+            Detailed Records
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
@@ -133,7 +154,7 @@ export default function DashboardDrilldownModal({
               <table className="min-w-full text-left text-sm">
                 <caption className="sr-only">
                   {detail.title ||
-                    "Dashboard drilldown records"}
+                    "Workforce detail records"}
                 </caption>
 
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800">
@@ -286,16 +307,11 @@ export default function DashboardDrilldownModal({
                         className="px-4 py-10 text-center"
                       >
                         <p className="font-semibold text-slate-700 dark:text-slate-200">
-                          No records
-                          found
+                          No Records Available
                         </p>
 
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                          There are no
-                          records
-                          available for
-                          this dashboard
-                          detail.
+                          There are no records available for this view.
                         </p>
                       </td>
                     </tr>
@@ -307,10 +323,7 @@ export default function DashboardDrilldownModal({
 
           {hasClickableRows && (
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Select an employee row
-              to open the
-              corresponding employee
-              details.
+              Select an employee row to view the employee details.
             </p>
           )}
         </div>

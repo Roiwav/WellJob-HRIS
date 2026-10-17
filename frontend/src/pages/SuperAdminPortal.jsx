@@ -213,7 +213,7 @@ function getAccountName(account) {
     account?.full_name ||
     account?.fullName ||
     account?.name ||
-    "Unknown User"
+    "Account holder"
   );
 }
 

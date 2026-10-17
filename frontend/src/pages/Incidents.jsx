@@ -16,7 +16,6 @@ import {
 } from "react-icons/fi";
 import RoleGuard from "../components/auth/RoleGuard";
 import Button from "../components/ui/Button";
-import PageHeader from "../components/ui/PageHeader";
 import ErrorState from "../components/ui/ErrorState";
 import { PERMISSIONS } from "../constants/permissions";
 import { useAuth } from "../context/useAuth";
@@ -37,6 +36,11 @@ import {
 import {
   normalizeEvidenceFiles,
 } from "../utils/incidents/evidenceFiles";
+
+import {
+  mergeIncidentDirectUploads,
+  prepareIncidentWorkflowDirectUploads,
+} from "../utils/incidents/incidentDirectUpload";
 import {
   canUserStartInvestigation,
   canUserSubmitInvestigationProof,
@@ -241,12 +245,19 @@ function normalizeRole(
 function normalizeTimelineEvent(
   event = {}
 ) {
+  const createdAtTimestamp =
+    event.createdAtTimestamp ??
+    event.created_at_timestamp ??
+    event.timestamp ??
+    null;
+
   const createdAt =
+    createdAtTimestamp ||
     event.createdAt ||
     event.created_at ||
     event.date ||
-    new Date()
-      .toISOString();
+    null;
+
   return {
     id:
       event.id ||
@@ -312,6 +323,18 @@ function normalizeTimelineEvent(
     createdAt,
     created_at:
       createdAt,
+
+    /*
+     * Preserve the database epoch supplied by the
+     * backend. CaseTimeline prefers this absolute
+     * timestamp so browser/device timezone parsing
+     * cannot shift the event time.
+     */
+    createdAtTimestamp:
+      createdAtTimestamp,
+
+    created_at_timestamp:
+      createdAtTimestamp,
   };
 }
 function normalizeBackendIncident(
@@ -338,15 +361,41 @@ function normalizeBackendIncident(
     incident.reportedBy ||
     incident.reported_by ||
     "Unknown";
+
+  const createdAtTimestamp =
+    incident.createdAtTimestamp ??
+    incident.created_at_timestamp ??
+    null;
+
+  const investigationStartedAtTimestamp =
+    incident.investigationStartedAtTimestamp ??
+    incident.investigation_started_at_timestamp ??
+    null;
+
+  const resolutionSubmittedAtTimestamp =
+    incident.resolutionSubmittedAtTimestamp ??
+    incident.resolution_submitted_at_timestamp ??
+    null;
+
+  const reviewedAtTimestamp =
+    incident.reviewedAtTimestamp ??
+    incident.reviewed_at_timestamp ??
+    null;
+
   const investigationStartedAt =
+    investigationStartedAtTimestamp ||
     incident.investigationStartedAt ||
     incident.investigation_started_at ||
     null;
+
   const resolutionSubmittedAt =
+    resolutionSubmittedAtTimestamp ||
     incident.resolutionSubmittedAt ||
     incident.resolution_submitted_at ||
     null;
+
   const reviewedAt =
+    reviewedAtTimestamp ||
     incident.reviewedAt ||
     incident.reviewed_at ||
     null;
@@ -519,24 +568,27 @@ function normalizeBackendIncident(
       incident.incident_date ||
       incident.createdAt ||
       incident.created_at ||
-      new Date()
-        .toISOString(),
+      null,
+
     incidentDate:
       incident.incidentDate ||
       incident.date ||
       incident.incident_date ||
       incident.createdAt ||
       incident.created_at ||
-      new Date()
-        .toISOString(),
+      null,
     reportedAt:
+      createdAtTimestamp ||
       incident.reportedAt ||
       incident.reported_at ||
       incident.createdAt ||
       incident.created_at ||
       incident.date ||
-      new Date()
-        .toISOString(),
+      null,
+
+    createdAtTimestamp,
+    created_at_timestamp:
+      createdAtTimestamp,
     reportedBy,
     reportedByName:
       reportedBy,
@@ -573,6 +625,11 @@ function normalizeBackendIncident(
     investigationStartedAt,
     investigation_started_at:
       investigationStartedAt,
+
+    investigationStartedAtTimestamp,
+    investigation_started_at_timestamp:
+      investigationStartedAtTimestamp,
+
     investigationStartedByName:
       investigation
         ?.startedByName ||
@@ -584,6 +641,11 @@ function normalizeBackendIncident(
     resolutionSubmittedAt,
     resolution_submitted_at:
       resolutionSubmittedAt,
+
+    resolutionSubmittedAtTimestamp,
+    resolution_submitted_at_timestamp:
+      resolutionSubmittedAtTimestamp,
+
     resolutionSubmittedByName:
       resolution
         ?.submittedByName ||
@@ -595,6 +657,11 @@ function normalizeBackendIncident(
     reviewedAt,
     reviewed_at:
       reviewedAt,
+
+    reviewedAtTimestamp,
+    reviewed_at_timestamp:
+      reviewedAtTimestamp,
+
     reviewedByName:
       review
         ?.reviewedByName ||
@@ -901,15 +968,14 @@ export default function Incidents() {
   const isHrManager =
     currentRole ===
     "HR_MANAGER";
-  const isHrStaff =
-    currentRole ===
-    "HR_STAFF";
   const isHrCoordinator =
     currentRole ===
     "HR_COORDINATOR";
+  const canCreateIncident =
+    isHrManager ||
+    isHrCoordinator;
   const canInvestigate =
     isHrManager ||
-    isHrStaff ||
     isHrCoordinator;
   const isAuthorizedReviewer =
     isSuperAdmin ||
@@ -937,6 +1003,8 @@ export default function Incidents() {
   const fetchRequestIdRef =
     useRef(0);
   const activePageRequestsRef =
+    useRef(0);
+  const modalOpenRequestIdRef =
     useRef(0);
   const hasCompletedInitialLoadRef =
     useRef(false);
@@ -1040,6 +1108,32 @@ export default function Incidents() {
       "ALL"
     );
   const [
+    violationFilter,
+    setViolationFilter,
+  ] =
+    useState(
+      "ALL"
+    );
+  const [
+    monthFilter,
+    setMonthFilter,
+  ] =
+    useState(
+      "ALL"
+    );
+  const [
+    yearFilter,
+    setYearFilter,
+  ] =
+    useState(
+      "ALL"
+    );
+  const [
+    availableYears,
+    setAvailableYears,
+  ] =
+    useState([]);
+  const [
     caseStatusFilter,
     setCaseStatusFilter,
   ] =
@@ -1071,6 +1165,85 @@ export default function Incidents() {
       },
       []
     );
+  const closeAllIncidentModals =
+    useCallback(
+      () => {
+        /*
+         * Invalidate any Incident detail request that is still in flight.
+         * This prevents a late async response from reopening a modal after
+         * the user already clicked Close, pressed Escape, or dismissed it.
+         */
+        modalOpenRequestIdRef.current +=
+          1;
+        setSelectedIncident(
+          null
+        );
+        setStartReviewIncident(
+          null
+        );
+        setConfirmStartIncident(
+          null
+        );
+        setResolutionIncident(
+          null
+        );
+        setReviewIncident(
+          null
+        );
+      },
+      []
+    );
+  const handleRequestStartConfirmation =
+    useCallback(
+      (
+        incident
+      ) => {
+        /*
+         * Transition from the review modal to the confirmation modal.
+         * Clear the previous modal first so two Incident modals are never
+         * mounted at the same time.
+         */
+        modalOpenRequestIdRef.current +=
+          1;
+        setSelectedIncident(
+          null
+        );
+        setStartReviewIncident(
+          null
+        );
+        setResolutionIncident(
+          null
+        );
+        setReviewIncident(
+          null
+        );
+        setConfirmStartIncident(
+          incident || null
+        );
+      },
+      []
+    );
+  const handleOpenAddIncidentModal =
+    useCallback(
+      () => {
+        closeAllIncidentModals();
+        setOpenAddModal(
+          true
+        );
+      },
+      [
+        closeAllIncidentModals,
+      ]
+    );
+  const handleCloseAddIncidentModal =
+    useCallback(
+      () => {
+        setOpenAddModal(
+          false
+        );
+      },
+      []
+    );
   const fetchPageData =
     useCallback(
       async ({
@@ -1086,6 +1259,12 @@ export default function Incidents() {
           caseTab,
         severityValue =
           severityFilter,
+        violationValue =
+          violationFilter,
+        monthValue =
+          monthFilter,
+        yearValue =
+          yearFilter,
         caseStatusValue =
           caseStatusFilter,
       } = {}) => {
@@ -1199,6 +1378,57 @@ export default function Incidents() {
             );
           }
 
+          const normalizedViolation =
+            String(
+              violationValue ||
+              "ALL"
+            ).trim();
+
+          if (
+            normalizedViolation &&
+            normalizedViolation.toUpperCase() !==
+              "ALL"
+          ) {
+            params.set(
+              "violationType",
+              normalizedViolation
+            );
+          }
+
+          const normalizedMonth =
+            String(
+              monthValue ||
+              "ALL"
+            ).trim();
+
+          if (
+            normalizedMonth &&
+            normalizedMonth.toUpperCase() !==
+              "ALL"
+          ) {
+            params.set(
+              "month",
+              normalizedMonth
+            );
+          }
+
+          const normalizedYear =
+            String(
+              yearValue ||
+              "ALL"
+            ).trim();
+
+          if (
+            normalizedYear &&
+            normalizedYear.toUpperCase() !==
+              "ALL"
+          ) {
+            params.set(
+              "year",
+              normalizedYear
+            );
+          }
+
           const normalizedCaseStatus =
             normalizeStatus(
               caseStatusValue ||
@@ -1279,6 +1509,25 @@ export default function Incidents() {
           setIncidentCaseCounts(
             nextCaseCounts
           );
+
+          setAvailableYears(
+            Array.isArray(
+              incidentData?.filterMeta
+                ?.years
+            )
+              ? incidentData.filterMeta.years
+                  .map(
+                    (year) =>
+                      Number(
+                        year
+                      )
+                  )
+                  .filter(
+                    Number.isInteger
+                  )
+              : []
+          );
+
           setCurrentPage(
             (
               previousPage
@@ -1342,6 +1591,9 @@ export default function Incidents() {
         currentPage,
         debouncedSearch,
         severityFilter,
+        violationFilter,
+        monthFilter,
+        yearFilter,
       ]
     );
   const loadIncidentDetails =
@@ -1413,13 +1665,20 @@ export default function Incidents() {
         incident,
         requestedAction = "view"
       ) => {
+        const openRequestId =
+          modalOpenRequestIdRef.current +
+          1;
+        modalOpenRequestIdRef.current =
+          openRequestId;
         try {
           const fullIncident =
             await loadIncidentDetails(
               incident
             );
           if (
-            !isMountedRef.current
+            !isMountedRef.current ||
+            openRequestId !==
+              modalOpenRequestIdRef.current
           ) {
             return false;
           }
@@ -1427,6 +1686,11 @@ export default function Incidents() {
             normalizeStatus(
               fullIncident.status
             );
+
+          /*
+           * Keep the Incident workflow modal stack exclusive:
+           * one workflow modal at a time.
+           */
           setSelectedIncident(
             null
           );
@@ -1442,6 +1706,7 @@ export default function Incidents() {
           setReviewIncident(
             null
           );
+
           if (
             requestedAction ===
               "review" &&
@@ -1503,6 +1768,12 @@ export default function Incidents() {
           }
           return true;
         } catch (error) {
+          if (
+            openRequestId !==
+              modalOpenRequestIdRef.current
+          ) {
+            return false;
+          }
           console.error(
             "Load incident detail error:",
             error
@@ -1714,74 +1985,65 @@ export default function Incidents() {
   );
   useEffect(
     () => {
+      const navigationState =
+        location.state;
+
       if (
-        !location.state
+        !navigationState
           ?.incidentId
       ) {
         return undefined;
       }
-      let cancelled =
-        false;
+
       const targetId =
         normalizeIncidentLookupId(
-          location.state
+          navigationState
             .incidentId
         );
       const requestedAction =
         String(
-          location.state
+          navigationState
             .action ||
           "view"
         )
           .trim()
           .toLowerCase();
+
+      /*
+       * Consume the navigation request immediately.
+       * Waiting until after the async detail request can cause the same
+       * location.state action to fire more than once in development/Strict
+       * Mode or during rerenders, which can reopen a modal after closing it.
+       */
+      navigate(
+        location.pathname,
+        {
+          replace:
+            true,
+          state:
+            {},
+        }
+      );
+
       if (
         !targetId
       ) {
-        navigate(
-          location.pathname,
-          {
-            replace:
-              true,
-            state:
-              {},
-          }
-        );
         return undefined;
       }
-      const openRequestedIncident =
-        async () => {
-          await openIncidentAction(
-            {
-              id:
-                targetId,
-              displayId:
-                formatIncidentCode(
-                  targetId
-                ),
-            },
-            requestedAction
-          );
-          if (
-            cancelled
-          ) {
-            return;
-          }
-          navigate(
-            location.pathname,
-            {
-              replace:
-                true,
-              state:
-                {},
-            }
-          );
-        };
-      openRequestedIncident();
-      return () => {
-        cancelled =
-          true;
-      };
+
+      void openIncidentAction(
+        {
+          id:
+            targetId,
+          displayId:
+            formatIncidentCode(
+              targetId
+            ),
+        },
+        requestedAction
+      );
+
+      return undefined;
     },
     [
       location.pathname,
@@ -1919,7 +2181,7 @@ export default function Incidents() {
           showNotice(
             "error",
             "Investigation Access Required",
-            "Only HR Manager, HR Staff, or HR Coordinator accounts can investigate incidents or submit investigation proof."
+            "Only eligible HR Manager or HR Coordinator accounts can investigate incidents or submit investigation proof."
           );
           return false;
         }
@@ -2147,9 +2409,18 @@ export default function Incidents() {
                 }),
             }
           );
-        setOpenAddModal(
-          false
-        );
+        /*
+         * Do NOT close AddIncidentModal here.
+         *
+         * AddIncidentModal owns the phone-capture session lifecycle.
+         * After this handler returns true, the child must first mark
+         * successful phone-capture sessions as safe/consumed before it
+         * closes itself.
+         *
+         * Closing from the parent here would unmount the child too early
+         * and allow its cleanup path to cancel a photo that the saved
+         * Incident already owns.
+         */
         setCaseTab(
           "ACTIVE"
         );
@@ -2251,12 +2522,7 @@ export default function Incidents() {
       if (
         success
       ) {
-        setConfirmStartIncident(
-          null
-        );
-        setStartReviewIncident(
-          null
-        );
+        closeAllIncidentModals();
       }
       return success;
     };
@@ -2273,6 +2539,26 @@ export default function Incidents() {
       ) {
         return false;
       }
+
+      const requestedWorkflowAction =
+        String(
+          resolutionData
+            ?.workflowAction ||
+          "SUBMIT_RESOLUTION"
+        )
+          .trim()
+          .toUpperCase();
+
+      const workflowAction =
+        [
+          "SUBMIT_RESOLUTION",
+          "SUBMIT_INVESTIGATION",
+        ].includes(
+          requestedWorkflowAction
+        )
+          ? requestedWorkflowAction
+          : "SUBMIT_RESOLUTION";
+
       const proofFiles =
         Array.isArray(
           resolutionData
@@ -2281,137 +2567,183 @@ export default function Incidents() {
           ? resolutionData
               .proofFiles
           : [];
-      const validFiles =
-        proofFiles.filter(
-          (
-            item
-          ) =>
-            item?.file instanceof
-              File &&
-            !item?.error
-        );
-      const formData =
-        new FormData();
-      formData.append(
-        "status",
-        "For Review"
-      );
-      formData.append(
-        "workflowAction",
-        "SUBMIT_RESOLUTION"
-      );
-      formData.append(
-        "actionTaken",
-        resolutionData.actionTaken
-      );
-      formData.append(
-        "resolutionNotes",
-        resolutionData.remarks
-      );
-      formData.append(
-        "recommendation",
-        incident.recommendation ||
-          ""
-      );
-      formData.append(
-        "userId",
-        user?.userId ||
-          user?.id ||
-          ""
-      );
-      formData.append(
-        "username",
-        user?.username ||
-          ""
-      );
-      formData.append(
-        "fullName",
-        actorFullName
-      );
-      formData.append(
-        "role",
-        user?.role ||
-          ""
-      );
-      validFiles.forEach(
-        (
-          item
-        ) =>
-          formData.append(
-            "evidenceFiles",
-            item.file,
-            item.name
-          )
-      );
-      const updatedIncident =
-        normalizeIncidentWithRules(
-          {
-            ...incident,
-            status:
-              "For Review",
-            resolution: {
-              submittedAt:
-                new Date()
-                  .toISOString(),
-              submittedById:
-                currentUser.id,
-              submittedByName:
-                actorFullName,
-              submittedByUsername:
-                currentUser.username,
-              submittedByRole:
-                currentUser.role,
+
+      const phoneDirectUploads =
+        Array.isArray(
+          resolutionData
+            ?.phoneDirectUploads
+        )
+          ? resolutionData
+              .phoneDirectUploads
+          : [];
+
+      try {
+        /*
+         * Desktop/laptop files use the same protected
+         * direct-upload pipeline as phone-captured
+         * evidence.
+         *
+         * This avoids mixing multipart binaries with
+         * WELLJOB direct-upload descriptors in one
+         * workflow request.
+         */
+        const desktopDirectUploads =
+          await prepareIncidentWorkflowDirectUploads({
+            incidentId:
+              incident.id,
+
+            workflowAction,
+
+            proofFiles,
+          });
+
+        const directUploads =
+          mergeIncidentDirectUploads(
+            desktopDirectUploads,
+            phoneDirectUploads
+          );
+
+        if (
+          directUploads.length ===
+          0
+        ) {
+          showNotice(
+            "error",
+            "Proof Upload Required",
+            "Please upload at least one valid proof file or add a photo from your phone before submitting for review."
+          );
+
+          return false;
+        }
+
+        const updatedIncident =
+          normalizeIncidentWithRules(
+            {
+              ...incident,
+
+              status:
+                "For Review",
+
+              resolution: {
+                submittedAt:
+                  new Date()
+                    .toISOString(),
+
+                submittedById:
+                  currentUser.id,
+
+                submittedByName:
+                  actorFullName,
+
+                submittedByUsername:
+                  currentUser.username,
+
+                submittedByRole:
+                  currentUser.role,
+
+                actionTaken:
+                  resolutionData
+                    .actionTaken,
+
+                remarks:
+                  resolutionData
+                    .remarks,
+
+                /*
+                 * The backend response remains the
+                 * canonical evidence source after the
+                 * successful PATCH.
+                 *
+                 * Local proofFiles are retained here as
+                 * an optimistic fallback only.
+                 */
+                proofFiles,
+              },
+
               actionTaken:
-                resolutionData.actionTaken,
-              remarks:
-                resolutionData.remarks,
-              proofFiles,
+                resolutionData
+                  .actionTaken,
+
+              action_taken:
+                resolutionData
+                  .actionTaken,
+
+              resolutionNotes:
+                resolutionData
+                  .remarks,
             },
-            actionTaken:
-              resolutionData.actionTaken,
-            action_taken:
-              resolutionData.actionTaken,
-            resolutionNotes:
-              resolutionData.remarks,
-          },
-          incidents
+            incidents
+          );
+
+        const success =
+          await patchIncidentStatus({
+            incident,
+
+            updatedIncident,
+
+            payload: {
+              status:
+                "For Review",
+
+              workflowAction,
+
+              actionTaken:
+                resolutionData
+                  .actionTaken,
+
+              resolutionNotes:
+                resolutionData
+                  .remarks,
+
+              recommendation:
+                incident.recommendation ||
+                "",
+
+              directUploads,
+            },
+
+            auditAction:
+              workflowAction,
+
+            successTitle:
+              "Submitted for Review",
+
+            successMessage:
+              `Proof for incident ${formatIncidentCode(
+                incident.id
+              )} has been submitted for authorized review.`,
+          });
+
+        /*
+         * Do NOT close ResolutionModal here.
+         *
+         * ResolutionModal owns the phone-capture session lifecycle.
+         * After this handler returns true, the child must first mark
+         * the successfully attached phone sessions as safe/consumed,
+         * then close itself.
+         *
+         * Parent-side close here would unmount the child before that
+         * ownership handoff is finished and could trigger cleanup of
+         * evidence already attached by the successful workflow PATCH.
+         */
+        return success;
+      } catch (error) {
+        console.error(
+          "Prepare or submit Incident resolution proof error:",
+          error
         );
-      const success =
-        await patchIncidentStatus({
-          incident,
-          updatedIncident,
-          payload: {
-            status:
-              "For Review",
-            workflowAction:
-              "SUBMIT_RESOLUTION",
-            actionTaken:
-              resolutionData.actionTaken,
-            resolutionNotes:
-              resolutionData.remarks,
-            recommendation:
-              incident.recommendation ||
-              "",
-          },
-          formData,
-          auditAction:
-            "SUBMIT_RESOLUTION",
-          successTitle:
-            "Submitted for Review",
-          successMessage:
-            `Proof for incident ${formatIncidentCode(
-              incident.id
-            )} has been submitted for authorized review.`,
-        });
-      if (
-        success
-      ) {
-        setResolutionIncident(
-          null
+
+        showNotice(
+          "error",
+          "Submission Failed",
+          error?.message ||
+            "The resolution proof could not be submitted. Please try again."
         );
+
+        return false;
       }
-      return success;
     };
+
   const handleApproveCase =
     async (
       incident
@@ -2496,9 +2828,7 @@ export default function Incidents() {
       if (
         success
       ) {
-        setReviewIncident(
-          null
-        );
+        closeAllIncidentModals();
         setCaseTab(
           "CLOSED"
         );
@@ -2589,9 +2919,7 @@ export default function Incidents() {
       if (
         success
       ) {
-        setReviewIncident(
-          null
-        );
+        closeAllIncidentModals();
         setCaseTab(
           "ACTIVE"
         );
@@ -2656,6 +2984,24 @@ export default function Incidents() {
               "ALL"
             ).trim();
 
+          const normalizedViolation =
+            String(
+              violationFilter ||
+              "ALL"
+            ).trim();
+
+          const normalizedMonth =
+            String(
+              monthFilter ||
+              "ALL"
+            ).trim();
+
+          const normalizedYear =
+            String(
+              yearFilter ||
+              "ALL"
+            ).trim();
+
           if (trimmedSearch) {
             params.set(
               "search",
@@ -2681,6 +3027,42 @@ export default function Incidents() {
             params.set(
               "severity",
               normalizedSeverity
+            );
+          }
+
+          if (
+            normalizedViolation &&
+            normalizedViolation
+              .toUpperCase() !==
+            "ALL"
+          ) {
+            params.set(
+              "violationType",
+              normalizedViolation
+            );
+          }
+
+          if (
+            normalizedMonth &&
+            normalizedMonth
+              .toUpperCase() !==
+            "ALL"
+          ) {
+            params.set(
+              "month",
+              normalizedMonth
+            );
+          }
+
+          if (
+            normalizedYear &&
+            normalizedYear
+              .toUpperCase() !==
+            "ALL"
+          ) {
+            params.set(
+              "year",
+              normalizedYear
             );
           }
 
@@ -2717,7 +3099,7 @@ export default function Incidents() {
               []
             );
 
-          exportIncidentReportPDF({
+          await exportIncidentReportPDF({
             incidents:
               reportIncidents,
             user,
@@ -2732,6 +3114,12 @@ export default function Incidents() {
                 normalizedCaseTab,
               severity:
                 normalizedSeverity,
+              violationType:
+                normalizedViolation,
+              month:
+                normalizedMonth,
+              year:
+                normalizedYear,
               status:
                 caseStatusFilter,
             },
@@ -2770,6 +3158,9 @@ export default function Incidents() {
         severityFilter,
         showNotice,
         user,
+        violationFilter,
+        monthFilter,
+        yearFilter,
       ]
     );
   const handleSearchChange =
@@ -2825,12 +3216,57 @@ export default function Incidents() {
       []
     );
 
+  const handleViolationFilterChange =
+    useCallback(
+      (
+        value
+      ) => {
+        setViolationFilter(
+          value
+        );
+        setCurrentPage(
+          1
+        );
+      },
+      []
+    );
+
   const handleCaseStatusFilterChange =
     useCallback(
       (
         value
       ) => {
         setCaseStatusFilter(
+          value
+        );
+        setCurrentPage(
+          1
+        );
+      },
+      []
+    );
+
+  const handleMonthFilterChange =
+    useCallback(
+      (
+        value
+      ) => {
+        setMonthFilter(
+          value
+        );
+        setCurrentPage(
+          1
+        );
+      },
+      []
+    );
+
+  const handleYearFilterChange =
+    useCallback(
+      (
+        value
+      ) => {
+        setYearFilter(
           value
         );
         setCurrentPage(
@@ -2865,6 +3301,15 @@ export default function Incidents() {
           ""
         );
         setSeverityFilter(
+          "ALL"
+        );
+        setViolationFilter(
+          "ALL"
+        );
+        setMonthFilter(
+          "ALL"
+        );
+        setYearFilter(
           "ALL"
         );
         setCaseStatusFilter(
@@ -2960,17 +3405,37 @@ export default function Incidents() {
         ? "Monitor incident cases, review submitted resolution proof, and maintain complete case history."
         : "Report incidents, manage investigations, and submit resolution proof for authorized review.";
   return (
-    <main className="min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
-      <PageHeader
-        eyebrow="Case Management"
-        title="Incident Reports"
-        description={pageDescription}
-        icon={<FiAlertTriangle size={22} />}
-        actions={
-          <>
+    <main className="min-w-0 max-w-full space-y-4 overflow-x-hidden p-4 sm:p-5 lg:p-6">
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+              <FiAlertTriangle
+                size={18}
+                aria-hidden="true"
+              />
+            </div>
+
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600 dark:text-indigo-300">
+                Case Management
+              </p>
+
+              <h1 className="mt-0.5 text-xl font-black tracking-tight text-slate-900 dark:text-white sm:text-2xl">
+                Incident Reports
+              </h1>
+
+              <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {pageDescription}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             <Button
               type="button"
               variant="secondary"
+              size="sm"
               leftIcon={
                 <FiRefreshCw
                   aria-hidden="true"
@@ -2990,10 +3455,12 @@ export default function Incidents() {
             >
               Refresh
             </Button>
+
             {canExportIncidentReport && (
               <Button
                 type="button"
                 variant="success"
+                size="sm"
                 leftIcon={
                   <FiDownload
                     aria-hidden="true"
@@ -3014,7 +3481,8 @@ export default function Incidents() {
                 Export PDF
               </Button>
             )}
-            {!isSuperAdmin && (
+
+            {canCreateIncident && (
               <RoleGuard
                 permission={
                   PERMISSIONS.CAN_ADD_INCIDENT
@@ -3023,6 +3491,7 @@ export default function Incidents() {
                 <Button
                   type="button"
                   variant="primary"
+                  size="sm"
                   leftIcon={
                     <FiPlus aria-hidden="true" />
                   }
@@ -3030,17 +3499,17 @@ export default function Incidents() {
                     isLoading ||
                     isRefreshing
                   }
-                  onClick={() =>
-                    setOpenAddModal(true)
+                  onClick={
+                    handleOpenAddIncidentModal
                   }
                 >
-                  Add Incident Report
+                  Add Incident
                 </Button>
               </RoleGuard>
             )}
-          </>
-        }
-      />
+          </div>
+        </div>
+      </section>
       {fetchError && (
         <ErrorState
           compact
@@ -3094,6 +3563,27 @@ export default function Incidents() {
           }
           onSeverityFilterChange={
             handleSeverityFilterChange
+          }
+          violationFilter={
+            violationFilter
+          }
+          onViolationFilterChange={
+            handleViolationFilterChange
+          }
+          monthFilter={
+            monthFilter
+          }
+          onMonthFilterChange={
+            handleMonthFilterChange
+          }
+          yearFilter={
+            yearFilter
+          }
+          onYearFilterChange={
+            handleYearFilterChange
+          }
+          availableYears={
+            availableYears
           }
           caseStatusFilter={
             caseStatusFilter
@@ -3185,10 +3675,8 @@ export default function Incidents() {
           incident={
             selectedIncident
           }
-          onClose={() =>
-            setSelectedIncident(
-              null
-            )
+          onClose={
+            closeAllIncidentModals
           }
         />
       )}
@@ -3198,13 +3686,11 @@ export default function Incidents() {
             startReviewIncident
           }
           mode="start-review"
-          onClose={() =>
-            setStartReviewIncident(
-              null
-            )
+          onClose={
+            closeAllIncidentModals
           }
           onRequestStart={
-            setConfirmStartIncident
+            handleRequestStartConfirmation
           }
         />
       )}
@@ -3216,10 +3702,8 @@ export default function Incidents() {
           currentUser={
             currentUser
           }
-          onClose={() =>
-            setConfirmStartIncident(
-              null
-            )
+          onClose={
+            closeAllIncidentModals
           }
           onConfirm={
             handleConfirmStartInvestigation
@@ -3231,10 +3715,8 @@ export default function Incidents() {
           incident={
             resolutionIncident
           }
-          onClose={() =>
-            setResolutionIncident(
-              null
-            )
+          onClose={
+            closeAllIncidentModals
           }
           onSubmit={
             handleSubmitResolution
@@ -3249,10 +3731,8 @@ export default function Incidents() {
           incident={
             reviewIncident
           }
-          onClose={() =>
-            setReviewIncident(
-              null
-            )
+          onClose={
+            closeAllIncidentModals
           }
           onApprove={
             handleApproveCase
@@ -3269,10 +3749,8 @@ export default function Incidents() {
         isOpen={
           openAddModal
         }
-        onClose={() =>
-          setOpenAddModal(
-            false
-          )
+        onClose={
+          handleCloseAddIncidentModal
         }
         onSave={
           handleAddIncident

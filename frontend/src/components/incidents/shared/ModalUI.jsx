@@ -34,6 +34,9 @@ const DIALOG_SIZE_MAP = {
 };
 const EVIDENCE_OBJECT_URL_LIFETIME_MS =
   5 * 60 * 1000;
+
+const INCIDENT_TIME_ZONE =
+  "Asia/Manila";
 function getDisplayValue(
   value,
   fallback = "-"
@@ -51,6 +54,50 @@ function getDisplayValue(
     fallback
   );
 }
+
+function getFriendlyFileType(
+  file
+) {
+  const fileName =
+    String(
+      file?.name ||
+      file?.fileName ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const mimeType =
+    String(
+      file?.type ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (
+    mimeType ===
+      "application/pdf" ||
+    fileName.endsWith(
+      ".pdf"
+    )
+  ) {
+    return "PDF document";
+  }
+
+  if (
+    mimeType.startsWith(
+      "image/"
+    ) ||
+    /\.(png|jpe?g|jfif|jpe)$/i.test(
+      fileName
+    )
+  ) {
+    return "Photo";
+  }
+
+  return "File";
+}
 function getTimelineEventAction(
   event
 ) {
@@ -63,15 +110,108 @@ function getTimelineEventAction(
     .trim()
     .toUpperCase();
 }
+function normalizeEventTimestamp(
+  value
+) {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return 0;
+  }
+
+  const numericValue =
+    Number(
+      value
+    );
+
+  if (
+    Number.isFinite(
+      numericValue
+    ) &&
+    numericValue > 0
+  ) {
+    return numericValue <
+      100000000000
+      ? numericValue *
+          1000
+      : numericValue;
+  }
+
+  const parsedTimestamp =
+    new Date(
+      value
+    ).getTime();
+
+  return Number.isNaN(
+    parsedTimestamp
+  )
+    ? 0
+    : parsedTimestamp;
+}
+
 function getTimelineEventDate(
   event
 ) {
+  const timestamp =
+    normalizeEventTimestamp(
+      event?.createdAtTimestamp ??
+        event?.created_at_timestamp ??
+        event?.timestamp ??
+        event?.createdAt ??
+        event?.created_at ??
+        event?.date ??
+        event?.reportedAt
+    );
+
+  if (timestamp) {
+    return timestamp;
+  }
+
   return (
     event?.createdAt ||
     event?.created_at ||
     event?.date ||
     event?.reportedAt ||
     null
+  );
+}
+
+function formatIncidentDateTime(
+  value
+) {
+  const timestamp =
+    normalizeEventTimestamp(
+      value
+    );
+
+  if (!timestamp) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone:
+        INCIDENT_TIME_ZONE,
+      month:
+        "short",
+      day:
+        "numeric",
+      year:
+        "numeric",
+      hour:
+        "numeric",
+      minute:
+        "2-digit",
+      hour12:
+        true,
+    }
+  ).format(
+    new Date(
+      timestamp
+    )
   );
 }
 function getTimelineEventCreator(
@@ -117,7 +257,7 @@ function getTimelineEventDescription(
     action ===
       "SUBMIT_INVESTIGATION"
   ) {
-    return `${createdBy} submitted proof for Super Admin review.`;
+    return `${createdBy} submitted the case for review.`;
   }
   if (
     action ===
@@ -167,7 +307,7 @@ function getTimelineEventTitle(
     action ===
     "RETURN_INCIDENT"
   ) {
-    return "Returned by Super Admin";
+    return "Returned for Correction";
   }
   if (
     action ===
@@ -175,7 +315,7 @@ function getTimelineEventTitle(
   ) {
     return "Approved and Closed";
   }
-  return "Timeline Event";
+  return "Case Update";
 }
 function getTimelineEventState(
   event
@@ -505,13 +645,17 @@ export function CaseTimeline({
     incident?.reported_by ||
     "Unknown Reporter";
   const reportedAt =
+    incident?.createdAtTimestamp ||
+    incident?.created_at_timestamp ||
     incident?.reportedAt ||
     incident?.reported_at ||
-    incident?.date ||
     incident?.createdAt ||
     incident?.created_at ||
+    incident?.date ||
     null;
   const investigationStartedAt =
+    incident?.investigationStartedAtTimestamp ||
+    incident?.investigation_started_at_timestamp ||
     investigation?.startedAt ||
     incident?.investigationStartedAt ||
     incident?.investigation_started_at ||
@@ -522,6 +666,8 @@ export function CaseTimeline({
     incident?.investigation_started_by_name ||
     "-";
   const resolutionSubmittedAt =
+    incident?.resolutionSubmittedAtTimestamp ||
+    incident?.resolution_submitted_at_timestamp ||
     resolution?.submittedAt ||
     incident?.resolutionSubmittedAt ||
     incident?.resolution_submitted_at ||
@@ -532,6 +678,8 @@ export function CaseTimeline({
     incident?.resolution_submitted_by_name ||
     "-";
   const reviewedAt =
+    incident?.reviewedAtTimestamp ||
+    incident?.reviewed_at_timestamp ||
     review?.reviewedAt ||
     incident?.reviewedAt ||
     incident?.reviewed_at ||
@@ -612,7 +760,7 @@ export function CaseTimeline({
         "review",
       title:
         isReturned
-          ? "Returned by Super Admin"
+          ? "Returned for Correction"
           : "Approved and Closed",
       description:
         reviewedAt
@@ -620,7 +768,7 @@ export function CaseTimeline({
               reviewDecision ||
               "Reviewed"
             } by ${reviewedBy}`
-          : "Waiting for Super Admin review",
+          : "Waiting for review",
       createdAt:
         reviewedAt,
       state:
@@ -707,7 +855,7 @@ export function CaseTimeline({
                     <FiClock
                       aria-hidden="true"
                     />
-                    {formatDateTime(
+                    {formatIncidentDateTime(
                       item.createdAt
                     )}
                   </p>
@@ -725,10 +873,9 @@ export function ProofReview({
 }) {
   if (!resolution) {
     return (
-      <InfoCard title="Resolution Proof Review">
+      <InfoCard title="Submitted Resolution">
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          No resolution proof was
-          submitted.
+          No resolution details or supporting files were submitted.
         </p>
       </InfoCard>
     );
@@ -761,7 +908,7 @@ export function ProofReview({
         ? resolution.proof_files
         : [];
   return (
-    <InfoCard title="Resolution Proof Review">
+    <InfoCard title="Submitted Resolution">
       <Detail
         label="Submitted By"
         value={
@@ -769,9 +916,9 @@ export function ProofReview({
         }
       />
       <Detail
-        label="Submitted Date"
+        label="Submitted On"
         value={
-          formatDateTime(
+          formatIncidentDateTime(
             submittedAt
           )
         }
@@ -890,7 +1037,7 @@ function ProofFileCard({
           !hasProtectedReference
         ) {
           setOpenError(
-            "The saved evidence reference is unavailable."
+            "This file is currently unavailable. Please refresh the case and try again."
           );
           return;
         }
@@ -1008,8 +1155,7 @@ function ProofFileCard({
             return;
           }
           setOpenError(
-            error?.message ||
-              "Unable to open the incident evidence file."
+            "We couldn’t open this file. Please try again."
           );
         } finally {
           if (
@@ -1045,8 +1191,9 @@ function ProofFileCard({
             {fileName}
           </p>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            {file?.type ||
-              "Uploaded file"}
+            {getFriendlyFileType(
+              file
+            )}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             {formatFileSize(
@@ -1087,7 +1234,7 @@ function ProofFileCard({
                   rel="noreferrer"
                   className="inline-flex min-h-9 items-center justify-center rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-indigo-500/30 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
                 >
-                  Open local preview
+                  Preview
                 </a>
               )}
             {!file?.isLocal && (
@@ -1130,17 +1277,12 @@ function ProofFileCard({
             !hasProtectedReference &&
             !openError && (
               <p className="mt-2 text-[11px] leading-4 text-amber-700 dark:text-amber-300">
-                This saved evidence record
-                does not contain a valid
-                protected file reference.
+                This file is currently unavailable. Please refresh the case and try again.
               </p>
             )}
           {file?.isLocal && (
             <p className="mt-2 text-[11px] leading-4 text-amber-700 dark:text-amber-300">
-              Local preview only.
-              Cross-device access begins
-              after the server stores and
-              returns this file.
+              Ready to submit.
             </p>
           )}
         </div>
@@ -1164,7 +1306,7 @@ export function ProofList({
   ) {
     return (
       <p className="mt-3 text-sm text-gray-500">
-        No proof uploaded.
+        No files or photos added.
       </p>
     );
   }

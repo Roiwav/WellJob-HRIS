@@ -18,7 +18,10 @@ import useSmartNotifications from "../hooks/useSmartNotifications";
 import SmartAlertToast from "./notifications/SmartAlertToast";
 import {
   formatSmartAlertDate,
+  formatSmartAlertRelativeTime,
   getAlertPriorityClasses,
+  isSmartAlertToday,
+  sortSmartAlertsByRecency,
 } from "../utils/notifications/smartNotifications";
 const ROLE_CONFIGS = {
   HR_MANAGER: {
@@ -52,7 +55,7 @@ const DEFAULT_ROLE_CONFIG = {
   color: "bg-gray-500",
   roleName: "User",
 };
-const SMART_ALERT_POLL_INTERVAL = 30000;
+const SMART_ALERT_POLL_INTERVAL = 5000;
 const RECOVERY_STATUS_URL = `${API_BASE}/auth/recovery-email-status`;
 function normalizeRole(value) {
   const role = String(value || "")
@@ -80,6 +83,74 @@ function getAlertKey(alert) {
   return String(alert?.alertKey ||
     alert?.id ||
     "");
+}
+
+function isReadNotification(
+  alert
+) {
+  return (
+    alert?.isRead === true ||
+    alert?.read === true ||
+    Boolean(
+      alert?.readAt
+    )
+  );
+}
+
+function getComplianceNavigationTarget(
+  alert
+) {
+  const employeeId =
+    alert?.employeeId ??
+    alert?.employee_id ??
+    alert?.employeeRecordId ??
+    alert?.employee_record_id ??
+    alert?.employee?.id ??
+    null;
+
+  const documentId =
+    alert?.documentId ??
+    alert?.document_id ??
+    alert?.document?.id ??
+    null;
+
+  const documentName =
+    String(
+      alert?.documentName ??
+        alert?.document_name ??
+        alert?.document?.name ??
+        ""
+    ).trim();
+
+  return {
+    employeeId,
+    documentId,
+    documentName,
+  };
+}
+
+function isComplianceNotification(alert) {
+  const sourceType =
+    String(
+      alert?.sourceType ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const purpose =
+    String(
+      alert?.notificationPurpose ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  return (
+    sourceType === "COMPLIANCE" ||
+    purpose === "COMPLIANCE_EXPIRED" ||
+    purpose === "COMPLIANCE_EXPIRING_SOON"
+  );
 }
 function getAlertStatusClasses(status) {
   const normalized = String(status || "")
@@ -194,6 +265,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
   const { user, setUser, } = useAuth();
   const [openProfile, setOpenProfile] = useState(false);
   const [openNotifications, setOpenNotifications] = useState(false);
+  const [notificationTab, setNotificationTab] = useState("ALL");
   const [animateNotificationBell, setAnimateNotificationBell] = useState(false);
   const profileRef = useRef(null);
   const notificationRef = useRef(null);
@@ -299,13 +371,92 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
     "USER");
   const isHRCoordinator = currentRole ===
     "HR_COORDINATOR";
-  const { canView, latestAlerts, popupAlert, unreadCount, readAlertCount, hasReadAlerts, isFetching, isClearingRead, markAlertAsRead, dismissAlert, clearReadAlerts, } = useSmartNotifications(user, {
+  const {
+    canView,
+    alerts,
+    latestAlerts,
+    popupAlert,
+    unreadCount,
+    isFetching,
+    markAlertAsRead,
+    markAllAsRead,
+    dismissAlert,
+  } = useSmartNotifications(user, {
     pollInterval: SMART_ALERT_POLL_INTERVAL,
   });
   const canViewSmartNotifications =
     Boolean(canView);
   const notificationsAreOpen = Boolean(canViewSmartNotifications &&
     openNotifications);
+  const sortedNotificationAlerts =
+    useMemo(
+      () =>
+        sortSmartAlertsByRecency(
+          alerts
+        ),
+      [
+        alerts,
+      ]
+    );
+
+  const dropdownAlerts =
+    useMemo(
+      () => {
+        if (
+          notificationTab ===
+          "UNREAD"
+        ) {
+          return sortedNotificationAlerts.filter(
+            (alert) =>
+              !isReadNotification(
+                alert
+              )
+          );
+        }
+
+        /*
+         * The quick All tab shows the most recent
+         * notifications. Full history remains in the
+         * Notifications Center.
+         */
+        return sortedNotificationAlerts.slice(
+          0,
+          12
+        );
+      },
+      [
+        notificationTab,
+        sortedNotificationAlerts,
+      ]
+    );
+
+  const todayAlerts =
+    useMemo(
+      () =>
+        dropdownAlerts.filter(
+          (alert) =>
+            isSmartAlertToday(
+              alert
+            )
+        ),
+      [
+        dropdownAlerts,
+      ]
+    );
+
+  const earlierAlerts =
+    useMemo(
+      () =>
+        dropdownAlerts.filter(
+          (alert) =>
+            !isSmartAlertToday(
+              alert
+            )
+        ),
+      [
+        dropdownAlerts,
+      ]
+    );
   const roleConfig = useMemo(() => ROLE_CONFIGS[currentRole] ||
     DEFAULT_ROLE_CONFIG, [currentRole]);
   const displayName = user?.name ||
@@ -428,7 +579,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
       await markAlertAsRead(alert.alertKey);
     }
     catch (error) {
-      console.error("Failed to mark smart alert as read:", error);
+      console.error("Failed to mark notification as read:", error);
     }
     if (alert.route ===
       "/incidents" &&
@@ -443,6 +594,50 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
       });
       return;
     }
+
+    if (
+      isComplianceNotification(
+        alert
+      )
+    ) {
+      const complianceTarget =
+        getComplianceNavigationTarget(
+          alert
+        );
+
+      if (
+        complianceTarget.employeeId
+      ) {
+        navigate(
+          "/employees",
+          {
+            state: {
+              smartAlertEmployeeTarget: {
+                employeeId:
+                  complianceTarget.employeeId,
+
+                openCompliance:
+                  true,
+
+                documentId:
+                  complianceTarget.documentId ||
+                  null,
+
+                documentName:
+                  complianceTarget.documentName,
+
+                alertKey:
+                  alert.alertKey ||
+                  "",
+              },
+            },
+          }
+        );
+
+        return;
+      }
+    }
+
     navigate(alert.route ||
       "/notifications");
   };
@@ -461,19 +656,25 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
     setOpenNotifications(false);
     navigate("/notifications");
   };
-  const handleClearReadAlerts = async () => {
-    if (!canViewSmartNotifications ||
-      !hasReadAlerts ||
-      isClearingRead) {
-      return;
-    }
-    try {
-      await clearReadAlerts();
-    }
-    catch (error) {
-      console.error("Failed to clear read smart alerts:", error);
-    }
-  };
+  const handleMarkAllAsRead =
+    async () => {
+      if (
+        !canViewSmartNotifications ||
+        unreadCount <= 0
+      ) {
+        return;
+      }
+
+      try {
+        await markAllAsRead();
+      } catch (error) {
+        console.error(
+          "Failed to mark all notifications as read:",
+          error
+        );
+      }
+    };
+
   const handleDismissToast = async (alert) => {
     if (!canViewSmartNotifications ||
       !alert?.alertKey) {
@@ -483,7 +684,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
       await dismissAlert(alert.alertKey);
     }
     catch (error) {
-      console.error("Failed to dismiss smart alert:", error);
+      console.error("Failed to dismiss notification:", error);
     }
   };
   const handleOpenProfileSettings = () => {
@@ -517,7 +718,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
 
      {canViewSmartNotifications && (<div className="relative" ref={notificationRef}>
 
-       <button type="button" onClick={handleToggleNotifications} className="relative flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 transition hover:bg-gray-100 hover:text-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/15 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white" title="Smart Alerts" aria-label={`Smart Alerts${unreadCount > 0
+       <button type="button" onClick={handleToggleNotifications} className="relative flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 transition hover:bg-gray-100 hover:text-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/15 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white" title="Notifications" aria-label={`Notifications${unreadCount > 0
         ? `, ${unreadCount} unread`
         : ""}`} aria-expanded={notificationsAreOpen} aria-haspopup="dialog">
 
@@ -536,211 +737,477 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
 
        </button>
 
-       {notificationsAreOpen && (<div role="dialog" aria-label="Smart Alerts" className="absolute right-0 z-[80] mt-3 w-[min(440px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-900/5 dark:border-slate-800 dark:bg-slate-900 dark:ring-white/5">
+       {notificationsAreOpen && (
+        <div
+          role="dialog"
+          aria-label="Notifications"
+          className="absolute right-0 z-[80] mt-3 w-[min(440px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-900/5 dark:border-slate-800 dark:bg-slate-900 dark:ring-white/5"
+        >
+          <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/50">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
+                <FiBell
+                  aria-hidden="true"
+                />
+              </div>
 
-         <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/50">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                    Notifications
+                  </h3>
 
-          <div className="flex items-start justify-between gap-3">
+                  <span
+                    className={[
+                      "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                      unreadCount > 0
+                        ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300"
+                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+                    ].join(" ")}
+                  >
+                    {unreadCount > 0
+                      ? `${unreadCount} unread`
+                      : "All caught up"}
+                  </span>
+                </div>
 
-           <div className="flex min-w-0 items-start gap-3">
-
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
-
-             <FiBell aria-hidden="true"/>
-
+                <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  HR notifications that may require attention.
+                </p>
+              </div>
             </div>
 
-            <div className="min-w-0">
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div
+                className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
+                role="tablist"
+                aria-label="Notification view"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={
+                    notificationTab ===
+                    "ALL"
+                  }
+                  onClick={() =>
+                    setNotificationTab(
+                      "ALL"
+                    )
+                  }
+                  className={[
+                    "rounded-lg px-3 py-1.5 text-xs font-bold transition",
+                    notificationTab ===
+                    "ALL"
+                      ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-300"
+                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200",
+                  ].join(" ")}
+                >
+                  All
+                </button>
 
-             <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={
+                    notificationTab ===
+                    "UNREAD"
+                  }
+                  onClick={() =>
+                    setNotificationTab(
+                      "UNREAD"
+                    )
+                  }
+                  className={[
+                    "rounded-lg px-3 py-1.5 text-xs font-bold transition",
+                    notificationTab ===
+                    "UNREAD"
+                      ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-300"
+                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200",
+                  ].join(" ")}
+                >
+                  Unread
+                </button>
+              </div>
 
-              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-
-               Smart Alerts
-
-              </h3>
-
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${unreadCount > 0
-          ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300"
-          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"}`}>
-
-               {unreadCount > 0
-          ? `${unreadCount} unread`
-          : "All caught up"}
-
-              </span>
-
-             </div>
-
-             <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-
-              Incident notifications that may require HR attention.
-
-             </p>
-
+              <button
+                type="button"
+                onClick={
+                  handleMarkAllAsRead
+                }
+                disabled={
+                  unreadCount <= 0
+                }
+                className="shrink-0 text-[11px] font-bold text-indigo-600 transition hover:text-indigo-800 disabled:cursor-not-allowed disabled:text-slate-400 dark:text-indigo-300 dark:hover:text-indigo-200 dark:disabled:text-slate-600"
+              >
+                Mark all as read
+              </button>
             </div>
-
-           </div>
-
-           <button type="button" onClick={handleClearReadAlerts} disabled={!hasReadAlerts ||
-          isClearingRead} className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" title={hasReadAlerts
-          ? `Remove ${readAlertCount} read alert${readAlertCount === 1
-            ? ""
-            : "s"} from this list`
-          : "No read alerts to clear"}>
-
-            {isClearingRead
-          ? "Clearing..."
-          : `Clear Read${readAlertCount > 0
-            ? ` (${readAlertCount})`
-            : ""}`}
-
-           </button>
-
           </div>
 
-         </div>
+          <div className="max-h-[420px] overflow-y-auto">
+            {isFetching &&
+            latestAlerts.length ===
+              0 ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="space-y-2.5 px-4 py-4"
+              >
+                {[1, 2, 3].map(
+                  (item) => (
+                    <div
+                      key={
+                        item
+                      }
+                      className="flex animate-pulse gap-3 rounded-xl border border-slate-100 p-3 dark:border-slate-800"
+                    >
+                      <div className="h-9 w-9 shrink-0 rounded-xl bg-slate-200 dark:bg-slate-700" />
 
-         <div className="max-h-[420px] overflow-y-auto">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-slate-700" />
+                        <div className="h-2.5 w-full rounded bg-slate-100 dark:bg-slate-800" />
+                        <div className="h-2.5 w-4/5 rounded bg-slate-100 dark:bg-slate-800" />
+                      </div>
+                    </div>
+                  )
+                )}
 
-          {isFetching &&
-          latestAlerts.length ===
-            0 ? (<div role="status" aria-live="polite" className="space-y-2.5 px-4 py-4">
+                <span className="sr-only">
+                  Loading notifications...
+                </span>
+              </div>
+            ) : dropdownAlerts.length >
+              0 ? (
+              <>
+                {todayAlerts.length >
+                  0 && (
+                  <div>
+                    <div className="sticky top-0 z-10 border-b border-slate-100 bg-white/95 px-4 py-2 text-[11px] font-extrabold text-slate-500 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 dark:text-slate-400">
+                      Today
+                    </div>
 
-            {[1, 2, 3].map((item) => (<div key={item} className="flex animate-pulse gap-3 rounded-xl border border-slate-100 p-3 dark:border-slate-800">
+                    {todayAlerts.map(
+                      (alert) => {
+                        const styles =
+                          getAlertPriorityClasses(
+                            alert.priority
+                          );
 
-               <div className="h-9 w-9 shrink-0 rounded-xl bg-slate-200 dark:bg-slate-700"/>
+                        const statusClasses =
+                          getAlertStatusClasses(
+                            alert.status
+                          );
 
-               <div className="min-w-0 flex-1 space-y-2">
+                        const complianceNotification =
+                          isComplianceNotification(
+                            alert
+                          );
 
-                <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-slate-700"/>
+                        return (
+                          <button
+                            type="button"
+                            key={
+                              alert.alertKey
+                            }
+                            onClick={() =>
+                              openAlertTarget(
+                                alert
+                              )
+                            }
+                            className={[
+                              "group relative flex w-full gap-3 border-b border-slate-100 px-4 py-3.5 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:border-slate-800 dark:hover:bg-white/[0.04]",
+                              !isReadNotification(
+                                alert
+                              )
+                                ? "bg-indigo-50/40 dark:bg-indigo-500/[0.05]"
+                                : "",
+                            ].join(" ")}
+                            aria-label={`${alert.title}. ${
+                              isReadNotification(
+                                alert
+                              )
+                                ? "Read"
+                                : "Unread"
+                            }. Open affected record.`}
+                          >
+                            {!isReadNotification(
+                              alert
+                            ) && (
+                              <span
+                                className="absolute left-1.5 top-5 h-2 w-2 rounded-full bg-indigo-500"
+                                aria-label="Unread"
+                              />
+                            )}
 
-                <div className="h-2.5 w-full rounded bg-slate-100 dark:bg-slate-800"/>
+                            <div
+                              className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${styles.icon}`}
+                              aria-hidden="true"
+                            >
+                              {alert.priority ===
+                              "High" ? (
+                                <FiAlertTriangle />
+                              ) : (
+                                <FiClock />
+                              )}
+                            </div>
 
-                <div className="h-2.5 w-4/5 rounded bg-slate-100 dark:bg-slate-800"/>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="line-clamp-1 text-sm font-extrabold text-slate-900 group-hover:text-indigo-700 dark:text-white dark:group-hover:text-indigo-300">
+                                  {
+                                    alert.title
+                                  }
+                                </p>
 
-               </div>
+                                <span
+                                  className="shrink-0 pt-0.5 text-[10px] font-medium text-slate-400 dark:text-slate-500"
+                                  title={
+                                    formatSmartAlertDate(
+                                      alert
+                                    )
+                                  }
+                                >
+                                  {formatSmartAlertDate(
+                                      alert
+                                    )}
+                                </span>
+                              </div>
 
-              </div>))}
+                              <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                {
+                                  alert.message
+                                }
+                              </p>
 
-            <span className="sr-only">
+                              <div className="mt-2 flex items-end justify-between gap-3">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {!complianceNotification && (
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${styles.badge}`}
+                                    >
+                                      {alert.priority ||
+                                        "Low"}
+                                    </span>
+                                  )}
 
-             Loading smart alerts...
+                                  <span
+                                    className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusClasses}`}
+                                  >
+                                    {alert.status ||
+                                      "Open"}
+                                  </span>
+                                </div>
 
-            </span>
+                                <span
+                                  className="shrink-0 text-[11px] font-semibold text-slate-400 dark:text-slate-500"
+                                  title={
+                                    formatSmartAlertDate(
+                                      alert
+                                    )
+                                  }
+                                >
+                                  {formatSmartAlertRelativeTime(
+                                      alert
+                                    )}
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                )}
 
-           </div>) : latestAlerts.length >
-          0 ? (latestAlerts.map((alert) => {
-          const styles = getAlertPriorityClasses(alert.priority);
-          const statusClasses = getAlertStatusClasses(alert.status);
-          return (<button type="button" key={alert.alertKey} onClick={() => openAlertTarget(alert)} className={`group relative flex w-full gap-3 border-b border-slate-100 px-4 py-3.5 text-left transition last:border-b-0 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:border-slate-800 dark:hover:bg-white/[0.04] ${!alert.isRead
-              ? "bg-indigo-50/40 dark:bg-indigo-500/[0.05]"
-              : ""}`} aria-label={`${alert.title}. ${alert.isRead
-              ? "Read"
-              : "Unread"}. Open affected record.`}>
+                {earlierAlerts.length >
+                  0 && (
+                  <div>
+                    <div className="sticky top-0 z-10 border-b border-slate-100 bg-white/95 px-4 py-2 text-[11px] font-extrabold text-slate-500 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 dark:text-slate-400">
+                      Earlier
+                    </div>
 
-               {!alert.isRead && (<span className="absolute left-1.5 top-5 h-2 w-2 rounded-full bg-indigo-500" aria-label="Unread"/>)}
+                    {earlierAlerts.map(
+                      (alert) => {
+                        const styles =
+                          getAlertPriorityClasses(
+                            alert.priority
+                          );
 
-               <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${styles.icon}`} aria-hidden="true">
+                        const statusClasses =
+                          getAlertStatusClasses(
+                            alert.status
+                          );
 
-                {alert.priority ===
-              "High" ? (<FiAlertTriangle />) : (<FiClock />)}
+                        const complianceNotification =
+                          isComplianceNotification(
+                            alert
+                          );
 
-               </div>
+                        return (
+                          <button
+                            type="button"
+                            key={
+                              alert.alertKey
+                            }
+                            onClick={() =>
+                              openAlertTarget(
+                                alert
+                              )
+                            }
+                            className={[
+                              "group relative flex w-full gap-3 border-b border-slate-100 px-4 py-3.5 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:border-slate-800 dark:hover:bg-white/[0.04]",
+                              !isReadNotification(
+                                alert
+                              )
+                                ? "bg-indigo-50/40 dark:bg-indigo-500/[0.05]"
+                                : "",
+                            ].join(" ")}
+                            aria-label={`${alert.title}. ${
+                              isReadNotification(
+                                alert
+                              )
+                                ? "Read"
+                                : "Unread"
+                            }. Open affected record.`}
+                          >
+                            {!isReadNotification(
+                              alert
+                            ) && (
+                              <span
+                                className="absolute left-1.5 top-5 h-2 w-2 rounded-full bg-indigo-500"
+                                aria-label="Unread"
+                              />
+                            )}
 
-               <div className="min-w-0 flex-1">
+                            <div
+                              className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${styles.icon}`}
+                              aria-hidden="true"
+                            >
+                              {alert.priority ===
+                              "High" ? (
+                                <FiAlertTriangle />
+                              ) : (
+                                <FiClock />
+                              )}
+                            </div>
 
-                <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="line-clamp-1 text-sm font-extrabold text-slate-900 group-hover:text-indigo-700 dark:text-white dark:group-hover:text-indigo-300">
+                                  {
+                                    alert.title
+                                  }
+                                </p>
 
-                 <p className="line-clamp-1 text-sm font-extrabold text-slate-900 group-hover:text-indigo-700 dark:text-white dark:group-hover:text-indigo-300">
+                                <span
+                                  className="shrink-0 pt-0.5 text-[10px] font-medium text-slate-400 dark:text-slate-500"
+                                  title={
+                                    formatSmartAlertDate(
+                                      alert
+                                    )
+                                  }
+                                >
+                                  {formatSmartAlertDate(
+                                      alert
+                                    )}
+                                </span>
+                              </div>
 
-                  {alert.title}
+                              <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                {
+                                  alert.message
+                                }
+                              </p>
 
-                 </p>
+                              <div className="mt-2 flex items-end justify-between gap-3">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {!complianceNotification && (
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${styles.badge}`}
+                                    >
+                                      {alert.priority ||
+                                        "Low"}
+                                    </span>
+                                  )}
 
-                 <span className="shrink-0 pt-0.5 text-[10px] font-medium text-slate-400 dark:text-slate-500">
+                                  <span
+                                    className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusClasses}`}
+                                  >
+                                    {alert.status ||
+                                      "Open"}
+                                  </span>
+                                </div>
 
-                  {formatSmartAlertDate(alert.date)}
-
-                 </span>
-
+                                <span
+                                  className="shrink-0 text-[11px] font-semibold text-slate-400 dark:text-slate-500"
+                                  title={
+                                    formatSmartAlertDate(
+                                      alert
+                                    )
+                                  }
+                                >
+                                  {formatSmartAlertRelativeTime(
+                                      alert
+                                    )}
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="px-5 py-10 text-center">
+                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+                  <FiBell
+                    size={
+                      20
+                    }
+                    aria-hidden="true"
+                  />
                 </div>
 
-                <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-
-                 {alert.message}
-
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                  {notificationTab ===
+                  "UNREAD"
+                    ? "No unread notifications"
+                    : "No notifications"}
                 </p>
 
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  {notificationTab ===
+                  "UNREAD"
+                    ? "You have read all current notifications."
+                    : "New HR notifications will appear here when attention is required."}
+                </p>
+              </div>
+            )}
+          </div>
 
-                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${styles.badge}`}>
-
-                  {alert.priority || "Low"}
-
-                 </span>
-
-                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusClasses}`}>
-
-                  {alert.status || "Open"}
-
-                 </span>
-
-                 {!alert.isRead && (<span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
-
-                   New
-
-                  </span>)}
-
-                </div>
-
-               </div>
-
-              </button>);
-        })) : (<div className="px-5 py-10 text-center">
-
-            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
-
-             <FiBell size={20} aria-hidden="true"/>
+          {latestAlerts.length >
+            0 && (
+            <div className="border-t border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+              <button
+                type="button"
+                onClick={
+                  handleViewNotifications
+                }
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-950"
+              >
+                <FiEye
+                  aria-hidden="true"
+                />
+                Open Notifications Center
+              </button>
 
             </div>
-
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">
-
-             No smart alerts
-
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-
-             New incident alerts will appear here when HR attention is required.
-
-            </p>
-
-           </div>)}
-
-         </div>
-
-         {latestAlerts.length >
-          0 && (<div className="border-t border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/50">
-
-           <button type="button" onClick={handleViewNotifications} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-950">
-
-            <FiEye aria-hidden="true"/>
-
-            Open Notifications Center
-
-           </button>
-
-           {isFetching && (<p className="mt-2 text-center text-[10px] font-medium text-slate-400 dark:text-slate-500">
-
-             Syncing latest alerts...
-
-            </p>)}
-
-          </div>)}
-
-        </div>)}
+          )}
+        </div>
+       )}
 
       </div>)}
 

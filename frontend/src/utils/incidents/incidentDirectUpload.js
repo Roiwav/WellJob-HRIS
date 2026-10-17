@@ -11,7 +11,7 @@ const INCIDENT_WORKFLOW_UPLOAD_AUTHORIZATION_URL =
 const INCIDENT_CREATE_UPLOAD_AUTHORIZATION_URL =
   `${API_BASE}/incident-evidence/upload-authorizations/create`;
 
-const MAX_INCIDENT_EVIDENCE_FILES =
+export const MAX_INCIDENT_EVIDENCE_FILES =
   10;
 
 const VALID_WORKFLOW_ACTIONS =
@@ -20,6 +20,12 @@ const VALID_WORKFLOW_ACTIONS =
     "SUBMIT_INVESTIGATION",
   ]);
 
+
+/*
+ * ==================================================
+ * BASIC NORMALIZATION
+ * ==================================================
+ */
 
 function normalizePositiveInteger(
   value
@@ -87,54 +93,301 @@ function isBrowserFile(
 }
 
 
-function getValidProofFiles(
-  proofFiles
+function getFileFromItem(
+  item
 ) {
-  const source =
-    Array.isArray(
-      proofFiles
+  if (
+    isBrowserFile(
+      item
     )
-      ? proofFiles
-      : [];
-
-  const validFiles =
-    source.filter(
-      (
-        item
-      ) =>
-        isBrowserFile(
-          item?.file
-        ) &&
-        !item?.error
-    );
-
-  if (
-    validFiles.length ===
-    0
   ) {
-    throw new Error(
-      "At least one valid proof file is required."
-    );
+    return item;
   }
 
   if (
-    validFiles.length >
-    MAX_INCIDENT_EVIDENCE_FILES
+    item &&
+    typeof item ===
+      "object" &&
+    !Array.isArray(
+      item
+    ) &&
+    isBrowserFile(
+      item.file
+    )
   ) {
-    throw new Error(
-      `A maximum of ${MAX_INCIDENT_EVIDENCE_FILES} proof files may be uploaded at once.`
-    );
+    return item.file;
   }
 
-  return validFiles;
+  return null;
 }
 
 
-async function requestAuthorization(
+function isItemMarkedInvalid(
+  item
+) {
+  return Boolean(
+    item &&
+    typeof item ===
+      "object" &&
+    !Array.isArray(
+      item
+    ) &&
+    item.error
+  );
+}
+
+
+function getValidBrowserFiles(
+  source,
+  {
+    label =
+      "Incident evidence",
+
+    requireAtLeastOne =
+      false,
+  } = {}
+) {
+  const values =
+    Array.isArray(
+      source
+    )
+      ? source
+      : [];
+
+  const files =
+    values
+      .filter(
+        (
+          item
+        ) =>
+          !isItemMarkedInvalid(
+            item
+          )
+      )
+      .map(
+        getFileFromItem
+      )
+      .filter(
+        Boolean
+      );
+
+  if (
+    requireAtLeastOne &&
+    files.length ===
+      0
+  ) {
+    throw new Error(
+      `At least one valid ${label.toLowerCase()} file is required.`
+    );
+  }
+
+  if (
+    files.length >
+    MAX_INCIDENT_EVIDENCE_FILES
+  ) {
+    throw new Error(
+      `A maximum of ${MAX_INCIDENT_EVIDENCE_FILES} ${label.toLowerCase()} files may be uploaded at once.`
+    );
+  }
+
+  return files;
+}
+
+
+/*
+ * ==================================================
+ * DIRECT-UPLOAD DESCRIPTOR HELPERS
+ * ==================================================
+ */
+
+function normalizeDirectUploadItem(
+  item
+) {
+  if (
+    typeof item ===
+      "string"
+  ) {
+    const descriptor =
+      item.trim();
+
+    return (
+      descriptor
+        ? {
+            descriptor,
+          }
+        : null
+    );
+  }
+
+  if (
+    item &&
+    typeof item ===
+      "object" &&
+    !Array.isArray(
+      item
+    )
+  ) {
+    const descriptor =
+      String(
+        item.descriptor ||
+        item.directUpload
+          ?.descriptor ||
+        ""
+      ).trim();
+
+    return (
+      descriptor
+        ? {
+            descriptor,
+          }
+        : null
+    );
+  }
+
+  return null;
+}
+
+
+/*
+ * Combine direct-upload descriptors from any source:
+ *
+ * - desktop/laptop-selected files
+ * - phone-camera capture sessions
+ *
+ * The backend independently enforces the same limit
+ * and validates every signed descriptor again.
+ */
+export function mergeIncidentDirectUploads(
+  ...groups
+) {
+  const merged =
+    groups
+      .flatMap(
+        (
+          group
+        ) =>
+          Array.isArray(
+            group
+          )
+            ? group
+            : (
+                group
+                  ? [group]
+                  : []
+              )
+      )
+      .map(
+        normalizeDirectUploadItem
+      )
+      .filter(
+        Boolean
+      );
+
+  if (
+    merged.length >
+    MAX_INCIDENT_EVIDENCE_FILES
+  ) {
+    throw new Error(
+      `A maximum of ${MAX_INCIDENT_EVIDENCE_FILES} Incident evidence files or photos may be submitted at once.`
+    );
+  }
+
+  return merged;
+}
+
+
+/*
+ * ==================================================
+ * WELLJOB AUTHORIZATION REQUESTS
+ * ==================================================
+ */
+
+async function requestCreateAuthorization(
+  {
+    employeeId,
+    files,
+  }
+) {
+  const response =
+    await authenticatedFetch(
+      INCIDENT_CREATE_UPLOAD_AUTHORIZATION_URL,
+      {
+        method:
+          "POST",
+
+        headers: {
+          Accept:
+            "application/json",
+
+          "Content-Type":
+            "application/json",
+        },
+
+        body:
+          JSON.stringify({
+            employeeId,
+
+            files:
+              files.map(
+                (
+                  file
+                ) => ({
+                  name:
+                    file.name,
+
+                  type:
+                    file.type,
+
+                  size:
+                    file.size,
+                })
+              ),
+          }),
+      }
+    );
+
+  const data =
+    await response
+      .json()
+      .catch(
+        () => null
+      );
+
+  if (
+    !response.ok
+  ) {
+    throw new Error(
+      data?.error ||
+      data?.message ||
+      `Unable to authorize Incident evidence upload. Status ${response.status}`
+    );
+  }
+
+  const uploads =
+    Array.isArray(
+      data?.uploads
+    )
+      ? data.uploads
+      : [];
+
+  if (
+    uploads.length !==
+    files.length
+  ) {
+    throw new Error(
+      "The server returned an incomplete Incident evidence upload authorization."
+    );
+  }
+
+  return uploads;
+}
+
+
+async function requestWorkflowAuthorization(
   {
     incidentId,
     workflowAction,
-    proofFiles,
+    files,
   }
 ) {
   const response =
@@ -159,18 +412,18 @@ async function requestAuthorization(
             workflowAction,
 
             files:
-              proofFiles.map(
+              files.map(
                 (
-                  item
+                  file
                 ) => ({
                   name:
-                    item.file.name,
+                    file.name,
 
                   type:
-                    item.file.type,
+                    file.type,
 
                   size:
-                    item.file.size,
+                    file.size,
                 })
               ),
           }),
@@ -203,7 +456,7 @@ async function requestAuthorization(
 
   if (
     uploads.length !==
-    proofFiles.length
+    files.length
   ) {
     throw new Error(
       "The server returned an incomplete evidence upload authorization."
@@ -215,6 +468,10 @@ async function requestAuthorization(
 
 
 /*
+ * ==================================================
+ * DIRECT SUPABASE PUT
+ * ==================================================
+ *
  * IMPORTANT:
  *
  * Never use authenticatedFetch here.
@@ -265,158 +522,18 @@ async function uploadEvidenceToSignedUrl(
 }
 
 
-export async function prepareIncidentCreateDirectUpload({
-  employeeId,
-  file,
-}) {
-  const normalizedEmployeeId =
-    normalizePositiveInteger(
-      employeeId
-    );
-
-  if (!normalizedEmployeeId) {
-    throw new Error(
-      "Invalid employee ID for Initial NTE upload."
-    );
-  }
-
-  if (!isBrowserFile(file)) {
-    return [];
-  }
-
-  const response =
-    await authenticatedFetch(
-      INCIDENT_CREATE_UPLOAD_AUTHORIZATION_URL,
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          employeeId:
-            normalizedEmployeeId,
-          files: [
-            {
-              name: file.name,
-              type: file.type,
-              size: file.size,
-            },
-          ],
-        }),
-      }
-    );
-
-  const data =
-    await response
-      .json()
-      .catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(
-      data?.error ||
-        data?.message ||
-        `Unable to authorize Initial NTE upload. Status ${response.status}`
-    );
-  }
-
-  const authorization =
-    Array.isArray(data?.uploads)
-      ? data.uploads[0]
-      : null;
-  const signedUrl =
-    String(
-      authorization?.signedUrl ||
-        ""
-    ).trim();
-  const descriptor =
-    String(
-      authorization?.descriptor ||
-        ""
-    ).trim();
-
-  if (
-    data?.uploads?.length !== 1 ||
-    !signedUrl ||
-    !descriptor
-  ) {
-    throw new Error(
-      "The server returned an incomplete Initial NTE upload authorization."
-    );
-  }
-
-  await uploadEvidenceToSignedUrl(
-    signedUrl,
-    file
-  );
-
-  return [
-    {
-      descriptor,
-    },
-  ];
-}
-
-
 /*
  * ==================================================
- * PUBLIC WORKFLOW DIRECT UPLOAD
+ * AUTHORIZATION → STORAGE UPLOAD → DESCRIPTORS
  * ==================================================
- *
- * 1. WELLJOB authorizes metadata/context.
- * 2. Browser PUTs each binary directly to Supabase.
- * 3. Return only WELLJOB-signed descriptors.
- * 4. Caller includes descriptors in the final JSON
- *    workflow request.
  */
-export async function prepareIncidentWorkflowDirectUploads({
-  incidentId,
-  workflowAction,
-  proofFiles,
-}) {
-  const normalizedIncidentId =
-    normalizePositiveInteger(
-      incidentId
-    );
 
-  if (
-    !normalizedIncidentId
-  ) {
-    throw new Error(
-      "Invalid incident ID for evidence upload."
-    );
+async function uploadAuthorizedFiles(
+  {
+    authorizations,
+    files,
   }
-
-  const normalizedWorkflowAction =
-    normalizeWorkflowAction(
-      workflowAction
-    );
-
-  if (
-    !normalizedWorkflowAction
-  ) {
-    throw new Error(
-      "Invalid incident proof submission action."
-    );
-  }
-
-  const validFiles =
-    getValidProofFiles(
-      proofFiles
-    );
-
-  const authorizations =
-    await requestAuthorization({
-      incidentId:
-        normalizedIncidentId,
-
-      workflowAction:
-        normalizedWorkflowAction,
-
-      proofFiles:
-        validFiles,
-    });
-
+) {
   const directUploads =
     [];
 
@@ -445,7 +562,7 @@ export async function prepareIncidentWorkflowDirectUploads({
       ) ||
       clientIndex < 0 ||
       clientIndex >=
-        validFiles.length
+        files.length
     ) {
       throw new Error(
         "The evidence upload authorization contains an invalid file index."
@@ -475,14 +592,14 @@ export async function prepareIncidentWorkflowDirectUploads({
       );
     }
 
-    const proofItem =
-      validFiles[
+    const file =
+      files[
         clientIndex
       ];
 
     await uploadEvidenceToSignedUrl(
       signedUrl,
-      proofItem.file
+      file
     );
 
     directUploads.push({
@@ -491,4 +608,218 @@ export async function prepareIncidentWorkflowDirectUploads({
   }
 
   return directUploads;
+}
+
+
+/*
+ * ==================================================
+ * INCIDENT CREATE DIRECT UPLOADS
+ * ==================================================
+ *
+ * Supports up to 10 desktop/laptop-selected files.
+ *
+ * Accepted input forms:
+ *
+ * files: [
+ *   File,
+ *   File,
+ * ]
+ *
+ * OR:
+ *
+ * files: [
+ *   { file: File, error: null },
+ *   { file: File, error: null },
+ * ]
+ *
+ * The legacy singular "file" argument is retained
+ * temporarily so existing callers do not break while
+ * AddIncidentModal is being migrated to multi-file
+ * evidence state.
+ */
+export async function prepareIncidentCreateDirectUploads({
+  employeeId,
+  files = [],
+  file = null,
+}) {
+  const normalizedEmployeeId =
+    normalizePositiveInteger(
+      employeeId
+    );
+
+  if (!normalizedEmployeeId) {
+    throw new Error(
+      "Invalid employee ID for Incident evidence upload."
+    );
+  }
+
+  const sourceFiles = [
+    ...(
+      Array.isArray(
+        files
+      )
+        ? files
+        : []
+    ),
+
+    ...(
+      isBrowserFile(
+        file
+      )
+        ? [file]
+        : []
+    ),
+  ];
+
+  const validFiles =
+    getValidBrowserFiles(
+      sourceFiles,
+      {
+        label:
+          "Incident evidence",
+
+        /*
+         * Zero local files is valid when all evidence
+         * came from phone-camera sessions.
+         */
+        requireAtLeastOne:
+          false,
+      }
+    );
+
+  if (
+    validFiles.length ===
+    0
+  ) {
+    return [];
+  }
+
+  const authorizations =
+    await requestCreateAuthorization({
+      employeeId:
+        normalizedEmployeeId,
+
+      files:
+        validFiles,
+    });
+
+  return uploadAuthorizedFiles({
+    authorizations,
+    files:
+      validFiles,
+  });
+}
+
+
+/*
+ * Backward-compatible alias for the previous singular
+ * helper name.
+ *
+ * Existing AddIncidentModal code can continue calling:
+ *
+ * prepareIncidentCreateDirectUpload({
+ *   employeeId,
+ *   file,
+ * })
+ *
+ * until that component is revised to multi-file state.
+ */
+export async function prepareIncidentCreateDirectUpload(
+  options
+) {
+  return prepareIncidentCreateDirectUploads(
+    options
+  );
+}
+
+
+/*
+ * ==================================================
+ * PUBLIC WORKFLOW DIRECT UPLOAD
+ * ==================================================
+ *
+ * 1. WELLJOB authorizes metadata/context.
+ * 2. Browser PUTs each binary directly to Supabase.
+ * 3. Return only WELLJOB-signed descriptors.
+ * 4. Caller combines these with any phone-capture
+ *    descriptors.
+ * 5. Caller includes the final combined descriptors
+ *    in the workflow JSON request.
+ *
+ * Zero local files is valid when proof is supplied
+ * entirely through phone-camera capture sessions.
+ */
+export async function prepareIncidentWorkflowDirectUploads({
+  incidentId,
+  workflowAction,
+  proofFiles = [],
+}) {
+  const normalizedIncidentId =
+    normalizePositiveInteger(
+      incidentId
+    );
+
+  if (
+    !normalizedIncidentId
+  ) {
+    throw new Error(
+      "Invalid incident ID for evidence upload."
+    );
+  }
+
+  const normalizedWorkflowAction =
+    normalizeWorkflowAction(
+      workflowAction
+    );
+
+  if (
+    !normalizedWorkflowAction
+  ) {
+    throw new Error(
+      "Invalid incident proof submission action."
+    );
+  }
+
+  const validFiles =
+    getValidBrowserFiles(
+      proofFiles,
+      {
+        label:
+          "Proof",
+
+        /*
+         * Phone-only proof is allowed. The Resolution
+         * modal will enforce that the final combined
+         * evidence list is not empty when proof is
+         * required.
+         */
+        requireAtLeastOne:
+          false,
+      }
+    );
+
+  if (
+    validFiles.length ===
+    0
+  ) {
+    return [];
+  }
+
+  const authorizations =
+    await requestWorkflowAuthorization({
+      incidentId:
+        normalizedIncidentId,
+
+      workflowAction:
+        normalizedWorkflowAction,
+
+      files:
+        validFiles,
+    });
+
+  return uploadAuthorizedFiles({
+    authorizations,
+    files:
+      validFiles,
+  });
 }

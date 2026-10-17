@@ -4,7 +4,6 @@ import {
   FiBell,
   FiCheckCircle,
   FiFileText,
-  FiFilter,
   FiRefreshCw,
   FiShuffle,
   FiUsers,
@@ -160,29 +159,29 @@ function getSuggestionTypeLabel(
   if (
     category === "Workforce"
   ) {
-    return "Workforce advisory";
+    return "Workforce Recommendation";
   }
 
   if (
     category ===
     "Incident Prevention"
   ) {
-    return "Prevention advisory";
+    return "Incident Prevention";
   }
 
   if (
     category === "Compliance"
   ) {
-    return "Compliance advisory";
+    return "Compliance Recommendation";
   }
 
   if (
     category === "Deployment"
   ) {
-    return "Deployment advisory";
+    return "Deployment Recommendation";
   }
 
-  return "HR advisory";
+  return "HR Recommendation";
 }
 
 function sortSuggestions(items) {
@@ -343,23 +342,23 @@ function SuggestionItem({
 
           <h3 className="mt-2 text-sm font-black leading-5 text-slate-900 dark:text-white">
             {suggestion.title ||
-              "Smart Suggestion"}
+              "HR Recommendation"}
           </h3>
 
           <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
             {suggestion.company ||
-              "Company not specified"}
+              "Client company not specified"}
           </p>
 
           <p className="mt-3 text-xs leading-5 text-slate-600 dark:text-slate-300">
             {suggestion.issue ||
-              "The system detected a possible HR concern based on current records."}
+              "Current records indicate a possible HR concern that may need review."}
           </p>
 
           <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-900/80">
             <p className="text-xs font-semibold leading-5 text-slate-900 dark:text-white">
               {suggestion.recommendation ||
-                "HR may review this record for possible next steps."}
+                "Review the available records and determine the appropriate HR action."}
             </p>
 
             {suggestion.reason && (
@@ -401,7 +400,7 @@ function SuggestionItem({
             suggestion.dismissReason && (
               <div className="mt-2 rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-900">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  Dismiss reason
+                  Reason for Dismissal
                 </p>
 
                 <p className="mt-1 text-[11px] leading-5 text-slate-600 dark:text-slate-300">
@@ -434,7 +433,7 @@ function SuggestionItem({
 
                 {isReviewed
                   ? "Reviewed"
-                  : "Mark Reviewed"}
+                  : "Mark as Reviewed"}
               </button>
 
               <button
@@ -592,7 +591,7 @@ export default function SmartSuggestionsWidget() {
       <div className="fixed bottom-24 right-6 z-[1100]">
         <div className="group relative flex items-center">
           <div className="pointer-events-none absolute right-16 hidden whitespace-nowrap rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-900">
-            Smart Suggestions
+            HR Recommendations
           </div>
 
           <button
@@ -604,8 +603,8 @@ export default function SmartSuggestionsWidget() {
               )
             }
             className="relative flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-indigo-700"
-            title="Smart Suggestions"
-            aria-label="Open Smart Suggestions"
+            title="HR Recommendations"
+            aria-label="Open HR Recommendations"
           >
             <BsLightbulbFill
               size={22}
@@ -643,13 +642,11 @@ export default function SmartSuggestionsWidget() {
                       aria-hidden="true"
                     />
 
-                    Smart Suggestions
+                    HR Recommendations
                   </h2>
 
                   <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    Rule-based HR
-                    suggestions for
-                    review only.
+                    Rule-based recommendations to support HR review and decision-making.
                   </p>
                 </div>
 
@@ -661,7 +658,7 @@ export default function SmartSuggestionsWidget() {
                     )
                   }
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition hover:bg-red-100 hover:text-red-600 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
-                  aria-label="Close Smart Suggestions"
+                  aria-label="Close HR Recommendations"
                 >
                   <FiX
                     size={18}
@@ -675,12 +672,12 @@ export default function SmartSuggestionsWidget() {
                   {
                     totalSuggestions
                   }{" "}
-                  suggestion
+                  recommendation
                   {totalSuggestions ===
                   1
                     ? ""
                     : "s"}{" "}
-                  detected
+                  available
                 </p>
 
                 <button
@@ -703,7 +700,7 @@ export default function SmartSuggestionsWidget() {
                     aria-hidden="true"
                   />
 
-                  Sync
+                  Refresh
                 </button>
               </div>
 
@@ -746,40 +743,35 @@ export default function SmartSuggestionsWidget() {
             <div className="max-h-[calc(100vh-20rem)] overflow-y-auto bg-slate-50 p-3 dark:bg-slate-950">
               {error && (
                 <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
-                  {error}
+                  Unable to load HR recommendations. Please try again.
                 </div>
               )}
 
               {mutationError && (
                 <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
-                  {
-                    mutationError
-                  }
+                  The recommendation could not be updated. Please try again.
                 </div>
               )}
 
               {isLoading ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-                  Loading smart
-                  suggestions...
+                  Loading HR recommendations...
                 </div>
               ) : visibleSuggestions.length ===
                 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
-                  <FiFilter
-                    className="mx-auto mb-3 text-slate-400"
+                  <FiCheckCircle
+                    className="mx-auto mb-3 text-emerald-500"
                     size={22}
                     aria-hidden="true"
                   />
 
                   <p className="text-sm font-black text-slate-900 dark:text-white">
-                    No suggestions found
+                    No Recommendations Available
                   </p>
 
                   <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    Suggestions appear
-                    when the system
-                    detects HR patterns.
+                    No current records require an HR recommendation.
                   </p>
                 </div>
               ) : (
@@ -813,14 +805,12 @@ export default function SmartSuggestionsWidget() {
                       {
                         hiddenSuggestions
                       }{" "}
-                      more suggestion
+                      more recommendation
                       {hiddenSuggestions ===
                       1
                         ? ""
                         : "s"}{" "}
-                      detected. Resolve
-                      related records to
-                      reduce the list.
+                      available. Review or dismiss items to update this list.
                     </div>
                   )}
                 </div>
@@ -829,11 +819,7 @@ export default function SmartSuggestionsWidget() {
 
             <footer className="border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
               <p className="text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                Advisory-only. The
-                system suggests
-                possible next steps;
-                HR still makes the
-                final decision.
+                Decision support only. Review each recommendation and apply HR judgment before taking action.
               </p>
             </footer>
           </section>

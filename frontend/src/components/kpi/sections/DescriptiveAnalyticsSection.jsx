@@ -27,6 +27,64 @@ const inputClass = [
 ].join(" ");
 const panelClass =
   "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5";
+
+const KPI_REPORT_TIME_ZONE =
+  "Asia/Manila";
+
+function getKpiReportFilenameDate() {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          KPI_REPORT_TIME_ZONE,
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      new Date()
+    );
+
+  const values =
+    Object.fromEntries(
+      parts
+        .filter(
+          (part) =>
+            [
+              "year",
+              "month",
+              "day",
+            ].includes(
+              part.type
+            )
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ]
+        )
+    );
+
+  if (
+    !values.year ||
+    !values.month ||
+    !values.day
+  ) {
+    return "";
+  }
+
+  return (
+    `${values.year}-` +
+    `${values.month}-` +
+    `${values.day}`
+  );
+}
+
 function uniqueValues(values) {
   return [
     ...new Set(
@@ -257,10 +315,12 @@ export default function DescriptiveAnalyticsSection({
     const link =
       document.createElement("a");
     link.href = url;
+
+    const filenameDate =
+      getKpiReportFilenameDate();
+
     link.download =
-      `WELLJOB-KPI-Filtered-${new Date()
-        .toISOString()
-        .slice(0, 10)}.csv`;
+      `WELLJOB-KPI-Filtered-${filenameDate}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();

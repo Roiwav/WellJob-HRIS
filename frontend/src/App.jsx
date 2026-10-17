@@ -40,10 +40,16 @@ import {
 // Each page is downloaded only when its route is visited.
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Employees = lazy(() => import("./pages/Employees"));
+const EmployeeMobileHandoff = lazy(
+  () => import("./pages/EmployeeMobileHandoff")
+);
 const Attendance = lazy(() => import("./pages/Attendance"));
 const ArchivedEmployees = lazy(() => import("./pages/ArchivedEmployees"));
 const Deployments = lazy(() => import("./pages/Deployments"));
 const Incidents = lazy(() => import("./pages/Incidents"));
+const IncidentPhoneCapture = lazy(
+  () => import("./pages/IncidentPhoneCapture")
+);
 const KPIReports = lazy(() => import("./pages/KPIReports"));
 const Login = lazy(() => import("./pages/Login"));
 const Notifications = lazy(() => import("./pages/Notifications"));
@@ -131,7 +137,7 @@ const queryClient = new QueryClient({
 });
 
 const MAINTENANCE_PROBE_URL =
-  `${API_BASE}/users`;
+  `${API_BASE}/system/availability`;
 
 const MAINTENANCE_PROBE_INTERVAL_MS =
   15 * 1000;
@@ -250,11 +256,7 @@ async function probeMaintenanceMode(
       : null;
   }
 
-  if (
-    response.ok ||
-    response.status === 401 ||
-    response.status === 403
-  ) {
+  if (response.ok) {
     return false;
   }
 
@@ -452,6 +454,37 @@ function ApplicationContent({
           }
         />
 
+        {/*
+         * Public Incident phone-camera capture.
+         *
+         * This route intentionally stays outside every
+         * ProtectedRoute and outside MainLayout.
+         *
+         * The phone is a capture-only companion:
+         * - no WELLJOB login is required
+         * - no employee/incident details are shown
+         * - no workflow editing is available
+         *
+         * The raw capture token is stored only in the
+         * frontend URL fragment:
+         *
+         * /incident-photo-capture#capture=<token>
+         *
+         * Browser URL fragments are not included in the
+         * HTTP request sent to Vercel/the frontend host.
+         * The page reads the fragment locally and uses
+         * ordinary fetch() only for the dedicated public
+         * capture endpoints.
+         */}
+        <Route
+          path="/incident-photo-capture"
+          element={
+            <LazyRoute>
+              <IncidentPhoneCapture />
+            </LazyRoute>
+          }
+        />
+
         {/* Public recovery links from email */}
         <Route
           path="/reset-password"
@@ -493,6 +526,46 @@ function ApplicationContent({
               </LazyRoute>
             }
           />
+
+          {/*
+           * Secure mobile document handoff.
+           *
+           * HR Staff only.
+           *
+           * This route intentionally stays outside
+           * MainLayout so a phone opened from the QR
+           * receives a focused mobile capture entry
+           * screen without the desktop application
+           * shell.
+           *
+           * ProtectedRoute preserves this route, including
+           * its URL fragment, as the post-login
+           * destination when the phone is not yet
+           * authenticated.
+           *
+           * The raw handoff token is intentionally kept
+           * in the URL fragment (#token), not the route
+           * path, so browsers do not send it to Vercel
+           * or the web server in the HTTP request.
+           */}
+          <Route
+            element={
+              <ProtectedRoute
+                allowedRoles={[
+                  ROLES.HR_STAFF,
+                ]}
+              />
+            }
+          >
+            <Route
+              path="/mobile-handoff"
+              element={
+                <LazyRoute>
+                  <EmployeeMobileHandoff />
+                </LazyRoute>
+              }
+            />
+          </Route>
 
           {/*
            * Protected application shell.
