@@ -1649,6 +1649,9 @@ function buildTrustedDecisionSnapshot(
       severityScore,
 
       riskLevel,
+
+      behaviorTrend:
+        severitySnapshot.behaviorTrend,
     });
 
   const correctiveAction =
@@ -1663,7 +1666,14 @@ function buildTrustedDecisionSnapshot(
 
       kpiLevel,
 
-      relatedIncidents,
+      /*
+       * Researchers' proposed current-intervention policy, pending client
+       * review: only positive-current-point incidents establish current
+       * repetition and keyword patterns. Historical zero-point incidents
+       * remain in the snapshot and persisted historical totals.
+       */
+      relatedIncidents:
+        severitySnapshot.activeIncidents,
     });
 
   const decisionConfidenceReason =
@@ -3303,3 +3313,17 @@ exports.createKpiDecision =
       }
     }
   };
+
+/*
+ * Test-only exports keep decision-rule regression tests isolated from the
+ * live route surface while exercising the same trusted snapshot constructor
+ * used by both evaluation and save workflows.
+ */
+if (
+  process.env.NODE_ENV ===
+  "test"
+) {
+  exports.__test = {
+    buildTrustedDecisionSnapshot,
+  };
+}
