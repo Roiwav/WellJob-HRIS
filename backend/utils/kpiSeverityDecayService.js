@@ -278,6 +278,7 @@ function calculateEmployeeSeveritySnapshot(
     evaluatedAt: evaluatedAt.toISOString(),
     scoringPolicyVersion: SCORING_POLICY_VERSION,
     scoredIncidents,
+    activeIncidents,
   };
 }
 

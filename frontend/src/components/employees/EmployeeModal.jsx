@@ -23,6 +23,10 @@ import {
   calculateSeveritySnapshot,
 } from "../../utils/kpi/severityDecayHelpers";
 import {
+  buildCoordinatorAwarenessDecisionSupport,
+  buildEmployeeDetailsDecisionSupport,
+} from "../../utils/employees/employeeDetailsDecisionSupport";
+import {
   normalizeEmployeeDocumentNumber,
   parseEmployeeDocuments,
 } from "../../utils/employees/employeeFormHelpers";
@@ -139,6 +143,18 @@ const RECOMMENDATION_CLASSES = {
     "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
   "Termination Review":
     "border border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300",
+  "Priority HR Escalation":
+    "border border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300",
+  "Schedule HR Investigation":
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
+  "HR Validation Required":
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
+  "Performance Improvement Review":
+    "border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
+  "Human Review Required":
+    "border border-indigo-200/80 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
+  "Continue Monitoring":
+    "border border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300",
   "HR Review Required":
     "border border-indigo-200/80 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
   Unavailable:
@@ -370,89 +386,6 @@ function getDaysLabel(expirationDate) {
   return `Expires in ${daysRemaining} day${
     daysRemaining === 1 ? "" : "s"
   }`;
-}
-function getKPILevel(severityScore, totalIncidents) {
-  if (severityScore >= 8) {
-    return "Critical Concern";
-  }
-  if (severityScore >= 4) {
-    return "Needs Improvement";
-  }
-  if (totalIncidents >= 1) {
-    return "Minor Concern";
-  }
-  return "Good Standing";
-}
-function getRiskLevel({
-  kpiLevel,
-  totalIncidents,
-  criticalIncidents,
-}) {
-  if (
-    criticalIncidents >= 1 ||
-    kpiLevel === "Critical Concern"
-  ) {
-    return "High Risk";
-  }
-  if (kpiLevel === "Needs Improvement") {
-    return "Repeat";
-  }
-  if (
-    kpiLevel === "Minor Concern" ||
-    totalIncidents >= 1
-  ) {
-    return "Monitor";
-  }
-  return "Low Risk";
-}
-function getRecommendationDecision({
-  totalIncidents,
-  criticalIncidents,
-  riskLevel,
-}) {
-  if (criticalIncidents >= 2) {
-    return {
-      recommendation: "Termination Review",
-      reason:
-        `Employee has ${criticalIncidents} critical incident(s), ` +
-        "requiring termination review.",
-    };
-  }
-  if (
-    criticalIncidents >= 1 ||
-    riskLevel === "High Risk"
-  ) {
-    return {
-      recommendation: "Suspension Review",
-      reason:
-        "Employee has critical or high-risk incident records requiring suspension review.",
-    };
-  }
-  if (
-    totalIncidents >= 3 ||
-    riskLevel === "Repeat"
-  ) {
-    return {
-      recommendation: "Final Warning",
-      reason:
-        "Employee has repeated violations and should receive final warning.",
-    };
-  }
-  if (
-    totalIncidents >= 1 ||
-    riskLevel === "Monitor"
-  ) {
-    return {
-      recommendation: "Monitor Employee",
-      reason:
-        "Employee has recorded violation(s) and should be monitored.",
-    };
-  }
-  return {
-    recommendation: "Retain",
-    reason:
-      "Employee has no recorded violation and may be retained.",
-  };
 }
 function getIncidentTimestamp(incident) {
   const dateValue =
@@ -2188,6 +2121,15 @@ export default function EmployeeModal({
     () => (historyAvailable ? historyRequest.incidents : []),
     [historyAvailable, historyRequest.incidents]
   );
+  const employeeKpiDecisionSupport = useMemo(
+    () =>
+      historyAvailable
+        ? buildEmployeeDetailsDecisionSupport(
+            employeeIncidents
+          )
+        : null,
+    [employeeIncidents, historyAvailable]
+  );
   /*
    * Detailed incident summary for non-coordinator
    * roles. This preserves the original modal behavior.
@@ -2212,6 +2154,7 @@ export default function EmployeeModal({
       }
     );
     const severitySnapshot =
+      employeeKpiDecisionSupport?.severitySnapshot ||
       calculateSeveritySnapshot(employeeIncidents);
 
     return {
@@ -2231,7 +2174,7 @@ export default function EmployeeModal({
       monthsWithoutNewIncident:
         severitySnapshot.monthsWithoutNewIncident,
     };
-  }, [employeeIncidents]);
+  }, [employeeIncidents, employeeKpiDecisionSupport]);
   /*
    * The coordinator's historical summary is usable
    * only when it belongs to the selected employee
@@ -2274,83 +2217,62 @@ export default function EmployeeModal({
     : historyLoading;
   const incidentSummaryAvailable =
     incidentSummary !== null;
-  /*
-   * KPI and Risk computation uses the SAME incident
-   * totals currently displayed in the summary cards.
-   *
-   * This preserves the existing score thresholds:
-   *
-   * Minor = 1
-   * Major = 3
-   * Critical = 5
-   */
   const decisionSupport = useMemo(() => {
-    if (!incidentSummary) {
+    if (isHRCoordinator) {
+      const awareness =
+        buildCoordinatorAwarenessDecisionSupport(
+          incidentSummary
+        );
+
+      return {
+        kpiLevel:
+          awareness.kpiLevel,
+        riskLevel:
+          awareness.riskLevel,
+        recommendation:
+          awareness.awarenessMessage,
+        reason:
+          awareness.awarenessReason,
+        correctiveIntervention:
+          "Restricted",
+        correctiveInterventionReason:
+          "Corrective intervention details require authorized HR management review.",
+      };
+    }
+
+    if (!employeeKpiDecisionSupport) {
       return {
         kpiLevel: "Unavailable",
         riskLevel: "Unavailable",
         recommendation: "Unavailable",
         reason:
           "Incident statistics are unavailable. No recommendation can be generated from incomplete data.",
+        correctiveIntervention:
+          "Unavailable",
+        correctiveInterventionReason:
+          "Incident statistics are unavailable. No corrective intervention can be generated from incomplete data.",
       };
     }
-    const kpiLevel = getKPILevel(
-      incidentSummary.activeSeverityScore ??
-        incidentSummary.severityScore,
-      incidentSummary.activeTotal ??
-        incidentSummary.total
-    );
-    const riskLevel = getRiskLevel({
-      kpiLevel,
-      totalIncidents:
-        incidentSummary.activeTotal ??
-        incidentSummary.total,
-      criticalIncidents:
-        incidentSummary.activeCritical ??
-        incidentSummary.critical,
-    });
-    /*
-     * Historical aggregate statistics may contain
-     * confidential cases from previous companies.
-     *
-     * Do not generate a disciplinary recommendation
-     * for HR Coordinator solely from those aggregates.
-     */
-    if (isHRCoordinator) {
-      if (incidentSummary.total > 0) {
-        return {
-          kpiLevel,
-          riskLevel,
-          recommendation: "HR Review Required",
-          reason:
-            "The incident indicators include recorded cases from previous and current company assignments. " +
-            "This summary is for awareness only. Detailed assessment and any disciplinary action require review " +
-            "by authorized HR management.",
-        };
-      }
-      return {
-        kpiLevel,
-        riskLevel,
-        recommendation: "Retain",
-        reason:
-          "No recorded incidents were found in the employee's overall incident summary. " +
-          "Continue regular HR monitoring.",
-      };
-    }
+
     return {
-      kpiLevel,
-      riskLevel,
-      ...getRecommendationDecision({
-        totalIncidents:
-          incidentSummary.activeTotal ??
-          incidentSummary.total,
-        criticalIncidents:
-          incidentSummary.activeCritical ??
-          incidentSummary.critical,
-        riskLevel,
-      }),
+      kpiLevel:
+        employeeKpiDecisionSupport.kpiLevel,
+      riskLevel:
+        employeeKpiDecisionSupport.riskLevel,
+      recommendation:
+        employeeKpiDecisionSupport.suggestedHRAction,
+      reason:
+        employeeKpiDecisionSupport.suggestedHRActionReason,
+      correctiveIntervention:
+        employeeKpiDecisionSupport.correctiveIntervention,
+      correctiveInterventionReason:
+        employeeKpiDecisionSupport.correctiveInterventionReason,
     };
-  }, [incidentSummary, isHRCoordinator]);
+  }, [
+    employeeKpiDecisionSupport,
+    incidentSummary,
+    isHRCoordinator,
+  ]);
   const recentIncidents = useMemo(
     () =>
       [...employeeIncidents]
@@ -2376,6 +2298,8 @@ export default function EmployeeModal({
     riskLevel,
     recommendation,
     reason,
+    correctiveIntervention,
+    correctiveInterventionReason,
   } = decisionSupport;
   const hasAttentionNeeded =
     expired.length > 0 ||
@@ -2422,6 +2346,12 @@ export default function EmployeeModal({
   const displayedRecommendationReason = incidentSummaryLoading
     ? "Loading incident statistics..."
     : reason;
+  const displayedCorrectiveIntervention = incidentSummaryLoading
+    ? "Loading..."
+    : correctiveIntervention;
+  const displayedCorrectiveInterventionReason = incidentSummaryLoading
+    ? "Loading incident statistics..."
+    : correctiveInterventionReason;
   const getDisplayedStatistic = (field) => {
     if (incidentSummaryLoading) {
       return "...";
@@ -3000,8 +2930,16 @@ export default function EmployeeModal({
               </section>
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <SectionTitle
-                  title="Recommended Action"
-                  description="Suggested action based on the available incident indicators. Final decisions remain with authorized HR management."
+                  title={
+                    isHRCoordinator
+                      ? "Coordinator Awareness"
+                      : "Suggested HR Workflow Action"
+                  }
+                  description={
+                    isHRCoordinator
+                      ? "Awareness-only message based on authorized aggregate incident indicators. Detailed assessment remains restricted to authorized HR management."
+                      : "Canonical KPI workflow suggestion based on the employee's complete authorized incident history and current severity snapshot. Final decisions remain with authorized HR management."
+                  }
                 />
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
                   <StatusPill
@@ -3018,6 +2956,22 @@ export default function EmployeeModal({
                   </p>
                 </div>
               </section>
+              {!isHRCoordinator && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                  <SectionTitle
+                    title="Corrective Intervention"
+                    description="Current intervention pattern analysis uses incidents with positive current points. Fully decayed incidents remain in history but do not establish current repetition. This is the researchers' proposed policy pending client review."
+                  />
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+                    <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                      {displayedCorrectiveIntervention}
+                    </p>
+                    <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                      {displayedCorrectiveInterventionReason}
+                    </p>
+                  </div>
+                </section>
+              )}
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <SectionTitle
                   title="Recent Incident History"
