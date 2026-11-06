@@ -2208,6 +2208,8 @@ export default function useEmployeeForm({
                 ? employeeId
                 : "",
 
+            initialEmployee,
+
             duplicateEmployee:
               verifiedDuplicateEmployee,
 

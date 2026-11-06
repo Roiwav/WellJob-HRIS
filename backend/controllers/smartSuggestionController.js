@@ -239,73 +239,158 @@ function isAbsenceRelated(
 }
 
 function isComplianceDocumentExpiring(
-  expirationDate
+  expirationDate,
+  referenceDate = new Date()
 ) {
-  if (
-    !expirationDate
-  ) {
-    return false;
-  }
-
-  const expiry =
-    new Date(
-      expirationDate
-    );
-
-  if (
-    Number.isNaN(
-      expiry.getTime()
-    )
-  ) {
-    return false;
-  }
-
-  const today =
-    new Date();
-
   const diffDays =
-    Math.ceil(
-      (
-        expiry.getTime() -
-        today.getTime()
-      ) /
-        86400000
+    getComplianceDaysUntilExpiration(
+      expirationDate,
+      referenceDate
     );
 
   return (
+    diffDays !== null &&
     diffDays >= 0 &&
     diffDays <= 30
   );
 }
 
 function isComplianceDocumentExpired(
-  expirationDate
+  expirationDate,
+  referenceDate = new Date()
+) {
+  const diffDays =
+    getComplianceDaysUntilExpiration(
+      expirationDate,
+      referenceDate
+    );
+
+  return (
+    diffDays !== null &&
+    diffDays < 0
+  );
+}
+
+function getDateOnlyParts(
+  value
 ) {
   if (
-    !expirationDate
+    value === null ||
+    value === undefined ||
+    value === ""
   ) {
-    return false;
+    return null;
   }
 
-  const expiry =
-    new Date(
-      expirationDate
-    );
+  const match =
+    String(value)
+      .trim()
+      .match(
+        /^(\d{4})-(\d{2})-(\d{2})/
+      );
+
+  if (match) {
+    return {
+      year: Number(match[1]),
+      month: Number(match[2]),
+      day: Number(match[3]),
+    };
+  }
+
+  const parsed =
+    value instanceof Date
+      ? value
+      : new Date(value);
 
   if (
     Number.isNaN(
-      expiry.getTime()
+      parsed.getTime()
     )
   ) {
-    return false;
+    return null;
   }
 
-  const today =
-    new Date();
+  return {
+    year: parsed.getFullYear(),
+    month: parsed.getMonth() + 1,
+    day: parsed.getDate(),
+  };
+}
+
+function getManilaTodayTimestamp(
+  referenceDate = new Date()
+) {
+  const parsed =
+    referenceDate instanceof Date
+      ? referenceDate
+      : new Date(referenceDate);
+
+  if (
+    Number.isNaN(
+      parsed.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Manila",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).formatToParts(parsed);
+
+  const values =
+    Object.fromEntries(
+      parts.map(
+        (part) => [
+          part.type,
+          part.value,
+        ]
+      )
+    );
+
+  return Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day)
+  );
+}
+
+function getComplianceDaysUntilExpiration(
+  expirationDate,
+  referenceDate = new Date()
+) {
+  const parts =
+    getDateOnlyParts(
+      expirationDate
+    );
+
+  const todayTimestamp =
+    getManilaTodayTimestamp(
+      referenceDate
+    );
 
   return (
-    expiry.getTime() <
-    today.getTime()
+    !parts ||
+    todayTimestamp === null
+      ? null
+      : Math.round(
+          (
+            Date.UTC(
+              parts.year,
+              parts.month - 1,
+              parts.day
+            ) -
+            todayTimestamp
+          ) /
+            86400000
+        )
   );
 }
 
@@ -1509,3 +1594,14 @@ exports.getSmartSuggestions =
         });
     }
   };
+
+if (
+  process.env.NODE_ENV ===
+  "test"
+) {
+  exports.__test = {
+    getComplianceDaysUntilExpiration,
+    isComplianceDocumentExpired,
+    isComplianceDocumentExpiring,
+  };
+}

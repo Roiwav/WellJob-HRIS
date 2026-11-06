@@ -13,11 +13,34 @@ const assert = require("node:assert/strict");
 const {
   __test: {
     buildTrustedDecisionSnapshot,
+    toPhilippineSqlDateTime,
   },
 } = require("../controllers/kpiDecisionController");
 
 const EVALUATION_DATE =
   new Date("2026-10-13T12:00:00.000Z");
+
+test(
+  "KPI snapshot timestamps are persisted as valid Asia/Manila MySQL DATETIME values",
+  () => {
+    assert.equal(
+      toPhilippineSqlDateTime(
+        "2026-10-31T16:00:00.000Z"
+      ),
+      "2026-11-01 00:00:00"
+    );
+    assert.equal(
+      toPhilippineSqlDateTime(
+        "2026-11-05T13:00:53.642Z"
+      ),
+      "2026-11-05 21:00:53"
+    );
+    assert.equal(
+      toPhilippineSqlDateTime(null),
+      null
+    );
+  }
+);
 
 function buildTerminationGateIncidents(
   latestIncidentDate

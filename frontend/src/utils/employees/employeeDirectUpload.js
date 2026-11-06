@@ -10,8 +10,8 @@ import authenticatedFetch from "../authenticatedFetch";
 
 import {
   EMPLOYEE_API_URL,
+  getEmployeeDocumentNumberForRequest,
   getSelectedDocuments,
-  normalizeEmployeeDocumentNumber,
 } from "./employeeFormHelpers";
 
 
@@ -246,8 +246,8 @@ function prepareEmployeeDocuments(
           "",
 
         documentNumber:
-          normalizeEmployeeDocumentNumber(
-            document?.documentNumber
+          getEmployeeDocumentNumberForRequest(
+            document
           ),
       })
     );

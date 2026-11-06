@@ -10,6 +10,9 @@ import { API_BASE } from "../config/api";
 const DECISION_HISTORY_API =
   `${API_BASE}/kpi/decision-history`;
 
+const KPI_EVALUATION_API =
+  `${API_BASE}/kpi/evaluation`;
+
 const REQUEST_TIMEOUT_MS =
   60 * 1000;
 
@@ -48,7 +51,7 @@ export const KPI_DECISION_QUERY_KEYS = {
   ],
 };
 
-async function requestJson(
+export async function requestKPIDecisionJson(
   url,
   options = {}
 ) {
@@ -96,11 +99,22 @@ async function requestJson(
     if (
       !response.ok
     ) {
-      throw new Error(
+      const requestError = new Error(
         data?.error ||
           data?.message ||
           `Request failed with status ${response.status}`
       );
+
+      requestError.name =
+        "KPIDecisionRequestError";
+
+      requestError.status =
+        response.status;
+
+      requestError.data =
+        data;
+
+      throw requestError;
     }
 
     return data;
@@ -120,6 +134,103 @@ async function requestJson(
       timeoutId
     );
   }
+}
+
+export function mergeKpiEvaluationSnapshot(
+  employee,
+  responseData
+) {
+  const evaluation =
+    responseData?.evaluation;
+
+  if (
+    !evaluation ||
+    typeof evaluation !== "object" ||
+    Array.isArray(evaluation)
+  ) {
+    throw new Error(
+      "The refreshed KPI assessment response is invalid."
+    );
+  }
+
+  const refreshedEmployee =
+    responseData?.employee &&
+    typeof responseData.employee === "object" &&
+    !Array.isArray(responseData.employee)
+      ? responseData.employee
+      : {};
+
+  return {
+    ...(employee || {}),
+    ...refreshedEmployee,
+    ...evaluation,
+
+    id:
+      refreshedEmployee.id ??
+      refreshedEmployee.employeeId ??
+      employee?.id,
+
+    name:
+      refreshedEmployee.name ??
+      employee?.name,
+
+    company:
+      refreshedEmployee.company ??
+      employee?.company,
+
+    violationCount:
+      evaluation.activeViolationCount ??
+      evaluation.violationCount ??
+      employee?.violationCount ??
+      0,
+
+    severityScore:
+      evaluation.activeSeverityScore ??
+      evaluation.severityScore ??
+      employee?.severityScore ??
+      0,
+
+    criticalIncidentCount:
+      evaluation.activeCriticalIncidentCount ??
+      evaluation.criticalIncidentCount ??
+      employee?.criticalIncidentCount ??
+      0,
+
+    recommendation:
+      evaluation.systemRecommendation ??
+      evaluation.recommendation ??
+      employee?.recommendation,
+
+    recommendationReason:
+      evaluation.recommendationReason ??
+      employee?.recommendationReason,
+
+    correctiveActionReason:
+      evaluation.recommendationReason ??
+      evaluation.correctiveActionReason ??
+      employee?.correctiveActionReason,
+  };
+}
+
+export async function requestKpiEvaluation(
+  employeeId
+) {
+  const normalizedEmployeeId =
+    String(
+      employeeId ?? ""
+    ).trim();
+
+  if (!normalizedEmployeeId) {
+    throw new Error(
+      "A valid employee ID is required to refresh the KPI assessment."
+    );
+  }
+
+  return requestKPIDecisionJson(
+    `${KPI_EVALUATION_API}/${encodeURIComponent(
+      normalizedEmployeeId
+    )}`
+  );
 }
 
 function buildDecisionHistoryUrl(
@@ -208,7 +319,7 @@ export function useKPIDecisionLatestQuery(
 
     queryFn:
       () =>
-        requestJson(
+        requestKPIDecisionJson(
           `${DECISION_HISTORY_API}?view=latest`
         ),
 
@@ -251,7 +362,7 @@ export function useKPIDecisionHistoryPageQuery(
 
     queryFn:
       () =>
-        requestJson(
+        requestKPIDecisionJson(
           url
         ),
 
@@ -281,7 +392,7 @@ export function useCreateKPIDecisionMutation() {
   return useMutation({
     mutationFn:
       (payload) =>
-        requestJson(
+        requestKPIDecisionJson(
           DECISION_HISTORY_API,
           {
             method:
@@ -311,7 +422,7 @@ export function useDeleteKPIDecisionMutation() {
   return useMutation({
     mutationFn:
       (id) =>
-        requestJson(
+        requestKPIDecisionJson(
           `${DECISION_HISTORY_API}/${encodeURIComponent(
             id
           )}`,

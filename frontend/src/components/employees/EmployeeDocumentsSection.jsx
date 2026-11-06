@@ -963,7 +963,13 @@ export default function EmployeeDocumentsSection({
                                 inputMode="numeric"
                                 autoComplete="off"
                                 value={document.documentNumber || ""}
-                                maxLength={DOCUMENT_NUMBER_MAX_LENGTH}
+                                maxLength={
+                                  document.documentNumberMaxLength ||
+                                  DOCUMENT_NUMBER_MAX_LENGTH
+                                }
+                                required={
+                                  !document.isExistingRecord
+                                }
                                 disabled={disabled}
                                 placeholder={
                                   document.documentNumberPlaceholder ||
@@ -987,7 +993,8 @@ export default function EmployeeDocumentsSection({
                               />
 
                               <p className="mt-1.5 text-xs leading-5 text-gray-400">
-                                Enter the number shown on the document.
+                                {document.documentNumberHelp ||
+                                  "Enter the number shown on the document."}
                               </p>
 
                               <ErrorText>{documentNumberError}</ErrorText>

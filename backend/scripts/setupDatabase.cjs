@@ -12,6 +12,12 @@ require("dotenv").config({
 
 const mysql = require("mysql2/promise");
 
+const {
+  MIGRATION_NAMES,
+} = require(
+  "./migrateDatabase.cjs"
+);
+
 const DATABASE_DIRECTORY =
   path.resolve(
     __dirname,
@@ -58,31 +64,18 @@ const REQUIRED_APPLICATION_TABLES = [
   "chat_group_messages",
   "chat_group_audit",
   "chat_attachments",
+  "employee_mobile_handoffs",
+  "employee_employment_history",
+  "deployment_attempts",
+  "incident_phone_capture_sessions",
 ];
 
 const REQUIRED_SYSTEM_TABLES = [
   "schema_migrations",
 ];
 
-const EXPECTED_MIGRATIONS = [
-  "add_employee_lifecycle_history.sql",
-  "add_incident_timeline.sql",
-  "smart_suggestion_states.sql",
-  "add_incident_policy_sanction.sql",
-  "add_incident_evidence_purpose.sql",
-  "add_one_active_deployment_invariant.sql",
-  "add_employee_documents_employee_id_index.sql",
-  "add_employee_documents_expiration_index.sql",
-  "add_audit_logs_category_created_index.sql",
-  "add_hr_coordinator_scope.sql",
-  "add_company_position_master_data.sql",
-  "add_user_email_password_reset.sql",
-  "add_password_reset_approval_requests.sql",
-  "add_account_credentials_delivery_status.sql",
-  "add_attendance_tracking.sql",
-  "add_chat_messenger_schema.sql",
-  "add_kpi_severity_decay_snapshots.sql",
-];
+const EXPECTED_MIGRATIONS =
+  MIGRATION_NAMES;
 
 function requiredEnv(
   name,
@@ -119,6 +112,53 @@ function requiredEnv(
   return value;
 }
 
+function booleanEnv(
+  name,
+  defaultValue = false
+) {
+  const rawValue =
+    String(
+      process.env[name] ??
+        ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (!rawValue) {
+    return defaultValue;
+  }
+
+  if (
+    [
+      "1",
+      "true",
+      "yes",
+      "on",
+    ].includes(
+      rawValue
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    [
+      "0",
+      "false",
+      "no",
+      "off",
+    ].includes(
+      rawValue
+    )
+  ) {
+    return false;
+  }
+
+  throw new Error(
+    `${name} must be a boolean value.`
+  );
+}
+
 function getDatabaseName() {
   const databaseName =
     requiredEnv(
@@ -150,6 +190,20 @@ function getDatabaseName() {
     );
   }
 
+  const expectedName =
+    requiredEnv(
+      "DB_EXPECTED_NAME"
+    );
+
+  if (
+    expectedName !==
+      databaseName
+  ) {
+    throw new Error(
+      `Database target confirmation failed: DB_EXPECTED_NAME is ${expectedName} but DB_NAME is ${databaseName}.`
+    );
+  }
+
   return databaseName;
 }
 
@@ -166,6 +220,16 @@ function getDatabaseSslOptions(
   if (
     !encodedCertificate
   ) {
+    if (
+      booleanEnv(
+        "DB_REQUIRE_SSL"
+      )
+    ) {
+      throw new Error(
+        "DB_REQUIRE_SSL requires DB_SSL_CA_BASE64 so TLS can be enabled with certificate and hostname verification."
+      );
+    }
+
     return undefined;
   }
 
@@ -258,6 +322,63 @@ function getConnectionOptions() {
     connectTimeout:
       15000,
   };
+}
+
+async function verifySelectedDatabase(
+  connection,
+  expectedName
+) {
+  const [databaseRows] =
+    await connection.query(
+      "SELECT DATABASE() AS database_name"
+    );
+
+  const selectedName =
+    String(
+      databaseRows[0]
+        ?.database_name ??
+        ""
+    );
+
+  if (
+    selectedName !==
+      expectedName
+  ) {
+    throw new Error(
+      `Database target verification failed: expected ${expectedName} but the connection selected ${selectedName || "no database"}.`
+    );
+  }
+
+  const [cipherRows] =
+    await connection.query(
+      "SHOW SESSION STATUS LIKE 'Ssl_cipher'"
+    );
+
+  const tlsCipher =
+    String(
+      cipherRows[0]?.Value ??
+        cipherRows[0]?.VALUE ??
+        ""
+    ).trim();
+
+  if (
+    booleanEnv(
+      "DB_REQUIRE_SSL"
+    ) &&
+    !tlsCipher
+  ) {
+    throw new Error(
+      "Database target verification failed: DB_REQUIRE_SSL is enabled but this connection is not using TLS."
+    );
+  }
+
+  console.log(
+    `Verified selected database: ${selectedName}`
+  );
+
+  console.log(
+    `Database TLS: ${tlsCipher ? "enabled" : "not detected"}`
+  );
 }
 
 async function getDatabaseFamily(
@@ -1655,42 +1776,50 @@ async function main() {
       `Target database: ${databaseName}`
     );
 
-    /*
-     * Connect without selecting DB_NAME first so a
-     * fresh installation can create the database.
-     */
-    adminConnection =
-      await mysql.createConnection(
-        connectionOptions
+    const requireExistingDatabase =
+      booleanEnv(
+        "DB_REQUIRE_EXISTING"
       );
 
-    const databaseFamily =
-      await getDatabaseFamily(
-        adminConnection
-      );
-
-    console.log(
-      `Database engine: ${databaseFamily}`
-    );
-
-    const baselineSql =
-      normalizeBaselineSqlForTarget(
-        rawBaselineSql,
-        databaseFamily
-      );
-
-    await adminConnection.query(
-      `
-      CREATE DATABASE IF NOT EXISTS \`${databaseName}\`
-      CHARACTER SET utf8mb4
-      COLLATE utf8mb4_general_ci
-      `
-    );
-
-    await adminConnection.end();
-
-    adminConnection =
+    let databaseFamily =
       null;
+
+    if (
+      !requireExistingDatabase
+    ) {
+      /*
+       * Normal fresh-install mode may create the named
+       * database. Restricted test credentials should set
+       * DB_REQUIRE_EXISTING=true and use a database that
+       * has already been provisioned.
+       */
+      adminConnection =
+        await mysql.createConnection(
+          connectionOptions
+        );
+
+      databaseFamily =
+        await getDatabaseFamily(
+          adminConnection
+        );
+
+      await adminConnection.query(
+        `
+        CREATE DATABASE IF NOT EXISTS \`${databaseName}\`
+        CHARACTER SET utf8mb4
+        COLLATE utf8mb4_general_ci
+        `
+      );
+
+      await adminConnection.end();
+
+      adminConnection =
+        null;
+    } else {
+      console.log(
+        "Existing-database mode enabled; CREATE DATABASE will not be attempted."
+      );
+    }
 
     databaseConnection =
       await mysql.createConnection({
@@ -1708,15 +1837,93 @@ async function main() {
           true,
       });
 
+    await verifySelectedDatabase(
+      databaseConnection,
+      databaseName
+    );
+
+    if (!databaseFamily) {
+      databaseFamily =
+        await getDatabaseFamily(
+          databaseConnection
+        );
+    }
+
+    console.log(
+      `Database engine: ${databaseFamily}`
+    );
+
+    const baselineSql =
+      normalizeBaselineSqlForTarget(
+        rawBaselineSql,
+        databaseFamily
+      );
+
     /*
      * baseline.sql contains CREATE TABLE IF NOT
      * EXISTS definitions and no destructive data
      * statements. On a fresh database this creates
      * the canonical application schema.
      */
-    await databaseConnection.query(
-      baselineSql
-    );
+    try {
+      await databaseConnection.query(
+        baselineSql
+      );
+    } catch (error) {
+      try {
+        const [warningRows] =
+          await databaseConnection.query(
+            "SHOW WARNINGS"
+          );
+
+        const relevantWarnings =
+          warningRows
+            .filter(
+              (row) =>
+                String(
+                  row.Level ||
+                    ""
+                ).toLowerCase() !==
+                  "note"
+            )
+            .slice(0, 10)
+            .map((row) => ({
+              level:
+                String(
+                  row.Level ||
+                    ""
+                ),
+              code:
+                Number(
+                  row.Code ||
+                    0
+                ),
+              message:
+                String(
+                  row.Message ||
+                    ""
+                ),
+            }));
+
+        if (
+          relevantWarnings.length >
+          0
+        ) {
+          console.error(
+            "Baseline SQL diagnostics:",
+            JSON.stringify(
+              relevantWarnings,
+              null,
+              2
+            )
+          );
+        }
+      } catch {
+        // Preserve the original setup error.
+      }
+
+      throw error;
+    }
 
     await databaseConnection.end();
 
@@ -1741,6 +1948,11 @@ async function main() {
         database:
           databaseName,
       });
+
+    await verifySelectedDatabase(
+      databaseConnection,
+      databaseName
+    );
 
     await verifyCoreSchema(
       databaseConnection

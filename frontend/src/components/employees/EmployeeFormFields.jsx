@@ -350,7 +350,9 @@ export default function EmployeeFormFields({
           <FormField
             label="Full Name"
             name="name"
-            required
+            required={
+              mode === "add"
+            }
             error={
               errors?.name
             }
@@ -402,6 +404,7 @@ export default function EmployeeFormFields({
           <FormField
             label="Birthday"
             name="birthday"
+            required
             error={
               errors?.birthday
             }

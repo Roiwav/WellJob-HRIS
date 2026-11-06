@@ -175,6 +175,10 @@ const cors =
 const compression =
   require("compression");
 
+const {
+  getDeploymentMetadata,
+} = require("./utils/deploymentMetadata");
+
 
 const {
   configureProductionProxy,
@@ -445,6 +449,23 @@ app.get(
     return res.json({
       available: true,
     });
+  }
+);
+
+
+/*
+ * Public, non-sensitive deployment identity for final-defense and operational
+ * verification. Vercel supplies the commit and deployment values at runtime.
+ */
+app.get(
+  "/api/system/version",
+  (
+    req,
+    res
+  ) => {
+    return res.json(
+      getDeploymentMetadata()
+    );
   }
 );
 

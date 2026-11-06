@@ -449,6 +449,8 @@ CREATE TABLE IF NOT EXISTS deployment_attempts (
 
   scheduled_date DATE NOT NULL,
 
+  scheduled_time TIME DEFAULT NULL,
+
   actual_arrival_date DATE DEFAULT NULL,
 
   status VARCHAR(30) NOT NULL
@@ -516,7 +518,12 @@ CREATE TABLE IF NOT EXISTS deployment_attempts (
   CONSTRAINT fk_deployment_attempts_employee
     FOREIGN KEY (employee_id)
     REFERENCES employees(id)
-    ON UPDATE CASCADE
+    /*
+     * employee_id feeds pending_employee_id_guard.
+     * MySQL 8.4 rejects cascading updates on a child
+     * column used by a STORED generated column.
+     */
+    ON UPDATE RESTRICT
     ON DELETE RESTRICT,
 
   CONSTRAINT fk_deployment_attempts_created_by
@@ -782,6 +789,96 @@ CREATE TABLE IF NOT EXISTS incident_evidence (
     FOREIGN KEY (incident_id)
     REFERENCES incidents(id)
     ON DELETE CASCADE
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_general_ci;
+
+
+/*
+ * ================================================================
+ * 9A. INCIDENT PHONE CAMERA CAPTURE SESSIONS
+ * ================================================================
+ *
+ * Short-lived, token-bound metadata for the incident phone camera
+ * workflow. Uploaded bytes remain in private Supabase storage; this
+ * table stores only the workflow state and protected object path.
+ * ================================================================
+ */
+CREATE TABLE IF NOT EXISTS incident_phone_capture_sessions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+  session_id CHAR(36)
+    CHARACTER SET ascii
+    COLLATE ascii_bin
+    NOT NULL,
+
+  token_hash CHAR(64)
+    CHARACTER SET ascii
+    COLLATE ascii_bin
+    NOT NULL,
+
+  creator_user_id INT NOT NULL,
+
+  capture_purpose VARCHAR(32) NOT NULL,
+
+  employee_id INT DEFAULT NULL,
+  incident_id INT DEFAULT NULL,
+  workflow_action VARCHAR(40) DEFAULT NULL,
+
+  status VARCHAR(24) NOT NULL
+    DEFAULT 'WAITING',
+
+  original_name VARCHAR(255) DEFAULT NULL,
+  mime_type VARCHAR(100) DEFAULT NULL,
+  file_size INT UNSIGNED DEFAULT NULL,
+
+  stored_filename VARCHAR(255) DEFAULT NULL,
+  object_path VARCHAR(1024) DEFAULT NULL,
+
+  expires_at DATETIME NOT NULL,
+
+  upload_authorized_at DATETIME DEFAULT NULL,
+  uploaded_at DATETIME DEFAULT NULL,
+  consumed_at DATETIME DEFAULT NULL,
+  cancelled_at DATETIME DEFAULT NULL,
+
+  created_at DATETIME NOT NULL
+    DEFAULT CURRENT_TIMESTAMP,
+
+  updated_at DATETIME NOT NULL
+    DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+
+  UNIQUE KEY uq_incident_phone_capture_session_id (
+    session_id
+  ),
+
+  UNIQUE KEY uq_incident_phone_capture_token_hash (
+    token_hash
+  ),
+
+  KEY idx_incident_phone_capture_creator_status (
+    creator_user_id,
+    status
+  ),
+
+  KEY idx_incident_phone_capture_purpose (
+    capture_purpose
+  ),
+
+  KEY idx_incident_phone_capture_employee (
+    employee_id
+  ),
+
+  KEY idx_incident_phone_capture_incident (
+    incident_id
+  ),
+
+  KEY idx_incident_phone_capture_expires (
+    expires_at
+  )
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_general_ci;

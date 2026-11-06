@@ -12,6 +12,12 @@ const fs =
 const path =
   require("path");
 
+const {
+  MIGRATION_NAMES,
+} = require(
+  "../scripts/migrateDatabase.cjs"
+);
+
 
 const backendRoot =
   path.resolve(
@@ -61,7 +67,16 @@ test(
       runner,
       /name:\s*"add_incident_evidence_purpose\.sql"/
     );
-    assert.match(setup, /"add_incident_evidence_purpose\.sql"/);
+    assert.match(
+      setup,
+      /EXPECTED_MIGRATIONS\s*=\s*MIGRATION_NAMES/
+    );
+
+    assert.ok(
+      MIGRATION_NAMES.includes(
+        "add_incident_evidence_purpose.sql"
+      )
+    );
   }
 );
 
@@ -177,7 +192,6 @@ test(
       "chat_group_messages",
       "chat_group_audit",
       "chat_attachments",
-      "add_chat_messenger_schema.sql",
     ];
 
 
@@ -195,6 +209,208 @@ test(
         )
       );
     }
+
+    assert.ok(
+      MIGRATION_NAMES.includes(
+        "add_chat_messenger_schema.sql"
+      )
+    );
+  }
+);
+
+
+test(
+  "Setup derives its complete migration ledger from the runner registry",
+  () => {
+    const setup = readSource(
+      "scripts/setupDatabase.cjs"
+    );
+
+    assert.equal(
+      MIGRATION_NAMES.length,
+      23
+    );
+
+    assert.equal(
+      new Set(
+        MIGRATION_NAMES
+      ).size,
+      MIGRATION_NAMES.length
+    );
+
+    for (
+      const migrationName of
+        MIGRATION_NAMES
+    ) {
+      assert.equal(
+        fs.existsSync(
+          path.join(
+            backendRoot,
+            "database",
+            migrationName
+          )
+        ),
+        true,
+        `Missing migration file: ${migrationName}`
+      );
+    }
+
+    assert.match(
+      setup,
+      /require\(\s*"\.\/migrateDatabase\.cjs"\s*\)/
+    );
+
+    assert.doesNotMatch(
+      setup,
+      /const\s+EXPECTED_MIGRATIONS\s*=\s*\[/
+    );
+  }
+);
+
+
+test(
+  "Fresh setup includes runtime-required deployment time and phone-capture schema",
+  () => {
+    const baseline = readSource(
+      "database/baseline.sql"
+    );
+
+    const runner = readSource(
+      "scripts/migrateDatabase.cjs"
+    );
+
+    const setup = readSource(
+      "scripts/setupDatabase.cjs"
+    );
+
+    assert.match(
+      baseline,
+      /scheduled_time\s+TIME\s+DEFAULT\s+NULL/i
+    );
+
+    assert.match(
+      baseline,
+      /CREATE TABLE IF NOT EXISTS\s+incident_phone_capture_sessions/i
+    );
+
+    for (
+      const migrationName of
+        [
+          "add_deployment_attempts_scheduled_time.sql",
+          "add_incident_phone_capture_sessions.sql",
+        ]
+    ) {
+      assert.ok(
+        MIGRATION_NAMES.includes(
+          migrationName
+        )
+      );
+
+      assert.match(
+        runner,
+        new RegExp(
+          migrationName.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&"
+          )
+        )
+      );
+    }
+
+    for (
+      const tableName of
+        [
+          "employee_mobile_handoffs",
+          "employee_employment_history",
+          "deployment_attempts",
+          "incident_phone_capture_sessions",
+        ]
+    ) {
+      assert.match(
+        setup,
+        new RegExp(
+          `"${tableName}"`
+        )
+      );
+    }
+
+    assert.match(
+      runner,
+      /SELECT DATABASE\(\) AS database_name/
+    );
+
+    assert.match(
+      runner,
+      /requiredEnv\(\s*"DB_EXPECTED_NAME"\s*\)/
+    );
+
+    assert.match(
+      runner,
+      /DB_REQUIRE_SSL requires DB_SSL_CA_BASE64/
+    );
+
+    assert.match(
+      runner,
+      /COALESCE\(DATETIME_PRECISION, 0\) = 0/
+    );
+
+    assert.match(
+      runner,
+      /createdDefinition[\s\S]{0,500}current_timestamp/
+    );
+
+    assert.match(
+      runner,
+      /updatedDefinition[\s\S]{0,800}on update current_timestamp/
+    );
+
+    assert.match(
+      setup,
+      /DB_REQUIRE_EXISTING/
+    );
+
+    assert.match(
+      setup,
+      /SELECT DATABASE\(\) AS database_name/
+    );
+
+    assert.match(
+      setup,
+      /requiredEnv\(\s*"DB_EXPECTED_NAME"\s*\)/
+    );
+
+    assert.match(
+      setup,
+      /DB_REQUIRE_SSL requires DB_SSL_CA_BASE64/
+    );
+  }
+);
+
+
+test(
+  "Fresh deployment-attempt schema keeps the generated-column employee foreign key restrictive",
+  () => {
+    const baseline = readSource(
+      "database/baseline.sql"
+    );
+
+    const workflowMigration =
+      readSource(
+        "database/add_employee_workforce_workflow.sql"
+      );
+
+    const expectedConstraint =
+      /CONSTRAINT\s+fk_deployment_attempts_employee[\s\S]{0,220}REFERENCES\s+employees\s*\(\s*id\s*\)[\s\S]{0,220}ON\s+UPDATE\s+RESTRICT[\s\S]{0,120}ON\s+DELETE\s+RESTRICT/i;
+
+    assert.match(
+      baseline,
+      expectedConstraint
+    );
+
+    assert.match(
+      workflowMigration,
+      expectedConstraint
+    );
   }
 );
 

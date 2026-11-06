@@ -33,6 +33,8 @@ import {
 } from "../../../utils/kpi/kpiHelpers";
 
 import {
+  mergeKpiEvaluationSnapshot,
+  requestKpiEvaluation,
   useCreateKPIDecisionMutation,
   useKPIDecisionLatestQuery,
 } from "../../../hooks/useKPIDecisionQueries";
@@ -232,26 +234,35 @@ function ReviewRecommendationModal({
   const createDecisionMutation =
     useCreateKPIDecisionMutation();
 
+  const [assessmentEmployee, setAssessmentEmployee] =
+    useState(employee);
+
+  const [snapshotRecoveryMessage, setSnapshotRecoveryMessage] =
+    useState("");
+
+  const [isRefreshingAssessment, setIsRefreshingAssessment] =
+    useState(false);
+
   const recommendation =
-    employee?.recommendation ||
+    assessmentEmployee?.recommendation ||
     RECOMMENDATION_LABELS.RETAIN;
 
   const recommendedFollowUp =
-    employee?.suggestedHRAction ||
+    assessmentEmployee?.suggestedHRAction ||
     HR_ACTION_WORKFLOW.MONITOR;
 
   const assessmentConfidence =
-    employee?.decisionConfidence ||
+    assessmentEmployee?.decisionConfidence ||
     DECISION_CONFIDENCE.LOW;
 
   const recommendationReason =
-    employee?.recommendationReason ||
-    employee?.correctiveActionReason ||
+    assessmentEmployee?.recommendationReason ||
+    assessmentEmployee?.correctiveActionReason ||
     "No recommendation explanation is available.";
 
   const followUpReason =
-    employee?.suggestedHRActionReason ||
-    employee?.decisionConfidenceReason ||
+    assessmentEmployee?.suggestedHRActionReason ||
+    assessmentEmployee?.decisionConfidenceReason ||
     "No follow-up explanation is available.";
 
   const [decisionChoice, setDecisionChoice] =
@@ -264,7 +275,8 @@ function ReviewRecommendationModal({
   const [notes, setNotes] = useState("");
 
   const isPending =
-    createDecisionMutation.isPending;
+    createDecisionMutation.isPending ||
+    isRefreshingAssessment;
 
   const decisionType =
     decisionChoice === "accept"
@@ -308,42 +320,44 @@ function ReviewRecommendationModal({
 
   async function handleSave() {
     if (
-      !employee ||
-      !employee.id ||
+      !assessmentEmployee ||
+      !assessmentEmployee.id ||
       !canSave
     ) {
       return;
     }
 
+    setSnapshotRecoveryMessage("");
+
     const payload = {
-      employeeId: employee.id,
+      employeeId: assessmentEmployee.id,
 
       employeeName:
-        employee.name || "Unknown Employee",
+        assessmentEmployee.name || "Unknown Employee",
 
       company:
-        employee.company || "Unassigned",
+        assessmentEmployee.company || "Unassigned",
 
       riskLevel:
-        employee.riskLevel || "Low Risk",
+        assessmentEmployee.riskLevel || "Low Risk",
 
       kpiLevel:
-        employee.kpiLevel || "Good Standing",
+        assessmentEmployee.kpiLevel || "Good Standing",
 
       violationCount: Number(
-        employee.violationCount || 0
+        assessmentEmployee.violationCount || 0
       ),
 
       severityScore: Number(
-        employee.severityScore || 0
+        assessmentEmployee.severityScore || 0
       ),
 
       criticalIncidentCount: Number(
-        employee.criticalIncidentCount || 0
+        assessmentEmployee.criticalIncidentCount || 0
       ),
 
       decisionConfidence:
-        employee.decisionConfidence ||
+        assessmentEmployee.decisionConfidence ||
         DECISION_CONFIDENCE.LOW,
 
       suggestedHRAction: recommendedFollowUp,
@@ -365,18 +379,18 @@ function ReviewRecommendationModal({
         user?.role || "Authorized User",
 
       recommendationReason:
-        employee.recommendationReason ||
-        employee.correctiveActionReason ||
+        assessmentEmployee.recommendationReason ||
+        assessmentEmployee.correctiveActionReason ||
         "",
 
       decisionConfidenceReason:
-        employee.decisionConfidenceReason || "",
+        assessmentEmployee.decisionConfidenceReason || "",
 
       suggestedHRActionReason:
-        employee.suggestedHRActionReason || "",
+        assessmentEmployee.suggestedHRActionReason || "",
 
       correctiveActionBasis:
-        employee.correctiveActionBasis || "",
+        assessmentEmployee.correctiveActionBasis || "",
     };
 
     try {
@@ -390,6 +404,57 @@ function ReviewRecommendationModal({
         decisionType
       );
     } catch (error) {
+      if (
+        error?.status === 409
+      ) {
+        setIsRefreshingAssessment(true);
+
+        try {
+          const refreshedData =
+            await requestKpiEvaluation(
+              assessmentEmployee.id
+            );
+
+          const refreshedEmployee =
+            mergeKpiEvaluationSnapshot(
+              assessmentEmployee,
+              refreshedData
+            );
+
+          setAssessmentEmployee(
+            refreshedEmployee
+          );
+
+          setDecisionChoice("");
+
+          setFinalAction(
+            refreshedEmployee.suggestedHRAction ||
+              HR_ACTION_WORKFLOW.MONITOR
+          );
+
+          createDecisionMutation.reset();
+
+          setSnapshotRecoveryMessage(
+            "The KPI assessment changed before this decision was saved. The latest assessment is now shown. Review the updated details, select an HR decision again, and then resubmit. No decision was recorded."
+          );
+        } catch (refreshError) {
+          console.error(
+            "KPI assessment refresh error:",
+            refreshError
+          );
+
+          createDecisionMutation.reset();
+
+          setSnapshotRecoveryMessage(
+            "The KPI assessment changed before this decision was saved, but the latest assessment could not be loaded. Close this review, refresh KPI Reports, and try again. No decision was recorded."
+          );
+        } finally {
+          setIsRefreshingAssessment(false);
+        }
+
+        return;
+      }
+
       console.error(
         "KPI decision save error:",
         error
@@ -399,7 +464,7 @@ function ReviewRecommendationModal({
 
   return (
     <Dialog
-      open={Boolean(employee)}
+      open={Boolean(assessmentEmployee)}
       onClose={onClose}
       title="Review Recommendation"
       description="Review the employee information and record the HR decision."
@@ -432,7 +497,7 @@ function ReviewRecommendationModal({
         </>
       }
     >
-      {employee && (
+      {assessmentEmployee && (
         <div className="space-y-5">
           <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/30">
             <div className="flex min-w-0 items-center gap-3">
@@ -440,11 +505,11 @@ function ReviewRecommendationModal({
 
               <div className="min-w-0">
                 <p className="truncate text-base font-black text-slate-900 dark:text-white">
-                  {employee.name || "Unknown Employee"}
+                  {assessmentEmployee.name || "Unknown Employee"}
                 </p>
 
                 <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
-                  {employee.company || "Unassigned"}
+                  {assessmentEmployee.company || "Unassigned"}
                 </p>
               </div>
             </div>
@@ -453,7 +518,7 @@ function ReviewRecommendationModal({
               <ReviewFact label="KPI Standing">
                 <KPIBadge
                   level={
-                    employee.kpiLevel ||
+                    assessmentEmployee.kpiLevel ||
                     "Good Standing"
                   }
                 />
@@ -462,7 +527,7 @@ function ReviewRecommendationModal({
               <ReviewFact label="Risk Level">
                 <RiskBadge
                   level={
-                    employee.riskLevel ||
+                    assessmentEmployee.riskLevel ||
                     "Low Risk"
                   }
                 />
@@ -470,28 +535,28 @@ function ReviewRecommendationModal({
 
               <ReviewFact label="Active Violations">
                 <p className="text-sm font-black text-slate-900 dark:text-white">
-                  {Number(employee.violationCount || 0)}
+                  {Number(assessmentEmployee.violationCount || 0)}
                 </p>
               </ReviewFact>
 
               <ReviewFact label="Active / Historical Score">
                 <p className="text-sm font-black text-slate-900 dark:text-white">
-                  {Number(employee.activeSeverityScore ?? employee.severityScore ?? 0)} / {Number(employee.historicalSeverityScore ?? employee.severityScore ?? 0)}
+                  {Number(assessmentEmployee.activeSeverityScore ?? assessmentEmployee.severityScore ?? 0)} / {Number(assessmentEmployee.historicalSeverityScore ?? assessmentEmployee.severityScore ?? 0)}
                 </p>
               </ReviewFact>
             </div>
 
             <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-300">
-              Behavior trend: {employee.behaviorTrend || "Insufficient Data"}. Current KPI and HR recommendations use the active score; historical incidents remain available for audit.
+              Behavior trend: {assessmentEmployee.behaviorTrend || "Insufficient Data"}. Current KPI and HR recommendations use the active score; historical incidents remain available for audit.
             </div>
 
             {Number(
-              employee.criticalIncidentCount || 0
+              assessmentEmployee.criticalIncidentCount || 0
             ) > 0 && (
               <div className="mt-3 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">
                 <FiAlertCircle aria-hidden="true" />
                 {Number(
-                  employee.criticalIncidentCount || 0
+                  assessmentEmployee.criticalIncidentCount || 0
                 )} critical incident(s) recorded
               </div>
             )}
@@ -690,7 +755,17 @@ function ReviewRecommendationModal({
             </div>
           )}
 
-          {createDecisionMutation.isError && (
+          {snapshotRecoveryMessage && (
+            <div
+              role="alert"
+              className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300"
+            >
+              {snapshotRecoveryMessage}
+            </div>
+          )}
+
+          {createDecisionMutation.isError &&
+            !snapshotRecoveryMessage && (
             <div
               role="alert"
               className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300"

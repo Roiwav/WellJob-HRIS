@@ -13,6 +13,18 @@ const {
   cleanupUnreferencedFileCandidates,
 } = require("../utils/fileReferenceService");
 
+const {
+  validateAndNormalizeEmployeeDocumentNumbers,
+} = require(
+  "../utils/employeeGovernmentIdValidation"
+);
+
+const {
+  validateEmployeeMinimumAge,
+} = require(
+  "../utils/employeeAgeValidation"
+);
+
 const MANILA_CURRENT_DATE_SQL =
   "DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))";
 
@@ -530,177 +542,6 @@ function isSameText(
   );
 }
 
-const EMPLOYEE_DOCUMENT_NUMBER_MAX_LENGTH =
-  64;
-
-const EMPLOYEE_DOCUMENT_NUMBER_RULES =
-  Object.freeze({
-    "sss (id or e1 form)": {
-      label:
-        "SSS Number",
-    },
-
-    "pag-ibig (id or mdrf form)": {
-      label:
-        "Pag-IBIG MID Number",
-    },
-
-    "philhealth (id or mdf form)": {
-      label:
-        "PhilHealth Number",
-    },
-  });
-
-function normalizeEmployeeDocumentNumber(
-  value
-) {
-  const normalized =
-    String(
-      value ?? ""
-    )
-      .trim()
-      .replace(
-        /\s+/g,
-        " "
-      );
-
-  return normalized ||
-    null;
-}
-
-function getEmployeeDocumentNumberRule(
-  documentName
-) {
-  const key =
-    normalizeComparableText(
-      documentName
-    );
-
-  return (
-    EMPLOYEE_DOCUMENT_NUMBER_RULES[
-      key
-    ] || null
-  );
-}
-
-function validateEmployeeDocumentNumbers(
-  documents,
-  existingDocuments = null
-) {
-  const safeDocuments =
-    Array.isArray(
-      documents
-    )
-      ? documents
-      : [];
-
-  const hasExistingDocumentContext =
-    Array.isArray(
-      existingDocuments
-    );
-
-  const safeExistingDocuments =
-    hasExistingDocumentContext
-      ? existingDocuments
-      : [];
-
-  for (
-    const document of
-    safeDocuments
-  ) {
-    const rule =
-      getEmployeeDocumentNumberRule(
-        document?.name
-      );
-
-    if (!rule) {
-      continue;
-    }
-
-    const documentNumber =
-      normalizeEmployeeDocumentNumber(
-        document?.documentNumber
-      );
-
-    if (documentNumber) {
-      if (
-        documentNumber.length >
-        EMPLOYEE_DOCUMENT_NUMBER_MAX_LENGTH
-      ) {
-        return `${rule.label} must not exceed ${EMPLOYEE_DOCUMENT_NUMBER_MAX_LENGTH} characters.`;
-      }
-
-      if (
-        !/^[0-9 -]+$/.test(
-          documentNumber
-        ) ||
-        !/\d/.test(
-          documentNumber
-        )
-      ) {
-        return `${rule.label} may only contain numbers, spaces, and hyphens.`;
-      }
-
-      continue;
-    }
-
-    /*
-     * CREATE:
-     * A newly submitted government compliance
-     * document must include its readable reference
-     * number.
-     */
-    if (
-      !hasExistingDocumentContext
-    ) {
-      return `${rule.label} is required for ${document.name}.`;
-    }
-
-    const existingDocument =
-      safeExistingDocuments.find(
-        (existing) =>
-          normalizeComparableText(
-            existing?.name
-          ) ===
-          normalizeComparableText(
-            document?.name
-          )
-      );
-
-    const existingDocumentNumber =
-      normalizeEmployeeDocumentNumber(
-        existingDocument?.document_number ??
-          existingDocument?.documentNumber
-      );
-
-    /*
-     * UPDATE LEGACY COMPATIBILITY:
-     *
-     * Historical production rows pre-date the
-     * structured document_number column. Allow an
-     * unrelated employee edit to preserve such a
-     * legacy government document without forcing HR
-     * Staff to invent or immediately re-encode a
-     * number.
-     *
-     * A number becomes required when:
-     * - the government document is newly added,
-     * - its scan/photo is being replaced, or
-     * - an already recorded structured number is
-     *   being cleared.
-     */
-    if (
-      !existingDocument ||
-      document?.hasNewFile ||
-      existingDocumentNumber
-    ) {
-      return `${rule.label} is required for ${document.name}.`;
-    }
-  }
-
-  return "";
-}
-
 /*
  * DEPLOYMENT MASTER-DATA VALIDATION
  *
@@ -1172,7 +1013,7 @@ const extractDocumentsFromReq = (
           ),
 
         documentNumber:
-          normalizeEmployeeDocumentNumber(
+          toNullable(
             documentNumber
           ),
 
@@ -1283,6 +1124,23 @@ exports.createEmployee = async (
         req,
         res,
         "Date Hired is required."
+      );
+    }
+
+    const minimumAgeError =
+      validateEmployeeMinimumAge(
+        finalBirthday,
+        finalDateHired,
+        {
+          required: true,
+        }
+      );
+
+    if (minimumAgeError) {
+      return await rejectEmployeeRequest(
+        req,
+        res,
+        minimumAgeError
       );
     }
 
@@ -1406,23 +1264,33 @@ exports.createEmployee = async (
       );
     }
 
-    const documents =
+    let documents =
       extractDocumentsFromReq(
         req
       );
 
-    const documentNumberError =
-      validateEmployeeDocumentNumbers(
-        documents
+    const documentNumberValidation =
+      validateAndNormalizeEmployeeDocumentNumbers(
+        documents,
+        null,
+        {
+          requireGovernmentIds:
+            true,
+        }
       );
 
-    if (documentNumberError) {
+    if (
+      documentNumberValidation.error
+    ) {
       return await rejectEmployeeRequest(
         req,
         res,
-        documentNumberError
+        documentNumberValidation.error
       );
     }
+
+    documents =
+      documentNumberValidation.documents;
 
     connection =
       await db
@@ -3531,7 +3399,7 @@ exports.updateEmployee = async (
     const submittedContractStart =
       submittedContractStartResult.value;
 
-    const frontendDocs =
+    let frontendDocs =
       extractDocumentsFromReq(
         req
       );
@@ -3699,6 +3567,48 @@ exports.updateEmployee = async (
         ? submittedDateHired.value
         : currentDateHired;
 
+    const birthdayChanged =
+      birthdayWasSubmitted &&
+      submittedBirthday.value !==
+        currentBirthday;
+
+    const dateHiredChanged =
+      dateHiredWasSubmitted &&
+      submittedDateHired.value !==
+        currentDateHired;
+
+    if (
+      birthdayWasSubmitted &&
+      currentBirthday &&
+      !submittedBirthday.value
+    ) {
+      return await rejectAfterRollback(
+        400,
+        "Birthday is required."
+      );
+    }
+
+    if (
+      birthdayChanged ||
+      dateHiredChanged
+    ) {
+      const minimumAgeError =
+        validateEmployeeMinimumAge(
+          finalBirthday,
+          finalDateHired,
+          {
+            required: true,
+          }
+        );
+
+      if (minimumAgeError) {
+        return await rejectAfterRollback(
+          400,
+          minimumAgeError
+        );
+      }
+    }
+
     const [
       existingDocs,
     ] =
@@ -3718,18 +3628,23 @@ exports.updateEmployee = async (
         ]
       );
 
-    const documentNumberError =
-      validateEmployeeDocumentNumbers(
+    const documentNumberValidation =
+      validateAndNormalizeEmployeeDocumentNumbers(
         frontendDocs,
         existingDocs
       );
 
-    if (documentNumberError) {
+    if (
+      documentNumberValidation.error
+    ) {
       return await rejectAfterRollback(
         400,
-        documentNumberError
+        documentNumberValidation.error
       );
     }
+
+    frontendDocs =
+      documentNumberValidation.documents;
 
     const [
       activeAssignments,

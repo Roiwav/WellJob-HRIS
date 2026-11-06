@@ -1,12 +1,14 @@
 import {
-  DOCUMENT_NUMBER_MAX_LENGTH,
   DOCUMENT_OPTIONS,
   documentRequiresNumber,
-  getDocumentNumberLabel,
   normalizeName,
   toProperName,
 } from "../../components/employees/employeeConstants";
 import { API_BASE } from "../../config/api";
+import {
+  normalizeGovernmentIdNumber,
+  validateGovernmentIdNumber,
+} from "./employeeGovernmentIdValidation";
 
 export const EMPLOYEE_API_URL = `${API_BASE}/employees`;
 
@@ -545,10 +547,26 @@ export function getExistingDocumentNumber(document) {
   );
 }
 
-export function normalizeEmployeeDocumentNumber(value) {
-  return String(value || "")
-    .trim()
-    .replace(/\s+/g, " ");
+export function normalizeEmployeeDocumentNumber(
+  value,
+  documentName = ""
+) {
+  const normalized =
+    String(
+      value ?? ""
+    ).trim();
+
+  if (!documentName) {
+    return normalized.replace(
+      /\s+/g,
+      " "
+    );
+  }
+
+  return normalizeGovernmentIdNumber(
+    documentName,
+    normalized
+  );
 }
 
 export function validateEmployeeDocumentNumber(document) {
@@ -567,74 +585,94 @@ export function validateEmployeeDocumentNumber(document) {
     return "";
   }
 
-  const label =
-    document.documentNumberLabel ||
-    getDocumentNumberLabel(document.name);
-
   const value =
-    normalizeEmployeeDocumentNumber(
-      document.documentNumber
-    );
+    String(
+      document.documentNumber ??
+        ""
+    ).trim();
 
   const originalNumber =
-    normalizeEmployeeDocumentNumber(
-      document.originalDocumentNumber
-    );
+    String(
+      document.originalDocumentNumber ??
+        ""
+    ).trim();
 
   const hasExistingRecord =
     Boolean(document.isExistingRecord);
 
-  const hasReplacementFile =
-    isFile(document.file);
-
   /*
-   * Legacy-safe rule:
-   *
-   * Existing historical government documents may
-   * have no structured number because they pre-date
-   * this feature. Allow unrelated edits while the
-   * original scan remains unchanged.
-   *
-   * Require the number when:
-   * - the government document is newly added,
-   * - the existing document gets a replacement file,
-   * - or a previously recorded number is cleared.
+   * Preserve an unchanged historical value verbatim.
+   * This prevents an unrelated employee edit from
+   * rewriting or blocking legacy formatted numbers.
+   * Any new or changed nonblank value must satisfy
+   * the current official length/character rule.
    */
   if (
-    !value &&
-    (
-      originalNumber ||
-      !hasExistingRecord ||
-      hasReplacementFile
-    )
+    hasExistingRecord &&
+    value === originalNumber
   ) {
-    return `${label} is required.`;
-  }
-
-  if (!value) {
     return "";
   }
 
-  if (
-    value.length >
-    DOCUMENT_NUMBER_MAX_LENGTH
-  ) {
-    return `${label} must not exceed ${DOCUMENT_NUMBER_MAX_LENGTH} characters.`;
-  }
+  return validateGovernmentIdNumber(
+    document.name,
+    value,
+    {
+      required:
+        !hasExistingRecord ||
+        Boolean(
+          originalNumber
+        ) ||
+        isFile(
+          document.file
+        ),
+    }
+  ).error;
+}
+
+export function getEmployeeDocumentNumberForRequest(
+  document
+) {
+  const value =
+    String(
+      document?.documentNumber ??
+        ""
+    ).trim();
+
+  const originalValue =
+    String(
+      document
+        ?.originalDocumentNumber ??
+        ""
+    ).trim();
 
   if (
-    !/^[0-9 -]+$/.test(value) ||
-    !/\d/.test(value)
+    document
+      ?.isExistingRecord &&
+    value ===
+      originalValue
   ) {
-    return `${label} may only contain numbers, spaces, and hyphens.`;
+    return originalValue;
   }
 
-  return "";
+  return normalizeEmployeeDocumentNumber(
+    value,
+    document?.name
+  );
 }
 
 export function normalizeDateInput(value) {
   if (!value) {
     return "";
+  }
+
+  const dateOnlyMatch =
+    /^(\d{4}-\d{2}-\d{2})(?:$|[ T])/.exec(
+      String(value).trim()
+    );
+
+  if (dateOnlyMatch) {
+    return dateOnlyMatch[1];
   }
 
   const parsedDate = new Date(value);
@@ -663,12 +701,72 @@ export function normalizeDateInput(value) {
   return `${year}-${month}-${day}`;
 }
 
-export function validateEmployeeBirthday(value) {
+export function getPhilippinesDateInputValue(
+  referenceDate = new Date()
+) {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Manila",
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).formatToParts(
+      referenceDate
+    );
+
+  const values =
+    Object.fromEntries(
+      parts
+        .filter(
+          (part) =>
+            [
+              "year",
+              "month",
+              "day",
+            ].includes(
+              part.type
+            )
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ]
+        )
+    );
+
+  return (
+    `${values.year}-` +
+    `${values.month}-` +
+    `${values.day}`
+  );
+}
+
+export function validateEmployeeBirthday(
+  value,
+  {
+    referenceDate = new Date(),
+    required = false,
+    minimumAge = 17,
+    minimumAgeReferenceDate = "",
+    minimumAgeReferenceLabel =
+      "Date Hired",
+  } = {}
+) {
   const birthday =
     String(value || "").trim();
 
   if (!birthday) {
-    return "";
+    return required
+      ? "Birthday is required."
+      : "";
   }
 
   const match =
@@ -701,15 +799,69 @@ export function validateEmployeeBirthday(value) {
     return "Enter a valid birthday.";
   }
 
-  const today = new Date();
-
   const todayValue =
-    `${today.getFullYear()}-` +
-    `${String(today.getMonth() + 1).padStart(2, "0")}-` +
-    `${String(today.getDate()).padStart(2, "0")}`;
+    getPhilippinesDateInputValue(
+      referenceDate
+    );
 
   if (birthday > todayValue) {
     return "Birthday cannot be in the future.";
+  }
+
+  const ageReference =
+    String(
+      minimumAgeReferenceDate ||
+        ""
+    ).trim();
+
+  if (ageReference) {
+    const referenceMatch =
+      /^(\d{4})-(\d{2})-(\d{2})$/.exec(
+        ageReference
+      );
+
+    if (referenceMatch) {
+      const referenceYear =
+        Number(referenceMatch[1]);
+      const referenceMonth =
+        Number(referenceMatch[2]);
+      const referenceDay =
+        Number(referenceMatch[3]);
+      const referenceProbe =
+        new Date(
+          Date.UTC(
+            referenceYear,
+            referenceMonth - 1,
+            referenceDay
+          )
+        );
+
+      if (
+        referenceProbe.getUTCFullYear() ===
+          referenceYear &&
+        referenceProbe.getUTCMonth() ===
+          referenceMonth - 1 &&
+        referenceProbe.getUTCDate() ===
+          referenceDay
+      ) {
+        let exactAge =
+          referenceYear - year;
+
+        if (
+          referenceMonth < month ||
+          (
+            referenceMonth === month &&
+            referenceDay < day
+          )
+        ) {
+          exactAge -= 1;
+        }
+
+        if (exactAge < minimumAge) {
+          return `Employee must be at least ${minimumAge} years old on ${minimumAgeReferenceLabel}.`;
+        }
+      }
+    }
   }
 
   return "";
@@ -847,6 +999,11 @@ export function createEmployeeDocuments(
       documentNumberPlaceholder:
         option.documentNumberPlaceholder ||
         "Enter document number",
+      documentNumberMaxLength:
+        option.documentNumberMaxLength,
+      documentNumberHelp:
+        option.documentNumberHelp ||
+        "Enter the number shown on the document.",
       documentNumber:
         originalDocumentNumber,
       originalDocumentNumber,
@@ -1098,6 +1255,7 @@ export function validateEmployeeForm({
   employees = [],
   employeeId = "",
   excludedEmployeeId = "",
+  initialEmployee = null,
   duplicateEmployee = null,
   duplicateConfirmed = false,
 }) {
@@ -1149,6 +1307,46 @@ export function validateEmployeeForm({
     status ===
     "Deployed";
 
+  const isCreate =
+    !initialEmployee;
+
+  const birthday =
+    String(
+      formData?.birthday || ""
+    ).trim();
+
+  const originalBirthday =
+    normalizeDateInput(
+      initialEmployee
+        ?.birthday ||
+        initialEmployee
+          ?.birthDate ||
+        initialEmployee
+          ?.birth_date ||
+        ""
+    );
+
+  const originalDateHired =
+    normalizeDateInput(
+      initialEmployee
+        ?.dateHired ||
+        initialEmployee
+          ?.date_hired ||
+        initialEmployee
+          ?.hireDate ||
+        initialEmployee
+          ?.hire_date ||
+        ""
+    );
+
+  const birthdayChanged =
+    birthday !==
+      originalBirthday;
+
+  const dateHiredChanged =
+    dateHired !==
+      originalDateHired;
+
   if (!name) {
     errors.name =
       "Full name is required.";
@@ -1171,7 +1369,21 @@ export function validateEmployeeForm({
 
   const birthdayError =
     validateEmployeeBirthday(
-      formData?.birthday
+      birthday,
+      {
+        required:
+          isCreate ||
+          Boolean(
+            originalBirthday
+          ) ||
+          dateHiredChanged,
+        minimumAgeReferenceDate:
+          isCreate ||
+          birthdayChanged ||
+          dateHiredChanged
+            ? dateHired
+            : "",
+      }
     );
 
   if (birthdayError) {
@@ -1271,8 +1483,51 @@ export function validateEmployeeForm({
       ? formData.documents
       : [];
 
+  if (isCreate) {
+    const missingGovernmentIds =
+      DOCUMENT_OPTIONS
+        .filter(
+          (option) =>
+            option
+              .requiresDocumentNumber
+        )
+        .filter(
+          (option) =>
+            !documents.some(
+              (document) =>
+                document
+                  ?.checked &&
+                document.name ===
+                  option.name
+            )
+        );
+
+    if (
+      missingGovernmentIds.length >
+      0
+    ) {
+      errors.documents.general =
+        "SSS, PhilHealth, and Pag-IBIG documents and numbers are required for new employees.";
+    }
+  }
+
   documents.forEach((document) => {
     if (!document?.checked) {
+      if (
+        document
+          ?.requiresDocumentNumber &&
+        document
+          ?.isExistingRecord &&
+        String(
+          document
+            ?.originalDocumentNumber ||
+            ""
+        ).trim()
+      ) {
+        errors.documents.general =
+          "Existing SSS, PhilHealth, and Pag-IBIG numbers cannot be removed through Edit Employee.";
+      }
+
       return;
     }
 
@@ -1545,8 +1800,8 @@ export function buildEmployeeFormData(
 
       requestData.append(
         `documents[${index}][documentNumber]`,
-        normalizeEmployeeDocumentNumber(
-          document.documentNumber
+        getEmployeeDocumentNumberForRequest(
+          document
         )
       );
 

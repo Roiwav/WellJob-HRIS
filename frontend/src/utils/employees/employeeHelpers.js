@@ -156,20 +156,92 @@ export function startOfDay(date = new Date()) {
   return normalizedDate;
 }
 
+function getDateOnlyParts(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const match = String(value)
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (match) {
+    return {
+      year: Number(match[1]),
+      month: Number(match[2]),
+      day: Number(match[3]),
+    };
+  }
+
+  const parsedDate = parseDate(value);
+
+  if (!parsedDate) {
+    return null;
+  }
+
+  return {
+    year: parsedDate.getFullYear(),
+    month: parsedDate.getMonth() + 1,
+    day: parsedDate.getDate(),
+  };
+}
+
+function getManilaDateTimestamp(referenceDate) {
+  const parsedReference = parseDate(referenceDate);
+
+  if (!parsedReference) {
+    return null;
+  }
+
+  const parts = new Intl.DateTimeFormat(
+    "en-US",
+    {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }
+  ).formatToParts(parsedReference);
+
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  );
+
+  return Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day)
+  );
+}
+
 export function getDaysUntilExpiration(
   expirationValue,
   referenceDate = new Date()
 ) {
-  const expirationDate = parseDate(expirationValue);
+  const expirationParts = getDateOnlyParts(expirationValue);
 
-  if (!expirationDate) {
+  if (!expirationParts) {
     return null;
   }
 
-  expirationDate.setHours(0, 0, 0, 0);
+  const referenceTimestamp = getManilaDateTimestamp(referenceDate);
 
-  return Math.ceil(
-    (expirationDate.getTime() - startOfDay(referenceDate).getTime()) /
+  if (referenceTimestamp === null) {
+    return null;
+  }
+
+  const expirationTimestamp = Date.UTC(
+    expirationParts.year,
+    expirationParts.month - 1,
+    expirationParts.day
+  );
+
+  return Math.round(
+    (expirationTimestamp - referenceTimestamp) /
       MILLISECONDS_PER_DAY
   );
 }

@@ -372,6 +372,64 @@ function cleanValue(
   );
 }
 
+/*
+ * MySQL DATETIME does not accept an ISO-8601 offset suffix on all supported
+ * server versions. KPI timestamps are generated as ISO strings, so convert
+ * them to an explicit Asia/Manila wall-clock value before persistence.
+ */
+function toPhilippineSqlDateTime(
+  value
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone:
+          "Asia/Manila",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      }
+    ).formatToParts(date);
+
+  const values =
+    Object.fromEntries(
+      parts.map(
+        (part) => [
+          part.type,
+          part.value,
+        ]
+      )
+    );
+
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+}
+
 function normalizeText(
   value
 ) {
@@ -3134,11 +3192,15 @@ exports.createKpiDecision =
 
             trustedSnapshot.monthsWithoutNewIncident,
 
-            trustedSnapshot.latestIncidentDate,
+            toPhilippineSqlDateTime(
+              trustedSnapshot.latestIncidentDate
+            ),
 
             trustedSnapshot.scoringPolicyVersion,
 
-            trustedSnapshot.evaluatedAt,
+            toPhilippineSqlDateTime(
+              trustedSnapshot.evaluatedAt
+            ),
 
             trustedSnapshot.decisionConfidence,
 
@@ -3325,5 +3387,6 @@ if (
 ) {
   exports.__test = {
     buildTrustedDecisionSnapshot,
+    toPhilippineSqlDateTime,
   };
 }

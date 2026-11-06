@@ -285,6 +285,59 @@ const MIGRATIONS = [
       employeeWorkforceWorkflowPreflight,
   },
 
+  /*
+   * ==================================================
+   * DEPLOYMENT EXPECTED ARRIVAL TIME
+   * ==================================================
+   *
+   * The scheduling API reads and writes this column.
+   * Keep it in the normal migration path so a fresh or
+   * upgraded database cannot pass setup without it.
+   */
+  {
+    name:
+      "add_deployment_attempts_scheduled_time.sql",
+
+    isApplied:
+      deploymentScheduledTimeSchemaIsApplied,
+
+    canAdopt:
+      deploymentScheduledTimeSchemaIsApplied,
+
+    verifyApplied:
+      deploymentScheduledTimeSchemaIsApplied,
+
+    preflight:
+      deploymentScheduledTimePreflight,
+  },
+
+  /*
+   * ==================================================
+   * INCIDENT PHONE CAMERA CAPTURE SESSIONS
+   * ==================================================
+   *
+   * The phone-capture controller requires this table.
+   * The one-shot standalone migration remains available
+   * for historical review, while this registry is now
+   * the authoritative application setup path.
+   */
+  {
+    name:
+      "add_incident_phone_capture_sessions.sql",
+
+    isApplied:
+      incidentPhoneCaptureSchemaIsApplied,
+
+    canAdopt:
+      incidentPhoneCaptureSchemaIsApplied,
+
+    verifyApplied:
+      incidentPhoneCaptureSchemaIsApplied,
+
+    preflight:
+      incidentPhoneCapturePreflight,
+  },
+
   {
     name: "add_audit_logs_category_created_index.sql",
     isApplied: async (connection) =>
@@ -812,6 +865,14 @@ const MIGRATIONS = [
       kpiSeverityDecayPreflight,
   },
 ];
+
+const MIGRATION_NAMES =
+  Object.freeze(
+    MIGRATIONS.map(
+      (migration) =>
+        migration.name
+    )
+  );
 
 async function employeeDocumentNumberSchemaIsApplied(
   connection
@@ -3147,6 +3208,538 @@ async function employeeWorkforceWorkflowPreflight(
   }
 }
 
+async function deploymentScheduledTimeSchemaIsApplied(
+  connection
+) {
+  const definitionMatches =
+    await columnDefinitionMatches(
+      connection,
+      {
+        tableName:
+          "deployment_attempts",
+        columnName:
+          "scheduled_time",
+        dataType:
+          "time",
+        nullable:
+          true,
+      }
+    );
+
+  if (!definitionMatches) {
+    return false;
+  }
+
+  const [rows] =
+    await connection.query(
+      `
+      SELECT
+        COUNT(*) AS count
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'deployment_attempts'
+        AND COLUMN_NAME = 'scheduled_time'
+        AND COLUMN_DEFAULT IS NULL
+        AND COALESCE(DATETIME_PRECISION, 0) = 0
+      `
+    );
+
+  return (
+    Number(
+      rows[0]?.count ||
+        0
+    ) === 1
+  );
+}
+
+async function deploymentScheduledTimePreflight(
+  connection
+) {
+  if (
+    !await tableExists(
+      connection,
+      "deployment_attempts"
+    )
+  ) {
+    throw new Error(
+      "Deployment scheduled-time migration preflight failed: deployment_attempts is missing."
+    );
+  }
+
+  if (
+    await columnExists(
+      connection,
+      "deployment_attempts",
+      "scheduled_time"
+    )
+  ) {
+    throw new Error(
+      "Deployment scheduled-time migration preflight failed: scheduled_time already exists with an unexpected definition. Stop and inspect the schema before continuing."
+    );
+  }
+}
+
+async function incidentPhoneCaptureSchemaIsApplied(
+  connection
+) {
+  const tableName =
+    "incident_phone_capture_sessions";
+
+  if (
+    !await tableExists(
+      connection,
+      tableName
+    )
+  ) {
+    return false;
+  }
+
+  const [tableRows] =
+    await connection.query(
+      `
+      SELECT
+        ENGINE AS engine,
+        TABLE_COLLATION AS table_collation
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND TABLE_TYPE = 'BASE TABLE'
+      LIMIT 1
+      `,
+      [tableName]
+    );
+
+  if (
+    String(
+      tableRows[0]?.engine ||
+        ""
+    ).toLowerCase() !==
+      "innodb" ||
+    String(
+      tableRows[0]?.table_collation ||
+        ""
+    ).toLowerCase() !==
+      "utf8mb4_general_ci"
+  ) {
+    return false;
+  }
+
+  const definitions = [
+    {
+      columnName: "id",
+      dataType: "bigint",
+      nullable: false,
+      unsigned: true,
+      extraIncludes:
+        "auto_increment",
+    },
+    {
+      columnName: "session_id",
+      dataType: "char",
+      maxLength: 36,
+      nullable: false,
+      collationName:
+        "ascii_bin",
+    },
+    {
+      columnName: "token_hash",
+      dataType: "char",
+      maxLength: 64,
+      nullable: false,
+      collationName:
+        "ascii_bin",
+    },
+    {
+      columnName:
+        "creator_user_id",
+      dataType: "int",
+      nullable: false,
+    },
+    {
+      columnName:
+        "capture_purpose",
+      dataType: "varchar",
+      maxLength: 32,
+      nullable: false,
+      collationName:
+        "utf8mb4_general_ci",
+    },
+    {
+      columnName: "employee_id",
+      dataType: "int",
+      nullable: true,
+    },
+    {
+      columnName: "incident_id",
+      dataType: "int",
+      nullable: true,
+    },
+    {
+      columnName:
+        "workflow_action",
+      dataType: "varchar",
+      maxLength: 40,
+      nullable: true,
+      collationName:
+        "utf8mb4_general_ci",
+    },
+    {
+      columnName: "status",
+      dataType: "varchar",
+      maxLength: 24,
+      nullable: false,
+      collationName:
+        "utf8mb4_general_ci",
+    },
+    {
+      columnName:
+        "original_name",
+      dataType: "varchar",
+      maxLength: 255,
+      nullable: true,
+      collationName:
+        "utf8mb4_general_ci",
+    },
+    {
+      columnName: "mime_type",
+      dataType: "varchar",
+      maxLength: 100,
+      nullable: true,
+      collationName:
+        "utf8mb4_general_ci",
+    },
+    {
+      columnName: "file_size",
+      dataType: "int",
+      nullable: true,
+      unsigned: true,
+    },
+    {
+      columnName:
+        "stored_filename",
+      dataType: "varchar",
+      maxLength: 255,
+      nullable: true,
+      collationName:
+        "utf8mb4_general_ci",
+    },
+    {
+      columnName: "object_path",
+      dataType: "varchar",
+      maxLength: 1024,
+      nullable: true,
+      collationName:
+        "utf8mb4_general_ci",
+    },
+    {
+      columnName: "expires_at",
+      dataType: "datetime",
+      nullable: false,
+    },
+    {
+      columnName:
+        "upload_authorized_at",
+      dataType: "datetime",
+      nullable: true,
+    },
+    {
+      columnName: "uploaded_at",
+      dataType: "datetime",
+      nullable: true,
+    },
+    {
+      columnName: "consumed_at",
+      dataType: "datetime",
+      nullable: true,
+    },
+    {
+      columnName: "cancelled_at",
+      dataType: "datetime",
+      nullable: true,
+    },
+    {
+      columnName: "created_at",
+      dataType: "datetime",
+      nullable: false,
+    },
+    {
+      columnName: "updated_at",
+      dataType: "datetime",
+      nullable: false,
+      extraIncludes:
+        "on update",
+    },
+  ];
+
+  const columnChecks =
+    await Promise.all(
+      definitions.map(
+        (definition) =>
+          columnDefinitionMatches(
+            connection,
+            {
+              tableName,
+              ...definition,
+            }
+          )
+      )
+    );
+
+  if (
+    columnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    return false;
+  }
+
+  const [defaultRows] =
+    await connection.query(
+      `
+      SELECT
+        COLUMN_NAME AS column_name,
+        COLUMN_DEFAULT AS column_default,
+        EXTRA AS extra
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME IN (
+          'status',
+          'created_at',
+          'updated_at'
+        )
+      `,
+      [tableName]
+    );
+
+  const defaultsByColumn =
+    new Map(
+      defaultRows.map(
+        (row) => [
+          String(
+            row.column_name ||
+              ""
+          ),
+          row,
+        ]
+      )
+    );
+
+  const normalizeCurrentTimestamp =
+    (value) =>
+      String(
+        value ??
+          ""
+      )
+        .trim()
+        .toLowerCase()
+        .replace(
+          /\(\)$/,
+          ""
+        );
+
+  const statusDefinition =
+    defaultsByColumn.get(
+      "status"
+    );
+
+  const createdDefinition =
+    defaultsByColumn.get(
+      "created_at"
+    );
+
+  const updatedDefinition =
+    defaultsByColumn.get(
+      "updated_at"
+    );
+
+  if (
+    String(
+      statusDefinition
+        ?.column_default ??
+        ""
+    ) !== "WAITING" ||
+    normalizeCurrentTimestamp(
+      createdDefinition
+        ?.column_default
+    ) !==
+      "current_timestamp" ||
+    normalizeCurrentTimestamp(
+      updatedDefinition
+        ?.column_default
+    ) !==
+      "current_timestamp" ||
+    !String(
+      updatedDefinition?.extra ||
+        ""
+    )
+      .toLowerCase()
+      .replace(
+        /\(\)/g,
+        ""
+      )
+      .includes(
+        "on update current_timestamp"
+      )
+  ) {
+    return false;
+  }
+
+  const indexes = [
+    [
+      "PRIMARY",
+      ["id"],
+      true,
+    ],
+    [
+      "uq_incident_phone_capture_session_id",
+      ["session_id"],
+      true,
+    ],
+    [
+      "uq_incident_phone_capture_token_hash",
+      ["token_hash"],
+      true,
+    ],
+    [
+      "idx_incident_phone_capture_creator_status",
+      [
+        "creator_user_id",
+        "status",
+      ],
+      false,
+    ],
+    [
+      "idx_incident_phone_capture_purpose",
+      ["capture_purpose"],
+      false,
+    ],
+    [
+      "idx_incident_phone_capture_employee",
+      ["employee_id"],
+      false,
+    ],
+    [
+      "idx_incident_phone_capture_incident",
+      ["incident_id"],
+      false,
+    ],
+    [
+      "idx_incident_phone_capture_expires",
+      ["expires_at"],
+      false,
+    ],
+  ];
+
+  const indexChecks =
+    await Promise.all(
+      indexes.map(
+        (
+          [
+            indexName,
+            columns,
+            unique,
+          ]
+        ) =>
+          indexDefinitionMatches(
+            connection,
+            {
+              tableName,
+              indexName,
+              columns,
+              unique,
+            }
+          )
+      )
+    );
+
+  return indexChecks.every(
+    Boolean
+  );
+}
+
+async function incidentPhoneCapturePreflight(
+  connection
+) {
+  const prerequisiteTables = [
+    "users",
+    "incidents",
+    "deployment_assignments",
+  ];
+
+  for (
+    const tableName of
+      prerequisiteTables
+  ) {
+    if (
+      !await tableExists(
+        connection,
+        tableName
+      )
+    ) {
+      throw new Error(
+        `Incident phone-capture migration preflight failed: required table ${tableName} is missing.`
+      );
+    }
+  }
+
+  const parentColumnChecks =
+    await Promise.all([
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName: "users",
+          columnName: "id",
+          dataType: "int",
+          nullable: false,
+        }
+      ),
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName: "incidents",
+          columnName: "id",
+          dataType: "int",
+          nullable: false,
+        }
+      ),
+      columnDefinitionMatches(
+        connection,
+        {
+          tableName:
+            "deployment_assignments",
+          columnName:
+            "employee_id",
+          dataType: "int",
+          nullable: false,
+        }
+      ),
+    ]);
+
+  if (
+    parentColumnChecks.some(
+      (matches) =>
+        !matches
+    )
+  ) {
+    throw new Error(
+      "Incident phone-capture migration preflight failed: required signed INT key columns do not match the expected schema."
+    );
+  }
+
+  if (
+    await tableExists(
+      connection,
+      "incident_phone_capture_sessions"
+    )
+  ) {
+    throw new Error(
+      "Incident phone-capture migration preflight failed: incident_phone_capture_sessions already exists with an unexpected or partial schema. Stop and inspect the table before continuing."
+    );
+  }
+}
+
 async function kpiSeverityDecaySchemaIsApplied(connection) {
   const expected = new Map([
     ["severity_score", ["decimal(10,2)", "NO"]],
@@ -3328,6 +3921,140 @@ function requiredEnv(
   return value;
 }
 
+function booleanEnv(
+  name,
+  defaultValue = false
+) {
+  const rawValue =
+    String(
+      process.env[name] ??
+        ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (!rawValue) {
+    return defaultValue;
+  }
+
+  if (
+    [
+      "1",
+      "true",
+      "yes",
+      "on",
+    ].includes(
+      rawValue
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    [
+      "0",
+      "false",
+      "no",
+      "off",
+    ].includes(
+      rawValue
+    )
+  ) {
+    return false;
+  }
+
+  throw new Error(
+    `${name} must be a boolean value.`
+  );
+}
+
+function getConfirmedDatabaseName() {
+  const databaseName =
+    requiredEnv(
+      "DB_NAME"
+    );
+
+  const expectedName =
+    requiredEnv(
+      "DB_EXPECTED_NAME"
+    );
+
+  if (
+    expectedName !==
+      databaseName
+  ) {
+    throw new Error(
+      `Database target confirmation failed: DB_EXPECTED_NAME is ${expectedName} but DB_NAME is ${databaseName}.`
+    );
+  }
+
+  return databaseName;
+}
+
+async function verifySelectedDatabase(
+  connection
+) {
+  const expectedName =
+    getConfirmedDatabaseName();
+
+  const [databaseRows] =
+    await connection.query(
+      "SELECT DATABASE() AS database_name"
+    );
+
+  const selectedName =
+    String(
+      databaseRows[0]
+        ?.database_name ??
+        ""
+    );
+
+  if (
+    selectedName !==
+      expectedName
+  ) {
+    throw new Error(
+      `Database target verification failed: expected ${expectedName} but the connection selected ${selectedName || "no database"}.`
+    );
+  }
+
+  const [cipherRows] =
+    await connection.query(
+      "SHOW SESSION STATUS LIKE 'Ssl_cipher'"
+    );
+
+  const tlsCipher =
+    String(
+      cipherRows[0]?.Value ??
+        cipherRows[0]?.VALUE ??
+        ""
+    ).trim();
+
+  if (
+    booleanEnv(
+      "DB_REQUIRE_SSL"
+    ) &&
+    !tlsCipher
+  ) {
+    throw new Error(
+      "Database target verification failed: DB_REQUIRE_SSL is enabled but this connection is not using TLS."
+    );
+  }
+
+  console.log(
+    `Verified selected database: ${selectedName}`
+  );
+
+  console.log(
+    `Database TLS: ${tlsCipher ? "enabled" : "not detected"}`
+  );
+
+  return {
+    selectedName,
+    tlsCipher,
+  };
+}
+
 function getDatabaseSslOptions(
   host
 ) {
@@ -3341,6 +4068,16 @@ function getDatabaseSslOptions(
   if (
     !encodedCertificate
   ) {
+    if (
+      booleanEnv(
+        "DB_REQUIRE_SSL"
+      )
+    ) {
+      throw new Error(
+        "DB_REQUIRE_SSL requires DB_SSL_CA_BASE64 so TLS can be enabled with certificate and hostname verification."
+      );
+    }
+
     return undefined;
   }
 
@@ -3417,9 +4154,8 @@ function getConnectionOptions() {
       }
     ),
 
-    database: requiredEnv(
-      "DB_NAME"
-    ),
+    database:
+      getConfirmedDatabaseName(),
 
     ssl:
       getDatabaseSslOptions(
@@ -5956,7 +6692,9 @@ async function releaseMigrationLock(
   }
 }
 
-async function runMigrations() {
+async function runMigrations({
+  verifyTargetOnly = false,
+} = {}) {
   const connection =
     await mysql.createConnection(
       getConnectionOptions()
@@ -5966,21 +6704,33 @@ async function runMigrations() {
     false;
 
   try {
+    console.log(
+      "WELLJOB HRIS database migrations"
+    );
+
+    await verifySelectedDatabase(
+      connection
+    );
+
+    if (verifyTargetOnly) {
+      console.log(
+        "\nDATABASE TARGET VERIFICATION PASSED. No schema changes were attempted."
+      );
+
+      return;
+    }
+
     const databaseFamily =
       await getDatabaseFamily(
         connection
       );
 
     console.log(
-      "WELLJOB HRIS database migrations"
-    );
-
-    console.log(
       `Database engine: ${databaseFamily}`
     );
 
     console.log(
-      `Database: ${requiredEnv("DB_NAME")}`
+      `Database: ${getConfirmedDatabaseName()}`
     );
 
     await acquireMigrationLock(
@@ -6286,15 +7036,31 @@ async function runMigrations() {
   }
 }
 
-runMigrations().catch(
-  (error) => {
-    console.error(
-      "\nDATABASE MIGRATION FAILED:",
-      error?.message ||
-        error
-    );
+module.exports = {
+  MIGRATION_NAMES,
+  runMigrations,
+  verifySelectedDatabase,
+};
 
-    process.exitCode =
-      1;
-  }
-);
+if (
+  require.main ===
+    module
+) {
+  runMigrations({
+    verifyTargetOnly:
+      process.argv.includes(
+        "--verify-target-only"
+      ),
+  }).catch(
+    (error) => {
+      console.error(
+        "\nDATABASE MIGRATION FAILED:",
+        error?.message ||
+          error
+      );
+
+      process.exitCode =
+        1;
+    }
+  );
+}

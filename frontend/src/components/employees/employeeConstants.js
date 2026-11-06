@@ -53,21 +53,30 @@ export const DOCUMENT_OPTIONS = [
     expirable: false,
     requiresDocumentNumber: true,
     documentNumberLabel: "SSS Number",
-    documentNumberPlaceholder: "Enter SSS Number",
+    documentNumberPlaceholder: "0000000000 or 00-0000000-0",
+    documentNumberMaxLength: 12,
+    documentNumberHelp:
+      "Required for new employees. Enter exactly 10 digits. Hyphens are removed when saved.",
   },
   {
     name: "Pag-IBIG (ID or MDRF Form)",
     expirable: false,
     requiresDocumentNumber: true,
     documentNumberLabel: "Pag-IBIG MID Number",
-    documentNumberPlaceholder: "Enter Pag-IBIG MID Number",
+    documentNumberPlaceholder: "000000000000 or 0000-0000-0000",
+    documentNumberMaxLength: 14,
+    documentNumberHelp:
+      "Required for new employees. Enter exactly 12 digits. Hyphens are removed when saved.",
   },
   {
     name: "PhilHealth (ID or MDF Form)",
     expirable: false,
     requiresDocumentNumber: true,
-    documentNumberLabel: "PhilHealth Number",
-    documentNumberPlaceholder: "Enter PhilHealth Number",
+    documentNumberLabel: "PhilHealth PIN",
+    documentNumberPlaceholder: "000000000000 or 00-000000000-0",
+    documentNumberMaxLength: 14,
+    documentNumberHelp:
+      "Required for new employees. Enter exactly 12 digits. Hyphens are removed when saved.",
   },
   {
     name: "Diploma",
