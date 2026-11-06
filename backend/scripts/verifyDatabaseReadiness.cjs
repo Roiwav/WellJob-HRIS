@@ -190,6 +190,45 @@ async function main() {
         `
       );
 
+    const [appliedMigrationRows] =
+      Number(
+        ledgerRows[0]
+          ?.ledger_count || 0
+      ) === 1
+        ? await connection.query(
+            "SELECT COUNT(*) AS migration_count FROM schema_migrations"
+          )
+        : [[]];
+
+    const [appliedMigrationNameRows] =
+      Number(
+        ledgerRows[0]
+          ?.ledger_count || 0
+      ) === 1
+        ? await connection.query(
+            "SELECT migration_name FROM schema_migrations ORDER BY migration_name"
+          )
+        : [[]];
+
+    const [criticalSchemaRows] =
+      await connection.query(
+        `
+        SELECT
+          TABLE_NAME AS table_name,
+          COLUMN_NAME AS column_name,
+          DATA_TYPE AS data_type
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND (
+            (TABLE_NAME = 'deployment_attempts' AND COLUMN_NAME = 'scheduled_time')
+            OR (TABLE_NAME = 'employees' AND COLUMN_NAME = 'birthday')
+            OR (TABLE_NAME = 'employee_documents' AND COLUMN_NAME = 'document_number')
+            OR (TABLE_NAME = 'users' AND COLUMN_NAME = 'avatar_filename')
+          )
+        ORDER BY TABLE_NAME, COLUMN_NAME
+        `
+      );
+
     const [applicationTableRows] =
       await connection.query(
         `
@@ -230,18 +269,19 @@ async function main() {
 
     const targetPattern =
       new RegExp(
-        `\\sON\\s+\`?${escapeRegExp(
+        `\\sON\\s+[\`\"]?${escapeRegExp(
           options.database
-        )}\`?\\.\\*`,
+        )}[\`\"]?\\.\\*`,
         "i"
       );
 
     const databaseGrantLines =
       grants.filter(
         (value) =>
-          /\sON\s+`?[^`\s]+`?\.\*/i.test(
+          /\sON\s+[`"]?[^`"\s]+[`"]?\.\*/i.test(
             value
-          )
+          ) &&
+          !/\sON\s+\*\.\*/i.test(value)
       );
 
     const targetGrantLines =
@@ -435,6 +475,31 @@ async function main() {
                 ?.ledger_count ||
                 0
             ) === 1,
+          appliedMigrationCount:
+            Number(
+              appliedMigrationRows[0]
+                ?.migration_count || 0
+            ),
+          appliedMigrations:
+            appliedMigrationNameRows.map(
+              (row) => String(
+                row.migration_name || ""
+              )
+            ),
+          criticalSchema:
+            criticalSchemaRows.map(
+              (row) => ({
+                table: String(
+                  row.table_name || ""
+                ),
+                column: String(
+                  row.column_name || ""
+                ),
+                type: String(
+                  row.data_type || ""
+                ),
+              })
+            ),
           grantSummary: {
             hasGlobalPrivileges:
               globalGrantLines.length >
@@ -448,6 +513,16 @@ async function main() {
             hasGlobalCreatePrivilege:
               /\bCREATE\b/.test(
                 globalGrantText
+              ),
+            canCreateUser:
+              /\bCREATE USER\b/.test(
+                globalGrantText
+              ),
+            hasGrantOption:
+              grants.some((value) =>
+                /\bWITH GRANT OPTION\b/i.test(
+                  value
+                )
               ),
             hasTargetDatabaseGrant:
               targetGrantLines.length >

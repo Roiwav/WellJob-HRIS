@@ -228,7 +228,7 @@ test(
 
     assert.equal(
       MIGRATION_NAMES.length,
-      23
+      24
     );
 
     assert.equal(
@@ -410,6 +410,33 @@ test(
     assert.match(
       workflowMigration,
       expectedConstraint
+    );
+  }
+);
+
+
+test(
+  "Fresh setup and migration registry include the user avatar column required by runtime queries",
+  () => {
+    const baseline = readSource(
+      "database/baseline.sql"
+    );
+    const migration = readSource(
+      "database/add_users_avatar_filename.sql"
+    );
+
+    assert.match(
+      baseline,
+      /avatar_filename\s+VARCHAR\(255\)\s+DEFAULT\s+NULL/i
+    );
+    assert.match(
+      migration,
+      /ALTER TABLE\s+users[\s\S]*ADD COLUMN\s+avatar_filename/i
+    );
+    assert.ok(
+      MIGRATION_NAMES.includes(
+        "add_users_avatar_filename.sql"
+      )
     );
   }
 );

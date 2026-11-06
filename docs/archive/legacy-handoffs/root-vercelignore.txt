@@ -1,0 +1,9 @@
+backend/
+frontend/dist/
+.vscode/
+README.txt
+WELLJOB-backend-deployment-review.txt
+fake-incident.pdf
+.env
+.env.*
+.vercel/

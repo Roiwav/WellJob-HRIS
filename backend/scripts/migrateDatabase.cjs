@@ -381,6 +381,16 @@ const MIGRATIONS = [
     },
   },
 
+  {
+    name: "add_users_avatar_filename.sql",
+    isApplied: async (connection) =>
+      columnExists(
+        connection,
+        "users",
+        "avatar_filename"
+      ),
+  },
+
   /*
    * ==================================================
    * CLIENT COMPANY + POSITION MASTER DATA

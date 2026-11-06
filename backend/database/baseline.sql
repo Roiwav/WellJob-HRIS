@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS users (
   ) NOT NULL,
 
   assigned_company VARCHAR(255) DEFAULT NULL,
+  avatar_filename VARCHAR(255) DEFAULT NULL,
 
   status ENUM(
     'Active',

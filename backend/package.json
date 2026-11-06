@@ -9,6 +9,8 @@
     "db:migrate": "node scripts/migrateDatabase.cjs",
     "db:setup": "node scripts/setupDatabase.cjs",
     "db:verify": "node scripts/verifyDatabaseReadiness.cjs",
+    "db:provision:phase3-runtime": "node scripts/provisionPhase3RuntimeUser.cjs --confirm-create",
+    "evidence:capture:phase3": "node scripts/capturePhase3DefenseEvidence.cjs --confirm-read",
     "deploy:verify:vercel": "node scripts/verifyVercelDeployment.cjs",
     "storage:prepare:phase3": "node scripts/preparePhase3Supabase.cjs --create",
     "test:phase3:runtime": "node scripts/verifyPhase3Runtime.cjs --confirm-write",
@@ -41,5 +43,8 @@
   },
   "engines": {
     "node": "22.x"
+  },
+  "overrides": {
+    "minimatch": "11.0.5"
   }
 }

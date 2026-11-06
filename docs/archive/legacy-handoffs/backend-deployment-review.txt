@@ -1,0 +1,3855 @@
+﻿WB HRIS BACKEND DEPLOYMENT REVIEW
+
+========== .\backend\server.js ==========
+
+const path = require("path");
+
+// LOAD ENVIRONMENT VARIABLES FIRST
+require("dotenv").config({
+  path: path.join(__dirname, ".env"),
+});
+
+/*
+ * ==================================================
+ * REQUIRED ENVIRONMENT CONFIGURATION
+ * ==================================================
+ *
+ * Fail early during startup when deployment-specific
+ * configuration is missing instead of allowing the
+ * application to start in a partially configured
+ * state.
+ *
+ * DB_PASSWORD is required to exist as a variable,
+ * but an empty value remains technically valid for
+ * environments whose database account has no
+ * password configured.
+ */
+
+const REQUIRED_ENVIRONMENT = [
+  {
+    name: "DB_HOST",
+  },
+  {
+    name: "DB_PORT",
+  },
+  {
+    name: "DB_USER",
+  },
+  {
+    name: "DB_PASSWORD",
+    allowEmpty: true,
+  },
+  {
+    name: "DB_NAME",
+  },
+  {
+    name: "PORT",
+  },
+  {
+    name: "JWT_SECRET",
+  },
+  {
+    name: "FRONTEND_ORIGIN",
+  },
+];
+
+const JSON_BODY_LIMIT = "1mb";
+
+/*
+ * ==================================================
+ * ENVIRONMENT VALIDATION
+ * ==================================================
+ */
+
+function validateEnvironment() {
+  const missingVariables = [];
+
+  for (const requirement of REQUIRED_ENVIRONMENT) {
+    const exists =
+      Object.prototype.hasOwnProperty.call(
+        process.env,
+        requirement.name
+      );
+
+    if (!exists) {
+      missingVariables.push(
+        requirement.name
+      );
+
+      continue;
+    }
+
+    const value = String(
+      process.env[
+        requirement.name
+      ] ?? ""
+    ).trim();
+
+    if (
+      !requirement.allowEmpty &&
+      !value
+    ) {
+      missingVariables.push(
+        requirement.name
+      );
+    }
+  }
+
+  if (missingVariables.length > 0) {
+    throw new Error(
+      `Missing required environment configuration: ${missingVariables.join(
+        ", "
+      )}`
+    );
+  }
+
+  const port = Number.parseInt(
+    process.env.PORT,
+    10
+  );
+
+  if (
+    !Number.isInteger(port) ||
+    port <= 0 ||
+    port > 65535
+  ) {
+    throw new Error(
+      "PORT must be a valid TCP port number."
+    );
+  }
+
+  const dbPort = Number.parseInt(
+    process.env.DB_PORT,
+    10
+  );
+
+  if (
+    !Number.isInteger(dbPort) ||
+    dbPort <= 0 ||
+    dbPort > 65535
+  ) {
+    throw new Error(
+      "DB_PORT must be a valid TCP port number."
+    );
+  }
+}
+
+validateEnvironment();
+
+/*
+ * ==================================================
+ * CORE DEPENDENCIES
+ * ==================================================
+ */
+
+const express = require("express");
+
+const cors = require("cors");
+
+const compression = require("compression");
+
+// DATABASE
+const db =
+  require("./config/db");
+
+// MAINTENANCE MIDDLEWARE
+const checkMaintenanceMode =
+  require(
+    "./middleware/maintenanceMiddleware"
+  );
+
+/*
+ * ==================================================
+ * EXISTING WELLJOB ROUTES
+ * ==================================================
+ */
+
+const authRoutes =
+  require("./routes/authRoutes");
+
+const userRoutes =
+  require("./routes/userRoutes");
+
+const employeeRoutes =
+  require(
+    "./routes/employeeRoutes"
+  );
+
+const incidentRoutes =
+  require(
+    "./routes/incidentRoutes"
+  );
+
+const deploymentRoutes =
+  require(
+    "./routes/deploymentRoutes"
+  );
+
+const auditLogRoutes =
+  require(
+    "./routes/auditLogRoutes"
+  );
+
+const kpiDecisionRoutes =
+  require(
+    "./routes/kpiDecisionRoutes"
+  );
+
+const kpiDataRoutes =
+  require(
+    "./routes/kpiDataRoutes"
+  );
+
+const smartAlertRoutes =
+  require(
+    "./routes/smartAlertRoutes"
+  );
+
+const smartSuggestionRoutes =
+  require(
+    "./routes/smartSuggestionRoutes"
+  );
+
+const settingsRoutes =
+  require(
+    "./routes/settingsRoutes"
+  );
+
+const dashboardRoutes =
+  require(
+    "./routes/dashboardRoutes"
+  );
+
+/*
+ * ==================================================
+ * NEW: WELLJOB MESSENGER MODULE
+ * ==================================================
+ *
+ * chatRoutes:
+ * Handles authenticated Messenger API requests.
+ *
+ * chatSocket:
+ * Provides real-time messaging and chat
+ * notification delivery using Socket.IO.
+ *
+ * The Messenger uses existing WELLJOB accounts
+ * and the existing authentication system.
+ */
+
+const chatRoutes =
+  require(
+    "./routes/chatRoutes"
+  );
+
+const {
+  initChatSocket,
+} = require(
+  "./services/chatSocket"
+);
+
+/*
+ * ==================================================
+ * INITIALIZE EXPRESS APPLICATION
+ * ==================================================
+ */
+
+const app = express();
+
+/*
+ * ==================================================
+ * CORS CONFIGURATION
+ * ==================================================
+ *
+ * Browser requests are allowed only from the
+ * configured frontend origin.
+ *
+ * Requests without an Origin header remain allowed
+ * so backend-to-backend tools, PowerShell tests,
+ * Postman-style clients, and health checks continue
+ * to work normally.
+ */
+
+const FRONTEND_ORIGIN = String(
+  process.env.FRONTEND_ORIGIN
+).trim();
+
+const corsOptions = {
+  origin(
+    requestOrigin,
+    callback
+  ) {
+    /*
+     * Non-browser/server-side requests commonly
+     * have no Origin header.
+     */
+
+    if (!requestOrigin) {
+      return callback(
+        null,
+        true
+      );
+    }
+
+    /*
+     * Allow only the configured browser frontend.
+     */
+
+    if (
+      requestOrigin ===
+      FRONTEND_ORIGIN
+    ) {
+      return callback(
+        null,
+        true
+      );
+    }
+
+    /*
+     * Do not grant CORS permission to any other
+     * browser origin.
+     */
+
+    return callback(
+      null,
+      false
+    );
+  },
+};
+
+/*
+ * ==================================================
+ * CORE MIDDLEWARE
+ * ==================================================
+ */
+
+app.use(
+  cors(corsOptions)
+);
+
+app.use(
+  compression()
+);
+
+/*
+ * ==================================================
+ * JSON REQUEST BODY LIMIT
+ * ==================================================
+ *
+ * Express defaults JSON bodies to approximately
+ * 100 KB. The system-wide violation policy can
+ * legitimately exceed that size.
+ *
+ * Keep this limit aligned with the application-level
+ * configuration limit enforced by settingsRoutes.js.
+ *
+ * This remains intentionally bounded at 1 MB instead
+ * of accepting unlimited JSON payloads.
+ */
+
+app.use(
+  express.json({
+    limit: JSON_BODY_LIMIT,
+  })
+);
+
+/*
+ * ==================================================
+ * DOCUMENT SECURITY
+ * ==================================================
+ *
+ * Employee documents and incident evidence are not
+ * exposed through a public static /documents route.
+ *
+ * Files stored under backend/documents must only be
+ * accessed through their dedicated authenticated
+ * API endpoints, where JWT authentication, RBAC,
+ * record ownership/association validation, path
+ * containment, and response security controls are
+ * enforced.
+ */
+
+/*
+ * ==================================================
+ * SYSTEM MAINTENANCE GATE
+ * ==================================================
+ *
+ * Existing /api maintenance middleware remains
+ * active for all registered API routes, including
+ * the new Messenger API.
+ */
+
+app.use(
+  "/api",
+  checkMaintenanceMode
+);
+
+/*
+ * ==================================================
+ * EXISTING WELLJOB API ROUTES
+ * ==================================================
+ */
+
+app.use(
+  "/api",
+  authRoutes
+);
+
+app.use(
+  "/api",
+  userRoutes
+);
+
+app.use(
+  "/api",
+  employeeRoutes
+);
+
+app.use(
+  "/api",
+  incidentRoutes
+);
+
+app.use(
+  "/api",
+  deploymentRoutes
+);
+
+app.use(
+  "/api",
+  kpiDecisionRoutes
+);
+
+app.use(
+  "/api",
+  kpiDataRoutes
+);
+
+app.use(
+  "/api",
+  smartAlertRoutes
+);
+
+app.use(
+  "/api",
+  smartSuggestionRoutes
+);
+
+app.use(
+  "/api",
+  auditLogRoutes
+);
+
+app.use(
+  "/api",
+  settingsRoutes
+);
+
+app.use(
+  "/api",
+  dashboardRoutes
+);
+
+/*
+ * ==================================================
+ * NEW: MESSENGER API ROUTES
+ * ==================================================
+ *
+ * Registers:
+ *
+ * GET  /api/chat/users
+ * GET  /api/chat/unread-count
+ * GET  /api/chat/conversations
+ *
+ * POST /api/chat/conversations
+ *
+ * GET  /api/chat/conversations/:id/messages
+ * POST /api/chat/conversations/:id/messages
+ * POST /api/chat/conversations/:id/read
+ *
+ * Authentication and authorization are handled
+ * by the chatAuth middleware inside chatRoutes.js.
+ */
+
+app.use(
+  "/api/chat",
+  chatRoutes
+);
+
+/*
+ * ==================================================
+ * DEFAULT TEST ROUTE
+ * ==================================================
+ */
+
+app.get(
+  "/",
+  (req, res) => {
+    return res.send(
+      "API is running..."
+    );
+  }
+);
+
+/*
+ * ==================================================
+ * CENTRAL 404 RESPONSE
+ * ==================================================
+ *
+ * Any request that reaches this point did not
+ * match an existing application route.
+ *
+ * Always return JSON instead of exposing Express
+ * implementation details or a default HTML page.
+ */
+
+app.use(
+  (req, res) => {
+    return res
+      .status(404)
+      .json({
+        error:
+          "Route not found.",
+      });
+  }
+);
+
+/*
+ * ==================================================
+ * CENTRAL ERROR BOUNDARY
+ * ==================================================
+ *
+ * Final safety boundary for errors forwarded through
+ * Express middleware or application routes.
+ *
+ * Known request parsing failures receive an
+ * appropriate client-facing HTTP status.
+ *
+ * Unexpected technical details remain only in
+ * the backend logs.
+ */
+
+app.use(
+  (
+    err,
+    req,
+    res,
+    next
+  ) => {
+    console.error(
+      "UNHANDLED SERVER ERROR:",
+      err
+    );
+
+    if (res.headersSent) {
+      return next(err);
+    }
+
+    /*
+     * Express/body-parser payload size rejection.
+     *
+     * A request exceeding the configured JSON limit
+     * is a client request-size problem, not an
+     * internal server failure.
+     */
+
+    if (
+      err?.type ===
+        "entity.too.large" ||
+      err?.status === 413 ||
+      err?.statusCode === 413
+    ) {
+      return res
+        .status(413)
+        .json({
+          success: false,
+
+          error:
+            "Request payload is too large.",
+
+          message:
+            `JSON request bodies must not exceed ${JSON_BODY_LIMIT}.`,
+        });
+    }
+
+    /*
+     * Malformed JSON should return HTTP 400 rather
+     * than being exposed as a generic server error.
+     */
+
+    if (
+      err instanceof
+        SyntaxError &&
+      err?.status === 400 &&
+      Object.prototype.hasOwnProperty.call(
+        err,
+        "body"
+      )
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+
+          error:
+            "Invalid JSON request body.",
+
+          message:
+            "Check the request body syntax and try again.",
+        });
+    }
+
+    return res
+      .status(500)
+      .json({
+        success: false,
+
+        error:
+          "Internal server error.",
+      });
+  }
+);
+
+/*
+ * ==================================================
+ * SERVER PORT
+ * ==================================================
+ */
+
+const PORT =
+  Number.parseInt(
+    process.env.PORT,
+    10
+  );
+
+/*
+ * ==================================================
+ * START EXISTING WELLJOB HTTP SERVER
+ * ==================================================
+ *
+ * IMPORTANT:
+ *
+ * Only one HTTP server is started.
+ *
+ * The existing Express application continues
+ * to handle all WELLJOB REST API requests.
+ *
+ * Socket.IO is attached to the SAME HTTP server
+ * to provide real-time Messenger functionality.
+ */
+
+const server = app.listen(
+  PORT,
+  () => {
+    console.log(
+      "Database connection verified."
+    );
+
+    console.log(`Server running on port ${PORT}`);
+
+    console.log(
+      "WELLJOB Messenger API registered at /api/chat"
+    );
+
+    console.log(
+      "WELLJOB Messenger Socket.IO initialized"
+    );
+  }
+);
+
+/*
+ * ==================================================
+ * INITIALIZE MESSENGER SOCKET.IO
+ * ==================================================
+ *
+ * The existing frontend origin is reused
+ * for Socket.IO CORS configuration.
+ *
+ * No second HTTP server is created.
+ *
+ * The Messenger uses the existing JWT
+ * authentication system through chatAuth.js.
+ */
+
+initChatSocket(
+  server,
+  FRONTEND_ORIGIN
+);
+
+========== .\backend\config\db.js ==========
+
+const mysql = require("mysql2");
+
+function getRequiredEnv(name, { allowEmpty = false } = {}) {
+  const exists = Object.prototype.hasOwnProperty.call(
+    process.env,
+    name
+  );
+
+  if (!exists) {
+    throw new Error(
+      `Missing required environment variable: ${name}`
+    );
+  }
+
+  const value = String(process.env[name] ?? "").trim();
+
+  if (!allowEmpty && !value) {
+    throw new Error(
+      `Missing required environment variable: ${name}`
+    );
+  }
+
+  return value;
+}
+
+const dbHost = getRequiredEnv("DB_HOST");
+
+const dbPortRaw = getRequiredEnv("DB_PORT");
+
+const dbUser = getRequiredEnv("DB_USER");
+
+const dbPassword = getRequiredEnv(
+  "DB_PASSWORD",
+  {
+    allowEmpty: true,
+  }
+);
+
+const dbName = getRequiredEnv("DB_NAME");
+
+const dbPort = Number.parseInt(
+  dbPortRaw,
+  10
+);
+
+if (
+  !Number.isInteger(dbPort) ||
+  dbPort <= 0 ||
+  dbPort > 65535
+) {
+  throw new Error(
+    "DB_PORT must be a valid TCP port number."
+  );
+}
+
+const db = mysql.createPool({
+  host: dbHost,
+  port: dbPort,
+  user: dbUser,
+  password: dbPassword,
+  database: dbName,
+
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
+
+db.getConnection((err, connection) => {
+  if (err) {
+    /*
+     * Keep the full database error on the server side
+     * only. This information must never be returned
+     * directly through an API response.
+     */
+    console.error(
+      "Database connection failed:",
+      err
+    );
+
+    return;
+  }
+
+  console.log(
+    "MySQL Connected"
+  );
+
+  connection.release();
+});
+
+module.exports = db;
+
+========== .\backend\middleware\upload.js ==========
+
+const crypto = require("crypto");
+const fs = require("fs");
+const multer = require("multer");
+const path = require("path");
+
+const uploadDirectory = path.join(
+  __dirname,
+  "..",
+  "documents",
+  "employees"
+);
+
+const MAX_FILE_SIZE =
+  5 * 1024 * 1024;
+
+const MAX_EMPLOYEE_DOCUMENTS = 20;
+const MAX_INCIDENT_EVIDENCE_FILES = 10;
+
+const FORM_FIELD_LIMIT = 100;
+const FORM_FIELD_SIZE = 64 * 1024;
+
+const EMPLOYEE_PART_LIMIT =
+  FORM_FIELD_LIMIT +
+  MAX_EMPLOYEE_DOCUMENTS;
+
+const INCIDENT_PART_LIMIT =
+  FORM_FIELD_LIMIT +
+  MAX_INCIDENT_EVIDENCE_FILES;
+
+const FILE_TYPE_CONFIG = {
+  "image/png": {
+    extension: ".png",
+    allowedExtensions: [".png"],
+
+    signatureMatches(buffer) {
+      return (
+        buffer.length >= 8 &&
+        buffer[0] === 0x89 &&
+        buffer[1] === 0x50 &&
+        buffer[2] === 0x4e &&
+        buffer[3] === 0x47 &&
+        buffer[4] === 0x0d &&
+        buffer[5] === 0x0a &&
+        buffer[6] === 0x1a &&
+        buffer[7] === 0x0a
+      );
+    },
+  },
+
+  "image/jpeg": {
+    extension: ".jpg",
+    allowedExtensions: [
+      ".jpg",
+      ".jpeg",
+    ],
+
+    signatureMatches(buffer) {
+      return (
+        buffer.length >= 3 &&
+        buffer[0] === 0xff &&
+        buffer[1] === 0xd8 &&
+        buffer[2] === 0xff
+      );
+    },
+  },
+
+  "application/pdf": {
+    extension: ".pdf",
+    allowedExtensions: [".pdf"],
+
+    signatureMatches(buffer) {
+      return (
+        buffer.length >= 5 &&
+        buffer
+          .subarray(0, 5)
+          .toString("ascii") ===
+          "%PDF-"
+      );
+    },
+  },
+};
+
+const SAFE_UPLOAD_ERROR_CODES =
+  new Set([
+    "UNSUPPORTED_FILE_TYPE",
+    "FILE_TYPE_MISMATCH",
+    "FILE_SIGNATURE_MISMATCH",
+    "INVALID_UPLOAD",
+  ]);
+
+function ensureUploadDirectory() {
+  fs.mkdirSync(uploadDirectory, {
+    recursive: true,
+  });
+}
+
+function createUploadError(
+  message,
+  {
+    code =
+      "UPLOAD_VALIDATION_ERROR",
+    statusCode = 400,
+  } = {}
+) {
+  const error =
+    new Error(message);
+
+  error.code = code;
+  error.statusCode = statusCode;
+
+  return error;
+}
+
+function getFileTypeConfig(mimetype) {
+  const normalizedMimeType =
+    String(mimetype || "")
+      .trim()
+      .toLowerCase();
+
+  return (
+    FILE_TYPE_CONFIG[
+      normalizedMimeType
+    ] || null
+  );
+}
+
+function flattenUploadedFiles(files) {
+  if (Array.isArray(files)) {
+    return files.filter(Boolean);
+  }
+
+  if (
+    files &&
+    typeof files === "object"
+  ) {
+    return Object.values(files)
+      .flat()
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+async function cleanupUploadedFiles(
+  files
+) {
+  const uploadedFiles =
+    flattenUploadedFiles(files);
+
+  for (const file of uploadedFiles) {
+    const filePath = String(
+      file?.path || ""
+    ).trim();
+
+    if (!filePath) {
+      continue;
+    }
+
+    try {
+      await fs.promises.unlink(
+        filePath
+      );
+    } catch (error) {
+      if (
+        error?.code !== "ENOENT"
+      ) {
+        console.error(
+          "UPLOAD CLEANUP ERROR:",
+          {
+            filePath,
+            message:
+              error?.message ||
+              error,
+          }
+        );
+      }
+    }
+  }
+}
+
+ensureUploadDirectory();
+
+/*
+ * ==================================================
+ * STORAGE
+ * ==================================================
+ *
+ * Stored extensions are controlled by the server.
+ * Original client filenames never determine the
+ * physical filename written to disk.
+ */
+const storage =
+  multer.diskStorage({
+    destination(
+      req,
+      file,
+      callback
+    ) {
+      ensureUploadDirectory();
+
+      callback(
+        null,
+        uploadDirectory
+      );
+    },
+
+    filename(
+      req,
+      file,
+      callback
+    ) {
+      const typeConfig =
+        getFileTypeConfig(
+          file.mimetype
+        );
+
+      if (!typeConfig) {
+        return callback(
+          createUploadError(
+            "Unsupported upload file type.",
+            {
+              code:
+                "UNSUPPORTED_FILE_TYPE",
+              statusCode: 415,
+            }
+          )
+        );
+      }
+
+      const safeName =
+        `${Date.now()}-${crypto.randomUUID()}${typeConfig.extension}`;
+
+      return callback(
+        null,
+        safeName
+      );
+    },
+  });
+
+/*
+ * ==================================================
+ * DECLARED FILE-TYPE VALIDATION
+ * ==================================================
+ *
+ * This is performed before the file is accepted by
+ * Multer.
+ *
+ * Actual file bytes are validated separately after
+ * Multer writes the file.
+ */
+function fileFilter(
+  req,
+  file,
+  callback
+) {
+  const typeConfig =
+    getFileTypeConfig(
+      file.mimetype
+    );
+
+  if (!typeConfig) {
+    return callback(
+      createUploadError(
+        "Only PNG, JPEG, and PDF files are allowed.",
+        {
+          code:
+            "UNSUPPORTED_FILE_TYPE",
+          statusCode: 415,
+        }
+      ),
+      false
+    );
+  }
+
+  const originalExtension =
+    path
+      .extname(
+        String(
+          file.originalname || ""
+        )
+      )
+      .trim()
+      .toLowerCase();
+
+  if (
+    !typeConfig.allowedExtensions.includes(
+      originalExtension
+    )
+  ) {
+    return callback(
+      createUploadError(
+        "The file extension does not match the uploaded file type.",
+        {
+          code:
+            "FILE_TYPE_MISMATCH",
+          statusCode: 415,
+        }
+      ),
+      false
+    );
+  }
+
+  return callback(null, true);
+}
+
+/*
+ * Generic Multer instance retained for compatibility.
+ *
+ * Employee and incident routes should use their
+ * dedicated hardened middleware properties below.
+ */
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+  },
+});
+
+/*
+ * ==================================================
+ * ACTUAL FILE CONTENT VALIDATION
+ * ==================================================
+ */
+async function validateStoredFileSignature(
+  file
+) {
+  const filePath = String(
+    file?.path || ""
+  ).trim();
+
+  const typeConfig =
+    getFileTypeConfig(
+      file?.mimetype
+    );
+
+  if (
+    !filePath ||
+    !typeConfig
+  ) {
+    throw createUploadError(
+      "Invalid uploaded file.",
+      {
+        code:
+          "INVALID_UPLOAD",
+        statusCode: 415,
+      }
+    );
+  }
+
+  let handle = null;
+
+  try {
+    handle =
+      await fs.promises.open(
+        filePath,
+        "r"
+      );
+
+    const signatureBuffer =
+      Buffer.alloc(8);
+
+    const { bytesRead } =
+      await handle.read(
+        signatureBuffer,
+        0,
+        signatureBuffer.length,
+        0
+      );
+
+    const actualBytes =
+      signatureBuffer.subarray(
+        0,
+        bytesRead
+      );
+
+    if (
+      !typeConfig.signatureMatches(
+        actualBytes
+      )
+    ) {
+      throw createUploadError(
+        "The uploaded file content does not match its declared file type.",
+        {
+          code:
+            "FILE_SIGNATURE_MISMATCH",
+          statusCode: 415,
+        }
+      );
+    }
+  } finally {
+    if (handle) {
+      await handle.close();
+    }
+  }
+}
+
+function isSafeUploadValidationError(
+  error
+) {
+  return SAFE_UPLOAD_ERROR_CODES.has(
+    error?.code
+  );
+}
+
+/*
+ * ==================================================
+ * EMPLOYEE DOCUMENT UPLOAD
+ * ==================================================
+ */
+
+const employeeDocumentFields =
+  Array.from(
+    {
+      length:
+        MAX_EMPLOYEE_DOCUMENTS,
+    },
+    (_, index) => ({
+      name:
+        `documents[${index}]`,
+      maxCount: 1,
+    })
+  );
+
+const employeeUpload = multer({
+  storage,
+  fileFilter,
+
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+    files:
+      MAX_EMPLOYEE_DOCUMENTS,
+    fields: FORM_FIELD_LIMIT,
+    parts:
+      EMPLOYEE_PART_LIMIT,
+    fieldSize:
+      FORM_FIELD_SIZE,
+  },
+});
+
+const parseEmployeeDocuments =
+  employeeUpload.fields(
+    employeeDocumentFields
+  );
+
+function sendEmployeeUploadError(
+  res,
+  error
+) {
+  if (
+    error instanceof
+    multer.MulterError
+  ) {
+    if (
+      error.code ===
+      "LIMIT_FILE_SIZE"
+    ) {
+      return res
+        .status(413)
+        .json({
+          error:
+            "Each employee document must be no larger than 5 MB.",
+        });
+    }
+
+    if (
+      error.code ===
+      "LIMIT_FILE_COUNT"
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "A maximum of 20 employee documents may be uploaded.",
+        });
+    }
+
+    if (
+      error.code ===
+      "LIMIT_UNEXPECTED_FILE"
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Unexpected employee document upload field.",
+        });
+    }
+
+    if (
+      [
+        "LIMIT_FIELD_COUNT",
+        "LIMIT_PART_COUNT",
+        "LIMIT_FIELD_KEY",
+        "LIMIT_FIELD_VALUE",
+      ].includes(error.code)
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "The employee upload form exceeds the allowed request limits.",
+        });
+    }
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid employee document upload request.",
+      });
+  }
+
+  if (
+    isSafeUploadValidationError(
+      error
+    )
+  ) {
+    return res
+      .status(
+        Number.isInteger(
+          error.statusCode
+        )
+          ? error.statusCode
+          : 400
+      )
+      .json({
+        error: error.message,
+      });
+  }
+
+  console.error(
+    "EMPLOYEE DOCUMENT UPLOAD ERROR:",
+    error
+  );
+
+  return res
+    .status(400)
+    .json({
+      error:
+        "Invalid employee document upload request.",
+    });
+}
+
+upload.employeeDocuments = (
+  req,
+  res,
+  next
+) => {
+  parseEmployeeDocuments(
+    req,
+    res,
+    async (uploadError) => {
+      const files =
+        flattenUploadedFiles(
+          req.files
+        );
+
+      /*
+       * Existing employeeController expects
+       * req.files to be a flat array.
+       */
+      req.files = files;
+
+      if (uploadError) {
+        await cleanupUploadedFiles(
+          files
+        );
+
+        req.files = [];
+
+        return sendEmployeeUploadError(
+          res,
+          uploadError
+        );
+      }
+
+      try {
+        for (const file of files) {
+          await validateStoredFileSignature(
+            file
+          );
+        }
+
+        return next();
+      } catch (error) {
+        await cleanupUploadedFiles(
+          files
+        );
+
+        req.files = [];
+
+        return sendEmployeeUploadError(
+          res,
+          error
+        );
+      }
+    }
+  );
+};
+
+/*
+ * ==================================================
+ * INCIDENT EVIDENCE UPLOAD
+ * ==================================================
+ *
+ * Security controls:
+ *
+ * - exact evidenceFiles field
+ * - maximum 10 files
+ * - maximum 5 MB per file
+ * - PNG/JPEG/PDF only
+ * - MIME/extension pairing
+ * - server-controlled stored extension
+ * - actual magic-byte verification
+ * - multipart request limits
+ * - cleanup after parser/signature failure
+ * - request-scoped cleanup for files not committed
+ *   to incident_evidence records
+ */
+
+const incidentUpload = multer({
+  storage,
+  fileFilter,
+
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+    files:
+      MAX_INCIDENT_EVIDENCE_FILES,
+    fields: FORM_FIELD_LIMIT,
+    parts:
+      INCIDENT_PART_LIMIT,
+    fieldSize:
+      FORM_FIELD_SIZE,
+  },
+});
+
+const parseIncidentEvidence =
+  incidentUpload.array(
+    "evidenceFiles",
+    MAX_INCIDENT_EVIDENCE_FILES
+  );
+
+function sendIncidentUploadError(
+  res,
+  error
+) {
+  if (
+    error instanceof
+    multer.MulterError
+  ) {
+    if (
+      error.code ===
+      "LIMIT_FILE_SIZE"
+    ) {
+      return res
+        .status(413)
+        .json({
+          error:
+            "Each incident evidence file must be no larger than 5 MB.",
+        });
+    }
+
+    if (
+      error.code ===
+        "LIMIT_FILE_COUNT" ||
+      error.code ===
+        "LIMIT_UNEXPECTED_FILE"
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            error.code ===
+            "LIMIT_FILE_COUNT"
+              ? "A maximum of 10 incident evidence files may be uploaded."
+              : "Unexpected upload field. Use evidenceFiles for incident evidence.",
+        });
+    }
+
+    if (
+      [
+        "LIMIT_FIELD_COUNT",
+        "LIMIT_PART_COUNT",
+        "LIMIT_FIELD_KEY",
+        "LIMIT_FIELD_VALUE",
+      ].includes(error.code)
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "The incident upload form exceeds the allowed request limits.",
+        });
+    }
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid incident evidence upload request.",
+      });
+  }
+
+  if (
+    isSafeUploadValidationError(
+      error
+    )
+  ) {
+    return res
+      .status(
+        Number.isInteger(
+          error.statusCode
+        )
+          ? error.statusCode
+          : 400
+      )
+      .json({
+        error: error.message,
+      });
+  }
+
+  console.error(
+    "INCIDENT EVIDENCE UPLOAD ERROR:",
+    error
+  );
+
+  return res
+    .status(400)
+    .json({
+      error:
+        "Unable to upload incident evidence.",
+    });
+}
+
+/*
+ * Registers a request-scoped ownership boundary.
+ *
+ * Multer writes files before the incident controller
+ * performs business validation or database work.
+ *
+ * Unless the controller explicitly calls:
+ *
+ * req.claimIncidentEvidenceFiles()
+ *
+ * the newly uploaded physical files are treated as
+ * uncommitted request files and are removed when the
+ * response finishes or the connection closes.
+ *
+ * This covers controller early-return paths without
+ * scattering file-deletion calls throughout every
+ * validation branch.
+ */
+function registerIncidentCleanupBoundary(
+  req,
+  res,
+  files
+) {
+  let ownershipClaimed = false;
+  let cleanupStarted = false;
+
+  req.claimIncidentEvidenceFiles =
+    () => {
+      ownershipClaimed = true;
+    };
+
+  const cleanupIfUnclaimed =
+    () => {
+      if (
+        ownershipClaimed ||
+        cleanupStarted
+      ) {
+        return;
+      }
+
+      cleanupStarted = true;
+
+      cleanupUploadedFiles(
+        files
+      ).catch((error) => {
+        console.error(
+          "INCIDENT REQUEST CLEANUP ERROR:",
+          error
+        );
+      });
+    };
+
+  res.once(
+    "finish",
+    cleanupIfUnclaimed
+  );
+
+  res.once(
+    "close",
+    cleanupIfUnclaimed
+  );
+}
+
+upload.incidentEvidence = (
+  req,
+  res,
+  next
+) => {
+  parseIncidentEvidence(
+    req,
+    res,
+    async (uploadError) => {
+      const files =
+        flattenUploadedFiles(
+          req.files
+        );
+
+      req.files = files;
+
+      if (uploadError) {
+        await cleanupUploadedFiles(
+          files
+        );
+
+        req.files = [];
+
+        return sendIncidentUploadError(
+          res,
+          uploadError
+        );
+      }
+
+      try {
+        for (const file of files) {
+          await validateStoredFileSignature(
+            file
+          );
+        }
+      } catch (error) {
+        await cleanupUploadedFiles(
+          files
+        );
+
+        req.files = [];
+
+        return sendIncidentUploadError(
+          res,
+          error
+        );
+      }
+
+      registerIncidentCleanupBoundary(
+        req,
+        res,
+        files
+      );
+
+      return next();
+    }
+  );
+};
+
+module.exports = upload;
+
+========== .\backend\middleware\avatarUpload.js ==========
+
+
+const multer = require("multer");
+const path = require("path");
+
+/*
+ * ==================================================
+ * WELLJOB SOLUTIONS
+ * PROFILE PICTURE UPLOAD MIDDLEWARE
+ * ==================================================
+ *
+ * This middleware is separate from the existing
+ * employee document and incident evidence upload
+ * middleware.
+ *
+ * Security controls:
+ *
+ * - One image per request
+ * - Maximum file size: 2 MB
+ * - JPG, PNG, and WebP only
+ * - File extension and MIME type validation
+ * - File signature validation
+ * - No client-controlled storage filename
+ * - No file is written to disk before validation
+ *
+ * Only the authenticated user's own profile
+ * picture may be updated.
+ *
+ * Authentication and account ownership are
+ * enforced by the route and controller.
+ */
+
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
+
+const ALLOWED_IMAGE_TYPES = {
+  "image/jpeg": {
+    extensions: [".jpg", ".jpeg"],
+  },
+
+  "image/png": {
+    extensions: [".png"],
+  },
+
+  "image/webp": {
+    extensions: [".webp"],
+  },
+};
+
+/*
+ * ==================================================
+ * VALIDATE DECLARED IMAGE TYPE
+ * ==================================================
+ */
+
+function getImageType(file) {
+  if (!file) {
+    return null;
+  }
+
+  const mimetype = String(
+    file.mimetype || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const configuration =
+    ALLOWED_IMAGE_TYPES[mimetype];
+
+  if (!configuration) {
+    return null;
+  }
+
+  const extension = path
+    .extname(
+      String(file.originalname || "")
+    )
+    .toLowerCase();
+
+  if (
+    !configuration.extensions.includes(
+      extension
+    )
+  ) {
+    return null;
+  }
+
+  return mimetype;
+}
+
+/*
+ * ==================================================
+ * VALIDATE ACTUAL FILE SIGNATURE
+ * ==================================================
+ *
+ * MIME types and filename extensions can be
+ * manipulated by the uploading client.
+ *
+ * Check the uploaded bytes before accepting
+ * the image.
+ */
+
+function hasValidImageSignature(
+  buffer,
+  mimetype
+) {
+  if (
+    !Buffer.isBuffer(buffer) ||
+    buffer.length === 0
+  ) {
+    return false;
+  }
+
+  /*
+   * JPEG:
+   * FF D8 FF
+   */
+
+  if (mimetype === "image/jpeg") {
+    return (
+      buffer.length >= 4 &&
+      buffer[0] === 0xff &&
+      buffer[1] === 0xd8 &&
+      buffer[2] === 0xff
+    );
+  }
+
+  /*
+   * PNG:
+   * 89 50 4E 47 0D 0A 1A 0A
+   */
+
+  if (mimetype === "image/png") {
+    const pngSignature = Buffer.from([
+      0x89,
+      0x50,
+      0x4e,
+      0x47,
+      0x0d,
+      0x0a,
+      0x1a,
+      0x0a,
+    ]);
+
+    return (
+      buffer.length >= 8 &&
+      buffer.subarray(0, 8).equals(
+        pngSignature
+      )
+    );
+  }
+
+  /*
+   * WebP:
+   *
+   * Bytes 0-3: RIFF
+   * Bytes 8-11: WEBP
+   *
+   * A valid WebP image must also identify one
+   * of the supported WebP image chunk types.
+   */
+
+  if (mimetype === "image/webp") {
+    if (buffer.length < 20) {
+      return false;
+    }
+
+    const riffHeader = buffer
+      .subarray(0, 4)
+      .toString("ascii");
+
+    const webpHeader = buffer
+      .subarray(8, 12)
+      .toString("ascii");
+
+    const imageChunk = buffer
+      .subarray(12, 16)
+      .toString("ascii");
+
+    const supportedChunks = new Set([
+      "VP8 ",
+      "VP8L",
+      "VP8X",
+    ]);
+
+    return (
+      riffHeader === "RIFF" &&
+      webpHeader === "WEBP" &&
+      supportedChunks.has(imageChunk)
+    );
+  }
+
+  return false;
+}
+
+/*
+ * ==================================================
+ * MULTER STORAGE
+ * ==================================================
+ *
+ * The image is temporarily held in memory.
+ *
+ * The controller will generate a safe filename
+ * and save the validated image to the dedicated
+ * avatar storage directory.
+ *
+ * This prevents an invalid image from being
+ * automatically written to the filesystem.
+ */
+
+const storage = multer.memoryStorage();
+
+/*
+ * ==================================================
+ * MULTER FILE FILTER
+ * ==================================================
+ */
+
+function avatarFileFilter(
+  req,
+  file,
+  callback
+) {
+  const mimetype = getImageType(file);
+
+  if (!mimetype) {
+    const error = new Error(
+      "Only JPG, PNG, and WebP profile pictures are allowed."
+    );
+
+    error.statusCode = 415;
+
+    return callback(
+      error,
+      false
+    );
+  }
+
+  return callback(
+    null,
+    true
+  );
+}
+
+/*
+ * ==================================================
+ * UPLOAD CONFIGURATION
+ * ==================================================
+ *
+ * The frontend must upload the image using
+ * multipart/form-data and the field name:
+ *
+ * avatar
+ */
+
+const upload = multer({
+  storage,
+
+  fileFilter: avatarFileFilter,
+
+  limits: {
+    fileSize: MAX_AVATAR_SIZE,
+
+    files: 1,
+
+    fields: 0,
+
+    parts: 1,
+
+    fieldNameSize: 50,
+  },
+});
+
+const parseAvatar = upload.single(
+  "avatar"
+);
+
+/*
+ * ==================================================
+ * PROFILE PICTURE UPLOAD MIDDLEWARE
+ * ==================================================
+ */
+
+function avatarUpload(
+  req,
+  res,
+  next
+) {
+  parseAvatar(
+    req,
+    res,
+    (error) => {
+      /*
+       * ==================================================
+       * MULTER ERRORS
+       * ==================================================
+       */
+
+      if (error) {
+        if (
+          error instanceof
+          multer.MulterError
+        ) {
+          if (
+            error.code ===
+            "LIMIT_FILE_SIZE"
+          ) {
+            return res
+              .status(413)
+              .json({
+                success: false,
+
+                message:
+                  "Profile picture must not exceed 2 MB.",
+              });
+          }
+
+          if (
+            error.code ===
+            "LIMIT_UNEXPECTED_FILE"
+          ) {
+            return res
+              .status(400)
+              .json({
+                success: false,
+
+                message:
+                  "Upload exactly one image using the avatar field.",
+              });
+          }
+
+          return res
+            .status(400)
+            .json({
+              success: false,
+
+              message:
+                "Invalid profile picture upload request.",
+            });
+        }
+
+        /*
+         * File type validation errors.
+         */
+
+        if (
+          error.statusCode === 415
+        ) {
+          return res
+            .status(415)
+            .json({
+              success: false,
+
+              message:
+                "Only JPG, PNG, and WebP profile pictures are allowed.",
+            });
+        }
+
+        console.error(
+          "PROFILE PICTURE UPLOAD ERROR:",
+          error
+        );
+
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Unable to process the profile picture upload.",
+          });
+      }
+
+      /*
+       * ==================================================
+       * REQUIRE ONE IMAGE
+       * ==================================================
+       */
+
+      if (
+        !req.file ||
+        !Buffer.isBuffer(
+          req.file.buffer
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Please select a profile picture to upload.",
+          });
+      }
+
+      /*
+       * ==================================================
+       * VERIFY ACTUAL FILE CONTENT
+       * ==================================================
+       */
+
+      const mimetype = getImageType(
+        req.file
+      );
+
+      if (
+        !mimetype ||
+        !hasValidImageSignature(
+          req.file.buffer,
+          mimetype
+        )
+      ) {
+        req.file = undefined;
+
+        return res
+          .status(415)
+          .json({
+            success: false,
+
+            message:
+              "The uploaded file does not match a supported image format.",
+          });
+      }
+
+      /*
+       * The uploaded image has passed the
+       * declared file type, file size,
+       * and file signature checks.
+       *
+       * The next controller will perform
+       * image processing and secure storage.
+       */
+
+      return next();
+    }
+  );
+}
+
+module.exports = avatarUpload;
+
+========== .\backend\controllers\avatarController.js ==========
+
+
+const crypto = require("node:crypto");
+const fs = require("node:fs/promises");
+const path = require("node:path");
+
+const sharp = require("sharp");
+
+const db = require("../config/db");
+
+/*
+ * ==================================================
+ * WELLJOB SOLUTIONS
+ * PROFILE PICTURE CONTROLLER
+ * ==================================================
+ *
+ * This controller is separate from userController.js.
+ *
+ * Features:
+ * - Upload or replace own profile picture
+ * - Retrieve a profile picture for authenticated display
+ * - Remove own profile picture
+ *
+ * All five system roles may manage their OWN avatar:
+ * SUPER_ADMIN, HR_MANAGER, HR_STAFF,
+ * HR_COORDINATOR, and IT_SUPPORT.
+ *
+ * Authentication must be enforced in the routes
+ * using the existing verifyToken middleware.
+ */
+
+/*
+ * ==================================================
+ * PRIVATE IMAGE STORAGE
+ * ==================================================
+ *
+ * Do not expose this directory using express.static().
+ *
+ * Profile pictures will be served through an
+ * authenticated controller endpoint instead.
+ */
+
+const AVATAR_DIRECTORY = path.join(
+  __dirname,
+  "..",
+  "private_uploads",
+  "avatars"
+);
+
+const AVATAR_SIZE = 512;
+
+const MAX_INPUT_PIXELS = 25_000_000;
+
+const SAFE_AVATAR_FILENAME =
+  /^[a-f0-9]{32}\.webp$/;
+
+/*
+ * ==================================================
+ * HELPERS
+ * ==================================================
+ */
+
+function getAuthenticatedUserId(req) {
+  const id = Number(req.user?.id);
+
+  if (
+    !Number.isSafeInteger(id) ||
+    id <= 0
+  ) {
+    return null;
+  }
+
+  return id;
+}
+
+function parseUserId(value) {
+  const text = String(value ?? "").trim();
+
+  if (!/^[1-9]\d*$/.test(text)) {
+    return null;
+  }
+
+  const id = Number(text);
+
+  if (
+    !Number.isSafeInteger(id) ||
+    id <= 0
+  ) {
+    return null;
+  }
+
+  return id;
+}
+
+function normalizeAvatarFilename(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const filename = value.trim();
+
+  return filename || null;
+}
+
+function isSafeAvatarFilename(filename) {
+  return (
+    typeof filename === "string" &&
+    SAFE_AVATAR_FILENAME.test(filename)
+  );
+}
+
+function getAvatarPath(filename) {
+  if (!isSafeAvatarFilename(filename)) {
+    return null;
+  }
+
+  return path.join(
+    AVATAR_DIRECTORY,
+    filename
+  );
+}
+
+async function deleteStoredAvatar(filename) {
+  const filePath = getAvatarPath(filename);
+
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    await fs.unlink(filePath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      console.error(
+        "AVATAR FILE CLEANUP ERROR:",
+        error
+      );
+    }
+  }
+}
+
+async function getActiveUser(userId) {
+  const [rows] = await db.promise().query(
+    `
+    SELECT
+      id,
+      avatar_filename
+    FROM users
+    WHERE id = ?
+      AND UPPER(TRIM(status)) = 'ACTIVE'
+    LIMIT 1
+    `,
+    [userId]
+  );
+
+  return rows[0] || null;
+}
+
+/*
+ * ==================================================
+ * UPLOAD OR REPLACE OWN PROFILE PICTURE
+ * ==================================================
+ *
+ * Expected request:
+ *
+ * PUT /api/users/me/avatar
+ *
+ * Content-Type: multipart/form-data
+ * Field name: avatar
+ *
+ * The avatarUpload middleware must execute
+ * BEFORE this controller.
+ *
+ * The authenticated user's ID comes exclusively
+ * from the verified session, NOT from req.body.
+ */
+
+exports.uploadMyAvatar = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication is required.",
+    });
+  }
+
+  if (
+    !req.file ||
+    !Buffer.isBuffer(req.file.buffer)
+  ) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "Please select a profile picture to upload.",
+    });
+  }
+
+  let newFilename = null;
+  let newFileWritten = false;
+  let databaseUpdated = false;
+
+  try {
+    /*
+     * Verify that the authenticated account
+     * still exists and is active.
+     */
+
+    const user = await getActiveUser(userId);
+
+    if (!user) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Your account is not allowed to update a profile picture.",
+      });
+    }
+
+    const previousFilename =
+      normalizeAvatarFilename(
+        user.avatar_filename
+      );
+
+    /*
+     * Decode the image, resize it, and generate
+     * a new WebP file.
+     *
+     * Metadata is not preserved in the output.
+     *
+     * The pixel limit helps reject images with
+     * excessively large decoded dimensions.
+     */
+
+    let processedImage;
+
+    try {
+      processedImage = await sharp(
+        req.file.buffer,
+        {
+          limitInputPixels:
+            MAX_INPUT_PIXELS,
+          failOn: "error",
+          animated: false,
+        }
+      )
+        .rotate()
+        .resize(
+          AVATAR_SIZE,
+          AVATAR_SIZE,
+          {
+            fit: "cover",
+            position: "centre",
+            withoutEnlargement: true,
+          }
+        )
+        .webp({
+          quality: 82,
+          effort: 4,
+        })
+        .toBuffer();
+    } catch (_error) {
+      return res.status(415).json({
+        success: false,
+        message:
+          "The selected file could not be processed as a valid profile picture.",
+      });
+    }
+
+    /*
+     * Generate a storage filename on the server.
+     * Never reuse the client's original filename.
+     */
+
+    newFilename =
+      `${crypto.randomBytes(16).toString("hex")}.webp`;
+
+    await fs.mkdir(
+      AVATAR_DIRECTORY,
+      {
+        recursive: true,
+      }
+    );
+
+    await fs.writeFile(
+      path.join(
+        AVATAR_DIRECTORY,
+        newFilename
+      ),
+      processedImage,
+      {
+        flag: "wx",
+        mode: 0o600,
+      }
+    );
+
+    newFileWritten = true;
+
+    /*
+     * Update only the authenticated user's row.
+     *
+     * The previous filename is included in the
+     * WHERE clause to prevent silently overwriting
+     * a concurrent avatar update.
+     */
+
+    const [result] =
+      await db.promise().query(
+        `
+        UPDATE users
+        SET avatar_filename = ?
+        WHERE id = ?
+          AND UPPER(TRIM(status)) = 'ACTIVE'
+          AND avatar_filename <=> ?
+        `,
+        [
+          newFilename,
+          userId,
+          previousFilename,
+        ]
+      );
+
+    if (Number(result.affectedRows) !== 1) {
+      await deleteStoredAvatar(
+        newFilename
+      );
+
+      newFileWritten = false;
+
+      return res.status(409).json({
+        success: false,
+        message:
+          "Your profile picture changed during the upload. Please refresh and try again.",
+      });
+    }
+
+    databaseUpdated = true;
+
+    /*
+     * Delete the old image only AFTER the database
+     * successfully references the replacement.
+     */
+
+    if (previousFilename) {
+      await deleteStoredAvatar(
+        previousFilename
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Profile picture updated successfully.",
+
+      avatar_filename: newFilename,
+      avatarFilename: newFilename,
+    });
+  } catch (error) {
+    console.error(
+      "UPLOAD PROFILE PICTURE ERROR:",
+      error
+    );
+
+    /*
+     * Remove a newly created file if the database
+     * update did not complete.
+     */
+
+    if (
+      newFileWritten &&
+      !databaseUpdated &&
+      newFilename
+    ) {
+      await deleteStoredAvatar(
+        newFilename
+      );
+    }
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to update your profile picture.",
+    });
+  }
+};
+
+/*
+ * ==================================================
+ * GET PROFILE PICTURE
+ * ==================================================
+ *
+ * Expected request:
+ *
+ * GET /api/users/:id/avatar
+ *
+ * The route must use verifyToken.
+ *
+ * The image is retrieved using the user ID.
+ * Clients cannot supply arbitrary filesystem paths.
+ */
+
+exports.getAvatar = async (req, res) => {
+  const authenticatedUserId =
+    getAuthenticatedUserId(req);
+
+  if (!authenticatedUserId) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication is required.",
+    });
+  }
+
+  const targetUserId = parseUserId(
+    req.params?.id
+  );
+
+  if (!targetUserId) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid user ID.",
+    });
+  }
+
+  try {
+    const user = await getActiveUser(
+      targetUserId
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile picture not found.",
+      });
+    }
+
+    const filename =
+      normalizeAvatarFilename(
+        user.avatar_filename
+      );
+
+    const filePath =
+      getAvatarPath(filename);
+
+    if (!filePath) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile picture not found.",
+      });
+    }
+
+    let imageBuffer;
+
+    try {
+      imageBuffer = await fs.readFile(
+        filePath
+      );
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Profile picture file not found.",
+        });
+      }
+
+      throw error;
+    }
+
+    /*
+     * Do not allow public caching of a protected
+     * profile picture response.
+     */
+
+    res.set({
+      "Content-Type": "image/webp",
+      "Content-Disposition": "inline",
+      "Cache-Control":
+        "private, no-store",
+      "X-Content-Type-Options":
+        "nosniff",
+    });
+
+    return res.status(200).send(
+      imageBuffer
+    );
+  } catch (error) {
+    console.error(
+      "GET PROFILE PICTURE ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to retrieve the profile picture.",
+    });
+  }
+};
+
+/*
+ * ==================================================
+ * REMOVE OWN PROFILE PICTURE
+ * ==================================================
+ *
+ * Expected request:
+ *
+ * DELETE /api/users/me/avatar
+ *
+ * Users may remove only their OWN avatar.
+ *
+ * The authenticated user ID comes from
+ * verifyToken, not from a URL parameter.
+ */
+
+exports.removeMyAvatar = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication is required.",
+    });
+  }
+
+  try {
+    const user = await getActiveUser(
+      userId
+    );
+
+    if (!user) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Your account is not allowed to remove a profile picture.",
+      });
+    }
+
+    const previousFilename =
+      normalizeAvatarFilename(
+        user.avatar_filename
+      );
+
+    if (!previousFilename) {
+      return res.status(200).json({
+        success: true,
+        message:
+          "Your account has no uploaded profile picture.",
+
+        avatar_filename: null,
+        avatarFilename: null,
+      });
+    }
+
+    /*
+     * Clear the database reference first.
+     *
+     * This conditional update avoids removing
+     * a newer avatar created by another request.
+     */
+
+    const [result] =
+      await db.promise().query(
+        `
+        UPDATE users
+        SET avatar_filename = NULL
+        WHERE id = ?
+          AND UPPER(TRIM(status)) = 'ACTIVE'
+          AND avatar_filename = ?
+        `,
+        [
+          userId,
+          previousFilename,
+        ]
+      );
+
+    if (Number(result.affectedRows) !== 1) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Your profile picture changed. Please refresh and try again.",
+      });
+    }
+
+    await deleteStoredAvatar(
+      previousFilename
+    );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Profile picture removed successfully.",
+
+      avatar_filename: null,
+      avatarFilename: null,
+    });
+  } catch (error) {
+    console.error(
+      "REMOVE PROFILE PICTURE ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to remove your profile picture.",
+    });
+  }
+};
+
+========== .\backend\routes\chatRoutes.js ==========
+
+/** WELLJOB Messenger: direct chats, groups, activity notices and private PDF batches. */
+const express = require('express');
+const db = require('../config/db');
+const multer = require('multer');
+const path = require('node:path');
+const fs = require('node:fs/promises');
+const crypto = require('node:crypto');
+const { chatAuth, isChatRole, normalizeRole } = require('../middleware/chatAuth');
+const { config, col, table, userSelect } = require('../config/chatConfig');
+const { publishToUsers } = require('../services/chatSocket');
+
+const router = express.Router();
+router.use(chatAuth);
+const sql = db.promise();
+const MAX_BATCH_BYTES = 15 * 1024 * 1024;
+const MAX_FILES = 30;
+const MESSAGE_LIMIT = 2000;
+const PAGE_SIZE = 50;
+const MAX_GROUP_MEMBERS = 30;
+const PRIVATE_FOLDER = path.resolve(__dirname, '../private_chat_uploads');
+
+function httpError(status, message) { return Object.assign(new Error(message), { status }); }
+function fail(res, status, message) { return res.status(status).json({ error: message }); }
+function serverError(res, e) {
+  console.error('CHAT ERROR:', e);
+  if (res.headersSent) return;
+  return fail(res, e.status || 500, e.status ? e.message : 'Messenger request failed.');
+}
+function id(v) {
+  if (!['string', 'number'].includes(typeof v) || !/^[1-9]\d*$/.test(String(v).trim())) return null;
+  const n = Number(v);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+function groupId(v) { return typeof v === 'string' && /^g:[1-9]\d*$/.test(v) ? id(v.slice(2)) : null; }
+function selectedConversation(raw) {
+  const g = groupId(raw);
+  if (g) return { kind: 'group', value: g };
+  const d = id(raw);
+  return d ? { kind: 'direct', value: d } : null;
+}
+function cleanBody(v) { return typeof v === 'string' ? v.trim() : ''; }
+function eligible(u) {
+  return !!u && String(u.accountStatus || '').toUpperCase() === 'ACTIVE' && isChatRole(u.role) &&
+    (normalizeRole(u.role) !== 'HR_COORDINATOR' || !!String(u.assignedCompany || '').trim());
+}
+function userDto(u) {
+  return { id: Number(u.id), username: u.username, fullName: u.fullName || null,
+    role: normalizeRole(u.role), avatarFilename: u.avatarFilename || null, avatarUrl: null };
+}
+function safeFilename(name) {
+  return path.basename(String(name || 'attachment.pdf').replace(/\\/g, '/'))
+    .replace(/[\x00-\x1f\x7f"<>:|?*]/g, '_').slice(0, 240) || 'attachment.pdf';
+}
+function validPdf(buf) {
+  return Buffer.isBuffer(buf) && buf.length > 0 && buf.length <= MAX_BATCH_BYTES &&
+    buf.subarray(0, 5).toString('ascii') === '%PDF-' &&
+    buf.subarray(Math.max(0, buf.length - 2048)).toString('latin1').includes('%%EOF');
+}
+
+/** Bounded *combined* memory buffering, including chunked multipart requests. */
+const boundedStorage = {
+  _handleFile(req, file, callback) {
+    const chunks = [];
+    let size = 0;
+    let completed = false;
+    function finish(error, result) {
+      if (completed) return;
+      completed = true;
+      callback(error, result);
+    }
+    file.stream.on('data', chunk => {
+      if (completed) return;
+      size += chunk.length;
+      req.chatUploadBytes = (req.chatUploadBytes || 0) + chunk.length;
+      if (req.chatUploadBytes > MAX_BATCH_BYTES) {
+        file.stream.resume();
+        finish(httpError(413, 'Combined PDF size must not exceed 15 MB.'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    file.stream.on('error', error => finish(error));
+    file.stream.on('end', () => {
+      if (!completed) finish(null, { buffer: Buffer.concat(chunks, size), size });
+    });
+  },
+  _removeFile(req, file, callback) { delete file.buffer; callback(null); },
+};
+const upload = multer({
+  storage: boundedStorage,
+  limits: { fileSize: MAX_BATCH_BYTES, files: MAX_FILES, fields: 1, parts: MAX_FILES + 1 },
+  fileFilter(req, file, cb) {
+    if (path.extname(file.originalname || '').toLowerCase() !== '.pdf' ||
+        (file.mimetype && file.mimetype !== 'application/pdf')) {
+      return cb(httpError(400, 'Only PDF attachments are allowed.'));
+    }
+    cb(null, true);
+  },
+}).fields([{ name: 'files', maxCount: MAX_FILES }, { name: 'file', maxCount: 1 }]);
+
+async function findUser(userId, conn = sql) {
+  const [rows] = await conn.query(`SELECT ${userSelect('u')},u.${col('status')} AS accountStatus,u.${col('assigned_company')} AS assignedCompany FROM ${table} u WHERE u.${col(config.userIdColumn)}=? LIMIT 1`, [userId]);
+  return rows[0] || null;
+}
+async function direct(conversationId, userId, conn = sql) {
+  const [rows] = await conn.query('SELECT * FROM chat_conversations WHERE id=? AND (user1_id=? OR user2_id=?) LIMIT 1', [conversationId, userId, userId]);
+  return rows[0] || null;
+}
+async function membership(groupIdValue, userId, conn = sql) {
+  const [rows] = await conn.query('SELECT g.id,g.name,g.created_by,m.is_admin,m.joined_after_message_id,m.last_read_message_id FROM chat_groups g JOIN chat_group_members m ON m.group_id=g.id WHERE g.id=? AND m.user_id=? LIMIT 1', [groupIdValue, userId]);
+  return rows[0] || null;
+}
+async function groupUsers(groupIdValue, conn = sql) {
+  const [rows] = await conn.query('SELECT user_id FROM chat_group_members WHERE group_id=?', [groupIdValue]);
+  return rows.map(row => Number(row.user_id));
+}
+async function emit(users, eventName, payload) {
+  try { await publishToUsers(users, eventName, payload); }
+  catch (e) { console.error('CHAT SOCKET ERROR:', e); }
+}
+
+function attachmentsForRow(row) { return Array.isArray(row.attachments) ? row.attachments : []; }
+function directDto(row) {
+  const attachments = attachmentsForRow(row);
+  return { id: String(row.id), conversationId: String(row.conversation_id),
+    senderId: Number(row.sender_id), body: row.body, createdAt: row.created_at,
+    readAt: row.read_at, attachments, attachment: attachments[0] || null, isSystem: false };
+}
+function groupDto(row) {
+  const attachments = attachmentsForRow(row);
+  return { id: String(row.id), conversationId: `g:${row.group_id}`,
+    senderId: Number(row.sender_id), senderName: row.senderName || null, body: row.body,
+    createdAt: row.created_at, readAt: null, attachments, attachment: attachments[0] || null,
+    isSystem: Boolean(row.system_action), systemAction: row.system_action || null };
+}
+async function attachFiles(kind, rows, conn = sql) {
+  if (!rows.length) return rows;
+  const placeholders = rows.map(() => '?').join(',');
+  const [files] = await conn.query(`SELECT id,message_id,original_name,byte_size FROM chat_attachments WHERE conversation_type=? AND message_id IN (${placeholders}) ORDER BY id ASC`, [kind, ...rows.map(row => row.id)]);
+  const grouped = new Map();
+  for (const file of files) {
+    const key = String(file.message_id);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push({ id: String(file.id), name: file.original_name, size: Number(file.byte_size) });
+  }
+  return rows.map(row => ({ ...row, attachments: grouped.get(String(row.id)) || [] }));
+}
+async function fetchMessage(kind, messageId, conn = sql) {
+  const [rows] = kind === 'group'
+    ? await conn.query('SELECT m.*,u.full_name AS senderName FROM chat_group_messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.id=? LIMIT 1', [messageId])
+    : await conn.query('SELECT * FROM chat_messages WHERE id=? LIMIT 1', [messageId]);
+  if (!rows.length) return null;
+  const enriched = await attachFiles(kind, rows, conn);
+  return kind === 'group' ? groupDto(enriched[0]) : directDto(enriched[0]);
+}
+/** Mutations are serialized on chat_groups row. Store genuine, server-generated system messages. */
+async function groupNotice(conn, groupIdValue, actorId, action, text) {
+  const [insert] = await conn.query('INSERT INTO chat_group_messages(group_id,sender_id,body,system_action) VALUES(?,?,?,?)', [groupIdValue, actorId, text, action]);
+  await conn.query('UPDATE chat_groups SET updated_at=CURRENT_TIMESTAMP(3) WHERE id=?', [groupIdValue]);
+  return fetchMessage('group', insert.insertId, conn);
+}
+function actorName(req) { return String(req.chatUser.fullName || req.chatUser.username || 'A member').trim().slice(0, 100); }
+function targetName(user) { return String(user.fullName || user.username || 'a member').trim().slice(0, 100); }
+async function notifyGroupChange(groupIdValue, recipients, notice) {
+  const conversationId = `g:${groupIdValue}`;
+  await emit(recipients, 'chat:changed', { conversationId });
+  if (notice) await emit(recipients, 'chat:message', { message: notice,
+    sender: { id: notice.senderId, fullName: 'Group activity' } });
+}
+
+async function saveMessage(selection, senderId, body, files = []) {
+  const conn = await sql.getConnection();
+  const writtenPaths = [];
+  try {
+    await conn.beginTransaction();
+    let receiver = null;
+    if (selection.kind === 'group') {
+      const [locked] = await conn.query('SELECT id FROM chat_groups WHERE id=? FOR UPDATE', [selection.value]);
+      if (!locked.length) throw httpError(404, 'Group not found.');
+      if (!await membership(selection.value, senderId, conn)) throw httpError(403, 'You are not a member of this group.');
+    } else {
+      const conversation = await direct(selection.value, senderId, conn);
+      if (!conversation) throw httpError(404, 'Conversation not found.');
+      receiver = Number(conversation.user1_id) === senderId ? Number(conversation.user2_id) : Number(conversation.user1_id);
+      if (!eligible(await findUser(receiver, conn))) throw httpError(403, 'Recipient is unavailable.');
+    }
+    const target = selection.kind === 'group' ? 'chat_group_messages' : 'chat_messages';
+    const foreignKey = selection.kind === 'group' ? 'group_id' : 'conversation_id';
+    const [insert] = await conn.query(`INSERT INTO ${target}(${foreignKey},sender_id,body) VALUES(?,?,?)`, [selection.value, senderId, body]);
+    if (files.length) {
+      await fs.mkdir(PRIVATE_FOLDER, { recursive: true, mode: 0o700 });
+      for (const file of files) {
+        const storageName = crypto.randomUUID();
+        const disk = path.join(PRIVATE_FOLDER, storageName);
+        await fs.writeFile(disk, file.buffer, { flag: 'wx', mode: 0o600 });
+        writtenPaths.push(disk);
+        await conn.query('INSERT INTO chat_attachments(conversation_type,message_id,storage_name,original_name,byte_size) VALUES(?,?,?,?,?)', [selection.kind, insert.insertId, storageName, safeFilename(file.originalname), file.size]);
+      }
+    }
+    await conn.query(`UPDATE ${selection.kind === 'group' ? 'chat_groups' : 'chat_conversations'} SET updated_at=CURRENT_TIMESTAMP(3) WHERE id=?`, [selection.value]);
+    const users = selection.kind === 'group' ? await groupUsers(selection.value, conn) : [senderId, receiver];
+    const message = await fetchMessage(selection.kind, insert.insertId, conn);
+    await conn.commit();
+    return { users, message };
+  } catch (error) {
+    await conn.rollback();
+    await Promise.all(writtenPaths.map(file => fs.unlink(file).catch(() => {})));
+    throw error;
+  } finally { conn.release(); }
+}
+async function notifySaved(saved, req) {
+  await emit(saved.users, 'chat:message', { message: saved.message,
+    sender: { id: req.chatUser.id, username: req.chatUser.username, fullName: req.chatUser.fullName } });
+}
+
+router.get('/users', async (req, res) => {
+  try {
+    const [rows] = await sql.query(`SELECT ${userSelect('u')},u.${col('status')} AS accountStatus,u.${col('assigned_company')} AS assignedCompany FROM ${table} u WHERE u.${col(config.userIdColumn)}<>? ORDER BY u.${col(config.usernameColumn)}`, [req.chatUser.id]);
+    return res.json(rows.filter(eligible).map(userDto));
+  } catch (e) { return serverError(res, e); }
+});
+router.get('/unread-count', async (req, res) => {
+  try {
+    const uid = req.chatUser.id;
+    const [[d]] = await sql.query('SELECT COUNT(*) AS n FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id WHERE (c.user1_id=? OR c.user2_id=?) AND m.sender_id<>? AND m.read_at IS NULL', [uid, uid, uid]);
+    const [[g]] = await sql.query('SELECT COUNT(*) AS n FROM chat_group_messages m JOIN chat_group_members gm ON gm.group_id=m.group_id WHERE gm.user_id=? AND m.id>GREATEST(gm.joined_after_message_id,gm.last_read_message_id) AND m.sender_id<>?', [uid, uid]);
+    return res.json({ unreadCount: Number(d.n) + Number(g.n) });
+  } catch (e) { return serverError(res, e); }
+});
+router.get('/conversations', async (req, res) => {
+  try {
+    const uid = req.chatUser.id;
+    const [directRows] = await sql.query(`SELECT c.id AS conversationId,c.created_at AS createdAt,c.updated_at AS updatedAt,${userSelect('u')},u.${col('status')} AS accountStatus,u.${col('assigned_company')} AS assignedCompany,
+      (SELECT IF((SELECT COUNT(*) FROM chat_attachments a WHERE a.conversation_type='direct' AND a.message_id=m.id)>0,IF(m.body='', 'PDF attachments',CONCAT(m.body,' Â· PDF attachments')),m.body) FROM chat_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS lastBody,
+      (SELECT m.created_at FROM chat_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS lastAt,
+      (SELECT COUNT(*) FROM chat_messages m WHERE m.conversation_id=c.id AND m.sender_id<>? AND m.read_at IS NULL) AS unreadCount
+      FROM chat_conversations c JOIN ${table} u ON u.${col(config.userIdColumn)}=IF(c.user1_id=?,c.user2_id,c.user1_id) WHERE c.user1_id=? OR c.user2_id=?`, [uid, uid, uid, uid]);
+    const [groupRows] = await sql.query(`SELECT g.id,g.name,g.created_at AS createdAt,g.updated_at AS updatedAt,gm.is_admin AS isAdmin,
+      (SELECT IF(m.system_action IS NOT NULL,m.body,IF((SELECT COUNT(*) FROM chat_attachments a WHERE a.conversation_type='group' AND a.message_id=m.id)>0,IF(m.body='', 'PDF attachments',CONCAT(m.body,' Â· PDF attachments')),m.body)) FROM chat_group_messages m WHERE m.group_id=g.id AND m.id>gm.joined_after_message_id ORDER BY m.id DESC LIMIT 1) AS lastBody,
+      (SELECT m.created_at FROM chat_group_messages m WHERE m.group_id=g.id AND m.id>gm.joined_after_message_id ORDER BY m.id DESC LIMIT 1) AS lastAt,
+      (SELECT COUNT(*) FROM chat_group_messages m WHERE m.group_id=g.id AND m.id>GREATEST(gm.joined_after_message_id,gm.last_read_message_id) AND m.sender_id<>?) AS unreadCount
+      FROM chat_groups g JOIN chat_group_members gm ON gm.group_id=g.id WHERE gm.user_id=?`, [uid, uid]);
+    const directs = directRows.map(r => ({ id: String(r.conversationId), kind: 'direct', createdAt: r.createdAt, updatedAt: r.updatedAt,
+      partner: userDto(r), canMessage: eligible(r), lastBody: r.lastBody, lastAt: r.lastAt, unreadCount: Number(r.unreadCount) }));
+    const groups = groupRows.map(r => ({ id: `g:${r.id}`, kind: 'group', name: r.name, isAdmin: !!r.isAdmin,
+      createdAt: r.createdAt, updatedAt: r.updatedAt, lastBody: r.lastBody, lastAt: r.lastAt, unreadCount: Number(r.unreadCount), canMessage: true }));
+    // Last actual message time controls priority; empty threads fall back to creation date.
+    return res.json([...directs, ...groups].sort((a, b) =>
+      new Date(b.lastAt || b.createdAt).getTime() - new Date(a.lastAt || a.createdAt).getTime()));
+  } catch (e) { return serverError(res, e); }
+});
+router.post('/conversations', async (req, res) => {
+  const recipient = id(req.body?.recipientId), uid = req.chatUser.id;
+  if (!recipient || recipient === uid) return fail(res, 400, 'Choose a different valid user.');
+  try {
+    if (!eligible(await findUser(recipient))) return fail(res, 404, 'Recipient is unavailable.');
+    const [insert] = await sql.query('INSERT INTO chat_conversations(user1_id,user2_id) VALUES(?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [Math.min(uid, recipient), Math.max(uid, recipient)]);
+    return res.json({ conversationId: String(insert.insertId) });
+  } catch (e) { return serverError(res, e); }
+});
+
+router.post('/groups', async (req, res) => {
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const raw = req.body?.memberIds;
+  if (name.length < 2 || name.length > 100 || !Array.isArray(raw) || raw.length < 1 || raw.length > MAX_GROUP_MEMBERS - 1)
+    return fail(res, 400, 'Enter a group name (2â€“100 characters) and select 1â€“29 participants.');
+  const ids = raw.map(id);
+  if (ids.some(x => !x) || new Set(ids).size !== ids.length || ids.includes(req.chatUser.id)) return fail(res, 400, 'Invalid or duplicate group members.');
+  const conn = await sql.getConnection();
+  try {
+    await conn.beginTransaction();
+    for (const userId of ids) if (!eligible(await findUser(userId, conn))) throw httpError(400, 'One or more members are unavailable.');
+    const [result] = await conn.query('INSERT INTO chat_groups(name,created_by) VALUES(?,?)', [name, req.chatUser.id]);
+    const gid = result.insertId;
+    for (const userId of [req.chatUser.id, ...ids]) await conn.query('INSERT INTO chat_group_members(group_id,user_id,is_admin) VALUES(?,?,?)', [gid, userId, userId === req.chatUser.id ? 1 : 0]);
+    await conn.query('INSERT INTO chat_group_audit(group_id,actor_id,action) VALUES(?,?,?)', [gid, req.chatUser.id, 'CREATE_GROUP']);
+    const notice = await groupNotice(conn, gid, req.chatUser.id, 'CREATE_GROUP', `${actorName(req)} created the group.`);
+    await conn.commit();
+    res.status(201).json({ conversationId: `g:${gid}` });
+    await notifyGroupChange(gid, [req.chatUser.id, ...ids], notice);
+  } catch (e) { await conn.rollback(); serverError(res, e); } finally { conn.release(); }
+});
+router.get('/groups/:id/members', async (req, res) => {
+  const gid = id(req.params.id);
+  if (!gid) return fail(res, 400, 'Invalid group.');
+  try {
+    if (!await membership(gid, req.chatUser.id)) return fail(res, 404, 'Group not found.');
+    const [rows] = await sql.query(`SELECT ${userSelect('u')},gm.is_admin AS isAdmin FROM chat_group_members gm JOIN ${table} u ON u.${col(config.userIdColumn)}=gm.user_id WHERE gm.group_id=? ORDER BY gm.is_admin DESC,u.${col(config.usernameColumn)}`, [gid]);
+    return res.json(rows.map(row => ({ ...userDto(row), isAdmin: !!row.isAdmin })));
+  } catch (e) { return serverError(res, e); }
+});
+router.post('/groups/:id/members', async (req, res) => {
+  const gid = id(req.params.id), newId = id(req.body?.userId);
+  if (!gid || !newId) return fail(res, 400, 'Invalid group or user.');
+  const conn = await sql.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [locked] = await conn.query('SELECT id FROM chat_groups WHERE id=? FOR UPDATE', [gid]);
+    if (!locked.length) throw httpError(404, 'Group not found.');
+    const actor = await membership(gid, req.chatUser.id, conn);
+    if (!actor?.is_admin) throw httpError(403, 'Only group admins can add members.');
+    const newUser = await findUser(newId, conn);
+    if (!eligible(newUser)) throw httpError(400, 'Selected user is unavailable.');
+    const [[count]] = await conn.query('SELECT COUNT(*) AS n FROM chat_group_members WHERE group_id=?', [gid]);
+    if (Number(count.n) >= MAX_GROUP_MEMBERS) throw httpError(400, 'Group member limit reached.');
+    const [[last]] = await conn.query('SELECT COALESCE(MAX(id),0) AS lastId FROM chat_group_messages WHERE group_id=?', [gid]);
+    const [insert] = await conn.query('INSERT IGNORE INTO chat_group_members(group_id,user_id,joined_after_message_id,last_read_message_id) VALUES(?,?,?,?)', [gid, newId, last.lastId, last.lastId]);
+    if (!insert.affectedRows) throw httpError(409, 'User is already a member.');
+    await conn.query('INSERT INTO chat_group_audit(group_id,actor_id,target_user_id,action) VALUES(?,?,?,?)', [gid, req.chatUser.id, newId, 'ADD_MEMBER']);
+    const notice = await groupNotice(conn, gid, req.chatUser.id, 'ADD_MEMBER', `${actorName(req)} added ${targetName(newUser)} to the group.`);
+    const users = await groupUsers(gid, conn);
+    await conn.commit();
+    res.json({ success: true });
+    await notifyGroupChange(gid, users, notice);
+  } catch (e) { await conn.rollback(); serverError(res, e); } finally { conn.release(); }
+});
+router.delete('/groups/:id/members/:userId', async (req, res) => {
+  const gid = id(req.params.id), target = id(req.params.userId), uid = req.chatUser.id;
+  if (!gid || !target) return fail(res, 400, 'Invalid group or user.');
+  const conn = await sql.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [locked] = await conn.query('SELECT id FROM chat_groups WHERE id=? FOR UPDATE', [gid]);
+    if (!locked.length) throw httpError(404, 'Group not found.');
+    const actor = await membership(gid, uid, conn), member = await membership(gid, target, conn);
+    if (!actor || !member) throw httpError(404, 'Membership not found.');
+    if (uid !== target && !actor.is_admin) throw httpError(403, 'Only group admins can remove other members.');
+    if (member.is_admin) {
+      const [[count]] = await conn.query('SELECT COUNT(*) AS n FROM chat_group_members WHERE group_id=? AND is_admin=1', [gid]);
+      if (Number(count.n) <= 1) throw httpError(400, 'Assign another admin before removing the last admin.');
+    }
+    const affectedUser = await findUser(target, conn);
+    await conn.query('DELETE FROM chat_group_members WHERE group_id=? AND user_id=?', [gid, target]);
+    const action = uid === target ? 'LEAVE_GROUP' : 'REMOVE_MEMBER';
+    await conn.query('INSERT INTO chat_group_audit(group_id,actor_id,target_user_id,action) VALUES(?,?,?,?)', [gid, uid, target, action]);
+    const notice = await groupNotice(conn, gid, uid, action,
+      uid === target ? `${actorName(req)} left the group.` : `${actorName(req)} removed ${targetName(affectedUser)} from the group.`);
+    const users = await groupUsers(gid, conn);
+    await conn.commit();
+    res.json({ success: true });
+    await notifyGroupChange(gid, [...users, target], null);
+    await emit(users, 'chat:message', { message: notice, sender: { id: uid, fullName: 'Group activity' } });
+  } catch (e) { await conn.rollback(); serverError(res, e); } finally { conn.release(); }
+});
+router.patch('/groups/:id/name', async (req, res) => {
+  const gid = id(req.params.id), name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  if (!gid || name.length < 2 || name.length > 100) return fail(res, 400, 'Invalid group name.');
+  const conn = await sql.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [locked] = await conn.query('SELECT id FROM chat_groups WHERE id=? FOR UPDATE', [gid]);
+    if (!locked.length) throw httpError(404, 'Group not found.');
+    if (!(await membership(gid, req.chatUser.id, conn))?.is_admin) throw httpError(403, 'Only a group admin can rename the group.');
+    await conn.query('UPDATE chat_groups SET name=?,updated_at=CURRENT_TIMESTAMP(3) WHERE id=?', [name, gid]);
+    await conn.query('INSERT INTO chat_group_audit(group_id,actor_id,action) VALUES(?,?,?)', [gid, req.chatUser.id, 'RENAME_GROUP']);
+    const notice = await groupNotice(conn, gid, req.chatUser.id, 'RENAME_GROUP', `${actorName(req)} renamed the group to ${name}.`);
+    const users = await groupUsers(gid, conn);
+    await conn.commit();
+    res.json({ success: true });
+    await notifyGroupChange(gid, users, notice);
+  } catch (e) { await conn.rollback(); serverError(res, e); } finally { conn.release(); }
+});
+router.patch('/groups/:id/members/:userId/admin', async (req, res) => {
+  const gid = id(req.params.id), target = id(req.params.userId);
+  if (!gid || !target || req.body?.isAdmin !== true) return fail(res, 400, 'Invalid admin assignment.');
+  const conn = await sql.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [locked] = await conn.query('SELECT id FROM chat_groups WHERE id=? FOR UPDATE', [gid]);
+    if (!locked.length) throw httpError(404, 'Group not found.');
+    const actor = await membership(gid, req.chatUser.id, conn), member = await membership(gid, target, conn);
+    if (!actor?.is_admin || !member) throw httpError(403, 'Admin authorization required.');
+    if (member.is_admin) throw httpError(409, 'This member is already an admin.');
+    const affectedUser = await findUser(target, conn);
+    await conn.query('UPDATE chat_group_members SET is_admin=1 WHERE group_id=? AND user_id=?', [gid, target]);
+    await conn.query('INSERT INTO chat_group_audit(group_id,actor_id,target_user_id,action) VALUES(?,?,?,?)', [gid, req.chatUser.id, target, 'GRANT_ADMIN']);
+    const notice = await groupNotice(conn, gid, req.chatUser.id, 'GRANT_ADMIN', `${actorName(req)} made ${targetName(affectedUser)} a group admin.`);
+    const users = await groupUsers(gid, conn);
+    await conn.commit();
+    res.json({ success: true });
+    await notifyGroupChange(gid, users, notice);
+  } catch (e) { await conn.rollback(); serverError(res, e); } finally { conn.release(); }
+});
+
+router.get('/conversations/:id/messages', async (req, res) => {
+  const selection = selectedConversation(req.params.id);
+  const before = req.query.before === undefined ? null : id(req.query.before);
+  if (!selection || (req.query.before !== undefined && !before)) return fail(res, 400, 'Invalid conversation or cursor.');
+  try {
+    const params = [selection.value];
+    let query;
+    if (selection.kind === 'group') {
+      const member = await membership(selection.value, req.chatUser.id);
+      if (!member) return fail(res, 404, 'Group not found.');
+      query = `SELECT m.*,u.full_name AS senderName FROM chat_group_messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.group_id=? AND m.id>? ${before ? 'AND m.id<?' : ''} ORDER BY m.id DESC LIMIT 51`;
+      params.push(member.joined_after_message_id);
+      if (before) params.push(before);
+    } else {
+      if (!await direct(selection.value, req.chatUser.id)) return fail(res, 404, 'Conversation not found.');
+      query = `SELECT m.* FROM chat_messages m WHERE m.conversation_id=? ${before ? 'AND m.id<?' : ''} ORDER BY m.id DESC LIMIT 51`;
+      if (before) params.push(before);
+    }
+    const [rows] = await sql.query(query, params);
+    const hasMore = rows.length > PAGE_SIZE;
+    const result = await attachFiles(selection.kind, rows.slice(0, PAGE_SIZE).reverse());
+    return res.json({ messages: result.map(selection.kind === 'group' ? groupDto : directDto), hasMore });
+  } catch (e) { return serverError(res, e); }
+});
+router.post('/conversations/:id/messages', async (req, res) => {
+  const selection = selectedConversation(req.params.id), body = cleanBody(req.body?.body);
+  if (!selection || !body || body.length > MESSAGE_LIMIT) return fail(res, 400, 'Message must contain 1â€“2000 characters.');
+  try {
+    const saved = await saveMessage(selection, req.chatUser.id, body);
+    res.status(201).json({ message: saved.message });
+    await notifySaved(saved, req);
+  } catch (e) { serverError(res, e); }
+});
+router.post('/conversations/:id/attachments', (req, res) => {
+  const selection = selectedConversation(req.params.id);
+  if (!selection) return fail(res, 400, 'Invalid conversation.');
+  upload(req, res, async error => {
+    if (error) {
+      const status = error.status || (error.code === 'LIMIT_FILE_SIZE' || error.code === 'LIMIT_FILE_COUNT' || error.code === 'LIMIT_PART_COUNT' ? 413 : 400);
+      return fail(res, status, error.status ? error.message : 'PDF upload exceeded the 15 MB total or file count limit.');
+    }
+    const files = [...(req.files?.files || []), ...(req.files?.file || [])];
+    const body = cleanBody(req.body?.body);
+    if (!files.length || files.length > MAX_FILES || body.length > MESSAGE_LIMIT)
+      return fail(res, 400, 'Choose PDF files and keep your message within 2000 characters.');
+    if (files.reduce((total, file) => total + file.size, 0) > MAX_BATCH_BYTES)
+      return fail(res, 413, 'Combined PDF size must not exceed 15 MB.');
+    if (files.some(file => !validPdf(file.buffer)))
+      return fail(res, 400, 'Every attachment must be a valid PDF (15 MB combined maximum).');
+    try {
+      const saved = await saveMessage(selection, req.chatUser.id, body, files);
+      res.status(201).json({ message: saved.message });
+      await notifySaved(saved, req);
+    } catch (e) { serverError(res, e); }
+  });
+});
+router.get('/attachments/:id/download', async (req, res) => {
+  const attachmentId = id(req.params.id), uid = req.chatUser.id;
+  if (!attachmentId) return fail(res, 400, 'Invalid attachment.');
+  try {
+    const [rows] = await sql.query('SELECT * FROM chat_attachments WHERE id=? LIMIT 1', [attachmentId]);
+    const file = rows[0];
+    if (!file) return fail(res, 404, 'Attachment not found.');
+    if (file.conversation_type === 'direct') {
+      const [message] = await sql.query('SELECT conversation_id FROM chat_messages WHERE id=?', [file.message_id]);
+      if (!message[0] || !await direct(message[0].conversation_id, uid)) return fail(res, 404, 'Attachment not found.');
+    } else {
+      const [message] = await sql.query('SELECT group_id FROM chat_group_messages WHERE id=?', [file.message_id]);
+      if (!message[0]) return fail(res, 404, 'Attachment not found.');
+      const member = await membership(message[0].group_id, uid);
+      if (!member || BigInt(file.message_id) <= BigInt(member.joined_after_message_id)) return fail(res, 404, 'Attachment not found.');
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(file.storage_name))
+      return fail(res, 404, 'Attachment not found.');
+    const disk = path.join(PRIVATE_FOLDER, file.storage_name);
+    const filename = safeFilename(file.original_name);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Content-Security-Policy', 'sandbox');
+    res.setHeader('Content-Disposition', `attachment; filename="attachment.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    return res.sendFile(disk, e => { if (e && !res.headersSent) serverError(res, e); });
+  } catch (e) { return serverError(res, e); }
+});
+router.post('/conversations/:id/read', async (req, res) => {
+  const selection = selectedConversation(req.params.id), uid = req.chatUser.id;
+  if (!selection) return fail(res, 400, 'Invalid conversation.');
+  try {
+    let updated = 0, users = [];
+    if (selection.kind === 'group') {
+      const conn = await sql.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [locked] = await conn.query('SELECT id FROM chat_groups WHERE id=? FOR UPDATE', [selection.value]);
+        if (!locked.length) throw httpError(404, 'Group not found.');
+        if (!await membership(selection.value, uid, conn)) throw httpError(404, 'Not a group member.');
+        const [[last]] = await conn.query('SELECT COALESCE(MAX(id),0) AS n FROM chat_group_messages WHERE group_id=?', [selection.value]);
+        await conn.query('UPDATE chat_group_members SET last_read_message_id=GREATEST(last_read_message_id,?) WHERE group_id=? AND user_id=?', [last.n, selection.value, uid]);
+        updated = 1;
+        users = await groupUsers(selection.value, conn);
+        await conn.commit();
+      } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+    } else {
+      const conversation = await direct(selection.value, uid);
+      if (!conversation) return fail(res, 404, 'Conversation not found.');
+      const [result] = await sql.query('UPDATE chat_messages SET read_at=CURRENT_TIMESTAMP(3) WHERE conversation_id=? AND sender_id<>? AND read_at IS NULL', [selection.value, uid]);
+      updated = Number(result.affectedRows);
+      users = [Number(conversation.user1_id), Number(conversation.user2_id)];
+    }
+    res.json({ updated });
+    if (updated) await emit(users, 'chat:read', { conversationId: req.params.id, readerId: uid, readAt: new Date().toISOString() });
+  } catch (e) { serverError(res, e); }
+});
+module.exports = router;
+
+========== .\backend\services\chatSocket.js ==========
+
+/**
+ * ==================================================
+ * WELLJOB SOLUTIONS
+ * MESSENGER SOCKET.IO SERVICE
+ * ==================================================
+ *
+ * Real-time message delivery for the existing
+ * single-server WELLJOB deployment.
+ *
+ * Security:
+ *
+ * - Existing JWT authentication
+ * - Current account status validation
+ * - Token version validation
+ * - Role validation
+ * - HR Coordinator company assignment validation
+ * - Server-controlled private rooms
+ * - Periodic session revalidation
+ * - Recipient validation before event delivery
+ *
+ * No client-controlled message publishing.
+ * No client-controlled room joining.
+ */
+
+const { Server } = require("socket.io");
+const db = require("../config/db");
+
+const {
+  resolveUser,
+} = require("../middleware/chatAuth");
+
+let io = null;
+
+/*
+ * ==================================================
+ * CONFIGURATION
+ * ==================================================
+ */
+
+const SESSION_CHECK_INTERVAL =
+  60 * 1000;
+
+/*
+ * Keep authentication tokens server-side.
+ *
+ * The token is not included in socket.data
+ * or transmitted through chat events.
+ */
+
+const socketTokens = new Map();
+
+/*
+ * ==================================================
+ * USER ID VALIDATION
+ * ==================================================
+ */
+
+function normalizeUserId(value) {
+  if (
+    typeof value !== "string" &&
+    typeof value !== "number"
+  ) {
+    return null;
+  }
+
+  const normalized =
+    String(value).trim();
+
+  if (
+    !/^[1-9][0-9]*$/.test(
+      normalized
+    )
+  ) {
+    return null;
+  }
+
+  const userId =
+    Number(normalized);
+
+  if (
+    !Number.isSafeInteger(userId) ||
+    userId <= 0
+  ) {
+    return null;
+  }
+
+  return userId;
+}
+
+/*
+ * ==================================================
+ * PRIVATE USER ROOM
+ * ==================================================
+ */
+
+function roomForUser(userId) {
+  const normalizedId =
+    normalizeUserId(userId);
+
+  if (!normalizedId) {
+    throw new Error(
+      "Invalid chat user ID."
+    );
+  }
+
+  return `chat:user:${normalizedId}`;
+}
+
+/*
+ * ==================================================
+ * SOCKET DISCONNECTION
+ * ==================================================
+ */
+
+function disconnectSocket(socket) {
+  if (!socket) {
+    return;
+  }
+
+  socketTokens.delete(
+    socket.id
+  );
+
+  if (socket.connected) {
+    socket.disconnect(true);
+  }
+}
+
+/*
+ * ==================================================
+ * SESSION REVALIDATION
+ * ==================================================
+ *
+ * Revalidate a connected local Socket instance
+ * using the existing WELLJOB authentication.
+ */
+
+async function revalidateSocket(socket) {
+  if (
+    !socket ||
+    !socket.connected
+  ) {
+    return false;
+  }
+
+  const token =
+    socketTokens.get(
+      socket.id
+    );
+
+  if (!token) {
+    disconnectSocket(socket);
+
+    return false;
+  }
+
+  try {
+    const currentUser =
+      await resolveUser(token);
+
+    const originalUserId =
+      normalizeUserId(
+        socket.data?.chatUser?.id
+      );
+
+    const currentUserId =
+      normalizeUserId(
+        currentUser?.id
+      );
+
+    /*
+     * A connected socket cannot change
+     * account identity.
+     */
+
+    if (
+      !originalUserId ||
+      !currentUserId ||
+      originalUserId !== currentUserId
+    ) {
+      disconnectSocket(socket);
+
+      return false;
+    }
+
+    /*
+     * Recheck connection state after
+     * the asynchronous database lookup.
+     */
+
+    if (!socket.connected) {
+      return false;
+    }
+
+    if (
+      socketTokens.get(
+        socket.id
+      ) !== token
+    ) {
+      disconnectSocket(socket);
+
+      return false;
+    }
+
+    /*
+     * Refresh authenticated user information.
+     */
+
+    socket.data.chatUser =
+      currentUser;
+
+    return true;
+  } catch (error) {
+    /*
+     * Fail closed.
+     *
+     * Invalid, revoked, expired, or otherwise
+     * unverifiable sessions are disconnected.
+     */
+
+    disconnectSocket(socket);
+
+    return false;
+  }
+}
+
+/*
+ * ==================================================
+ * SOCKET.IO INITIALIZATION
+ * ==================================================
+ */
+
+function initChatSocket(
+  httpServer,
+  allowedOrigin
+) {
+  if (io) {
+    return io;
+  }
+
+  if (!httpServer) {
+    throw new Error(
+      "An existing HTTP server is required."
+    );
+  }
+
+  io = new Server(
+    httpServer,
+    {
+      cors: {
+        origin: allowedOrigin,
+
+        methods: [
+          "GET",
+          "POST",
+        ],
+      },
+
+      transports: [
+        "websocket",
+        "polling",
+      ],
+    }
+  );
+
+  /*
+   * ==================================================
+   * INITIAL CONNECTION AUTHENTICATION
+   * ==================================================
+   */
+
+  io.use(
+    async (socket, next) => {
+      try {
+        const token =
+          socket.handshake.auth?.token;
+
+        if (
+          typeof token !== "string" ||
+          !token.trim()
+        ) {
+          return next(
+            new Error(
+              "Chat authentication required."
+            )
+          );
+        }
+
+        const authenticatedUser =
+          await resolveUser(token);
+
+        const userId =
+          normalizeUserId(
+            authenticatedUser?.id
+          );
+
+        if (!userId) {
+          return next(
+            new Error(
+              "Invalid chat user."
+            )
+          );
+        }
+
+        /*
+         * Store authenticated user information.
+         *
+         * The token is stored separately
+         * when the socket connects.
+         */
+
+        socket.data.chatUser =
+          authenticatedUser;
+
+        socket.data.pendingChatToken =
+          token;
+
+        return next();
+      } catch (error) {
+        return next(
+          new Error(
+            "Chat authentication failed."
+          )
+        );
+      }
+    }
+  );
+
+  /*
+   * ==================================================
+   * SOCKET CONNECTION
+   * ==================================================
+   */
+
+  io.on(
+    "connection",
+    (socket) => {
+      const userId =
+        normalizeUserId(
+          socket.data?.chatUser?.id
+        );
+
+      const token =
+        socket.data.pendingChatToken;
+
+      /*
+       * Remove the temporary token
+       * from socket.data.
+       */
+
+      delete socket.data.pendingChatToken;
+
+      if (
+        !userId ||
+        typeof token !== "string" ||
+        !token
+      ) {
+        disconnectSocket(socket);
+
+        return;
+      }
+
+      /*
+       * Store the token privately on
+       * the backend.
+       */
+
+      socketTokens.set(
+        socket.id,
+        token
+      );
+
+      /*
+       * Join the authenticated user's
+       * server-controlled private room.
+       */
+
+      socket.join(
+        roomForUser(userId)
+      );
+
+      /*
+       * ==================================================
+       * PERIODIC SESSION REVALIDATION
+       * ==================================================
+       */
+
+      let checkingSession =
+        false;
+
+      const sessionTimer =
+        setInterval(
+          async () => {
+            if (
+              !socket.connected ||
+              checkingSession
+            ) {
+              return;
+            }
+
+            checkingSession =
+              true;
+
+            try {
+              await revalidateSocket(
+                socket
+              );
+            } finally {
+              checkingSession =
+                false;
+            }
+          },
+          SESSION_CHECK_INTERVAL
+        );
+
+      /*
+       * Prevent the timer from keeping
+       * the Node.js process running alone.
+       */
+
+      if (
+        typeof sessionTimer.unref ===
+        "function"
+      ) {
+        sessionTimer.unref();
+      }
+
+      /*
+       * ==================================================
+       * DISCONNECTION CLEANUP
+       * ==================================================
+       */
+
+      socket.on(
+        "disconnect",
+        () => {
+          clearInterval(
+            sessionTimer
+          );
+
+          socketTokens.delete(
+            socket.id
+          );
+
+          delete socket.data.chatUser;
+        }
+      );
+
+      /*
+       * No incoming client event can:
+       *
+       * - publish an arbitrary message
+       * - join another user's private room
+       * - retrieve another user's conversation
+       *
+       * Message creation is handled by
+       * authenticated REST API routes.
+       */
+    }
+  );
+
+  return io;
+}
+
+/*
+ * ==================================================
+ * PUBLISH EVENTS TO USERS
+ * ==================================================
+ *
+ * Called by chatRoutes.js after an authorized
+ * database operation succeeds.
+ *
+ * This implementation uses actual local Socket
+ * instances rather than fetchSockets().
+ *
+ * It is intended for WELLJOB's existing
+ * single-server deployment.
+ */
+
+async function publishToUsers(
+  userIds,
+  eventName,
+  payload
+) {
+  if (!io) {
+    return;
+  }
+
+  if (
+    !Array.isArray(userIds) ||
+    typeof eventName !== "string" ||
+    !eventName.trim()
+  ) {
+    return;
+  }
+
+  /*
+   * Remove duplicate and invalid user IDs.
+   */
+
+  const uniqueUserIds =
+    [
+      ...new Set(
+        userIds
+          .map(
+            normalizeUserId
+          )
+          .filter(
+            (id) =>
+              id !== null
+          )
+      ),
+    ];
+
+  /*
+   * Access only actual local Socket instances.
+   *
+   * No RemoteSocket conversion is required.
+   */
+
+  const connectedSockets =
+    io.of("/").sockets;
+
+  /*
+   * Deliver to each eligible recipient.
+   */
+
+  for (const userId of uniqueUserIds) {
+    const room =
+      roomForUser(userId);
+
+    for (
+      const socket of
+      connectedSockets.values()
+    ) {
+      const socketUserId =
+        normalizeUserId(
+          socket.data?.chatUser?.id
+        );
+
+      /*
+       * The socket must belong to the
+       * intended authenticated recipient.
+       */
+
+      if (
+        !socket.connected ||
+        socketUserId !== userId ||
+        !socket.rooms.has(room)
+      ) {
+        continue;
+      }
+
+      /*
+       * Revalidate the session before
+       * sending the event.
+       */
+
+      const isAuthorized =
+        await revalidateSocket(
+          socket
+        );
+
+      if (!isAuthorized) {
+        continue;
+      }
+
+      /*
+       * Confirm the socket is still connected
+       * to the intended user's private room.
+       */
+
+      const currentUserId =
+        normalizeUserId(
+          socket.data?.chatUser?.id
+        );
+
+      if (
+        !socket.connected ||
+        currentUserId !== userId ||
+        !socket.rooms.has(room)
+      ) {
+        continue;
+      }
+
+      /*
+       * A removed group member must not receive delayed group messages.
+       * Membership AND message visibility are rechecked immediately before
+       * sending a group message, even if an old recipient list was captured.
+       */
+      const groupMatch =
+        eventName === "chat:message" &&
+        typeof payload?.message?.conversationId === "string" &&
+        /^g:[1-9]\d*$/.test(payload.message.conversationId);
+
+      if (groupMatch) {
+        const groupId = Number(payload.message.conversationId.slice(2));
+        const messageId = Number(payload.message.id);
+        try {
+          const [membershipRows] = await db.promise().query(
+            `SELECT 1 FROM chat_group_members
+             WHERE group_id = ? AND user_id = ?
+               AND joined_after_message_id < ? LIMIT 1`,
+            [groupId, userId, messageId]
+          );
+          if (!membershipRows.length) continue;
+        } catch (error) {
+          console.error("CHAT GROUP DELIVERY VALIDATION ERROR:", error);
+          continue;
+        }
+      }
+
+      /*
+       * Send only to this verified socket.
+       */
+
+      socket.emit(
+        eventName,
+        payload
+      );
+    }
+  }
+}
+
+/*
+ * ==================================================
+ * EXPORTS
+ * ==================================================
+ */
+
+module.exports = {
+  initChatSocket,
+  publishToUsers,
+};
+
+========== .\backend\package.json ==========
+
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "db:migrate": "node scripts/migrateDatabase.cjs",
+    "db:setup": "node scripts/setupDatabase.cjs",
+    "test": "node --test test/violationPolicyService.test.js test/companyDeactivationProtection.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.4.0",
+    "mysql": "^2.18.1",
+    "mysql2": "^3.24.3",
+    "nodemailer": "^10.0.10",
+    "sharp": "^0.35.4",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
