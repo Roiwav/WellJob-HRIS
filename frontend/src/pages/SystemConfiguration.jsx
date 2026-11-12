@@ -63,8 +63,7 @@ export default function SystemConfiguration() {
 
   const currentUserRoleLabel =
     ROLE_LABELS[currentUserRole] ||
-    currentUserRole ||
-    "Unknown Role";
+    "Role unavailable";
 
   const tabs = useMemo(
     () => [

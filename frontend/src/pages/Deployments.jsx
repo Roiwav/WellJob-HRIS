@@ -1,3 +1,6 @@
+import { useLocation, useNavigate } from "react-router-dom";
+import { focusNotificationTarget } from "../utils/notifications/notificationFocus";
+import { TARGET_UNAVAILABLE } from "../utils/notifications/notificationTarget";
 import {
   useCallback,
   useEffect,
@@ -2016,6 +2019,15 @@ async function exportDeploymentMovementReportPDF({
 }
 
 export default function Deployments() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [notificationAttemptTarget, setNotificationAttemptTarget] = useState(null);
+  useEffect(() => {
+    if (!location.state?.notificationAttemptTarget) return;
+    setNotificationAttemptTarget(location.state.notificationAttemptTarget);
+    setActiveView(DEPLOYMENT_VIEW.RECORDS);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate]);
   const {
     user,
   } = useAuth();
@@ -2961,12 +2973,27 @@ export default function Deployments() {
             return false;
           }
 
-          const attempts =
+          let attempts =
             Array.isArray(
               data?.data
             )
               ? data.data
               : [];
+
+          if (notificationAttemptTarget) {
+            // The default list is bounded. Fetch the target employee separately
+            // so a pending arrival beyond the first 100 records remains reachable.
+            const targetParams = new URLSearchParams({ status: "For Deployment", employeeId: String(notificationAttemptTarget.employeeId), limit: "100" });
+            const targetData = await requestJson(`${DEPLOYMENT_ATTEMPT_API_URL}?${targetParams}`);
+            if (!isMountedRef.current || requestId !== pendingArrivalRequestIdRef.current) return false;
+            const target = (targetData?.data || []).find((attempt) => Number(attempt.attemptId || attempt.id) === Number(notificationAttemptTarget.attemptId));
+            if (target) {
+              attempts = [target, ...attempts.filter((attempt) => Number(attempt.attemptId || attempt.id) !== Number(notificationAttemptTarget.attemptId))];
+              focusNotificationTarget(`[data-arrival-id="${Number(notificationAttemptTarget.attemptId)}"]`);
+            } else {
+              setFetchError(TARGET_UNAVAILABLE);
+            }
+          }
 
           setPendingArrivals(
             attempts
@@ -3028,6 +3055,7 @@ export default function Deployments() {
       },
       [
         isHRCoordinator,
+        notificationAttemptTarget,
       ]
     );
 
@@ -4564,6 +4592,7 @@ function CoordinatorPendingArrivals({
 
                   return (
                     <tr
+                      data-arrival-id={attemptId}
                       key={
                         attemptId
                       }

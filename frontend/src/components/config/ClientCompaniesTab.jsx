@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../../utils/hrErrors";
 import {
   useCallback,
   useEffect,
@@ -209,9 +210,7 @@ async function requestJson(url, options = {}) {
 
     if (!response.ok) {
       throw new Error(
-        data?.message ||
-          data?.error ||
-          `Request failed with status ${response.status}`
+        hrErrorMessage(data, undefined, response.status)
       );
     }
 
@@ -226,10 +225,10 @@ function getConfigurationErrorMessage(
   fallbackMessage
 ) {
   if (error?.name === "AbortError") {
-    return "The server took too long to respond. Check that the backend and database are running, then try again.";
+    return "The service is taking longer than expected. Please try again. If the problem continues, contact IT Support.";
   }
 
-  return error?.message || fallbackMessage;
+  return hrErrorMessage(error, fallbackMessage);
 }
 
 function emitCompaniesUpdated(action) {

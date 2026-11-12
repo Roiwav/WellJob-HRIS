@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../utils/hrErrors";
 import {
   useMemo,
   useState,
@@ -70,27 +71,27 @@ function getFriendlyResolveMessage(
     );
 
   if (backendMessage) {
-    return backendMessage;
+    return hrErrorMessage(backendMessage, "Unable to start the phone document session. Please try again.", status);
   }
 
   switch (status) {
     case 400:
-      return "This mobile handoff link is invalid.";
+      return "This phone link is invalid.";
 
     case 403:
-      return "This mobile handoff belongs to a different WELLJOB account.";
+      return "This phone link belongs to a different WELLJOB account.";
 
     case 404:
-      return "This mobile handoff is invalid or no longer available.";
+      return "This phone link is invalid or no longer available.";
 
     case 409:
-      return "This mobile handoff can no longer be activated.";
+      return "This phone document session can no longer be started.";
 
     case 410:
-      return "This mobile handoff has expired or has already been used.";
+      return "This phone link has expired or has already been used.";
 
     default:
-      return "Unable to activate the mobile document handoff. Please try again.";
+      return "Unable to start the phone document session. Please try again.";
   }
 }
 
@@ -165,7 +166,7 @@ export default function EmployeeMobileHandoff() {
   ] = useState(
     tokenLooksValid
       ? ""
-      : "This mobile handoff link is invalid."
+      : "This phone link is invalid."
   );
 
   const handleActivate =
@@ -236,7 +237,7 @@ export default function EmployeeMobileHandoff() {
           employeeId <= 0
         ) {
           setError(
-            "The mobile handoff was activated, but the employee record could not be identified. Generate a new QR code from the desktop."
+            "The employee record is unavailable. Generate a new phone link from the desktop and try again."
           );
 
           return;
@@ -326,7 +327,7 @@ export default function EmployeeMobileHandoff() {
 
               <div className="min-w-0">
                 <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-cyan-300">
-                  Secure Mobile Handoff
+                  Secure phone document session
                 </p>
 
                 <h1 className="mt-1 text-2xl font-black tracking-tight text-white sm:text-3xl">
@@ -334,7 +335,7 @@ export default function EmployeeMobileHandoff() {
                 </h1>
 
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  Activate the temporary handoff, then continue to the employee compliance documents for camera capture or file upload.
+                  Continue on this phone to take a photo or upload employee compliance documents.
                 </p>
               </div>
             </div>
@@ -361,7 +362,7 @@ export default function EmployeeMobileHandoff() {
                   />
                 }
                 title="Short-lived"
-                description="The handoff expires automatically after a short period."
+                description="This phone link expires automatically after a short period."
               />
 
               <SecurityItem
@@ -390,7 +391,7 @@ export default function EmployeeMobileHandoff() {
 
                   <div>
                     <p className="font-extrabold text-red-200">
-                      Handoff unavailable
+                      Phone link unavailable
                     </p>
 
                     <p className="mt-1 text-sm leading-6 text-red-100/80">
@@ -445,7 +446,7 @@ export default function EmployeeMobileHandoff() {
                       className="h-5 w-5 animate-spin"
                       aria-hidden="true"
                     />
-                    Activating...
+                    Opening...
                   </>
                 ) : error ? (
                   <>
@@ -453,7 +454,7 @@ export default function EmployeeMobileHandoff() {
                       size={18}
                       aria-hidden="true"
                     />
-                    Try Activation Again
+                    Try Again
                   </>
                 ) : (
                   <>
@@ -461,7 +462,7 @@ export default function EmployeeMobileHandoff() {
                       size={18}
                       aria-hidden="true"
                     />
-                    Continue to Employee Documents
+                    Continue on this phone
                   </>
                 )}
               </button>
@@ -485,7 +486,7 @@ export default function EmployeeMobileHandoff() {
             </div>
 
             <p className="text-center text-[11px] leading-5 text-slate-500">
-              WELLJOB employee compliance documents remain protected by your authenticated HR Staff session and the existing private document-storage controls.
+              Employee documents remain protected and are available only to authorized HR users.
             </p>
           </div>
         </section>

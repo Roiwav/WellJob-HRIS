@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../../utils/hrErrors";
 import {
   useEffect,
   useMemo,
@@ -40,24 +41,7 @@ function normalizePositiveInteger(
     : null;
 }
 
-function getResponseMessage(
-  data,
-  fallback
-) {
-  if (
-    typeof data === "string" &&
-    data.trim()
-  ) {
-    return data.trim();
-  }
 
-  return String(
-    data?.error ||
-      data?.message ||
-      fallback ||
-      ""
-  ).trim();
-}
 
 function formatRemainingTime(
   totalSeconds
@@ -269,10 +253,7 @@ export default function EmployeeMobileHandoffPanel({
           );
 
           setError(
-            getResponseMessage(
-              data,
-              "Unable to create a secure mobile handoff."
-            )
+            hrErrorMessage(data, "Unable to start the secure phone document session. Please try again.", response.status)
           );
 
           return;
@@ -388,7 +369,7 @@ export default function EmployeeMobileHandoffPanel({
             disabled={
               isGenerating
             }
-            aria-label="Close mobile handoff QR code"
+            aria-label="Close phone document QR code"
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:hover:bg-white/10 dark:hover:text-white"
           >
             <FiX
@@ -461,7 +442,7 @@ export default function EmployeeMobileHandoffPanel({
                   size={190}
                   level="M"
                   marginSize={1}
-                  title="Secure WELLJOB mobile document handoff QR code"
+                  title="Secure WELLJOB phone document QR code"
                 />
               ) : (
                 <div className="flex h-[190px] w-[190px] items-center justify-center text-center text-xs font-semibold text-red-600">

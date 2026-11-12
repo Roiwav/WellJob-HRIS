@@ -1,3 +1,5 @@
+import { focusNotificationTarget } from "../utils/notifications/notificationFocus";
+import { TARGET_UNAVAILABLE } from "../utils/notifications/notificationTarget";
 import {
   useCallback,
   useEffect,
@@ -1762,6 +1764,9 @@ export default function Incidents() {
               fullIncident
             );
           } else {
+            if (["review", "submit-resolution", "start-investigation"].includes(requestedAction)) {
+              showNotice("warning", "Action Unavailable", "This action is no longer available for this case. The case details are shown for reference.");
+            }
             setSelectedIncident(
               fullIncident
             );
@@ -2041,7 +2046,10 @@ export default function Incidents() {
             ),
         },
         requestedAction
-      );
+      ).then((opened) => {
+        if (opened && navigationState.notificationFocus) focusNotificationTarget('[role="dialog"]');
+        if (!opened) showNotice("error", "Record Unavailable", TARGET_UNAVAILABLE);
+      });
 
       return undefined;
     },
@@ -2050,6 +2058,7 @@ export default function Incidents() {
       location.state,
       navigate,
       openIncidentAction,
+      showNotice,
     ]
   );
   const syncModalIncident =

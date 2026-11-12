@@ -1,3 +1,4 @@
+import { formatRoleLabel } from "../../../utils/userDisplay";
 import {
   useEffect,
   useMemo,
@@ -250,7 +251,7 @@ function HistoryCard({
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                 {record?.employeeName ||
-                  "Unknown Employee"}
+                  "Employee name unavailable"}
               </h3>
 
               <StatusBadge
@@ -306,16 +307,20 @@ function HistoryCard({
         )}
       </div>
 
-      <div className="mt-4 grid gap-4 border-t border-slate-200 pt-4 dark:border-slate-800 lg:grid-cols-[1fr_1fr_0.8fr]">
+      <div className="mt-4 grid gap-4 border-t border-slate-200 pt-4 dark:border-slate-800 sm:grid-cols-2 lg:grid-cols-4">
         <HistoryField
-          label="Original Recommendation"
+          label="Suggested HR Workflow Action"
+          value={record?.suggestedHRAction || "Not recorded"}
+        />
+        <HistoryField
+          label="Corrective Intervention"
           value={
             record?.systemRecommendation
           }
         />
 
         <HistoryField
-          label="Final HR Action"
+          label="Final HR Decision"
           value={record?.finalAction}
           strong
         />
@@ -326,13 +331,11 @@ function HistoryCard({
           </p>
 
           <p className="mt-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
-            {record?.decidedBy ||
-              "HR User"}
+            {record?.decidedByName || "Reviewer name unavailable"}
           </p>
 
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            {record?.decidedByRole ||
-              "Authorized User"}
+            {formatRoleLabel(record?.decidedByRole)}
           </p>
         </div>
       </div>
@@ -357,7 +360,7 @@ function HistoryCard({
             <FiShield
               aria-hidden="true"
             />
-            Review Basis
+            Recommendation Basis
           </p>
 
           <p className="mt-1.5 line-clamp-3 text-sm leading-6 text-indigo-800/90 dark:text-indigo-300/90">
@@ -736,7 +739,7 @@ export default function DecisionHistorySection({
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                 {Number(
                   pagination.total || 0
-                )} record(s)
+                )} {Number(pagination.total || 0) === 1 ? "record" : "records"}
               </span>
 
               <Button
@@ -887,7 +890,7 @@ export default function DecisionHistorySection({
                 1}{" "}
               •{" "}
               {pagination.total || 0}{" "}
-              matching record(s)
+              matching {Number(pagination.total || 0) === 1 ? "record" : "records"}
             </p>
 
             <div className="flex gap-2">

@@ -1,3 +1,4 @@
+import { getUserFullName } from "../../../utils/userDisplay";
 import { useMemo, useState } from "react";
 
 import {
@@ -82,37 +83,7 @@ function formatEmployeeId(value) {
   );
 }
 
-function getReviewerFullName(user) {
-  const directName =
-    user?.fullName ||
-    user?.full_name ||
-    user?.displayName ||
-    user?.display_name ||
-    user?.name;
-
-  if (
-    typeof directName === "string" &&
-    directName.trim()
-  ) {
-    return directName.trim();
-  }
-
-  const combinedName = [
-    user?.firstName || user?.first_name,
-    user?.middleName || user?.middle_name,
-    user?.lastName || user?.last_name,
-  ]
-    .filter(Boolean)
-    .map((part) => String(part).trim())
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    combinedName ||
-    user?.username ||
-    "HR User"
-  );
-}
+const getReviewerFullName = getUserFullName;
 
 function isPendingRecommendation(employee) {
   const recommendation = String(
@@ -574,7 +545,7 @@ function ReviewRecommendationModal({
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
               <div className="min-w-0">
                 <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  Recommendation
+                  Corrective Intervention
                 </p>
 
                 <p className="mt-1.5 text-sm font-black leading-5 text-slate-900 dark:text-white">
@@ -588,7 +559,7 @@ function ReviewRecommendationModal({
 
               <div className="min-w-0 border-t border-slate-200 pt-4 dark:border-slate-800 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
                 <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  Recommended HR Follow-up
+                  Suggested HR Workflow Action
                 </p>
 
                 <p className="mt-1.5 text-sm font-black leading-5 text-slate-900 dark:text-white">
@@ -671,7 +642,7 @@ function ReviewRecommendationModal({
                   htmlFor="kpi-final-hr-action"
                   className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300"
                 >
-                  Final HR Action
+                  Final HR Decision
                 </label>
 
                 <select
@@ -870,7 +841,7 @@ function PendingRecommendationCard({
 
           <div className="min-w-0 border-t border-slate-200 pt-4 dark:border-slate-800 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
             <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-              Recommendation
+              Corrective Intervention
             </p>
 
             <p className="mt-1.5 text-sm font-black leading-5 text-slate-900 dark:text-white">
@@ -886,7 +857,7 @@ function PendingRecommendationCard({
 
           <div className="min-w-0 border-t border-slate-200 pt-4 dark:border-slate-800 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
             <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-              Recommended HR Follow-up
+              Suggested HR Workflow Action
             </p>
 
             <p className="mt-1.5 text-sm font-black leading-5 text-slate-900 dark:text-white">

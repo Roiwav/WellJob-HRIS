@@ -176,6 +176,11 @@ const ALLOWED_FINAL_ACTIONS =
     "No Action Required",
   ]);
 
+async function displayRecords(rows) {
+  const { resolveDecisionReviewerNames } = require("../utils/decisionReviewerDisplay");
+  return (await resolveDecisionReviewerNames(rows, db)).map(toCamelCaseRecord);
+}
+
 function toCamelCaseRecord(
   row
 ) {
@@ -310,6 +315,8 @@ function toCamelCaseRecord(
     notes:
       row.notes ||
       "",
+
+    decidedByName: row.reviewer_full_name || null,
 
     decidedBy:
       row.decided_by ||
@@ -2088,9 +2095,7 @@ exports.getKpiDecisionHistory =
             );
 
         return res.json(
-          rows.map(
-            toCamelCaseRecord
-          )
+          await displayRecords(rows)
         );
       }
 
@@ -2163,9 +2168,7 @@ exports.getKpiDecisionHistory =
 
         return res.json({
           decisions:
-            rows.map(
-              toCamelCaseRecord
-            ),
+            await displayRecords(rows),
 
           total:
             Number(
@@ -2488,9 +2491,7 @@ exports.getKpiDecisionHistory =
 
       return res.json({
         records:
-          rows.map(
-            toCamelCaseRecord
-          ),
+          await displayRecords(rows),
 
         pagination: {
           page,
@@ -3321,7 +3322,7 @@ exports.createKpiDecision =
 
           record:
             toCamelCaseRecord(
-              rows[0]
+              { ...rows[0], reviewer_full_name: actor.fullName !== actor.username ? actor.fullName : null }
             ),
         });
     } catch (

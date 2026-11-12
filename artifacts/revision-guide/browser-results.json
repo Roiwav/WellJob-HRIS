@@ -1,0 +1,29 @@
+{
+  "fixtureOnly": true,
+  "results": [
+    "center: exact No Show employee outside first page, workforce highlight and dot",
+    "temporary highlight/dot clears after five seconds",
+    "navbar: exact No Show employee outside first page, workforce highlight and dot",
+    "center: coordinator exact pending arrival beyond 100-row default list",
+    "navbar: coordinator exact pending arrival beyond 100-row default list",
+    "center: exact closed incident and duration stops at 2025 closure",
+    "navbar: exact closed incident and duration stops at 2025 closure",
+    "center, HR_MANAGER: exact compliance document preserved with temporary dot",
+    "navbar, HR_MANAGER: exact compliance document preserved with temporary dot",
+    "center, HR_STAFF: exact compliance document preserved with temporary dot",
+    "navbar, HR_STAFF: exact compliance document preserved with temporary dot",
+    "center: KPI alert opens exact authorized employee assessment",
+    "navbar: KPI alert opens exact authorized employee assessment",
+    "missing employee shows friendly unavailable message",
+    "unauthorized incident destination remains on Notifications with friendly access message",
+    "resolved incident workflow alert shows friendly unavailable-action notice and reference details",
+    "HR_STAFF: removed compliance document shows friendly unavailable message instead of highlighting a different record",
+    "HR_MANAGER: removed compliance document shows friendly unavailable message instead of highlighting a different record",
+    "390px mobile notification opens exact employee without dialog width overflow",
+    "empty HTTP 500 shows friendly KPI message",
+    "invalid phone link uses revised session terminology",
+    "history: real reviewer name, readable role, safe legacy fallbacks and singular/plural record wording",
+    "legacy-history: real reviewer name, readable role, safe legacy fallbacks and singular/plural record wording"
+  ],
+  "count": 23
+}

@@ -1,0 +1,28 @@
+{
+  "mode": "APPLY",
+  "employeeId": 1665,
+  "assignmentId": 1865,
+  "before": {
+    "status": "Inactive",
+    "employment_status": "Active",
+    "workforce_status": "Deployed"
+  },
+  "after": {
+    "status": "Inactive",
+    "employment_status": "Resigned",
+    "workforce_status": null
+  },
+  "originalWorkforceHistoryId": 2225,
+  "preservedEffectiveAtStored": "2026-11-10 07:57:14",
+  "originalSeparationActorId": 22,
+  "addMissingEmploymentHistory": true,
+  "preserveAssignmentAndOriginalHistory": true,
+  "alreadyCorrect": false,
+  "committed": true,
+  "verified": {
+    "status": "Inactive",
+    "employment_status": "Resigned",
+    "workforce_status": null
+  },
+  "historyRows": 1
+}

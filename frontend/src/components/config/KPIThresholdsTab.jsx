@@ -1,3 +1,5 @@
+import { formatRoleLabel } from "../../utils/userDisplay";
+import { hrErrorMessage } from "../../utils/hrErrors";
 import {
   useCallback,
   useEffect,
@@ -397,9 +399,7 @@ async function requestJson(url, options = {}) {
 
     if (!response.ok) {
       throw new Error(
-        data?.error ||
-          data?.message ||
-          `Request failed with status ${response.status}`
+        hrErrorMessage(data, undefined, response.status)
       );
     }
 
@@ -411,6 +411,7 @@ async function requestJson(url, options = {}) {
       );
     }
 
+    if (error instanceof Error) error.message = hrErrorMessage(error);
     throw error;
   } finally {
     globalThis.clearTimeout(timeoutId);
@@ -2132,7 +2133,7 @@ export default function KPIThresholdsTab({
                     ? ` by ${configuration.metadata.updatedBy}`
                     : ""}
                   {configuration.metadata?.updatedByRole
-                    ? ` (${configuration.metadata.updatedByRole})`
+                    ? ` (${formatRoleLabel(configuration.metadata.updatedByRole)})`
                     : ""}
                 </p>
               </div>

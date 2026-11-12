@@ -1,6 +1,7 @@
+import { getNotificationDestination } from "../utils/notifications/notificationTarget";
 import { useCallback, useEffect, useMemo, useState, } from "react";
 import { FiBell, FiCheckCircle, FiClock, FiRefreshCw, FiShield, FiUserCheck, FiXCircle, } from "react-icons/fi";
-import { useNavigate, } from "react-router-dom";
+import { useNavigate, useLocation, } from "react-router-dom";
 import NotificationTable from "../components/notifications/NotificationTable";
 import { useAuth } from "../context/useAuth";
 import useSmartNotifications from "../hooks/useSmartNotifications";
@@ -64,37 +65,8 @@ function normalizeCaseStatus(status) {
     }
     return "Open";
 }
-function isComplianceNotification(alert) {
-    const sourceType = String(alert?.sourceType ||
-        "")
-        .trim()
-        .toUpperCase();
-    const purpose = String(alert?.notificationPurpose ||
-        "")
-        .trim()
-        .toUpperCase();
-    return (sourceType === "COMPLIANCE" ||
-        purpose === "COMPLIANCE_EXPIRED" ||
-        purpose === "COMPLIANCE_EXPIRING_SOON");
-}
-function getComplianceNavigationTarget(alert) {
-    return {
-        employeeId: alert?.employeeId ??
-            alert?.employee_id ??
-            alert?.employeeRecordId ??
-            alert?.employee_record_id ??
-            alert?.employee?.id ??
-            null,
-        documentId: alert?.documentId ??
-            alert?.document_id ??
-            alert?.document?.id ??
-            null,
-        documentName: String(alert?.documentName ??
-            alert?.document_name ??
-            alert?.document?.name ??
-            "").trim(),
-    };
-}
+
+
 function isIncidentNotification(alert) {
     const sourceType = String(alert?.sourceType ||
         "")
@@ -816,41 +788,9 @@ function NotificationAlertsSection({ user }) {
         catch (readError) {
             console.error("Failed to mark notification as read:", readError);
         }
-        if (alert.route ===
-            "/incidents" &&
-            alert.incidentId) {
-            navigate("/incidents", {
-                state: {
-                    incidentId: alert.incidentId,
-                    action: alert.navigationAction ||
-                        alert.action ||
-                        "view",
-                },
-            });
-            return;
-        }
-        if (isComplianceNotification(alert)) {
-            const complianceTarget = getComplianceNavigationTarget(alert);
-            if (complianceTarget.employeeId) {
-                navigate("/employees", {
-                    state: {
-                        smartAlertEmployeeTarget: {
-                            employeeId: complianceTarget.employeeId,
-                            openCompliance: true,
-                            documentId: complianceTarget.documentId ||
-                                null,
-                            documentName: complianceTarget.documentName,
-                            alertKey: alert.alertKey ||
-                                "",
-                        },
-                    },
-                });
-                return;
-            }
-        }
-        navigate(alert.route ||
-            "/notifications");
-    };
+    const target = getNotificationDestination(alert, user?.role);
+    navigate(target.path, { state: target.state });
+  };
     return (<section className="space-y-3">
 
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
@@ -921,10 +861,12 @@ function NotificationAlertsSection({ user }) {
  */
 export default function Notifications() {
     const { user } = useAuth();
+    const location = useLocation();
     const role = user?.role;
     const canViewNotifications = NOTIFICATION_ALERT_ROLES.has(role);
     const canReviewPasswordResets = PASSWORD_RESET_REVIEWER_ROLES.has(role);
     return (<div className="space-y-5">
+      {location.state?.targetError && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">{location.state.targetError}</div>}
 
       <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-6">
 

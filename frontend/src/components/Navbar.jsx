@@ -1,3 +1,4 @@
+import { getNotificationDestination } from "../utils/notifications/notificationTarget";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -97,37 +98,7 @@ function isReadNotification(
   );
 }
 
-function getComplianceNavigationTarget(
-  alert
-) {
-  const employeeId =
-    alert?.employeeId ??
-    alert?.employee_id ??
-    alert?.employeeRecordId ??
-    alert?.employee_record_id ??
-    alert?.employee?.id ??
-    null;
 
-  const documentId =
-    alert?.documentId ??
-    alert?.document_id ??
-    alert?.document?.id ??
-    null;
-
-  const documentName =
-    String(
-      alert?.documentName ??
-        alert?.document_name ??
-        alert?.document?.name ??
-        ""
-    ).trim();
-
-  return {
-    employeeId,
-    documentId,
-    documentName,
-  };
-}
 
 function isComplianceNotification(alert) {
   const sourceType =
@@ -581,65 +552,8 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
     catch (error) {
       console.error("Failed to mark notification as read:", error);
     }
-    if (alert.route ===
-      "/incidents" &&
-      alert.incidentId) {
-      navigate("/incidents", {
-        state: {
-          incidentId: alert.incidentId,
-          action: alert.action ||
-            alert.navigationAction ||
-            "view",
-        },
-      });
-      return;
-    }
-
-    if (
-      isComplianceNotification(
-        alert
-      )
-    ) {
-      const complianceTarget =
-        getComplianceNavigationTarget(
-          alert
-        );
-
-      if (
-        complianceTarget.employeeId
-      ) {
-        navigate(
-          "/employees",
-          {
-            state: {
-              smartAlertEmployeeTarget: {
-                employeeId:
-                  complianceTarget.employeeId,
-
-                openCompliance:
-                  true,
-
-                documentId:
-                  complianceTarget.documentId ||
-                  null,
-
-                documentName:
-                  complianceTarget.documentName,
-
-                alertKey:
-                  alert.alertKey ||
-                  "",
-              },
-            },
-          }
-        );
-
-        return;
-      }
-    }
-
-    navigate(alert.route ||
-      "/notifications");
+    const target = getNotificationDestination(alert, user?.role);
+    navigate(target.path, { state: target.state });
   };
   const handleToggleNotifications = () => {
     if (!canViewSmartNotifications) {

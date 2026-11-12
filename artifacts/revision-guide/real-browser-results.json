@@ -1,0 +1,52 @@
+{
+  "database": "welljob_phase3_test",
+  "bucket": "welljob-phase3-test",
+  "fixtureOnly": true,
+  "count": 11,
+  "checks": [
+    {
+      "name": "POST: no success toast before the real server confirms its save",
+      "status": "PASS"
+    },
+    {
+      "name": "Real browser Add Employee saves three protected proof files and displays the Add success title",
+      "status": "PASS"
+    },
+    {
+      "name": "POST: no success toast before the real server confirms its save",
+      "status": "PASS"
+    },
+    {
+      "name": "Real server rejected Add: error visible, no employee persisted and no success toast",
+      "status": "PASS"
+    },
+    {
+      "name": "PUT: no success toast before the real server confirms its save",
+      "status": "PASS"
+    },
+    {
+      "name": "Real browser Edit persists the update, preserves calendar dates and displays the Edit success title",
+      "status": "PASS"
+    },
+    {
+      "name": "PUT: no success toast before the real server confirms its save",
+      "status": "PASS"
+    },
+    {
+      "name": "Real server rejected Edit: original employee preserved, visible error and no success toast",
+      "status": "PASS"
+    },
+    {
+      "name": "390px real one-time phone link resolves to the exact employee's expanded document form",
+      "status": "PASS"
+    },
+    {
+      "name": "Real consumed phone link shows the friendly unavailable message",
+      "status": "PASS"
+    },
+    {
+      "name": "Real HR Manager view does not expose HR Staff Add controls",
+      "status": "PASS"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { highlightNotificationElement } from "../../utils/notifications/notificationFocus";
 import {
   FiAlertTriangle,
   FiBriefcase,
@@ -2041,6 +2042,7 @@ export default function EmployeeModal({
       return undefined;
     }
 
+    let stopHighlight = () => {};
     const scrollTimer =
       window.setTimeout(() => {
         const targetedDocument =
@@ -2048,6 +2050,11 @@ export default function EmployeeModal({
             ?.querySelector(
               '[data-compliance-notification-target="true"]'
             );
+
+        if (targetedDocument) stopHighlight = highlightNotificationElement(targetedDocument);
+        else if (complianceTargetDocumentId || complianceTargetDocumentName) {
+          setPreviewError("This compliance document is no longer available. Refresh the employee record and try again.");
+        }
 
         (
           targetedDocument ||
@@ -2062,6 +2069,7 @@ export default function EmployeeModal({
       }, 120);
 
     return () => {
+      stopHighlight();
       window.clearTimeout(
         scrollTimer
       );
@@ -2752,6 +2760,7 @@ export default function EmployeeModal({
                       "Not recorded"}
                   </StatusPill>
 
+                  <span data-employee-workforce className="inline-flex rounded-full">
                   <StatusPill
                     className={getClassName(
                       STATUS_CLASSES,
@@ -2765,6 +2774,7 @@ export default function EmployeeModal({
                     Workforce:{" "}
                     {employeeWorkforceStatusLabel}
                   </StatusPill>
+                  </span>
                 </div>
               </div>
             </div>

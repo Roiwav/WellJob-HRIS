@@ -623,7 +623,7 @@ export default function EmployeeKpiDetailsModal({
 
             <div className="mt-3">
               <ExplanationRow
-                label="Review Basis"
+                label="Recommendation Basis"
                 icon={<FiClipboard aria-hidden="true" />}
               >
                 {correctiveActionBasis}

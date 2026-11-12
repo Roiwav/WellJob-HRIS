@@ -1,0 +1,21 @@
+{
+  "mode": "READ_ONLY_DRY_RUN",
+  "employeeId": 1665,
+  "assignmentId": 1865,
+  "before": {
+    "status": "Inactive",
+    "employment_status": "Resigned",
+    "workforce_status": null
+  },
+  "after": {
+    "status": "Inactive",
+    "employment_status": "Resigned",
+    "workforce_status": null
+  },
+  "originalWorkforceHistoryId": 2225,
+  "preservedEffectiveAtStored": "2026-11-10 07:57:14",
+  "originalSeparationActorId": 22,
+  "addMissingEmploymentHistory": false,
+  "preserveAssignmentAndOriginalHistory": true,
+  "alreadyCorrect": true
+}

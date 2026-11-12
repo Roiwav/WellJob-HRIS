@@ -1,0 +1,94 @@
+{
+  "database": "welljob_phase3_test",
+  "bucket": "welljob-phase3-test",
+  "runId": "1794482508784-11100",
+  "checks": [
+    {
+      "name": "Real MySQL and private Supabase preflight",
+      "status": "PASS",
+      "detail": {
+        "database": "welljob_phase3_test",
+        "version": "8.4.8",
+        "tls": true,
+        "bucket": "welljob-phase3-test",
+        "public": false
+      }
+    },
+    {
+      "name": "Fictional runtime fixtures created in isolated database",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real MySQL Resigned: atomic state, history, retry and scopes",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real MySQL AWOL: atomic state, history, retry and scopes",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real MySQL Terminated: atomic state, history, retry and scopes",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real MySQL Completed Contract: atomic state, history, retry and scopes",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real MySQL simultaneous separation: one winner, one conflict, one history row",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real MySQL rollback after injected SQL failure: UPDATE employees",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real MySQL rollback after injected SQL failure: INSERT INTO employee_status_history",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real MySQL rollback after injected SQL failure: INSERT INTO employee_employment_history",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real MySQL rollback after injected SQL failure: INSERT INTO audit_logs",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real Confirm Arrival / No Show and cross-company denial remain correct",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "MySQL DATE values retain their calendar date through the employee API; DATETIME behavior is unchanged",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real expired-session, role and company access enforcement",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Real phone-link ownership, one-time consumption and database UTC expiry",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Actual private Supabase signed upload, finalization, protected download and denied cross-company access",
+      "status": "PASS",
+      "detail": ""
+    }
+  ],
+  "count": 16
+}

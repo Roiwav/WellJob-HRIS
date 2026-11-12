@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../hrErrors";
 import {
   DOCUMENT_OPTIONS,
   documentRequiresNumber,
@@ -465,12 +466,7 @@ export function getEmployeeApiError(
     return "The server took too long to respond. Please try again.";
   }
 
-  return (
-    error?.response?.data?.error ||
-    error?.response?.data?.message ||
-    error?.message ||
-    fallback
-  );
+  return hrErrorMessage(error, fallback);
 }
 
 export function parseEmployeeDocuments(documents) {

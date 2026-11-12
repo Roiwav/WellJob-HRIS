@@ -911,7 +911,7 @@ export default function EmployeeDocumentsSection({
                   className={[
                     "scroll-mt-24 rounded-xl border bg-white p-3.5 shadow-sm transition duration-300 focus:outline-none dark:bg-slate-900",
                     isNotificationTarget
-                      ? "border-indigo-500 bg-indigo-50/80 ring-4 ring-indigo-500/20 dark:border-indigo-400 dark:bg-indigo-500/10 dark:ring-indigo-400/20"
+                      ? "notification-focus border-indigo-500 bg-indigo-50/80 ring-4 ring-indigo-500/20 dark:border-indigo-400 dark:bg-indigo-500/10 dark:ring-indigo-400/20"
                       : document.checked
                         ? "border-indigo-300 ring-1 ring-indigo-100 dark:border-indigo-500/40 dark:ring-indigo-500/10"
                         : "border-gray-200 hover:border-indigo-200 dark:border-white/10 dark:hover:border-indigo-500/30",

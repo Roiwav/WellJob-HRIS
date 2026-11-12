@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../../utils/hrErrors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -206,9 +207,7 @@ async function requestJson(url, options = {}) {
 
     if (!response.ok) {
       throw new Error(
-        data?.message ||
-          data?.error ||
-          `Request failed with status ${response.status}`
+        hrErrorMessage(data, undefined, response.status)
       );
     }
 
@@ -223,7 +222,7 @@ function getConfigurationErrorMessage(error, fallbackMessage) {
     return "The request took too long. Please try again. If the problem continues, contact IT Support.";
   }
 
-  return error?.message || fallbackMessage;
+  return hrErrorMessage(error, fallbackMessage);
 }
 
 function stripHtml(value) {

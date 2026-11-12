@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../utils/hrErrors";
 import {
   useCallback,
   useEffect,
@@ -105,15 +106,10 @@ function getApiError(
   if (
     error?.name === "AbortError"
   ) {
-    return "The server took too long to respond. Check that the backend and database are running, then try again.";
+    return "The service is taking longer than expected. Please try again. If the problem continues, contact IT Support.";
   }
 
-  return (
-    error?.response?.data?.message ||
-    error?.response?.data?.error ||
-    error?.message ||
-    fallbackMessage
-  );
+  return hrErrorMessage(error, fallbackMessage);
 }
 
 async function requestJson(
@@ -156,9 +152,7 @@ async function requestJson(
 
     if (!response.ok) {
       const requestError = new Error(
-        data?.message ||
-          data?.error ||
-          `Request failed with status ${response.status}`
+        hrErrorMessage(data, undefined, response.status)
       );
 
       // Preserve HTTP status for field-specific form errors.

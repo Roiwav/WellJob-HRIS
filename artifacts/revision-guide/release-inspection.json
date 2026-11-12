@@ -1,0 +1,58 @@
+{
+  "productionRecord": {
+    "readOnly": true,
+    "employeeId": 1665,
+    "found": true,
+    "employee": {
+      "legacy": "Inactive",
+      "employment": "Resigned",
+      "workforce": null,
+      "archived": 0
+    },
+    "latestAssignment": {
+      "id": 1865,
+      "status": "Cancelled",
+      "endReason": "Resigned",
+      "endDate": "2026-11-10",
+      "endedAt": "2026-11-10 07:57:14"
+    },
+    "activeAssignments": 0,
+    "employmentHistoryCount": 2,
+    "resignationHistoryCount": 1,
+    "scopeMembership": {
+      "active": "0",
+      "separated": "1"
+    },
+    "originalAssignmentAndWorkforceEventPreserved": true,
+    "mismatch": false,
+    "proposedState": {
+      "status": "Inactive",
+      "employment_status": "Resigned",
+      "workforce_status": null
+    },
+    "modified": false
+  },
+  "vercelAccess": {
+    "available": true,
+    "checks": [
+      {
+        "endpoint": "/v2/user",
+        "status": 200,
+        "code": null,
+        "message": null
+      },
+      {
+        "endpoint": "/v2/teams",
+        "status": 200,
+        "code": null,
+        "message": null,
+        "teams": [
+          {
+            "id": "team_covGrAYtkRwD2GeOtyNKjlZe",
+            "slug": "well-job-solutions"
+          }
+        ]
+      }
+    ]
+  }
+}

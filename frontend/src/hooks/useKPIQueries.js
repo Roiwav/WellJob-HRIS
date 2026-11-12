@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../utils/hrErrors";
 import {
   useQuery,
   useQueryClient,
@@ -54,9 +55,7 @@ async function requestJson(
 
     if (!response.ok) {
       throw new Error(
-        data?.error ||
-          data?.message ||
-          `Request failed with status ${response.status}`
+        hrErrorMessage(data, undefined, response.status)
       );
     }
 
@@ -66,10 +65,11 @@ async function requestJson(
       error?.name === "AbortError"
     ) {
       throw new Error(
-        "The server took too long to respond. Check that the backend server and database are running, then try again."
+        "The service is taking longer than expected. Please try again. If the problem continues, contact IT Support."
       );
     }
 
+    if (error instanceof Error) error.message = hrErrorMessage(error);
     throw error;
   } finally {
     globalThis.clearTimeout(
@@ -107,7 +107,7 @@ function normalizeBackendEmployee(
       employee?.name ||
       employee?.full_name ||
       employee?.fullName ||
-      "Unknown Employee",
+      "Employee name unavailable",
 
     company:
       employee?.company ||
@@ -186,13 +186,13 @@ function normalizeBackendIncident(
       incident?.employee ||
       incident?.employeeName ||
       incident?.employee_name ||
-      "Unknown Employee",
+      "Employee name unavailable",
 
     employeeName:
       incident?.employeeName ||
       incident?.employee ||
       incident?.employee_name ||
-      "Unknown Employee",
+      "Employee name unavailable",
 
     company:
       incident?.company ||

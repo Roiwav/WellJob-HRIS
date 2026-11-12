@@ -1,3 +1,4 @@
+import { getIncidentDaysOpen } from "../../../utils/incidents/incidentDuration";
 import {
   FiAlertTriangle,
   FiCheckCircle,
@@ -603,9 +604,9 @@ export default function ViewIncidentModal({
 
             <Detail
               label="Days Open"
-              value={getCaseAgeLabel(
-                incident.caseAgeDays
-              )}
+              value={getIncidentDaysOpen(incident) === null
+                ? "Duration unavailable"
+                : getCaseAgeLabel(getIncidentDaysOpen(incident))}
             />
           </InfoCard>
 

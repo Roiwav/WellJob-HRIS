@@ -1,4 +1,5 @@
-﻿import {
+import { hrErrorMessage } from "../hrErrors";
+import {
   toProperName,
 } from "../../components/employees/employeeConstants";
 
@@ -62,11 +63,7 @@ function createBackendError(
   data,
   fallbackMessage
 ) {
-  const message =
-    data?.error ||
-    data?.message ||
-    fallbackMessage ||
-    `Request failed with status ${response?.status || "unknown"}.`;
+  const message = hrErrorMessage(data, fallbackMessage, response?.status);
 
   const error =
     new Error(
@@ -77,8 +74,7 @@ function createBackendError(
     status:
       response?.status,
 
-    data:
-      data || {},
+    data: { ...(data || {}), error: message, message },
   };
 
   return error;
@@ -202,11 +198,8 @@ async function uploadFileToSignedUrl(
           () => ""
         );
 
-    throw new Error(
-      responseText
-        ? `Protected file upload failed (${response.status}): ${responseText}`
-        : `Protected file upload failed with status ${response.status}.`
-    );
+    console.error("Employee document upload failed", response.status, responseText);
+    throw new Error("The employee document could not be uploaded. Check your connection and try again.");
   }
 }
 

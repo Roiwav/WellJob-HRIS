@@ -417,6 +417,7 @@ async function verifyToken(
             id,
             user_id,
             username,
+            full_name,
             role,
             assigned_company,
             status,
@@ -647,6 +648,7 @@ async function verifyToken(
      * JWT claims or browser input.
      */
     req.user = {
+      fullName: String(user.full_name || "").trim(),
       id:
         user.id,
 

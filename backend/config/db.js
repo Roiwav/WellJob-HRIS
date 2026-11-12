@@ -280,6 +280,12 @@ const db =
     database:
       dbName,
 
+    // A MySQL DATE is a calendar day, not an instant. Keeping DATE columns
+    // as YYYY-MM-DD prevents JSON serialization from moving Manila midnight
+    // to the previous UTC day during employee edit/phone-document round trips.
+    // DATETIME and TIMESTAMP parsing retain their existing behavior.
+    dateStrings: ["DATE"],
+
     ssl:
       getDatabaseSslOptions(),
 

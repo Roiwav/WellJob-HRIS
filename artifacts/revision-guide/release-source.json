@@ -1,0 +1,9 @@
+{
+    "sourceSha256":  "5ecb32b300feb45bdbecd2ab6f62e796c20ac5b1b7445fa39c6deac741d15e69",
+    "fileCount":  295,
+    "unsafeFiles":  0,
+    "beforeFrontend":  "dpl_29qR3e6usE6E5EaEzEutJfK6m5s3",
+    "beforeBackend":  "dpl_DMZzago3574AxE7fGctm9JZAfCHF",
+    "baseCommit":  "45a889c719cef4f05caf01cc47cdfa144fa6eee2",
+    "uncommittedSource":  true
+}

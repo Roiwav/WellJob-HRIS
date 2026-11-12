@@ -1,3 +1,5 @@
+import { focusNotificationTarget } from "../utils/notifications/notificationFocus";
+import { TARGET_UNAVAILABLE } from "../utils/notifications/notificationTarget";
 import {
   useCallback,
   useEffect,
@@ -426,9 +428,7 @@ function normalizeSmartAlertEmployeeTarget(
     !Number.isSafeInteger(
       employeeId
     ) ||
-    employeeId <= 0 ||
-    value.openCompliance !==
-      true
+    employeeId <= 0
   ) {
     return null;
   }
@@ -463,8 +463,8 @@ function normalizeSmartAlertEmployeeTarget(
 
   return {
     employeeId,
-    openCompliance:
-      true,
+    openCompliance: value.openCompliance === true,
+    section: value.openCompliance === true ? "compliance" : "workforce",
     documentId,
     documentName,
     alertKey,
@@ -3044,7 +3044,8 @@ export default function Employees() {
       if (
         !isHRStaff &&
         !isHRManager &&
-        !isSuperAdmin
+        !isSuperAdmin &&
+        !isHRCoordinator
       ) {
         navigate(
           "/employees",
@@ -3083,8 +3084,15 @@ export default function Employees() {
           }
 
           if (!fullEmployee) {
-            smartAlertTargetHandledRef.current =
-              "";
+            setPageError(TARGET_UNAVAILABLE);
+            navigate("/employees", { replace: true, state: null });
+            return;
+          }
+
+          if (alertTarget.openCompliance && alertTarget.documentId &&
+            !parseEmployeeDocuments(fullEmployee.documents).some((document) => Number(document.id || document.documentId || document.document_id) === alertTarget.documentId)) {
+            setPageError("This compliance document is no longer available. Refresh notifications and try again.");
+            navigate("/employees", { replace: true, state: null });
             return;
           }
 
@@ -3092,7 +3100,7 @@ export default function Employees() {
             null
           );
 
-          if (isHRStaff) {
+          if (isHRStaff && alertTarget.openCompliance) {
             setViewEmployee(
               null
             );
@@ -3150,8 +3158,8 @@ export default function Employees() {
             );
 
             setViewComplianceTarget({
-              openCompliance:
-                true,
+              openCompliance: alertTarget.openCompliance,
+              section: alertTarget.section,
 
               documentId:
                 alertTarget
@@ -3166,6 +3174,8 @@ export default function Employees() {
               fullEmployee
             );
           }
+
+          if (!alertTarget.openCompliance) focusNotificationTarget("[data-employee-workforce]");
 
           navigate(
             "/employees",
@@ -3183,10 +3193,14 @@ export default function Employees() {
       return () => {
         isActive =
           false;
+        if (smartAlertTargetHandledRef.current === targetSignature) {
+          smartAlertTargetHandledRef.current = "";
+        }
       };
     },
     [
       fetchEmployeeById,
+      isHRCoordinator,
       isHRManager,
       isHRStaff,
       isSuperAdmin,
@@ -3331,6 +3345,9 @@ export default function Employees() {
       return () => {
         isActive =
           false;
+        // A Strict Mode cleanup can cancel the initial detail request before
+        // it opens the form. Allow the next effect to retry the resolved target.
+        mobileHandoffHandledRef.current = false;
       };
     },
     [
@@ -3772,16 +3789,13 @@ export default function Employees() {
           handleCloseEmployeeForm();
           return;
         }
-        const safeEmployeeName =
-          employeeName ||
-          "the employee";
         const isEditMode =
           mode === "edit";
         handleCloseEmployeeForm();
         setSuccessMessage(
           isEditMode
-            ? `${safeEmployeeName}'s information was updated successfully.`
-            : `${safeEmployeeName} was saved successfully.`
+            ? "Employee Information Updated Successfully"
+            : "Employee Added Successfully"
         );
         emitDataUpdated(
           isEditMode
@@ -4382,7 +4396,7 @@ export default function Employees() {
       </ConfirmDialog>
       {successMessage && (
         <SuccessToast
-          title="Update Completed"
+          title={successMessage === "Employee Added Successfully" || successMessage === "Employee Information Updated Successfully" ? successMessage : "Completed Successfully"}
           message={
             successMessage
           }

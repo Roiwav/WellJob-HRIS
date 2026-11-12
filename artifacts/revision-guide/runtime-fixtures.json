@@ -1,0 +1,473 @@
+{
+  "runId": "1794482508784-11100",
+  "companyA": "Revision Fictional Client A 1794482508784-11100",
+  "companyB": "Revision Fictional Client B 1794482508784-11100",
+  "position": "Revision Test Associate",
+  "employees": [
+    {
+      "id": 47,
+      "body": {
+        "name": "Revision Resigned cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 48,
+      "body": {
+        "name": "Revision AWOL cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 49,
+      "body": {
+        "name": "Revision Terminated cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 50,
+      "body": {
+        "name": "Revision CompletedContract cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 51,
+      "body": {
+        "name": "Revision Concurrent Separation cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 52,
+      "body": {
+        "name": "Revision Rollback Probe cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 53,
+      "body": {
+        "name": "Revision Rollback Probe cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 54,
+      "body": {
+        "name": "Revision Rollback Probe cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 55,
+      "body": {
+        "name": "Revision Rollback Probe cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 56,
+      "body": {
+        "name": "Revision Arrival Workflow cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Floating / Standby",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 57,
+      "body": {
+        "name": "Revision Browser Employee cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Floating / Standby",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 58,
+      "body": {
+        "name": "Revision Browser Deployed cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client A 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    },
+    {
+      "id": 59,
+      "body": {
+        "name": "Revision Other Company Employee cafdabhibi",
+        "birthday": "2000-01-01",
+        "dateHired": "2025-01-01",
+        "company": "Revision Fictional Client B 1794482508784-11100",
+        "position": "Revision Test Associate",
+        "status": "Deployed",
+        "contractStart": "2025-01-02",
+        "documents": [
+          {
+            "name": "SSS (ID or E1 form)",
+            "documentNumber": "0012345678"
+          },
+          {
+            "name": "PhilHealth (ID or MDF Form)",
+            "documentNumber": "001234567890"
+          },
+          {
+            "name": "Pag-IBIG (ID or MDRF Form)",
+            "documentNumber": "000123456789"
+          }
+        ]
+      }
+    }
+  ],
+  "browserEmployee": {
+    "id": 57,
+    "body": {
+      "name": "Revision Browser Employee cafdabhibi",
+      "birthday": "2000-01-01",
+      "dateHired": "2025-01-01",
+      "company": "Revision Fictional Client A 1794482508784-11100",
+      "position": "Revision Test Associate",
+      "status": "Floating / Standby",
+      "documents": [
+        {
+          "name": "SSS (ID or E1 form)",
+          "documentNumber": "0012345678"
+        },
+        {
+          "name": "PhilHealth (ID or MDF Form)",
+          "documentNumber": "001234567890"
+        },
+        {
+          "name": "Pag-IBIG (ID or MDRF Form)",
+          "documentNumber": "000123456789"
+        }
+      ]
+    }
+  },
+  "browserDeployed": {
+    "id": 58,
+    "body": {
+      "name": "Revision Browser Deployed cafdabhibi",
+      "birthday": "2000-01-01",
+      "dateHired": "2025-01-01",
+      "company": "Revision Fictional Client A 1794482508784-11100",
+      "position": "Revision Test Associate",
+      "status": "Deployed",
+      "contractStart": "2025-01-02",
+      "documents": [
+        {
+          "name": "SSS (ID or E1 form)",
+          "documentNumber": "0012345678"
+        },
+        {
+          "name": "PhilHealth (ID or MDF Form)",
+          "documentNumber": "001234567890"
+        },
+        {
+          "name": "Pag-IBIG (ID or MDRF Form)",
+          "documentNumber": "000123456789"
+        }
+      ]
+    }
+  },
+  "otherCompanyEmployee": {
+    "id": 59,
+    "body": {
+      "name": "Revision Other Company Employee cafdabhibi",
+      "birthday": "2000-01-01",
+      "dateHired": "2025-01-01",
+      "company": "Revision Fictional Client B 1794482508784-11100",
+      "position": "Revision Test Associate",
+      "status": "Deployed",
+      "contractStart": "2025-01-02",
+      "documents": [
+        {
+          "name": "SSS (ID or E1 form)",
+          "documentNumber": "0012345678"
+        },
+        {
+          "name": "PhilHealth (ID or MDF Form)",
+          "documentNumber": "001234567890"
+        },
+        {
+          "name": "Pag-IBIG (ID or MDRF Form)",
+          "documentNumber": "000123456789"
+        }
+      ]
+    }
+  },
+  "browserDocumentId": 129,
+  "users": {
+    "staff": {
+      "id": 84,
+      "username": "revision_staff_1794482508784-11100",
+      "role": "HR_STAFF",
+      "fullName": "Revision Fictional HR_STAFF",
+      "assignedCompany": null
+    },
+    "otherStaff": {
+      "id": 85,
+      "username": "revision_otherStaff_1794482508784-11100",
+      "role": "HR_STAFF",
+      "fullName": "Revision Fictional HR_STAFF",
+      "assignedCompany": null
+    },
+    "manager": {
+      "id": 86,
+      "username": "revision_manager_1794482508784-11100",
+      "role": "HR_MANAGER",
+      "fullName": "Revision Fictional HR_MANAGER",
+      "assignedCompany": null
+    },
+    "coordinatorA": {
+      "id": 87,
+      "username": "revision_coordinatorA_1794482508784-11100",
+      "role": "HR_COORDINATOR",
+      "fullName": "Revision Fictional HR_COORDINATOR",
+      "assignedCompany": "Revision Fictional Client A 1794482508784-11100"
+    },
+    "coordinatorB": {
+      "id": 88,
+      "username": "revision_coordinatorB_1794482508784-11100",
+      "role": "HR_COORDINATOR",
+      "fullName": "Revision Fictional HR_COORDINATOR",
+      "assignedCompany": "Revision Fictional Client B 1794482508784-11100"
+    },
+    "admin": {
+      "id": 89,
+      "username": "revision_admin_1794482508784-11100",
+      "role": "SUPER_ADMIN",
+      "fullName": "Revision Fictional SUPER_ADMIN",
+      "assignedCompany": null
+    },
+    "it": {
+      "id": 90,
+      "username": "revision_it_1794482508784-11100",
+      "role": "IT_SUPPORT",
+      "fullName": "Revision Fictional IT_SUPPORT",
+      "assignedCompany": null
+    }
+  }
+}

@@ -406,3 +406,26 @@
     filter: drop-shadow(0 0 8px rgb(239 68 68 / 0.8));
   }
 }
+/* Temporary notification emphasis; no record text or timestamps are inserted. */
+.notification-focus {
+  position: relative;
+  outline: 3px solid #6366f1;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 5px rgb(99 102 241 / 12%);
+}
+.notification-focus::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6366f1;
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 80%);
+  pointer-events: none;
+}
+.notification-focus[data-employee-workforce]::after {
+  top: -3px;
+  right: -3px;
+}

@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../hrErrors";
 import authenticatedFetch from "../authenticatedFetch";
 import { API_BASE } from "../../config/api";
 
@@ -54,9 +55,7 @@ export async function requestSmartSuggestionJson(
 
   if (!response.ok) {
     throw new Error(
-      data?.error ||
-        data?.message ||
-        `Request failed with status ${response.status}`
+      hrErrorMessage(data, undefined, response.status)
     );
   }
 

@@ -212,7 +212,7 @@ function ActionRow({
 
           <h3 className="mt-2 line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">
             {action?.title ||
-              "Recommended HR Action"}
+              "Suggested HR Workflow Action"}
           </h3>
 
           <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-600 dark:text-slate-300">
@@ -223,7 +223,7 @@ function ActionRow({
           {action?.basis && (
             <p className="mt-2 line-clamp-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-500 dark:bg-slate-900 dark:text-slate-400">
               <span className="font-bold">
-                Basis:
+                Recommendation Basis:
               </span>{" "}
               {action.basis}
             </p>
@@ -282,7 +282,7 @@ export default function ExecutiveActionItems({
               id="priority-hr-actions-title"
               className="text-base font-extrabold text-slate-900 dark:text-white"
             >
-              Priority HR Actions
+              Suggested HR Workflow Actions
             </h2>
 
             <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
@@ -291,7 +291,7 @@ export default function ExecutiveActionItems({
           </div>
 
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Recommended HR follow-up based on current workforce records and established HR rules.
+            Suggested HR Workflow Actions based on current workforce records and established HR rules.
           </p>
         </div>
 

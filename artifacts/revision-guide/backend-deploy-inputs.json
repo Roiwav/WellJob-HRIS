@@ -1,0 +1,1901 @@
+﻿{
+  "framework": {
+    "name": "Express",
+    "slug": "express"
+  },
+  "basePath": "C:\\Users\\dudeg\\Downloads\\WellJob-HRIS-backup",
+  "fileCount": 295,
+  "totalSize": 6541183,
+  "ignoredCount": 33,
+  "ignored": [
+    ".env.local",
+    ".git",
+    ".gitignore",
+    ".vercel",
+    ".vscode",
+    "PHASE3_BUSINESS_RULE_DECISION_RECORD.md",
+    "PHASE3_FINAL_VERIFICATION_REPORT.md",
+    "artifacts",
+    "backend\\.env",
+    "backend\\.env.example",
+    "backend\\.env.local",
+    "backend\\.env.phase3.local",
+    "backend\\.env.phase3.runtime.local",
+    "backend\\.env.revision-1665-backup.local",
+    "backend\\.env.revision-production-snapshot.local",
+    "backend\\.env.revision-session.local",
+    "backend\\.gitignore",
+    "backend\\.vercel",
+    "backend\\documents",
+    "backend\\node_modules",
+    "backend\\private_chat_uploads",
+    "backend\\scripts",
+    "backend\\test",
+    "docs",
+    "fake-incident.pdf",
+    "frontend\\.env.example",
+    "frontend\\.env.local",
+    "frontend\\.gitignore",
+    "frontend\\.vercel",
+    "frontend\\dist",
+    "frontend\\node_modules",
+    "frontend\\scripts",
+    "frontend\\test"
+  ],
+  "directories": [
+    {
+      "path": "frontend",
+      "fileCount": 184,
+      "size": 4934283
+    },
+    {
+      "path": "backend",
+      "fileCount": 109,
+      "size": 1606212
+    },
+    {
+      "path": ".vercelignore",
+      "fileCount": 1,
+      "size": 517
+    },
+    {
+      "path": ".gitattributes",
+      "fileCount": 1,
+      "size": 171
+    }
+  ],
+  "largestFiles": [
+    {
+      "path": "frontend/src/assets/welljob.png",
+      "size": 896878,
+      "mode": 33206,
+      "sha": "49ee19656e682994fa8dc24462f4b6b1d3fa43e7"
+    },
+    {
+      "path": "frontend/public/Logo.svg",
+      "size": 358257,
+      "mode": 33206,
+      "sha": "7373c5409e079c6b44ab21fe1463075a3487216c"
+    },
+    {
+      "path": "frontend/public/20260401Outdoor running.gpx",
+      "size": 222631,
+      "mode": 33206,
+      "sha": "84da681533ba99e43b4328dd9b8addd13a810521"
+    },
+    {
+      "path": "frontend/package-lock.json",
+      "size": 181188,
+      "mode": 33206,
+      "sha": "364f4fdda025114c3aa5df55202687e574fc992a"
+    },
+    {
+      "path": "frontend/src/pages/Deployments.jsx",
+      "size": 147784,
+      "mode": 33206,
+      "sha": "a7a63df9bcf5b6721f4a7dfff42927451d4ae2d8"
+    },
+    {
+      "path": "frontend/src/assets/Logo.png",
+      "size": 138185,
+      "mode": 33206,
+      "sha": "7b1c16e80f4ae14bf186117ee27f38638d44d38a"
+    },
+    {
+      "path": "frontend/src/pages/Messenger.jsx",
+      "size": 136298,
+      "mode": 33206,
+      "sha": "ab9964d08b5841dfa302e33c25e9899c2413dc5a"
+    },
+    {
+      "path": "backend/controllers/incidentController.js",
+      "size": 120710,
+      "mode": 33206,
+      "sha": "691812a816a7ebdf12f3ee0163af879707ccaf54"
+    },
+    {
+      "path": "backend/controllers/employeeController.js",
+      "size": 117755,
+      "mode": 33206,
+      "sha": "ec17438c22fe67d17d94386208349641674abbd1"
+    },
+    {
+      "path": "frontend/src/components/incidents/modals/AddIncidentModal.jsx",
+      "size": 115568,
+      "mode": 33206,
+      "sha": "52d57da9dea2d556dee25cc5ec05a6f827123387"
+    }
+  ],
+  "files": [
+    {
+      "path": ".gitattributes",
+      "size": 171,
+      "mode": 33206,
+      "sha": "fceaa8982c8b54b86dea66984ca96307fbdd68e7"
+    },
+    {
+      "path": ".vercelignore",
+      "size": 517,
+      "mode": 33206,
+      "sha": "90e6a891a837fe1907891f8bf4575adbee5431cf"
+    },
+    {
+      "path": "backend/.vercelignore",
+      "size": 148,
+      "mode": 33206,
+      "sha": "5e6a794b7a0f6126e09e25ea47a01f4b1af9599d"
+    },
+    {
+      "path": "backend/app.js",
+      "size": 11231,
+      "mode": 33206,
+      "sha": "87fe78d422cc8eb87a0888bf44d773b701b47e1b"
+    },
+    {
+      "path": "backend/config/chatConfig.js",
+      "size": 2950,
+      "mode": 33206,
+      "sha": "c76998f8f05763e22e407a37b29ab97e7def353c"
+    },
+    {
+      "path": "backend/config/db.js",
+      "size": 5841,
+      "mode": 33206,
+      "sha": "c7d731ef1cd2e1fc1963ebbc79f7a5b932d84d03"
+    },
+    {
+      "path": "backend/config/supabase.js",
+      "size": 815,
+      "mode": 33206,
+      "sha": "fa64ceae9a8d59ea7918df4b022b7d82e1c46b3a"
+    },
+    {
+      "path": "backend/controllers/attendanceController.js",
+      "size": 45381,
+      "mode": 33206,
+      "sha": "c2d325673faacb89a6a24cf3e6e7cbae671df8d8"
+    },
+    {
+      "path": "backend/controllers/auditLogController.js",
+      "size": 8950,
+      "mode": 33206,
+      "sha": "07acfe35c7f966935d3a64bec674bbdded956b36"
+    },
+    {
+      "path": "backend/controllers/authController.js",
+      "size": 11534,
+      "mode": 33206,
+      "sha": "99cbb66afb974ae952f667b2622a25f259f3b3c6"
+    },
+    {
+      "path": "backend/controllers/avatarController.js",
+      "size": 14859,
+      "mode": 33206,
+      "sha": "9b7e2757e41b144b7fddff798274440b351641ab"
+    },
+    {
+      "path": "backend/controllers/dashboardController.js",
+      "size": 32193,
+      "mode": 33206,
+      "sha": "06a985fbb83f488f3a2c34334ebb2f8800ce5583"
+    },
+    {
+      "path": "backend/controllers/deploymentAttemptController.js",
+      "size": 92662,
+      "mode": 33206,
+      "sha": "f472cf8112daf36f7ef3c3c905e7524af9c6c777"
+    },
+    {
+      "path": "backend/controllers/deploymentController.js",
+      "size": 65922,
+      "mode": 33206,
+      "sha": "676b9e5ad07c1134b845c4e19d424c46f0890bcd"
+    },
+    {
+      "path": "backend/controllers/employeeController.js",
+      "size": 117755,
+      "mode": 33206,
+      "sha": "ec17438c22fe67d17d94386208349641674abbd1"
+    },
+    {
+      "path": "backend/controllers/employeeDocumentController.js",
+      "size": 9606,
+      "mode": 33206,
+      "sha": "b54ee06014632de1518562c397b821a7abf2bc39"
+    },
+    {
+      "path": "backend/controllers/employeeIncidentSummaryController.js",
+      "size": 9165,
+      "mode": 33206,
+      "sha": "6373ccd4e7a3472890cb628ba1bf13549d1b742a"
+    },
+    {
+      "path": "backend/controllers/employeeMobileHandoffController.js",
+      "size": 14427,
+      "mode": 33206,
+      "sha": "5abe654bcc2a9aedb443f54633cf774ba45cd189"
+    },
+    {
+      "path": "backend/controllers/incidentController.js",
+      "size": 120710,
+      "mode": 33206,
+      "sha": "691812a816a7ebdf12f3ee0163af879707ccaf54"
+    },
+    {
+      "path": "backend/controllers/incidentEvidenceController.js",
+      "size": 10717,
+      "mode": 33206,
+      "sha": "25b440dfe8301a27aa9b41f461e3ca7555ac52c8"
+    },
+    {
+      "path": "backend/controllers/incidentPhoneCaptureController.js",
+      "size": 54340,
+      "mode": 33206,
+      "sha": "708070251b07a628b0078d6da9a5850f380a41e7"
+    },
+    {
+      "path": "backend/controllers/kpiDataController.js",
+      "size": 4043,
+      "mode": 33206,
+      "sha": "aea442a07bbb0aa7c4f76a8ec9b774c16297481a"
+    },
+    {
+      "path": "backend/controllers/kpiDecisionController.js",
+      "size": 68433,
+      "mode": 33206,
+      "sha": "ae4d41da0687929005b63c147accc1c87f3f4f08"
+    },
+    {
+      "path": "backend/controllers/passwordResetReviewController.js",
+      "size": 19550,
+      "mode": 33206,
+      "sha": "896899b16ac3ee3cef12b525432b682d182480af"
+    },
+    {
+      "path": "backend/controllers/passwordResetSubmissionController.js",
+      "size": 1913,
+      "mode": 33206,
+      "sha": "7371f870173ce8ef45b3d73a2314e55dbba526d3"
+    },
+    {
+      "path": "backend/controllers/recoveryController.js",
+      "size": 6843,
+      "mode": 33206,
+      "sha": "17e7218248283cca52c742f26eb35f7a9732f6c7"
+    },
+    {
+      "path": "backend/controllers/recoveryEmailStatusController.js",
+      "size": 1769,
+      "mode": 33206,
+      "sha": "488d3c161bb5977167fb667b842df9c43a17ac27"
+    },
+    {
+      "path": "backend/controllers/smartAlertController.js",
+      "size": 96677,
+      "mode": 33206,
+      "sha": "39eed829f5f0bbcdd83ec5f761e3e5899850ccb1"
+    },
+    {
+      "path": "backend/controllers/smartSuggestionController.js",
+      "size": 28490,
+      "mode": 33206,
+      "sha": "75fdfe2436c24ac14218e4021d66f86fa818b296"
+    },
+    {
+      "path": "backend/controllers/smartSuggestionStateController.js",
+      "size": 8866,
+      "mode": 33206,
+      "sha": "6d6932fc4d4f85143752f925e7dd7f8eefde1cb2"
+    },
+    {
+      "path": "backend/controllers/storageUploadController.js",
+      "size": 19463,
+      "mode": 33206,
+      "sha": "b3f11ca0cf4f78d769fbefc6c6959dc3d8184799"
+    },
+    {
+      "path": "backend/controllers/userController.js",
+      "size": 50637,
+      "mode": 33206,
+      "sha": "52f8451060831e095b7e8b46cffe2dad382ec6e5"
+    },
+    {
+      "path": "backend/database/add_account_credentials_delivery_status.sql",
+      "size": 1046,
+      "mode": 33206,
+      "sha": "21cb0ecae6a4efbbce5ad6b3491049e84d2b101d"
+    },
+    {
+      "path": "backend/database/add_attendance_tracking.sql",
+      "size": 4690,
+      "mode": 33206,
+      "sha": "fa0b6fbe072ccd9768c64237c393060cf54add06"
+    },
+    {
+      "path": "backend/database/add_audit_logs_category_created_index.sql",
+      "size": 172,
+      "mode": 33206,
+      "sha": "ba5cfe4aad02e13b625d7febe7518fde720777ec"
+    },
+    {
+      "path": "backend/database/add_chat_messenger_schema.sql",
+      "size": 5114,
+      "mode": 33206,
+      "sha": "596b4cb2c805d59f003d0890eb4369ee8cedaf95"
+    },
+    {
+      "path": "backend/database/add_company_position_master_data.sql",
+      "size": 6726,
+      "mode": 33206,
+      "sha": "72a62c241dda9b9235806a68c0b022119793525b"
+    },
+    {
+      "path": "backend/database/add_deployment_attempts_scheduled_time.sql",
+      "size": 4450,
+      "mode": 33206,
+      "sha": "2c3d03d89a283389dc5d96672b7508d8c7c3e500"
+    },
+    {
+      "path": "backend/database/add_employee_documents_document_number.sql",
+      "size": 595,
+      "mode": 33206,
+      "sha": "dec903a596d86ba13e1d1bf83aacc16e3eae77b1"
+    },
+    {
+      "path": "backend/database/add_employee_documents_employee_id_index.sql",
+      "size": 164,
+      "mode": 33206,
+      "sha": "d495f8ba610a347d42bff611ecbf42e45841f678"
+    },
+    {
+      "path": "backend/database/add_employee_documents_expiration_index.sql",
+      "size": 133,
+      "mode": 33206,
+      "sha": "dbd021f3a83528b6ca6ceb68f1892f085af8970b"
+    },
+    {
+      "path": "backend/database/add_employee_lifecycle_history.sql",
+      "size": 3480,
+      "mode": 33206,
+      "sha": "321d1f5c18630aec062eb90d1b4ffb3788ae02d5"
+    },
+    {
+      "path": "backend/database/add_employee_mobile_handoffs.sql",
+      "size": 2013,
+      "mode": 33206,
+      "sha": "b0bb0d314efe772275ef1e17dead29b47f97fa01"
+    },
+    {
+      "path": "backend/database/add_employee_workforce_workflow.sql",
+      "size": 10947,
+      "mode": 33206,
+      "sha": "893674652a48d2df2d2327fae76c6b568a1e94d8"
+    },
+    {
+      "path": "backend/database/add_employees_birthday.sql",
+      "size": 69,
+      "mode": 33206,
+      "sha": "d6bc198a836c631f00350ad10e8069ff718d8264"
+    },
+    {
+      "path": "backend/database/add_hr_coordinator_scope.sql",
+      "size": 1175,
+      "mode": 33206,
+      "sha": "00b9d2786b41cdf64c56388df6d1cc2746c3598a"
+    },
+    {
+      "path": "backend/database/add_incident_evidence_purpose.sql",
+      "size": 1686,
+      "mode": 33206,
+      "sha": "2b5ce29dc0995bd74166d0b94cec8ff2fd03707a"
+    },
+    {
+      "path": "backend/database/add_incident_phone_capture_sessions.sql",
+      "size": 4281,
+      "mode": 33206,
+      "sha": "4bf02ecc431356c28f98e814251dc6d46e241d66"
+    },
+    {
+      "path": "backend/database/add_incident_policy_sanction.sql",
+      "size": 1732,
+      "mode": 33206,
+      "sha": "a3ca9678015ff2ee75eb56a8b589db2ce3426f74"
+    },
+    {
+      "path": "backend/database/add_incident_timeline.sql",
+      "size": 686,
+      "mode": 33206,
+      "sha": "6a7b51b73198f0668ffa1d347ae5252c8f835df0"
+    },
+    {
+      "path": "backend/database/add_kpi_severity_decay_snapshots.sql",
+      "size": 1819,
+      "mode": 33206,
+      "sha": "46a196f29be9d2adbfc0e3bf36fd25a820007c37"
+    },
+    {
+      "path": "backend/database/add_one_active_deployment_invariant.sql",
+      "size": 6031,
+      "mode": 33206,
+      "sha": "d406f20f94d78479b7c869a09983d8f352595cad"
+    },
+    {
+      "path": "backend/database/add_password_reset_approval_requests.sql",
+      "size": 2530,
+      "mode": 33206,
+      "sha": "919efb96011cc58a5d6eb1db3fdd8f8eaf510a21"
+    },
+    {
+      "path": "backend/database/add_user_email_password_reset.sql",
+      "size": 1643,
+      "mode": 33206,
+      "sha": "73596d2e83416ee020bbfe526be3fd9f91b7c008"
+    },
+    {
+      "path": "backend/database/add_users_avatar_filename.sql",
+      "size": 300,
+      "mode": 33206,
+      "sha": "971c4a9975a2d8fdf9ccd96e2662f32c000652f9"
+    },
+    {
+      "path": "backend/database/baseline.sql",
+      "size": 35365,
+      "mode": 33206,
+      "sha": "4880dc7cdf1dc17d0616e83f442a71d143785eef"
+    },
+    {
+      "path": "backend/database/chat.sql",
+      "size": 1476,
+      "mode": 33206,
+      "sha": "0b18f2dff0ea2591f1bce8f8e1f84f62c91a76e4"
+    },
+    {
+      "path": "backend/database/read_only_incident_phone_capture_save_qa.js",
+      "size": 2072,
+      "mode": 33206,
+      "sha": "a8f7426d1813dcc38b63d634ed5992748c8b7df3"
+    },
+    {
+      "path": "backend/database/read_only_incident_workflow_phone_qa.js",
+      "size": 4803,
+      "mode": 33206,
+      "sha": "166f71b920618a93a526e49948781f86961f1daf"
+    },
+    {
+      "path": "backend/database/run_incident_phone_capture_contract_qa.js",
+      "size": 11782,
+      "mode": 33206,
+      "sha": "c538c41a5ae9f6405aaf00981ff330a5415f8cee"
+    },
+    {
+      "path": "backend/database/run_incident_phone_capture_migration.js",
+      "size": 11015,
+      "mode": 33206,
+      "sha": "a0131710ef9ec55b30f0aad6aa17ac4c9b8f24bc"
+    },
+    {
+      "path": "backend/database/run_incident_phone_capture_preflight.js",
+      "size": 10071,
+      "mode": 33206,
+      "sha": "e945d1ce2a9205fed17cd81ed1b82c0a72614409"
+    },
+    {
+      "path": "backend/database/smart_suggestion_states.sql",
+      "size": 817,
+      "mode": 33206,
+      "sha": "b108f2f027e728dcafebaf3f4bfabb47ccab8a47"
+    },
+    {
+      "path": "backend/middleware/authMiddleware.js",
+      "size": 14328,
+      "mode": 33206,
+      "sha": "2df211c91124794a5c99d5dc7f089d4235478336"
+    },
+    {
+      "path": "backend/middleware/avatarUpload.js",
+      "size": 8614,
+      "mode": 33206,
+      "sha": "f4e2229ae9de3fb86a6f11888ea3bf814b98fa77"
+    },
+    {
+      "path": "backend/middleware/chatAuth.js",
+      "size": 6953,
+      "mode": 33206,
+      "sha": "d9350fca3a72a0a98690289f2cd7a90897d48fd7"
+    },
+    {
+      "path": "backend/middleware/directUploadFinalizeMiddleware.js",
+      "size": 20549,
+      "mode": 33206,
+      "sha": "445ad083820be715746bcb67fc9be094432e5061"
+    },
+    {
+      "path": "backend/middleware/incidentWorkflowScopeMiddleware.js",
+      "size": 3528,
+      "mode": 33206,
+      "sha": "b99cd48fa94e266b0cfa1d2d98d84e0a09b493b5"
+    },
+    {
+      "path": "backend/middleware/maintenanceMiddleware.js",
+      "size": 9725,
+      "mode": 33206,
+      "sha": "aa87525bfab259a1a7a275eb9a2dd87830bbc9f9"
+    },
+    {
+      "path": "backend/middleware/productionHardening.js",
+      "size": 4225,
+      "mode": 33206,
+      "sha": "246b341ee5d828fb89df8f607bc77e61748927db"
+    },
+    {
+      "path": "backend/middleware/roleMiddleware.js",
+      "size": 2037,
+      "mode": 33206,
+      "sha": "8e9088ea473f0814bfaf71f6dcc55bcd93d535b7"
+    },
+    {
+      "path": "backend/middleware/upload.js",
+      "size": 16305,
+      "mode": 33206,
+      "sha": "84ed99db3a8420001a974375fad59f3b4ead04ba"
+    },
+    {
+      "path": "backend/package-lock.json",
+      "size": 98365,
+      "mode": 33206,
+      "sha": "43703e48d0b1e5cb2d663156775fa3170132fe8c"
+    },
+    {
+      "path": "backend/package.json",
+      "size": 2657,
+      "mode": 33206,
+      "sha": "92e84ac11a87e0a08c96dd9725e87b2e68ef6ed8"
+    },
+    {
+      "path": "backend/routes/attendanceRoutes.js",
+      "size": 2099,
+      "mode": 33206,
+      "sha": "69c48e5c8b5b276a6c6a24cd73623363e3214423"
+    },
+    {
+      "path": "backend/routes/auditLogRoutes.js",
+      "size": 3168,
+      "mode": 33206,
+      "sha": "7613238e5d4c4128215b1fbcf2f95ffae60f0b22"
+    },
+    {
+      "path": "backend/routes/authRoutes.js",
+      "size": 3306,
+      "mode": 33206,
+      "sha": "9c4eb85b4361a83efcf1e34d2fe83caf4be0e22e"
+    },
+    {
+      "path": "backend/routes/chatRoutes.js",
+      "size": 60774,
+      "mode": 33206,
+      "sha": "efb6a78276f3882e924fc91df764f8014aa369a5"
+    },
+    {
+      "path": "backend/routes/dashboardRoutes.js",
+      "size": 2027,
+      "mode": 33206,
+      "sha": "7c0315b937c4503094803858657fc49eeb8302fb"
+    },
+    {
+      "path": "backend/routes/deploymentRoutes.js",
+      "size": 8982,
+      "mode": 33206,
+      "sha": "ea414b76f5c6b388a0f69a81037323deadc947b1"
+    },
+    {
+      "path": "backend/routes/employeeRoutes.js",
+      "size": 8562,
+      "mode": 33206,
+      "sha": "bfc8b8618930470efa12999ee29cff5a4a5314e5"
+    },
+    {
+      "path": "backend/routes/incidentRoutes.js",
+      "size": 16048,
+      "mode": 33206,
+      "sha": "0ba389250d765da4204c43b548eb89799285b532"
+    },
+    {
+      "path": "backend/routes/kpiDataRoutes.js",
+      "size": 469,
+      "mode": 33206,
+      "sha": "ae8993080f915ffb1da6703451e6ec4a61656e6e"
+    },
+    {
+      "path": "backend/routes/kpiDecisionRoutes.js",
+      "size": 957,
+      "mode": 33206,
+      "sha": "75310a6dbee1360d89892f1c08f39feccbe083ca"
+    },
+    {
+      "path": "backend/routes/settingsRoutes.js",
+      "size": 47652,
+      "mode": 33206,
+      "sha": "6a66942db1083ab615005a7abd24e109136323c5"
+    },
+    {
+      "path": "backend/routes/smartAlertRoutes.js",
+      "size": 1005,
+      "mode": 33206,
+      "sha": "0ec46ff4d989fe805b5237b8556fcbed720fac4f"
+    },
+    {
+      "path": "backend/routes/smartSuggestionRoutes.js",
+      "size": 1932,
+      "mode": 33206,
+      "sha": "f5d0bea1704c97bbc59ea71f99fd21473134b1b4"
+    },
+    {
+      "path": "backend/routes/userRoutes.js",
+      "size": 4362,
+      "mode": 33206,
+      "sha": "bf0ae5e932e08ce600ce594f4253ff3636c54a7d"
+    },
+    {
+      "path": "backend/server.js",
+      "size": 2793,
+      "mode": 33206,
+      "sha": "8af6573f13dff605f1eb058d0d4cd0e7e86fd417"
+    },
+    {
+      "path": "backend/services/chatSocket.js",
+      "size": 16254,
+      "mode": 33206,
+      "sha": "ef51374fe201184ce59e0bd2c7c9ecec75990ab1"
+    },
+    {
+      "path": "backend/services/directUploadSecurityService.js",
+      "size": 35642,
+      "mode": 33206,
+      "sha": "ea3fff276512e355795c75154a0486eb3cf494e4"
+    },
+    {
+      "path": "backend/services/passwordResetRequestService.js",
+      "size": 6349,
+      "mode": 33206,
+      "sha": "53040b9af56982a7096e0d465aa6ce3eac8ddf4f"
+    },
+    {
+      "path": "backend/services/storageService.js",
+      "size": 6847,
+      "mode": 33206,
+      "sha": "cbe86cd4eeca2362517a09ae0dcc56bca0019dd3"
+    },
+    {
+      "path": "backend/utils/accountCredentialsMailer.js",
+      "size": 5424,
+      "mode": 33206,
+      "sha": "799e4cad6871afda80ad4b07aaa99ef7b4da9c10"
+    },
+    {
+      "path": "backend/utils/auditLogger.js",
+      "size": 3681,
+      "mode": 33206,
+      "sha": "12693e4af314e33ee0992161d44f2332c36e444c"
+    },
+    {
+      "path": "backend/utils/decisionReviewerDisplay.js",
+      "size": 1054,
+      "mode": 33206,
+      "sha": "24b7db4afa01c01d6eac83539f7a2d6055a4d0d1"
+    },
+    {
+      "path": "backend/utils/deploymentMetadata.js",
+      "size": 1213,
+      "mode": 33206,
+      "sha": "8000f85a33310a58e989fa11bc8abe8a5f7eae40"
+    },
+    {
+      "path": "backend/utils/employeeAgeValidation.js",
+      "size": 1879,
+      "mode": 33206,
+      "sha": "9867cab00db207fb942c7d77e6c83a325262ace7"
+    },
+    {
+      "path": "backend/utils/employeeGovernmentIdValidation.js",
+      "size": 6845,
+      "mode": 33206,
+      "sha": "a85aaae7411bfe24410f0138083e421681f1df3b"
+    },
+    {
+      "path": "backend/utils/fileReferenceService.js",
+      "size": 7927,
+      "mode": 33206,
+      "sha": "43f004fdab0b905e791c7d64bbba6d7f49612359"
+    },
+    {
+      "path": "backend/utils/helpers.js",
+      "size": 2581,
+      "mode": 33206,
+      "sha": "78e9f3b6bb041bfd522aa939938a1d314feb4497"
+    },
+    {
+      "path": "backend/utils/incidentInvestigationPolicy.js",
+      "size": 12081,
+      "mode": 33206,
+      "sha": "6df2f5cdb8e01fe553a761314c2f96e50aa168b9"
+    },
+    {
+      "path": "backend/utils/incidentReviewPolicy.js",
+      "size": 1934,
+      "mode": 33206,
+      "sha": "8274afeb6eaa0b78147ce413649e616ec4fdc90c"
+    },
+    {
+      "path": "backend/utils/kpiSeverityDecayService.js",
+      "size": 7541,
+      "mode": 33206,
+      "sha": "3c45ab5e8a953ea367c89e7e2f15f6ddbe2e4e1e"
+    },
+    {
+      "path": "backend/utils/passwordResetReviewPolicy.js",
+      "size": 2492,
+      "mode": 33206,
+      "sha": "bd0f60adc0c5aa95850e76c6d6b8c5f7f7efbd46"
+    },
+    {
+      "path": "backend/utils/performanceEvaluationService.js",
+      "size": 24142,
+      "mode": 33206,
+      "sha": "b388c80c1b825541aa187980caf7fdd264e16b9d"
+    },
+    {
+      "path": "backend/utils/recoveryHelpers.js",
+      "size": 1015,
+      "mode": 33206,
+      "sha": "1def90c0c2f6536523afe49fc8424e072f86379e"
+    },
+    {
+      "path": "backend/utils/recoveryMailer.js",
+      "size": 4003,
+      "mode": 33206,
+      "sha": "bde89ddd51eb4d53e1b9636d3e6030ced67ac0ad"
+    },
+    {
+      "path": "backend/utils/smartSuggestionState.js",
+      "size": 6117,
+      "mode": 33206,
+      "sha": "fc9efeda36ba341daf33d0f7a09b7b8d99242d4a"
+    },
+    {
+      "path": "backend/utils/violationPolicyService.js",
+      "size": 23035,
+      "mode": 33206,
+      "sha": "1f032a27d9c6e0177af6c25b443e3244c60fc575"
+    },
+    {
+      "path": "backend/utils/workforceScope.js",
+      "size": 1961,
+      "mode": 33206,
+      "sha": "e279e536f36a5efae0e8f2b1715d58cc3c42e503"
+    },
+    {
+      "path": "frontend/eslint.config.js",
+      "size": 787,
+      "mode": 33206,
+      "sha": "4e06f7997389bb6d31f8ad126ff465cd3c86867f"
+    },
+    {
+      "path": "frontend/index.html",
+      "size": 391,
+      "mode": 33206,
+      "sha": "511151ab6bad4c7ba20226831e9de38a9c3639bd"
+    },
+    {
+      "path": "frontend/package-lock.json",
+      "size": 181188,
+      "mode": 33206,
+      "sha": "364f4fdda025114c3aa5df55202687e574fc992a"
+    },
+    {
+      "path": "frontend/package.json",
+      "size": 1471,
+      "mode": 33206,
+      "sha": "1ae13221ba203578ba0203235cc745887cd285b4"
+    },
+    {
+      "path": "frontend/postcss.config.js",
+      "size": 86,
+      "mode": 33206,
+      "sha": "d81f6023fc07196029b1c879d8e04502d9b33f2f"
+    },
+    {
+      "path": "frontend/public/20260401Outdoor running.gpx",
+      "size": 222631,
+      "mode": 33206,
+      "sha": "84da681533ba99e43b4328dd9b8addd13a810521"
+    },
+    {
+      "path": "frontend/public/Logo.svg",
+      "size": 358257,
+      "mode": 33206,
+      "sha": "7373c5409e079c6b44ab21fe1463075a3487216c"
+    },
+    {
+      "path": "frontend/README.md",
+      "size": 1173,
+      "mode": 33206,
+      "sha": "c132fd040bd3b1864e5ad2944f5fc5a0a3a5fd24"
+    },
+    {
+      "path": "frontend/src/App.css",
+      "size": 648,
+      "mode": 33206,
+      "sha": "93d78e21d9a527f975faf803d8dd074209b3b6dc"
+    },
+    {
+      "path": "frontend/src/App.jsx",
+      "size": 26703,
+      "mode": 33206,
+      "sha": "46f5f14230bc1690ad0c5485d5ef1c6da5442b4d"
+    },
+    {
+      "path": "frontend/src/assets/Logo.png",
+      "size": 138185,
+      "mode": 33206,
+      "sha": "7b1c16e80f4ae14bf186117ee27f38638d44d38a"
+    },
+    {
+      "path": "frontend/src/assets/welljob.png",
+      "size": 896878,
+      "mode": 33206,
+      "sha": "49ee19656e682994fa8dc24462f4b6b1d3fa43e7"
+    },
+    {
+      "path": "frontend/src/components/audit/AuditLogsPage.jsx",
+      "size": 34604,
+      "mode": 33206,
+      "sha": "e7911fefb206c49d7d720f8376fcc1896aa2b50a"
+    },
+    {
+      "path": "frontend/src/components/auth/ProtectedRoute.jsx",
+      "size": 1645,
+      "mode": 33206,
+      "sha": "8c672eb0fdd654e12027ff23bfdff79af0b92397"
+    },
+    {
+      "path": "frontend/src/components/auth/RecoveryEmailVerificationAction.jsx",
+      "size": 17724,
+      "mode": 33206,
+      "sha": "06cd4e0f9436f34127b40101a57dbe5c00dbe763"
+    },
+    {
+      "path": "frontend/src/components/auth/RoleGuard.jsx",
+      "size": 247,
+      "mode": 33206,
+      "sha": "1e1bf0d6a6ef7d44a951a259197847918aaa4586"
+    },
+    {
+      "path": "frontend/src/components/chat/ChatNavLink.jsx",
+      "size": 793,
+      "mode": 33206,
+      "sha": "cb74d72b8a60461417b4a12144cdceafb0f68de6"
+    },
+    {
+      "path": "frontend/src/components/chat/FloatingMessenger.jsx",
+      "size": 6948,
+      "mode": 33206,
+      "sha": "a47b78744708dd79eaea8925391ff87cac23e3c0"
+    },
+    {
+      "path": "frontend/src/components/config/ClientCompaniesTab.jsx",
+      "size": 39367,
+      "mode": 33206,
+      "sha": "6c3126eb1076b8ddfa5e1434f3933ed215b2e2ce"
+    },
+    {
+      "path": "frontend/src/components/config/CompanyPositionsTab.jsx",
+      "size": 37358,
+      "mode": 33206,
+      "sha": "d2be6a0e1ccbb13699ee6180cda6d2d718d1aee5"
+    },
+    {
+      "path": "frontend/src/components/config/KPIThresholdsTab.jsx",
+      "size": 69425,
+      "mode": 33206,
+      "sha": "07030a4ae5a9e27f1f18b865f6602934524bb859"
+    },
+    {
+      "path": "frontend/src/components/config/ViolationRulesTab.jsx",
+      "size": 62823,
+      "mode": 33206,
+      "sha": "33c2cad2b67a48db44582fd0b536fdb1e00d6823"
+    },
+    {
+      "path": "frontend/src/components/config/ViolationTable.jsx",
+      "size": 16919,
+      "mode": 33206,
+      "sha": "25b3c120c1402e2f1b31e3e082f3a722d26d346c"
+    },
+    {
+      "path": "frontend/src/components/dashboard/cards/KPICards.jsx",
+      "size": 10560,
+      "mode": 33206,
+      "sha": "9c9448ce26af5844a2f6248a6abc50cfc2255b68"
+    },
+    {
+      "path": "frontend/src/components/dashboard/charts/CaseAgingChart.jsx",
+      "size": 7024,
+      "mode": 33206,
+      "sha": "e3922f0410b1405d4ff00a651acfa59610e8c981"
+    },
+    {
+      "path": "frontend/src/components/dashboard/charts/DeploymentTrendChart.jsx",
+      "size": 12301,
+      "mode": 33206,
+      "sha": "2d93326b6487105d25845b14ce1e83bc302b5bfc"
+    },
+    {
+      "path": "frontend/src/components/dashboard/charts/IncidentTrendChart.jsx",
+      "size": 12264,
+      "mode": 33206,
+      "sha": "292d35c6a7ff3ed97241921d1484dfabd0c8808d"
+    },
+    {
+      "path": "frontend/src/components/dashboard/charts/SeverityPieChart.jsx",
+      "size": 7362,
+      "mode": 33206,
+      "sha": "40dd87f8ff29c1e28651a0b1465272f62818ecdd"
+    },
+    {
+      "path": "frontend/src/components/dashboard/insights/ExecutiveActionItems.jsx",
+      "size": 9062,
+      "mode": 33206,
+      "sha": "e5f3dd994183ef487e3d2521306302b395a721bc"
+    },
+    {
+      "path": "frontend/src/components/dashboard/insights/ExecutiveInsightTabs.jsx",
+      "size": 14902,
+      "mode": 33206,
+      "sha": "a8db409ef54a977997d8cc24ac4a7d1ca2869350"
+    },
+    {
+      "path": "frontend/src/components/dashboard/insights/WorkforceHealthBanner.jsx",
+      "size": 6748,
+      "mode": 33206,
+      "sha": "c4bed61f138717e596f147bc66816759f75de192"
+    },
+    {
+      "path": "frontend/src/components/dashboard/modals/DashboardDrilldownModal.jsx",
+      "size": 10341,
+      "mode": 33206,
+      "sha": "23a920f46dc79c8dea2ff5d369d2d029813561c0"
+    },
+    {
+      "path": "frontend/src/components/dashboard/shared/DashboardHeader.jsx",
+      "size": 1260,
+      "mode": 33206,
+      "sha": "e6293d92c7d637aca77e7c8fa46fbe88a80ced49"
+    },
+    {
+      "path": "frontend/src/components/dashboard/shared/SharedTooltip.jsx",
+      "size": 3331,
+      "mode": 33206,
+      "sha": "ffcf28682da53c9bb8d51806f7d405edd627a2d0"
+    },
+    {
+      "path": "frontend/src/components/deployments/modals/DeploymentModal.jsx",
+      "size": 16155,
+      "mode": 33206,
+      "sha": "c76eea961c390eb8ceb7b47bf98a4bab587cc8bc"
+    },
+    {
+      "path": "frontend/src/components/deployments/shared/DeploymentModalUI.jsx",
+      "size": 652,
+      "mode": 33206,
+      "sha": "8785d16d32ef2c2f093648a8a057e499f72e0cbd"
+    },
+    {
+      "path": "frontend/src/components/deployments/shared/DeploymentToast.jsx",
+      "size": 467,
+      "mode": 33206,
+      "sha": "3284cec03fd8a829394d56d6a1298914925f078d"
+    },
+    {
+      "path": "frontend/src/components/deployments/table/DeploymentTable.jsx",
+      "size": 25547,
+      "mode": 33206,
+      "sha": "a33a088a3c62aca13891785c2d25c3481fe31edf"
+    },
+    {
+      "path": "frontend/src/components/employees/AddEmployeeModal.jsx",
+      "size": 20775,
+      "mode": 33206,
+      "sha": "a155926fafc266b1da030336bfeb2be60949da01"
+    },
+    {
+      "path": "frontend/src/components/employees/ComplianceBadge.jsx",
+      "size": 3144,
+      "mode": 33206,
+      "sha": "c99d4ddb136988a2daf73ac261beecb2e0d15d70"
+    },
+    {
+      "path": "frontend/src/components/employees/EditEmployeeModal.jsx",
+      "size": 23327,
+      "mode": 33206,
+      "sha": "dc196b2ff64665765f3293cd08bc861a12218463"
+    },
+    {
+      "path": "frontend/src/components/employees/EmployeeComponents.jsx",
+      "size": 2158,
+      "mode": 33206,
+      "sha": "967e3806f29f607f36ada0bb88a9cc7ab9cc5fe9"
+    },
+    {
+      "path": "frontend/src/components/employees/employeeConstants.js",
+      "size": 8274,
+      "mode": 33206,
+      "sha": "537c4346e79150895f694784ffe5503391dac4d9"
+    },
+    {
+      "path": "frontend/src/components/employees/EmployeeDocumentsSection.jsx",
+      "size": 35871,
+      "mode": 33206,
+      "sha": "9191c77c1bea169f16431017946c33ea9aeda430"
+    },
+    {
+      "path": "frontend/src/components/employees/EmployeeFormFields.jsx",
+      "size": 28859,
+      "mode": 33206,
+      "sha": "57a3b102bd81f2e170c0f63169c6987ff0398c70"
+    },
+    {
+      "path": "frontend/src/components/employees/EmployeeMobileHandoffPanel.jsx",
+      "size": 12210,
+      "mode": 33206,
+      "sha": "dc33ef0c3e9fd8c22439e124751a14bfe79b349c"
+    },
+    {
+      "path": "frontend/src/components/employees/EmployeeModal.jsx",
+      "size": 95609,
+      "mode": 33206,
+      "sha": "435dc7dadcb05eefba278c784fcef0405318d0b4"
+    },
+    {
+      "path": "frontend/src/components/employees/EmployeeReviewDialog.jsx",
+      "size": 20205,
+      "mode": 33206,
+      "sha": "a8602e1a19a25e03edced0ce059e4e02ca2e8c0b"
+    },
+    {
+      "path": "frontend/src/components/employees/EmployeeTable.jsx",
+      "size": 21333,
+      "mode": 33206,
+      "sha": "28dd7d5bd7ee7263e3a223f2c54a706a709a0b10"
+    },
+    {
+      "path": "frontend/src/components/employees/StatusBadge.jsx",
+      "size": 558,
+      "mode": 33206,
+      "sha": "895fb90322da737fcc6d6cbe11da5731dbcda895"
+    },
+    {
+      "path": "frontend/src/components/incidents/add/AddIncidentUI.jsx",
+      "size": 20980,
+      "mode": 33206,
+      "sha": "098f229190cb3c80fb0f9962e71f89ff6955b92c"
+    },
+    {
+      "path": "frontend/src/components/incidents/badges/IncidentBadges.jsx",
+      "size": 7768,
+      "mode": 33206,
+      "sha": "92f8c204559a5e49b043f67332500f907d98fc0f"
+    },
+    {
+      "path": "frontend/src/components/incidents/modals/AddIncidentModal.jsx",
+      "size": 115568,
+      "mode": 33206,
+      "sha": "52d57da9dea2d556dee25cc5ec05a6f827123387"
+    },
+    {
+      "path": "frontend/src/components/incidents/modals/ConfirmStartInvestigationModal.jsx",
+      "size": 10931,
+      "mode": 33206,
+      "sha": "ac514ce50eaa879ef1e9fa4e7d4e0a715c052d6f"
+    },
+    {
+      "path": "frontend/src/components/incidents/modals/ResolutionModal.jsx",
+      "size": 53629,
+      "mode": 33206,
+      "sha": "d0a1639b50a5fa876fb42668b1d8079e3f5bc622"
+    },
+    {
+      "path": "frontend/src/components/incidents/modals/ReviewCaseModal.jsx",
+      "size": 13680,
+      "mode": 33206,
+      "sha": "d9856c8dd51ed9f1e59c272f985ac8f4b901f8f7"
+    },
+    {
+      "path": "frontend/src/components/incidents/modals/ViewIncidentModal.jsx",
+      "size": 19710,
+      "mode": 33206,
+      "sha": "7724ed872de08733eef928f4be1b88f5d9018213"
+    },
+    {
+      "path": "frontend/src/components/incidents/shared/ModalUI.jsx",
+      "size": 33132,
+      "mode": 33206,
+      "sha": "a5430fb24bb06e2a4de1ccac581a0510d56048c5"
+    },
+    {
+      "path": "frontend/src/components/incidents/table/IncidentActionButtons.jsx",
+      "size": 12754,
+      "mode": 33206,
+      "sha": "a97cfc661fc58773d2313d57329da9015142bedc"
+    },
+    {
+      "path": "frontend/src/components/incidents/table/IncidentFilters.jsx",
+      "size": 1833,
+      "mode": 33206,
+      "sha": "73320dccd37969fe052be6a250d83a37d19a9483"
+    },
+    {
+      "path": "frontend/src/components/incidents/table/IncidentTable.jsx",
+      "size": 39836,
+      "mode": 33206,
+      "sha": "e0725bc443222461e9a691ad60f46845b4818122"
+    },
+    {
+      "path": "frontend/src/components/kpi/badges/KPIBadge.jsx",
+      "size": 3888,
+      "mode": 33206,
+      "sha": "1980b113de701652d4500944aeaeb735e2ac8156"
+    },
+    {
+      "path": "frontend/src/components/kpi/badges/RiskBadge.jsx",
+      "size": 3451,
+      "mode": 33206,
+      "sha": "41911edad1cad649c944d995474efe7a63ab1782"
+    },
+    {
+      "path": "frontend/src/components/kpi/cards/KPICards.jsx",
+      "size": 3588,
+      "mode": 33206,
+      "sha": "3714770e7160f17d617a89cc8f0e363b2ccd1266"
+    },
+    {
+      "path": "frontend/src/components/kpi/modals/EmployeeKpiDetailsModal.jsx",
+      "size": 22609,
+      "mode": 33206,
+      "sha": "ce4b6e964d3c8e337a2c926d3ad26a9c55ffd459"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/AnalyticsTrendsSection.jsx",
+      "size": 6382,
+      "mode": 33206,
+      "sha": "ad13a2dffb176bdb2820b2ee52c3330fff099c25"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/CriticalAlerts.jsx",
+      "size": 3258,
+      "mode": 33206,
+      "sha": "97afe04ce8310b066c43811018d447a137ad6bdc"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/DecisionHistorySection.jsx",
+      "size": 26233,
+      "mode": 33206,
+      "sha": "d339f32ebf860ebc473bc78d55fec984e5f36674"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/DescriptiveAnalyticsSection.jsx",
+      "size": 30877,
+      "mode": 33206,
+      "sha": "c317e150a7551bc29c794f0afbc5d7e3f8b652b7"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/GoodStandingEmployees.jsx",
+      "size": 7481,
+      "mode": 33206,
+      "sha": "b25c3b691ef798adea1251132bcc7405bedddac2"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/HighRiskEmployees.jsx",
+      "size": 5146,
+      "mode": 33206,
+      "sha": "1d4523485298016ba476b4ef98bac057dd804d93"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/KPISummarySection.jsx",
+      "size": 3538,
+      "mode": 33206,
+      "sha": "c10516caa5eee4372495a6fe45860bc912886043"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/LowKPIActionGuide.jsx",
+      "size": 4947,
+      "mode": 33206,
+      "sha": "ca519f0d0094729a35b0292d6d54fda9f652cff2"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/RecommendationReviewSection.jsx",
+      "size": 39168,
+      "mode": 33206,
+      "sha": "573dd465601f740675f241d3f7aa98adb5a60fb0"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/RiskIntelligenceSection.jsx",
+      "size": 4850,
+      "mode": 33206,
+      "sha": "7607204c34fda742aa55965c60aaaeacb72abbf4"
+    },
+    {
+      "path": "frontend/src/components/kpi/sections/WorkforceStandingSnapshot.jsx",
+      "size": 10441,
+      "mode": 33206,
+      "sha": "9f33a9f7c11fe01027351bf87cd769225188093a"
+    },
+    {
+      "path": "frontend/src/components/kpi/table/RiskTable.jsx",
+      "size": 31697,
+      "mode": 33206,
+      "sha": "09d2dd8705a62a0b691a1e07587ca8b568e93962"
+    },
+    {
+      "path": "frontend/src/components/Navbar.jsx",
+      "size": 44875,
+      "mode": 33206,
+      "sha": "dd5e88677dfcd681038e30ddaa9f6157f3b498d1"
+    },
+    {
+      "path": "frontend/src/components/notifications/NotificationCard.jsx",
+      "size": 5013,
+      "mode": 33206,
+      "sha": "917baebf404df3427bd03e53ae678fbdb219e9cf"
+    },
+    {
+      "path": "frontend/src/components/notifications/NotificationTable.jsx",
+      "size": 23558,
+      "mode": 33206,
+      "sha": "01a7ab4ecbe086249929187560461fde4e4d6468"
+    },
+    {
+      "path": "frontend/src/components/notifications/SmartAlertToast.jsx",
+      "size": 13974,
+      "mode": 33206,
+      "sha": "139eb571bc9657bbeca60310a646b29332c9fe89"
+    },
+    {
+      "path": "frontend/src/components/profile/AuthenticatedAvatar.jsx",
+      "size": 5121,
+      "mode": 33206,
+      "sha": "f9fd58018029268248df8b26717db2c2ca445634"
+    },
+    {
+      "path": "frontend/src/components/profile/ProfilePictureActions.jsx",
+      "size": 33028,
+      "mode": 33206,
+      "sha": "c753ba75c6a314c0127ba5ee50e7555210161c56"
+    },
+    {
+      "path": "frontend/src/components/reports/ReportGenerator.jsx",
+      "size": 963,
+      "mode": 33206,
+      "sha": "5911f207de97a0416b363a540122f3418c70cf58"
+    },
+    {
+      "path": "frontend/src/components/Sidebar.jsx",
+      "size": 5930,
+      "mode": 33206,
+      "sha": "8c7e925c5d2d4f9d4e0133013bf7335c6c69c7c6"
+    },
+    {
+      "path": "frontend/src/components/standby/StandbyExperience.jsx",
+      "size": 1756,
+      "mode": 33206,
+      "sha": "6ca48548049bad67ff2e04a1283c7de2b04cb21c"
+    },
+    {
+      "path": "frontend/src/components/standby/WelljobStandbyScreen.jsx",
+      "size": 19712,
+      "mode": 33206,
+      "sha": "dad0532b5cf46bbd084ab12b8b223ff9bab260f9"
+    },
+    {
+      "path": "frontend/src/components/suggestions/SmartSuggestionsWidget.jsx",
+      "size": 24429,
+      "mode": 33206,
+      "sha": "5324d98d03472c53e4d61acd17947444e5994dff"
+    },
+    {
+      "path": "frontend/src/components/ui/Button.jsx",
+      "size": 3740,
+      "mode": 33206,
+      "sha": "c9a7cce27d1f06c64ca0b909788e8a129a0c0182"
+    },
+    {
+      "path": "frontend/src/components/ui/ConfirmDialog.jsx",
+      "size": 3115,
+      "mode": 33206,
+      "sha": "92e6669721348a72953a336730a21e90a917082b"
+    },
+    {
+      "path": "frontend/src/components/ui/Dialog.jsx",
+      "size": 10137,
+      "mode": 33206,
+      "sha": "e094e9ec39b3b55a184e3412ecf2185013175a94"
+    },
+    {
+      "path": "frontend/src/components/ui/EmptyState.jsx",
+      "size": 2182,
+      "mode": 33206,
+      "sha": "b5ed8d5577389424222d6d738c302dfbdeedbfec"
+    },
+    {
+      "path": "frontend/src/components/ui/ErrorState.jsx",
+      "size": 2155,
+      "mode": 33206,
+      "sha": "c9d61662396e2a5aa59bf4c92f2d443a71ed008d"
+    },
+    {
+      "path": "frontend/src/components/ui/FilterBar.jsx",
+      "size": 1804,
+      "mode": 33206,
+      "sha": "6cdecbcc6f98fbf7a5171cdaf4eb7b0bbb8d3899"
+    },
+    {
+      "path": "frontend/src/components/ui/FormField.jsx",
+      "size": 2658,
+      "mode": 33206,
+      "sha": "60d0be47e867dcf499d4b97ae4c4ce46430ae1f4"
+    },
+    {
+      "path": "frontend/src/components/ui/IconButton.jsx",
+      "size": 3176,
+      "mode": 33206,
+      "sha": "9a31c0be344dc966d4c483d2514191c3ddb7b004"
+    },
+    {
+      "path": "frontend/src/components/ui/LoadingSkeleton.jsx",
+      "size": 4822,
+      "mode": 33206,
+      "sha": "1ddb080ba0b6e65e5e5a1188e3a4ebbd825dd801"
+    },
+    {
+      "path": "frontend/src/components/ui/PageHeader.jsx",
+      "size": 2387,
+      "mode": 33206,
+      "sha": "54977a0a746e72383f4bc042092fc2f5023e5a08"
+    },
+    {
+      "path": "frontend/src/components/ui/SearchInput.jsx",
+      "size": 3550,
+      "mode": 33206,
+      "sha": "9a36b6336a5d228f21803db5abbfecc11f82574e"
+    },
+    {
+      "path": "frontend/src/components/ui/StatusBadge.jsx",
+      "size": 8106,
+      "mode": 33206,
+      "sha": "36270716ae887ad5fd8e9800b2b9ab26a554c935"
+    },
+    {
+      "path": "frontend/src/components/ui/SuccessToast.jsx",
+      "size": 2376,
+      "mode": 33206,
+      "sha": "a18bfbeab5480a5ca5de49b166d08298f88c3d21"
+    },
+    {
+      "path": "frontend/src/config/api.js",
+      "size": 2120,
+      "mode": 33206,
+      "sha": "54219d800800a96b7cf9c4510ebb2336a083abeb"
+    },
+    {
+      "path": "frontend/src/config/sidebarItems.js",
+      "size": 1981,
+      "mode": 33206,
+      "sha": "b9902f4b6eb22a373dd3df21b6d65d0cf9396c06"
+    },
+    {
+      "path": "frontend/src/constants/permissions.js",
+      "size": 587,
+      "mode": 33206,
+      "sha": "7038fafae6fa8427ec2fd0b3f8f906d358a60f1f"
+    },
+    {
+      "path": "frontend/src/constants/rolePermissions.js",
+      "size": 698,
+      "mode": 33206,
+      "sha": "863a4dd74226e3479c87c05c7bd979efa7df3834"
+    },
+    {
+      "path": "frontend/src/constants/roles.js",
+      "size": 177,
+      "mode": 33206,
+      "sha": "0db4fbb90627a7e55d7f7c18201cf5967c817eda"
+    },
+    {
+      "path": "frontend/src/context/auth-context.js",
+      "size": 89,
+      "mode": 33206,
+      "sha": "a07c801184ac673627524596a20fc62500240218"
+    },
+    {
+      "path": "frontend/src/context/AuthContext.jsx",
+      "size": 5042,
+      "mode": 33206,
+      "sha": "60b9ab3bd045c438d1f702a3c08ffb910efb623d"
+    },
+    {
+      "path": "frontend/src/context/ChatContext.jsx",
+      "size": 20352,
+      "mode": 33206,
+      "sha": "9b28138b4444e3e89a58476764c862c3b6c9927d"
+    },
+    {
+      "path": "frontend/src/context/useAuth.js",
+      "size": 276,
+      "mode": 33206,
+      "sha": "361e37c40f935a7098cf24777b31b438561cc05e"
+    },
+    {
+      "path": "frontend/src/data/violationRules.js",
+      "size": 58324,
+      "mode": 33206,
+      "sha": "7a514c3308157697596c8081edbd44eb7c7f05be"
+    },
+    {
+      "path": "frontend/src/hooks/employees/useEmployeeForm.js",
+      "size": 45355,
+      "mode": 33206,
+      "sha": "c51256c453c5d436b5ab5fcbfbd2a38343a94206"
+    },
+    {
+      "path": "frontend/src/hooks/useIdleStandby.js",
+      "size": 3171,
+      "mode": 33206,
+      "sha": "bd96e2b3e70802d20cc7395759b4244f55103f7f"
+    },
+    {
+      "path": "frontend/src/hooks/useKPIDecisionQueries.js",
+      "size": 7558,
+      "mode": 33206,
+      "sha": "e3abe18f3c51fbbcc1437c338ce275757a49a02c"
+    },
+    {
+      "path": "frontend/src/hooks/useKPIQueries.js",
+      "size": 5783,
+      "mode": 33206,
+      "sha": "9eaf71c9e27f79ac8caa7aaf24b88e238f9547b0"
+    },
+    {
+      "path": "frontend/src/hooks/useSmartNotifications.js",
+      "size": 29663,
+      "mode": 33206,
+      "sha": "79157f3a68a374d102918b312f2093497d9afd67"
+    },
+    {
+      "path": "frontend/src/hooks/useSmartSuggestions.js",
+      "size": 10968,
+      "mode": 33206,
+      "sha": "c7a411fb46f0e613187198c31deb0ac44b0c7636"
+    },
+    {
+      "path": "frontend/src/hooks/useTheme.js",
+      "size": 823,
+      "mode": 33206,
+      "sha": "988d0aaccd511a0d49e1b864385ed43a7677322e"
+    },
+    {
+      "path": "frontend/src/hooks/useViolationPolicyOptions.js",
+      "size": 4112,
+      "mode": 33206,
+      "sha": "cf2d1677f1703f23c9e7f8b460e0ec6739f7f526"
+    },
+    {
+      "path": "frontend/src/index.css",
+      "size": 9643,
+      "mode": 33206,
+      "sha": "aa63497a0df36eeefa84ea538e2bc873584281a5"
+    },
+    {
+      "path": "frontend/src/layout/MainLayout.jsx",
+      "size": 2869,
+      "mode": 33206,
+      "sha": "78f9cf616ed60833772b56c95c6f2474d1d59469"
+    },
+    {
+      "path": "frontend/src/main.jsx",
+      "size": 339,
+      "mode": 33206,
+      "sha": "c37704bb355efaaa4c7f923b878476b9b8b04658"
+    },
+    {
+      "path": "frontend/src/pages/ArchivedEmployees.jsx",
+      "size": 26367,
+      "mode": 33206,
+      "sha": "a35de5cc08175738fdf16aecf72992fdb7a3b047"
+    },
+    {
+      "path": "frontend/src/pages/Attendance.jsx",
+      "size": 115218,
+      "mode": 33206,
+      "sha": "b26f219bba0553ed9c465253c33663bf69748df6"
+    },
+    {
+      "path": "frontend/src/pages/ChangePassword.jsx",
+      "size": 25479,
+      "mode": 33206,
+      "sha": "d71f6901f2c3b93974f93c4bec5c9c0c6347de1c"
+    },
+    {
+      "path": "frontend/src/pages/Dashboard.jsx",
+      "size": 104797,
+      "mode": 33206,
+      "sha": "da9ff51315f232ef829ef7cca4ecdec8ca19e2f3"
+    },
+    {
+      "path": "frontend/src/pages/Deployments.jsx",
+      "size": 147784,
+      "mode": 33206,
+      "sha": "a7a63df9bcf5b6721f4a7dfff42927451d4ae2d8"
+    },
+    {
+      "path": "frontend/src/pages/EmployeeMobileHandoff.jsx",
+      "size": 13456,
+      "mode": 33206,
+      "sha": "f60edbd1c40172f212826268ff92ee36a2f0dc87"
+    },
+    {
+      "path": "frontend/src/pages/Employees.jsx",
+      "size": 101875,
+      "mode": 33206,
+      "sha": "1e68b7ba43f50d4be49e7360cdda5fccc0a01f7a"
+    },
+    {
+      "path": "frontend/src/pages/IncidentPhoneCapture.jsx",
+      "size": 27335,
+      "mode": 33206,
+      "sha": "433f3d301167f3abdf2714ff41c273a776947c53"
+    },
+    {
+      "path": "frontend/src/pages/Incidents.jsx",
+      "size": 84551,
+      "mode": 33206,
+      "sha": "ef7c55d10c50d382802492a3b4a59b5ee308c61d"
+    },
+    {
+      "path": "frontend/src/pages/KPIReports.jsx",
+      "size": 24368,
+      "mode": 33206,
+      "sha": "2412d755bd2a8c1aa242e81c733e9110bc977e48"
+    },
+    {
+      "path": "frontend/src/pages/Login.jsx",
+      "size": 34905,
+      "mode": 33206,
+      "sha": "258787295a9b1f5c0e9786f71584a927b3404b58"
+    },
+    {
+      "path": "frontend/src/pages/MaintenancePage.jsx",
+      "size": 441,
+      "mode": 33206,
+      "sha": "74306243d8cded9ce010df3768c5a88a264afb51"
+    },
+    {
+      "path": "frontend/src/pages/Messenger.jsx",
+      "size": 136298,
+      "mode": 33206,
+      "sha": "ab9964d08b5841dfa302e33c25e9899c2413dc5a"
+    },
+    {
+      "path": "frontend/src/pages/Notifications.jsx",
+      "size": 30818,
+      "mode": 33206,
+      "sha": "51a1353c5c492ab2f137829ccbe2a111605c075b"
+    },
+    {
+      "path": "frontend/src/pages/OperationalAuditLogs.jsx",
+      "size": 361,
+      "mode": 33206,
+      "sha": "9c95d6fd314a3e3ba546c98c4668ad7d791bfa69"
+    },
+    {
+      "path": "frontend/src/pages/ProfileSettings.jsx",
+      "size": 12754,
+      "mode": 33206,
+      "sha": "2eb183110c3f04b6fb8ffe4171728b90dbc65faf"
+    },
+    {
+      "path": "frontend/src/pages/ResetPassword.jsx",
+      "size": 11724,
+      "mode": 33206,
+      "sha": "454d03d63e834ca265b5c1ef5f1a4aea982e5106"
+    },
+    {
+      "path": "frontend/src/pages/Settings.jsx",
+      "size": 30457,
+      "mode": 33206,
+      "sha": "43b9b309013d1021a7e4f0682e897b5c2cae28ad"
+    },
+    {
+      "path": "frontend/src/pages/SuperAdminPortal.jsx",
+      "size": 77243,
+      "mode": 33206,
+      "sha": "024ff67a47f0359f8563d5a47b040b1f9cc0a542"
+    },
+    {
+      "path": "frontend/src/pages/SystemConfiguration.jsx",
+      "size": 11713,
+      "mode": 33206,
+      "sha": "fe7c5ac0cff4c4b36c94c9547f517df9780cf21e"
+    },
+    {
+      "path": "frontend/src/pages/SystemMaintenance.jsx",
+      "size": 18759,
+      "mode": 33206,
+      "sha": "f4fc358374e58e3dd1752fdc712e60293ac3bda7"
+    },
+    {
+      "path": "frontend/src/pages/TechnicalAuditLogs.jsx",
+      "size": 336,
+      "mode": 33206,
+      "sha": "50901a5ae199bc4d140d2c54f44e45fa20897f7e"
+    },
+    {
+      "path": "frontend/src/pages/VerifyEmail.jsx",
+      "size": 8198,
+      "mode": 33206,
+      "sha": "92a7e841d4c7ee7c925c8f1613373c0361d171c2"
+    },
+    {
+      "path": "frontend/src/services/chatApi.js",
+      "size": 14934,
+      "mode": 33206,
+      "sha": "8e22ff3275be055607ccc27cc8428e63348f8fa3"
+    },
+    {
+      "path": "frontend/src/utils/attendance/attendanceApi.js",
+      "size": 7329,
+      "mode": 33206,
+      "sha": "6679d0c82551937cfcb2f75e327b48384fd6651a"
+    },
+    {
+      "path": "frontend/src/utils/authenticatedFetch.js",
+      "size": 3404,
+      "mode": 33206,
+      "sha": "14c5deca96456850c82d7771203a13b20e0c9157"
+    },
+    {
+      "path": "frontend/src/utils/configStorage.js",
+      "size": 7070,
+      "mode": 33206,
+      "sha": "542e0bc126d6feeb0e1ba8d2d65beb8971aa97d9"
+    },
+    {
+      "path": "frontend/src/utils/dashboard/dashboardInsights.js",
+      "size": 38250,
+      "mode": 33206,
+      "sha": "39b0d0a55f22e32362328d1233307b1d65c4d8bd"
+    },
+    {
+      "path": "frontend/src/utils/dashboard/prescriptiveAnalytics.js",
+      "size": 8283,
+      "mode": 33206,
+      "sha": "296828e77e14455f7533e9be2e4a5740c2d3a8d0"
+    },
+    {
+      "path": "frontend/src/utils/deployments/deploymentHelpers.js",
+      "size": 14274,
+      "mode": 33206,
+      "sha": "2ed0d00316115b8fec536cef6bf2cd95ce1a1ceb"
+    },
+    {
+      "path": "frontend/src/utils/employees/employeeDetailsDecisionSupport.js",
+      "size": 3987,
+      "mode": 33206,
+      "sha": "3393bd990adda18ca31cbab0694536dcd71ffd53"
+    },
+    {
+      "path": "frontend/src/utils/employees/employeeDirectUpload.js",
+      "size": 11373,
+      "mode": 33206,
+      "sha": "1f1e6d6daed0814738a6313d280e997e72758b40"
+    },
+    {
+      "path": "frontend/src/utils/employees/employeeDocumentPreview.js",
+      "size": 1936,
+      "mode": 33206,
+      "sha": "1c11b8ed0b7b17826c4cda813bb2a234455b458e"
+    },
+    {
+      "path": "frontend/src/utils/employees/employeeFormHelpers.js",
+      "size": 33508,
+      "mode": 33206,
+      "sha": "07ecc88e36b1dc505cdf689203da4e3635b1b455"
+    },
+    {
+      "path": "frontend/src/utils/employees/employeeGovernmentIdValidation.js",
+      "size": 2419,
+      "mode": 33206,
+      "sha": "2c9765064ce4acbd8997e61b0548159a89591d83"
+    },
+    {
+      "path": "frontend/src/utils/employees/employeeHelpers.js",
+      "size": 12938,
+      "mode": 33206,
+      "sha": "ab13ba2460d92b60bb8d190a4fb64fa1354931c3"
+    },
+    {
+      "path": "frontend/src/utils/hasPermission.js",
+      "size": 249,
+      "mode": 33206,
+      "sha": "9eb6abbd88c5993c418de29a11bc24fddc287b84"
+    },
+    {
+      "path": "frontend/src/utils/hrErrors.js",
+      "size": 2422,
+      "mode": 33206,
+      "sha": "a2fab1d3946863972437844617e81ccdd457e90a"
+    },
+    {
+      "path": "frontend/src/utils/incidentIntelligence.js",
+      "size": 18545,
+      "mode": 33206,
+      "sha": "351d36dd176a6d7c0eb63d42fd677277d8912ba5"
+    },
+    {
+      "path": "frontend/src/utils/incidents/addIncidentHelpers.js",
+      "size": 10019,
+      "mode": 33206,
+      "sha": "19dc34bed2706cb19ca85ab482b6fe6d4c4ba1da"
+    },
+    {
+      "path": "frontend/src/utils/incidents/evidenceFiles.js",
+      "size": 9735,
+      "mode": 33206,
+      "sha": "9ad91ede9937a6b86cfafa8bc523b103a24dc075"
+    },
+    {
+      "path": "frontend/src/utils/incidents/incidentDirectUpload.js",
+      "size": 14421,
+      "mode": 33206,
+      "sha": "bbf259fa35a4f6f857827835d2cf0d07c40c5314"
+    },
+    {
+      "path": "frontend/src/utils/incidents/incidentDuration.js",
+      "size": 704,
+      "mode": 33206,
+      "sha": "a6100dfc4dac99a0c80bceb5beaded22190e291b"
+    },
+    {
+      "path": "frontend/src/utils/incidents/incidentHelpers.js",
+      "size": 10901,
+      "mode": 33206,
+      "sha": "5b5c9f90d51a328c97f10edadd49b3cfe6078200"
+    },
+    {
+      "path": "frontend/src/utils/incidents/incidentPdfExport.js",
+      "size": 17038,
+      "mode": 33206,
+      "sha": "6f6f0b6c8f189501d5ed29613ed2566998e79f3d"
+    },
+    {
+      "path": "frontend/src/utils/incidents/incidentPhoneCapture.js",
+      "size": 22935,
+      "mode": 33206,
+      "sha": "0b7898c3724b16c5563cf107d04540db783e893e"
+    },
+    {
+      "path": "frontend/src/utils/incidents/investigationEligibility.js",
+      "size": 7535,
+      "mode": 33206,
+      "sha": "aa94b456131b96da57d2cf826bb863b0d01b1e28"
+    },
+    {
+      "path": "frontend/src/utils/kpi/descriptiveAnalytics.js",
+      "size": 14681,
+      "mode": 33206,
+      "sha": "c7904bc19f21a4aec76b43526a55226aecdada23"
+    },
+    {
+      "path": "frontend/src/utils/kpi/kpiHelpers.js",
+      "size": 51520,
+      "mode": 33206,
+      "sha": "c668a9e8643d0ed69709c593eac49319b8f83da1"
+    },
+    {
+      "path": "frontend/src/utils/kpi/kpiPdfExport.js",
+      "size": 12279,
+      "mode": 33206,
+      "sha": "e6ce9bd824ce39a71cefeef0dccb93475a7db2f0"
+    },
+    {
+      "path": "frontend/src/utils/kpi/kpiPresentationHelpers.js",
+      "size": 2818,
+      "mode": 33206,
+      "sha": "beece37a74715ea3d3819cc0054f02dea261342e"
+    },
+    {
+      "path": "frontend/src/utils/kpi/riskTableHelpers.js",
+      "size": 3603,
+      "mode": 33206,
+      "sha": "a2231ab4f489ae3ba02519977694ca78d645ad1a"
+    },
+    {
+      "path": "frontend/src/utils/kpi/severityDecayHelpers.js",
+      "size": 6262,
+      "mode": 33206,
+      "sha": "f1cc094c6a5f8294f277402639e3d7bc269cbc5b"
+    },
+    {
+      "path": "frontend/src/utils/notifications/notificationFocus.js",
+      "size": 1218,
+      "mode": 33206,
+      "sha": "5fb71e333a145497b343976bf57524009f3d6595"
+    },
+    {
+      "path": "frontend/src/utils/notifications/notificationTarget.js",
+      "size": 2704,
+      "mode": 33206,
+      "sha": "23b5c4cd15e1b66c7ed7f0ce0f4504bc1d637a4c"
+    },
+    {
+      "path": "frontend/src/utils/notifications/smartNotifications.js",
+      "size": 7543,
+      "mode": 33206,
+      "sha": "3c3534967290d72842f54c7b71a28f02717d7497"
+    },
+    {
+      "path": "frontend/src/utils/policyDescription.js",
+      "size": 707,
+      "mode": 33206,
+      "sha": "6a7f9329ba0951639eea7ecb8d96a301420ac209"
+    },
+    {
+      "path": "frontend/src/utils/suggestions/smartSuggestions.js",
+      "size": 6272,
+      "mode": 33206,
+      "sha": "590a064598bb02ce26c3e6a86d76f8b74a5ca9df"
+    },
+    {
+      "path": "frontend/src/utils/userDisplay.js",
+      "size": 807,
+      "mode": 33206,
+      "sha": "346e450f1f8880a127dfaf81bde58844c71639c3"
+    },
+    {
+      "path": "frontend/tailwind.config.js",
+      "size": 1110,
+      "mode": 33206,
+      "sha": "19c2bcdd28d93c06b595052beb4ad21da3ee673f"
+    },
+    {
+      "path": "frontend/vercel.json",
+      "size": 102,
+      "mode": 33206,
+      "sha": "cbce3c26cb8439f33989e6b9ea9a61d3da734e17"
+    },
+    {
+      "path": "frontend/vite.config.js",
+      "size": 789,
+      "mode": 33206,
+      "sha": "614bc0ad581e2cff495b280ad715f9a71aab9a7c"
+    }
+  ]
+}

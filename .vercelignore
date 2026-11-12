@@ -1,0 +1,32 @@
+# Both Vercel projects deploy from this repository root with their own
+# backend/frontend Root Directory. Nested ignore files do not protect root uploads.
+.git
+.vercel
+**/.vercel
+**/.env
+**/.env.*
+**/node_modules
+**/dist
+**/build
+**/*.log
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.dump
+**/*.sql.gz
+.tools
+.vscode
+artifacts
+docs
+backend/documents
+backend/private_uploads
+backend/private_chat_uploads
+backend/uploads
+backend/temp
+backend/test
+backend/scripts
+frontend/test
+frontend/scripts
+fake-incident.pdf
+PHASE3_*.md

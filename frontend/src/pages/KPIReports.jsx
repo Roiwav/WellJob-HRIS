@@ -1,4 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { focusNotificationTarget } from "../utils/notifications/notificationFocus";
+import { TARGET_UNAVAILABLE } from "../utils/notifications/notificationTarget";
+import EmployeeKpiDetailsModal from "../components/kpi/modals/EmployeeKpiDetailsModal";
 import {
   FiActivity,
   FiBarChart2,
@@ -216,6 +220,9 @@ function getErrorMessage(
 }
 
 export default function KPIReports() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [notificationEmployee, setNotificationEmployee] = useState(null);
   const { user } = useAuth();
 
   const isSuperAdmin =
@@ -508,6 +515,20 @@ export default function KPIReports() {
   const isLoading =
     isKpiLoading ||
     isDecisionSnapshotLoading;
+
+  useEffect(() => {
+    const target = location.state?.notificationKpiTarget;
+    if (!target || isLoading) return;
+    const employee = employees.find((row) => Number(String(row.id || row.employeeId).replace(/^KPI-/i, "")) === Number(target.employeeId));
+    if (employee) {
+      setActiveTab("intelligence");
+      setNotificationEmployee(employee);
+      focusNotificationTarget('[role="dialog"]');
+    } else {
+      setRefreshError(TARGET_UNAVAILABLE);
+    }
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, isLoading, employees, navigate]);
 
   const pageError =
     refreshError ||
@@ -923,6 +944,7 @@ export default function KPIReports() {
         </div>
       )}
 
+      {notificationEmployee && <EmployeeKpiDetailsModal employee={notificationEmployee} onClose={() => setNotificationEmployee(null)} />}
       <SuccessToast
         title="KPI Reports Updated"
         message={successMessage}

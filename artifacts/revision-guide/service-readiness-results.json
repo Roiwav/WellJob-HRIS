@@ -1,0 +1,44 @@
+{
+  "emailSent": false,
+  "checks": [
+    {
+      "name": "Real isolated employee access: staff",
+      "status": "PASS",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Real isolated employee access: otherStaff",
+      "status": "PASS",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Real isolated employee access: manager",
+      "status": "PASS",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Real isolated employee access: admin",
+      "status": "PASS",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Real isolated employee access: coordinatorA",
+      "status": "PASS",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Real isolated employee access: coordinatorB",
+      "status": "PASS",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Real isolated employee access: it",
+      "status": "PASS",
+      "expectedStatus": 403
+    },
+    {
+      "name": "Actual configured SMTP connection and authentication; no message sent",
+      "status": "PASS"
+    }
+  ]
+}

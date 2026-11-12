@@ -2804,6 +2804,12 @@ exports.updateDeploymentStatus =
         status
       );
 
+    const isSeparation = isLegacySeparationDeploymentStatus(status);
+    const employmentStatus = isSeparation
+      ? (finalReason === "Resigned" ? "Resigned" : "Terminated")
+      : "Active";
+    const workforceStatus = isSeparation ? null : "Floating / Standby";
+
     const actor =
       getActor(
         req
@@ -2889,6 +2895,8 @@ exports.updateDeploymentStatus =
             id,
             name,
             status,
+            employment_status,
+            workforce_status,
             archived
 
           FROM employees
@@ -3157,6 +3165,10 @@ exports.updateDeploymentStatus =
           SET
             status = ?,
 
+            employment_status = ?,
+
+            workforce_status = ?,
+
             contractEnd =
               ${MANILA_CURRENT_DATE_SQL},
 
@@ -3172,6 +3184,8 @@ exports.updateDeploymentStatus =
           `,
           [
             employeeStatus,
+            employmentStatus,
+            workforceStatus,
             finalReason,
             finalRemarks,
             employeeId,
@@ -3227,6 +3241,20 @@ exports.updateDeploymentStatus =
           actorUserId,
         ]
       );
+
+      // The employee lock and active-assignment guard make retries a conflict,
+      // so a separation can create at most one employment transition.
+      const previousEmploymentStatus = employee.employment_status || "Active";
+      if (previousEmploymentStatus !== employmentStatus) {
+        await connection.query(
+          `INSERT INTO employee_employment_history
+            (employee_id, from_status, to_status, effective_at, reason,
+             remarks, source_event, changed_by_user_id)
+           VALUES (?, ?, ?, UTC_TIMESTAMP(), ?, ?, 'EMPLOYMENT_SEPARATED', ?)`,
+          [employeeId, previousEmploymentStatus, employmentStatus,
+            finalReason, finalRemarks, actorUserId]
+        );
+      }
 
       const deploymentDisplayStatus =
         getDeploymentDisplayStatus(
@@ -3318,6 +3346,8 @@ exports.updateDeploymentStatus =
         deploymentDisplayStatus,
 
         employeeStatus,
+        employmentStatus,
+        workforceStatus,
 
         endReason:
           finalReason,

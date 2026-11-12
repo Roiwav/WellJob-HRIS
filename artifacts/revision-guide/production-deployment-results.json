@@ -1,0 +1,76 @@
+{
+  "checkedAt": "2026-11-12T12:05:31.184Z",
+  "sourceSha256": "5ecb32b300feb45bdbecd2ab6f62e796c20ac5b1b7445fa39c6deac741d15e69",
+  "productionWrites": false,
+  "deployments": {
+    "backend": {
+      "id": "dpl_DbkgfaM65GwxwwittL79RnGxn7Zc",
+      "origin": "https://welljob-hris-backend.vercel.app",
+      "deploymentUrl": "https://welljob-hris-backend-oti6w6rmb-well-job-solutions.vercel.app",
+      "readyState": "READY",
+      "revisionSource": "5ecb32b300feb45bdbecd2ab6f62e796c20ac5b1b7445fa39c6deac741d15e69",
+      "aliases": [
+        "welljob-hris-backend.vercel.app",
+        "welljob-hris-backend-well-job-solutions.vercel.app"
+      ]
+    },
+    "frontend": {
+      "id": "dpl_Brhz31wnYjQ1h4Guri5gA5u9EsmR",
+      "origin": "https://welljob-hris-frontend.vercel.app",
+      "deploymentUrl": "https://welljob-hris-frontend-hkf8ej5h1-well-job-solutions.vercel.app",
+      "readyState": "READY",
+      "revisionSource": "5ecb32b300feb45bdbecd2ab6f62e796c20ac5b1b7445fa39c6deac741d15e69",
+      "aliases": [
+        "welljob-hris-frontend.vercel.app",
+        "welljob-hris-frontend-well-job-solutions.vercel.app"
+      ]
+    }
+  },
+  "count": 11,
+  "checks": [
+    {
+      "name": "backend: correct existing project, root directory, READY production deployment and reviewed source fingerprint",
+      "status": "PASS"
+    },
+    {
+      "name": "frontend: correct existing project, root directory, READY production deployment and reviewed source fingerprint",
+      "status": "PASS"
+    },
+    {
+      "name": "Live backend availability and response security headers",
+      "status": "PASS"
+    },
+    {
+      "name": "Live backend version identifies the newly deployed production function",
+      "status": "PASS"
+    },
+    {
+      "name": "Live employee API rejects missing session",
+      "status": "PASS"
+    },
+    {
+      "name": "Live employee API rejects invalid session",
+      "status": "PASS"
+    },
+    {
+      "name": "Live frontend origin is permitted by backend CORS",
+      "status": "PASS"
+    },
+    {
+      "name": "Live production JavaScript loads and points to the stable production backend",
+      "status": "PASS"
+    },
+    {
+      "name": "Live frontend SPA route /",
+      "status": "PASS"
+    },
+    {
+      "name": "Live frontend SPA route /employees",
+      "status": "PASS"
+    },
+    {
+      "name": "Live frontend SPA route /mobile-handoff",
+      "status": "PASS"
+    }
+  ]
+}

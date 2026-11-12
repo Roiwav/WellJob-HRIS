@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../utils/hrErrors";
 import {
   useMutation,
   useQuery,
@@ -100,9 +101,7 @@ export async function requestKPIDecisionJson(
       !response.ok
     ) {
       const requestError = new Error(
-        data?.error ||
-          data?.message ||
-          `Request failed with status ${response.status}`
+        hrErrorMessage(data, undefined, response.status)
       );
 
       requestError.name =
@@ -124,10 +123,11 @@ export async function requestKPIDecisionJson(
       "AbortError"
     ) {
       throw new Error(
-        "The server took too long to respond. Check that the backend server and database are running, then try again."
+        "The service is taking longer than expected. Please try again. If the problem continues, contact IT Support."
       );
     }
 
+    if (error instanceof Error) error.message = hrErrorMessage(error);
     throw error;
   } finally {
     globalThis.clearTimeout(

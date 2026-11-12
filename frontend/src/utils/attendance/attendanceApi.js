@@ -1,3 +1,4 @@
+import { hrErrorMessage } from "../hrErrors";
 import {
   API_BASE,
 } from "../../config/api";
@@ -19,18 +20,6 @@ const ATTENDANCE_IMAGE_TYPES =
 
 export const MAX_ATTENDANCE_EVIDENCE_SIZE =
   10 * 1024 * 1024;
-
-
-function apiErrorMessage(
-  payload,
-  fallback
-) {
-  return String(
-    payload?.error ||
-      payload?.message ||
-      fallback
-  ).trim();
-}
 
 
 async function readJsonSafely(
@@ -122,10 +111,7 @@ async function requestWelljobJson(
   if (!response.ok) {
     const error =
       new Error(
-        apiErrorMessage(
-          payload,
-          `Attendance request failed (${response.status}).`
-        )
+        hrErrorMessage(payload, "The attendance information could not be loaded. Please try again.", response.status)
       );
 
     error.status =
@@ -309,11 +295,8 @@ async function uploadEvidenceToSignedUrl(
           () => ""
         );
 
-    throw new Error(
-      message
-        ? `Protected Attendance evidence upload failed: ${message}`
-        : `Protected Attendance evidence upload failed (${response.status}).`
-    );
+    console.error("Attendance evidence upload failed", response.status, message);
+    throw new Error("The attendance image could not be uploaded. Check your connection and try again.");
   }
 }
 
