@@ -4,6 +4,7 @@ const router = express.Router();
 
 const {
   getDeployments,
+  getEmployeeDeploymentHistory,
   getDeploymentReport,
   getDeploymentCompanyOptions,
   getDeploymentPositionOptions,
@@ -321,18 +322,35 @@ router.get(
 
 /*
  * ==================================================
- * VIEW ACTUAL DEPLOYMENTS
+ * EMPLOYEE DEPLOYMENT HISTORY
  * ==================================================
  *
- * HR_COORDINATOR:
- * - may view actual deployment records
- * - controller restricts results to the
- *   coordinator's assigned company
+ * Read-only exact employee assignment history used by
+ * Employee Overview. Controller-level employee and
+ * company scope remains authoritative.
  *
  * IMPORTANT:
  * Route access alone is not the security boundary.
  * backend/controllers/deploymentController.js also
  * enforces the actual company scope.
+ */
+router.get(
+  "/employees/:employeeId/deployments",
+  verifyToken,
+  authorizeRoles(
+    "SUPER_ADMIN",
+    "HR_MANAGER",
+    "HR_STAFF",
+    "HR_COORDINATOR"
+  ),
+  getEmployeeDeploymentHistory
+);
+
+
+/*
+ * ==================================================
+ * VIEW ACTUAL DEPLOYMENTS
+ * ==================================================
  */
 router.get(
   "/deployments",

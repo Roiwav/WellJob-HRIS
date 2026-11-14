@@ -532,6 +532,53 @@ function buildCoordinatorCurrentEmployeeCondition(
   `;
 }
 
+function buildCoordinatorEmployeeOverviewCondition(
+  employeeAlias = "e"
+) {
+  return `
+    ${employeeAlias}.archived = 0
+    AND ${employeeAlias}.employment_status = 'Active'
+    AND LOWER(
+      TRIM(
+        COALESCE(
+          ${employeeAlias}.company,
+          ''
+        )
+      )
+    ) = LOWER(TRIM(?))
+    AND (
+      (
+        ${employeeAlias}.workforce_status = 'Deployed'
+        AND EXISTS (
+          SELECT 1
+          FROM deployment_assignments AS da_overview
+          WHERE da_overview.employee_id = ${employeeAlias}.id
+            AND da_overview.status = 'Active'
+            AND LOWER(TRIM(da_overview.company)) = LOWER(TRIM(${employeeAlias}.company))
+            AND NOT EXISTS (
+              SELECT 1
+              FROM deployment_assignments AS da_conflict
+              WHERE da_conflict.employee_id = ${employeeAlias}.id
+                AND da_conflict.status = 'Active'
+                AND da_conflict.id <> da_overview.id
+            )
+        )
+      )
+      OR
+      (
+        ${employeeAlias}.workforce_status = 'For Deployment'
+        AND EXISTS (
+          SELECT 1
+          FROM deployment_attempts AS dpa_overview
+          WHERE dpa_overview.employee_id = ${employeeAlias}.id
+            AND dpa_overview.status = 'For Deployment'
+            AND LOWER(TRIM(dpa_overview.company)) = LOWER(TRIM(${employeeAlias}.company))
+        )
+      )
+    )
+  `;
+}
+
 function isCurrentlyDeployedEmployee(
   employee
 ) {
@@ -711,6 +758,40 @@ function mapAssignment(row) {
 
     updatedAt:
       row.updatedAt,
+  };
+}
+
+function mapEmployeeDeploymentHistoryAssignment(
+  row
+) {
+  const mapped =
+    mapAssignment(row);
+
+  return {
+    id:
+      mapped.deploymentId,
+    employeeId:
+      mapped.employeeId,
+    company:
+      mapped.company === "-"
+        ? ""
+        : mapped.company,
+    location:
+      "",
+    position:
+      mapped.position,
+    startDate:
+      mapped.contractStart === "-"
+        ? ""
+        : mapped.contractStart,
+    endDate:
+      mapped.contractEnd === "-"
+        ? ""
+        : mapped.contractEnd,
+    status:
+      mapped.status,
+    displayStatus:
+      mapped.displayStatus,
   };
 }
 
@@ -2360,6 +2441,184 @@ exports.getDeployments = async (
       });
   }
 };
+
+/*
+ * ==================================================
+ * GET EMPLOYEE DEPLOYMENT HISTORY
+ * ==================================================
+ *
+ * Read-only exact employee lookup for Employee Overview.
+ * deployment_assignments remains the source of truth for
+ * actual current and historical assignments.
+ */
+exports.getEmployeeDeploymentHistory =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const employeeId =
+        toPositiveInteger(
+          req.params?.employeeId,
+          null
+        );
+
+      if (!employeeId) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid employee ID.",
+          });
+      }
+
+      const isHrCoordinator =
+        isHrCoordinatorRequest(
+          req
+        );
+
+      const coordinatorCompany =
+        isHrCoordinator
+          ? getHrCoordinatorAssignedCompany(
+              req
+            )
+          : null;
+
+      if (
+        isHrCoordinator &&
+        !coordinatorCompany
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "HR Coordinator company assignment is required.",
+          });
+      }
+
+      const employeeScopeSql =
+        isHrCoordinator
+          ? `
+            AND
+            ${buildCoordinatorEmployeeOverviewCondition(
+              "e"
+            )}
+          `
+          : "";
+
+      const employeeParams =
+        isHrCoordinator
+          ? [
+              employeeId,
+              coordinatorCompany,
+            ]
+          : [
+              employeeId,
+            ];
+
+      const [employeeRows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT e.id
+            FROM employees AS e
+            WHERE e.id = ?
+              ${employeeScopeSql}
+            LIMIT 1
+            `,
+            employeeParams
+          );
+
+      if (
+        employeeRows.length ===
+        0
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Employee not found.",
+          });
+      }
+
+      const assignmentScopeSql =
+        isHrCoordinator
+          ? `
+            AND
+            ${buildCoordinatorCompanyCondition(
+              "da"
+            )}
+          `
+          : "";
+
+      const assignmentParams =
+        isHrCoordinator
+          ? [
+              employeeId,
+              coordinatorCompany,
+            ]
+          : [
+              employeeId,
+            ];
+
+      const [rows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              da.id AS deploymentId,
+              da.employee_id AS employeeId,
+              da.company,
+              da.position,
+              DATE_FORMAT(da.start_date, '%Y-%m-%d') AS startDate,
+              DATE_FORMAT(da.end_date, '%Y-%m-%d') AS endDate,
+              da.end_reason AS endReason,
+              da.end_remarks AS endRemarks,
+              da.status AS deploymentStatus,
+              da.ended_at AS endedAt,
+              da.created_at AS createdAt,
+              da.updated_at AS updatedAt
+            FROM deployment_assignments AS da
+            WHERE da.employee_id = ?
+              ${assignmentScopeSql}
+            ORDER BY
+              CASE
+                WHEN da.status = 'Active' THEN 0
+                ELSE 1
+              END ASC,
+              COALESCE(
+                da.end_date,
+                da.start_date
+              ) DESC,
+              da.start_date DESC,
+              da.id DESC
+            `,
+            assignmentParams
+          );
+
+      return res.json({
+        employeeId,
+        deployments:
+          rows.map(
+            mapEmployeeDeploymentHistoryAssignment
+          ),
+      });
+    } catch (err) {
+      console.error(
+        "GET EMPLOYEE DEPLOYMENT HISTORY ERROR:",
+        err
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch employee deployment history.",
+        });
+    }
+  };
 
 /*
  * ==================================================

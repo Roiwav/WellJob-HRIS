@@ -31,6 +31,9 @@ import {
   normalizeEmployeeDocumentNumber,
   parseEmployeeDocuments,
 } from "../../utils/employees/employeeFormHelpers";
+import {
+  groupEmployeeDeployments,
+} from "../../utils/employees/employeeDeploymentHistory";
 import authenticatedFetch from "../../utils/authenticatedFetch";
 import { fetchEmployeeDocumentPreview } from "../../utils/employees/employeeDocumentPreview";
 import { API_BASE } from "../../config/api";
@@ -43,6 +46,7 @@ import {
   getDocumentStatus as getExpirationStatus,
 } from "./employeeConstants";
 const INCIDENT_API_URL = `${API_BASE}/incidents`;
+const EMPLOYEE_DEPLOYMENT_API_URL = `${API_BASE}/employees`;
 const EMPLOYEE_TIME_ZONE = "Asia/Manila";
 
 const DOCUMENT_OPTIONS_BY_NAME = new Map(
@@ -1836,9 +1840,132 @@ export default function EmployeeModal({
     loading: true,
     error: "",
   });
+  const [deploymentRequest, setDeploymentRequest] = useState({
+    employeeId: "",
+    deployments: [],
+    loading: true,
+    error: "",
+    requestVersion: 0,
+  });
   const previewControllerRef = useRef(null);
   const previewUrlRef = useRef("");
   const complianceSectionRef = useRef(null);
+  useEffect(() => {
+    if (!hasEmployee || !employeeId) {
+      setDeploymentRequest({
+        employeeId: "",
+        deployments: [],
+        loading: false,
+        error: "",
+        requestVersion: 0,
+      });
+      return undefined;
+    }
+
+    const controller =
+      new AbortController();
+
+    setDeploymentRequest(
+      (current) => ({
+        employeeId,
+        deployments: [],
+        loading: true,
+        error: "",
+        requestVersion:
+          current.requestVersion,
+      })
+    );
+
+    async function loadEmployeeDeployments() {
+      try {
+        const response =
+          await authenticatedFetch(
+            `${EMPLOYEE_DEPLOYMENT_API_URL}/${encodeURIComponent(employeeId)}/deployments`,
+            {
+              signal:
+                controller.signal,
+              cache:
+                "no-store",
+            }
+          );
+        const data =
+          await response
+            .json()
+            .catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              data?.message ||
+              `Failed to load deployment history. Status ${response.status}`
+          );
+        }
+
+        if (
+          !Array.isArray(
+            data?.deployments
+          )
+        ) {
+          throw new Error(
+            "Invalid deployment history response."
+          );
+        }
+
+        if (
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        setDeploymentRequest(
+          (current) => ({
+            employeeId,
+            deployments:
+              data.deployments,
+            loading: false,
+            error: "",
+            requestVersion:
+              current.requestVersion,
+          })
+        );
+      } catch (error) {
+        if (
+          controller.signal.aborted ||
+          error?.name ===
+            "AbortError"
+        ) {
+          return;
+        }
+
+        console.error(
+          "Employee deployment history fetch failed:",
+          error
+        );
+
+        setDeploymentRequest(
+          (current) => ({
+            employeeId,
+            deployments: [],
+            loading: false,
+            error:
+              "Unable to load deployment history.",
+            requestVersion:
+              current.requestVersion,
+          })
+        );
+      }
+    }
+
+    void loadEmployeeDeployments();
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    deploymentRequest.requestVersion,
+    employeeId,
+    hasEmployee,
+  ]);
   /*
    * ==================================================
    * COMPANY-SCOPED DETAILED INCIDENT HISTORY
@@ -2128,6 +2255,36 @@ export default function EmployeeModal({
   const employeeIncidents = useMemo(
     () => (historyAvailable ? historyRequest.incidents : []),
     [historyAvailable, historyRequest.incidents]
+  );
+  const deploymentIsCurrent =
+    deploymentRequest.employeeId ===
+      employeeId &&
+    Boolean(employeeId);
+  const deploymentLoading =
+    hasEmployee &&
+    (
+      !deploymentIsCurrent ||
+      deploymentRequest.loading
+    );
+  const deploymentError =
+    deploymentIsCurrent
+      ? deploymentRequest.error
+      : "";
+  const deploymentGroups = useMemo(
+    () =>
+      groupEmployeeDeployments(
+        deploymentIsCurrent &&
+          !deploymentRequest.loading &&
+          !deploymentRequest.error
+          ? deploymentRequest.deployments
+          : []
+      ),
+    [
+      deploymentIsCurrent,
+      deploymentRequest.deployments,
+      deploymentRequest.error,
+      deploymentRequest.loading,
+    ]
   );
   const employeeKpiDecisionSupport = useMemo(
     () =>
@@ -2561,6 +2718,17 @@ export default function EmployeeModal({
     setIsComplianceOpen((current) => !current);
   };
 
+  const handleRetryDeployments = () => {
+    setDeploymentRequest(
+      (current) => ({
+        ...current,
+        requestVersion:
+          current.requestVersion +
+          1,
+      })
+    );
+  };
+
   const handleCloseEmployee = () => {
     if (!previewFile) {
       onClose?.();
@@ -2651,7 +2819,7 @@ export default function EmployeeModal({
                   Employee Overview
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  Employee identity and record overview.
+                  Employee details and work status.
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -2729,7 +2897,7 @@ export default function EmployeeModal({
 
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-lg font-bold text-slate-900 dark:text-slate-100">
+                      <p className="break-words text-lg font-bold text-slate-900 dark:text-slate-100">
                         {employeeName}
                       </p>
 
@@ -2738,9 +2906,6 @@ export default function EmployeeModal({
                       </span>
                     </div>
 
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Employee record and workforce information
-                    </p>
                   </div>
                 </div>
 
@@ -2780,7 +2945,7 @@ export default function EmployeeModal({
             </div>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 text-slate-900 dark:text-slate-100 sm:px-6 sm:py-5">
-            <div className="mx-auto max-w-[1500px] space-y-5">
+            <div className="mx-auto max-w-[1500px] space-y-4">
               {historicalSummaryError && (
                 <AlertBox tone="warning">
                   {historicalSummaryError}
@@ -2803,14 +2968,12 @@ export default function EmployeeModal({
                 </AlertBox>
               )}
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <SectionTitle
-                  title="Employee Information"
-                  description="Employment, personal, and workforce placement details."
-                />
+              <div className="grid items-stretch gap-4 lg:grid-cols-2">
+                <section className="h-full min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <SectionTitle title="Employee Information" />
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <InfoBox
+                <dl className="grid gap-x-5 sm:grid-cols-2">
+                  <InfoRow
                     label="Birthday"
                     value={
                       employeeBirthday
@@ -2821,7 +2984,7 @@ export default function EmployeeModal({
                     }
                   />
 
-                  <InfoBox
+                  <InfoRow
                     label="Age"
                     value={
                       employeeAge !== null
@@ -2830,7 +2993,7 @@ export default function EmployeeModal({
                     }
                   />
 
-                  <InfoBox
+                  <InfoRow
                     label="Date Hired"
                     value={
                       employeeDateHired
@@ -2841,21 +3004,21 @@ export default function EmployeeModal({
                     }
                   />
 
-                  <InfoBox
+                  <InfoRow
                     label="Client Company"
                     value={
                       companyDisplay
                     }
                   />
 
-                  <InfoBox
+                  <InfoRow
                     label="Position"
                     value={
                       positionDisplay
                     }
                   />
 
-                  <InfoBox
+                  <InfoRow
                     label="Deployment Date"
                     value={
                       employeeWorkforceStatus ===
@@ -2870,23 +3033,66 @@ export default function EmployeeModal({
                         : "Not yet deployed"
                     }
                   />
-                </div>
+                </dl>
 
-                <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-xs leading-5 text-indigo-800 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-200">
+                <p className="mt-3 border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   {placementWorkflowNote}
-                </div>
-              </section>
+                </p>
+                </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <SectionTitle
-                  title="Incident & KPI Summary"
-                  description={
-                    isHRCoordinator
-                      ? "Overall statistics may include incidents from previous and current company assignments."
-                      : "Current incident totals and system-generated employee indicators."
-                  }
-                />
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <section className="h-full min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <SectionTitle title="Deployment Information" />
+
+                {deploymentLoading ? (
+                  <CompactMessage text="Loading deployment history..." />
+                ) : deploymentError ? (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 dark:border-rose-500/25 dark:bg-rose-500/10">
+                    <p className="text-sm text-rose-700 dark:text-rose-300">
+                      {deploymentError}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="mt-3"
+                      onClick={handleRetryDeployments}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                ) : deploymentGroups.all.length === 0 ? (
+                  <p className="border-t border-slate-200 pt-3 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                    No deployment records available
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {deploymentGroups.current.length > 0 && (
+                      <DeploymentGroup
+                        title="Current Deployment"
+                        deployments={deploymentGroups.current}
+                      />
+                    )}
+                    {deploymentGroups.previous.length > 0 && (
+                      <DeploymentGroup
+                        title="Previous Deployments"
+                        deployments={deploymentGroups.previous}
+                        collapsible
+                      />
+                    )}
+                  </div>
+                )}
+                </section>
+
+                <section className="h-full min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <SectionTitle
+                    title="Incident & KPI Summary"
+                    description={
+                      isHRCoordinator
+                        ? "Overall statistics may include incidents from previous and current company assignments."
+                        : undefined
+                    }
+                  />
+                  <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
                   <StatBox
                     label="Total Incidents"
                     value={getDisplayedStatistic("total")}
@@ -2895,23 +3101,6 @@ export default function EmployeeModal({
                     label="Open Cases"
                     value={getDisplayedStatistic("open")}
                     valueClassName="text-rose-600 dark:text-rose-300"
-                  />
-                  <StatBox
-                    label="Closed Cases"
-                    value={getDisplayedStatistic("closed")}
-                    valueClassName="text-emerald-600 dark:text-emerald-300"
-                  />
-                  <StatBox
-                    label="Current Severity Score"
-                    value={getDisplayedStatistic("activeSeverityScore")}
-                  />
-                  <StatBox
-                    label="Historical Severity Score"
-                    value={getDisplayedStatistic("historicalSeverityScore")}
-                  />
-                  <StatBox
-                    label="Behavior Trend"
-                    value={getDisplayedStatistic("behaviorTrend")}
                   />
                   <MetricBadgeBox
                     label="Risk Level"
@@ -2931,27 +3120,28 @@ export default function EmployeeModal({
                       "Unavailable"
                     )}
                   />
-                </div>
-                {isHRCoordinator && (
-                  <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    Previous-company incident details remain restricted. Only authorized incident details are shown below.
-                  </p>
-                )}
-              </section>
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <SectionTitle
-                  title={
-                    isHRCoordinator
-                      ? "Coordinator Awareness"
-                      : "Suggested HR Workflow Action"
-                  }
-                  description={
-                    isHRCoordinator
-                      ? "Awareness-only message based on authorized aggregate incident indicators. Detailed assessment remains restricted to authorized HR management."
-                      : "Canonical KPI workflow suggestion based on the employee's complete authorized incident history and current severity snapshot. Final decisions remain with authorized HR management."
-                  }
-                />
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+                  </div>
+                  {isHRCoordinator && (
+                    <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      Previous-company incident details remain restricted. Only authorized incident details are shown below.
+                    </p>
+                  )}
+                </section>
+
+                <section className="h-full min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <SectionTitle
+                    title={
+                      isHRCoordinator
+                        ? "Coordinator Awareness"
+                        : "Suggested HR Workflow Action"
+                    }
+                    description={
+                      isHRCoordinator
+                        ? "Awareness only. Final assessment remains with authorized HR management."
+                        : "Suggested action for HR review. Final decisions remain with authorized HR management."
+                    }
+                  />
+                  <div className="flex min-w-0 flex-col gap-2 border-t border-slate-200 pt-3 dark:border-slate-800 sm:flex-row sm:items-start sm:gap-4">
                   <StatusPill
                     className={getClassName(
                       RECOMMENDATION_CLASSES,
@@ -2961,109 +3151,61 @@ export default function EmployeeModal({
                   >
                     {displayedRecommendation}
                   </StatusPill>
-                  <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  <p className="min-w-0 flex-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
                     {displayedRecommendationReason}
                   </p>
-                </div>
-              </section>
-              {!isHRCoordinator && (
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <SectionTitle
-                    title="Corrective Intervention"
-                    description="Current intervention pattern analysis uses incidents with positive current points. Fully decayed incidents remain in history but do not establish current repetition. This is the researchers' proposed policy pending client review."
-                  />
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
-                    <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                      {displayedCorrectiveIntervention}
-                    </p>
-                    <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                      {displayedCorrectiveInterventionReason}
-                    </p>
                   </div>
                 </section>
-              )}
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <SectionTitle
-                  title="Recent Incident History"
-                  description={
-                    isHRCoordinator
-                      ? "Detailed records are limited to incidents you are authorized to view for your assigned company."
-                      : "Up to five of the most recent incident records for this employee."
-                  }
-                />
-                {historyLoading ? (
-                  <EmptyBox text="Loading incident history..." />
-                ) : historyError ? (
-                  <EmptyBox text="Incident history is unavailable." />
-                ) : recentIncidents.length === 0 ? (
-                  <EmptyBox
-                    text={
-                      isHRCoordinator &&
-                      incidentSummaryAvailable &&
-                      incidentSummary.total > 0
-                        ? "The overall summary contains recorded incidents, but no detailed incident records are available for your assigned company."
-                        : "No incident history found for this employee."
+              </div>
+
+              <div className="grid items-stretch gap-4 lg:grid-cols-2">
+                {!isHRCoordinator && (
+                  <section className="h-full min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                    <SectionTitle title="Corrective Intervention" />
+                    <div className="grid min-w-0 gap-2 border-t border-slate-200 pt-3 dark:border-slate-800 sm:grid-cols-[minmax(0,0.36fr)_minmax(0,0.64fr)] sm:gap-4">
+                      <p className="break-words text-sm font-bold leading-5 text-slate-900 dark:text-slate-100">
+                        {displayedCorrectiveIntervention}
+                      </p>
+                      <p className="min-w-0 text-sm leading-5 text-slate-600 dark:text-slate-300">
+                        {displayedCorrectiveInterventionReason}
+                      </p>
+                    </div>
+                  </section>
+                )}
+
+                <section
+                  className={[
+                    "h-full min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900",
+                    isHRCoordinator ? "lg:col-span-2" : "",
+                  ].join(" ")}
+                >
+                  <SectionTitle
+                    title="Recent Incident History"
+                    description={
+                      isHRCoordinator
+                        ? "Detailed records are limited to incidents you are authorized to view for your assigned company."
+                        : undefined
                     }
                   />
-                ) : (
-                  <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-                    {recentIncidents.map((incident, index) => (
-                      <article
-                        key={`${incident.id}-${index}`}
-                        className="px-4 py-3"
-                      >
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0">
-                            <p className="font-semibold text-slate-900 dark:text-slate-100">
-                              {incident.violation || "No violation type"}
-                            </p>
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              {incident.displayId} •{" "}
-                              {formatDate(
-                                incident.reportedAt ||
-                                  incident.date
-                              )}
-                            </p>
-                            {incident.description && (
-                              <p className="mt-2 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                                {incident.description}
-                              </p>
-                            )}
-                            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                              <span className="font-semibold text-slate-700 dark:text-slate-200">
-                                Sanction:
-                              </span>{" "}
-                              {incident.sanction || "For HR Review"}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 flex-wrap gap-2">
-                            <StatusPill
-                              className={getClassName(
-                                STATUS_CLASSES,
-                                incident.status,
-                                "Open"
-                              )}
-                            >
-                              {incident.status || "Open"}
-                            </StatusPill>
-                            <StatusPill
-                              className={getClassName(
-                                KPI_CLASSES,
-                                getSeverityKPILevel(
-                                  incident.severity
-                                ),
-                                "Minor Concern"
-                              )}
-                            >
-                              {incident.severity || "Minor"}
-                            </StatusPill>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
+                  {historyLoading ? (
+                    <CompactMessage text="Loading incident history..." />
+                  ) : historyError ? (
+                    <CompactMessage text="Incident history is unavailable." />
+                  ) : recentIncidents.length === 0 ? (
+                    <CompactMessage
+                      text={
+                        isHRCoordinator &&
+                        incidentSummaryAvailable &&
+                        incidentSummary.total > 0
+                          ? "No authorized incident details are available for the assigned company."
+                          : "No incidents recorded."
+                      }
+                    />
+                  ) : (
+                    <IncidentHistoryList incidents={recentIncidents} />
+                  )}
+                </section>
+              </div>
               <section
                 ref={complianceSectionRef}
                 className="scroll-mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
@@ -3093,10 +3235,6 @@ export default function EmployeeModal({
                     id="employee-compliance-documents"
                     className="border-t border-slate-200 px-4 pb-4 pt-4 dark:border-slate-800"
                   >
-                    <p className="mb-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                      Document numbers, submitted files, and expiration details.
-                    </p>
-
                     {hasAttentionNeeded && (
                       <div
                         className={[
@@ -3433,19 +3571,18 @@ function SectionTitle({
     </div>
   );
 }
-function InfoBox({
+function InfoRow({
   label,
   value,
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
-      <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+    <div className="grid min-w-0 grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3 border-b border-slate-100 py-2.5 last:border-b-0 dark:border-slate-800">
+      <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">
         {label}
-      </p>
-
-      <p className="mt-1 break-words text-sm font-bold text-slate-900 dark:text-slate-100">
+      </dt>
+      <dd className="min-w-0 break-words text-sm font-semibold text-slate-900 dark:text-slate-100">
         {value}
-      </p>
+      </dd>
     </div>
   );
 }
@@ -3456,13 +3593,13 @@ function StatBox({
   valueClassName = "text-slate-900 dark:text-slate-100",
 }) {
   return (
-    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+    <div className="min-w-0 border-b border-r border-slate-200 px-3 py-3 dark:border-slate-800">
       <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
         {label}
       </p>
       <p
         className={[
-          "mt-1 break-words text-lg font-bold leading-tight tabular-nums sm:text-xl",
+          "mt-1 break-words text-base font-bold leading-tight tabular-nums sm:text-lg",
           valueClassName,
         ].join(" ")}
       >
@@ -3477,7 +3614,7 @@ function MetricBadgeBox({
   className,
 }) {
   return (
-    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+    <div className="min-w-0 border-b border-r border-slate-200 px-3 py-3 dark:border-slate-800">
       <p className="mb-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
         {label}
       </p>
@@ -3492,6 +3629,179 @@ function MetricBadgeBox({
         {value}
       </StatusPill>
     </div>
+  );
+}
+function DeploymentGroup({
+  title,
+  deployments,
+  collapsible = false,
+}) {
+  const content = (
+    <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+      {deployments.map((deployment, index) => (
+        <article
+          key={deployment.id || `${title}-${index}`}
+          className="px-3 py-3"
+        >
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                Client Company
+              </p>
+              <p className="break-words text-sm font-bold text-slate-900 dark:text-slate-100">
+                {deployment.company || "Assignment details unavailable"}
+              </p>
+            </div>
+            <StatusPill
+              className={getClassName(
+                STATUS_CLASSES,
+                deployment.status,
+                "Inactive"
+              )}
+            >
+              {deployment.displayStatus}
+            </StatusPill>
+          </div>
+          <dl className="mt-3 grid gap-x-4 text-xs sm:grid-cols-2">
+            <InfoRow
+              label="Client Site / Location"
+              value={deployment.location || "Not recorded"}
+            />
+            <InfoRow
+              label="Assigned Position"
+              value={deployment.position || "Not recorded"}
+            />
+            <InfoRow
+              label="Start Date"
+              value={deployment.startDate ? formatDate(deployment.startDate) : "Not recorded"}
+            />
+            <InfoRow
+              label="End Date"
+              value={deployment.endDate ? formatDate(deployment.endDate) : "—"}
+            />
+          </dl>
+        </article>
+      ))}
+    </div>
+  );
+
+  if (collapsible) {
+    return (
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800/50">
+          <span>
+            {title} ({deployments.length})
+          </span>
+          <FiChevronDown
+            aria-hidden="true"
+            className="shrink-0 transition-transform group-open:rotate-180"
+          />
+        </summary>
+        <div className="mt-2">{content}</div>
+      </details>
+    );
+  }
+
+  return (
+    <div>
+      <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {title}
+      </h4>
+      {content}
+    </div>
+  );
+}
+function IncidentHistoryList({ incidents }) {
+  const [latestIncident, ...additionalIncidents] = incidents;
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+        <IncidentHistoryItem incident={latestIncident} />
+      </div>
+
+      {additionalIncidents.length > 0 && (
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800/50">
+            <span>
+              View {additionalIncidents.length} more recent incident{additionalIncidents.length === 1 ? "" : "s"}
+            </span>
+            <FiChevronDown
+              aria-hidden="true"
+              className="shrink-0 transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <div className="mt-2 divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+            {additionalIncidents.map((incident, index) => (
+              <IncidentHistoryItem
+                key={`${incident.id}-${index}`}
+                incident={incident}
+              />
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+function IncidentHistoryItem({ incident }) {
+  return (
+    <article className="px-3 py-3">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="break-words text-sm font-semibold text-slate-900 dark:text-slate-100">
+            {incident.violation || "No violation type"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {incident.displayId} •{" "}
+            {formatDate(
+              incident.reportedAt ||
+                incident.date
+            )}
+          </p>
+          {incident.description && (
+            <p className="mt-2 line-clamp-2 text-sm leading-5 text-slate-600 dark:text-slate-300">
+              {incident.description}
+            </p>
+          )}
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">
+              Sanction:
+            </span>{" "}
+            {incident.sanction || "For HR Review"}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <StatusPill
+            className={getClassName(
+              STATUS_CLASSES,
+              incident.status,
+              "Open"
+            )}
+          >
+            {incident.status || "Open"}
+          </StatusPill>
+          <StatusPill
+            className={getClassName(
+              KPI_CLASSES,
+              getSeverityKPILevel(
+                incident.severity
+              ),
+              "Minor Concern"
+            )}
+          >
+            {incident.severity || "Minor"}
+          </StatusPill>
+        </div>
+      </div>
+    </article>
+  );
+}
+function CompactMessage({ text }) {
+  return (
+    <p className="border-t border-slate-200 pt-3 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+      {text}
+    </p>
   );
 }
 function EmptyBox({ text }) {

@@ -3915,6 +3915,21 @@ export default function Deployments() {
             size={22}
           />
         }
+        className={
+          isMovementView
+            ? "rounded-2xl p-4 sm:p-5"
+            : ""
+        }
+        contentClassName={
+          isMovementView
+            ? "lg:max-w-3xl"
+            : ""
+        }
+        actionsClassName={
+          isMovementView
+            ? "lg:pt-1"
+            : ""
+        }
         actions={
           <>
             <Button
@@ -3981,7 +3996,7 @@ export default function Deployments() {
         }
       />
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <section className="rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-1.5">
         <div
           role="tablist"
           aria-label="Deployment views"
@@ -4000,7 +4015,7 @@ export default function Deployments() {
               )
             }
             className={[
-              "flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40",
+              "flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 sm:py-2.5",
               activeView ===
               DEPLOYMENT_VIEW.RECORDS
                 ? "bg-indigo-600 text-white shadow-sm"
@@ -4028,7 +4043,7 @@ export default function Deployments() {
               )
             }
             className={[
-              "flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40",
+              "flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 sm:py-2.5",
               activeView ===
               DEPLOYMENT_VIEW.MOVEMENT
                 ? "bg-indigo-600 text-white shadow-sm"
@@ -5038,6 +5053,15 @@ function CoordinatorDeploymentActionModal({
   );
 }
 
+function getHistoryTableCountClass(
+  value,
+  nonzeroClassName = ""
+) {
+  return Number(value || 0) === 0
+    ? "text-slate-400 dark:text-slate-500"
+    : nonzeroClassName;
+}
+
 function DeploymentMovementActivity({
   report,
   isLoading = false,
@@ -5052,6 +5076,11 @@ function DeploymentMovementActivity({
   isHRCoordinator = false,
   assignedCompany = "",
 }) {
+  const [
+    showAllHistoryCompanies,
+    setShowAllHistoryCompanies,
+  ] = useState(false);
+
   const summary =
     report?.summary ||
     {};
@@ -5067,6 +5096,14 @@ function DeploymentMovementActivity({
     )
       ? report.companies
       : [];
+
+  const previewCompanies =
+    companies.slice(
+      0,
+      2
+    );
+  const hasAdditionalHistoryCompanies =
+    companies.length > 2;
 
   const events =
     Array.isArray(
@@ -5096,24 +5133,24 @@ function DeploymentMovementActivity({
     <section
       role="tabpanel"
       aria-label="Deployment history"
-      className="space-y-4"
+      className="min-w-0 space-y-5"
     >
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-5 sm:py-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
                 <FiActivity
                   aria-hidden="true"
                 />
               </div>
 
               <div>
-                <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 sm:text-base">
                   Deployment History
                 </h2>
 
-                <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500 dark:text-slate-400">
                   {isHRCoordinator
                     ? assignedCompany
                       ? `Deployment history for ${assignedCompany}.`
@@ -5124,7 +5161,7 @@ function DeploymentMovementActivity({
             </div>
           </div>
 
-          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto lg:min-w-[430px]">
+          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto lg:min-w-[420px]">
             <div>
               <label
                 htmlFor="movement-month-filter"
@@ -5218,12 +5255,12 @@ function DeploymentMovementActivity({
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          <span className="font-semibold text-slate-700 dark:text-slate-300">
             {periodLabel}
           </span>
 
-          <span>
+          <span className="before:mr-3 before:text-slate-300 before:content-['•'] dark:before:text-slate-700">
             {Number(
               summary.totalEvents ||
               events.length ||
@@ -5240,7 +5277,7 @@ function DeploymentMovementActivity({
           </span>
 
           {isRefreshing && (
-            <span>
+            <span className="font-medium text-indigo-600 dark:text-indigo-300">
               Updating history...
             </span>
           )}
@@ -5255,18 +5292,20 @@ function DeploymentMovementActivity({
         />
       ) : (
         <>
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-3">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                History Summary
-              </h3>
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  History Summary
+                </h3>
 
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Overall deployment history counts for {periodLabel}.
-              </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  Overall deployment history counts for {periodLabel}.
+                </p>
+              </div>
             </div>
 
-            <div className="flex flex-wrap gap-2.5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-9">
               <MovementSummaryCard
                 label="Total Activity"
                 value={
@@ -5300,119 +5339,210 @@ function DeploymentMovementActivity({
             </div>
           </section>
 
-          {!isHRCoordinator &&
-            companies.length >
-              0 && (
+          {!isHRCoordinator && (
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  Client Client Company Summary
-                </h3>
+              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3.5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Client Company Summary
+                  </h3>
 
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Deployment history totals by client company.
-                </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Deployment history activity by client company for {periodLabel}.
+                  </p>
+                </div>
+
+                {hasAdditionalHistoryCompanies && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    aria-controls="deployment-history-company-details"
+                    aria-expanded={
+                      showAllHistoryCompanies
+                    }
+                    className="shrink-0 self-start sm:self-auto"
+                    onClick={() =>
+                      setShowAllHistoryCompanies(
+                        (
+                          currentValue
+                        ) =>
+                          !currentValue
+                      )
+                    }
+                  >
+                    {showAllHistoryCompanies
+                      ? "Show Less"
+                      : `View All Companies (${companies.length})`}
+                  </Button>
+                )}
               </div>
 
-              <div className="max-h-[360px] overflow-auto">
-                <table className="w-full min-w-[1120px] text-left text-xs">
-                  <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {companies.length === 0 ? (
+                <div className="px-5 py-8 text-center">
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    No company activity for this period
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Client company deployment history will appear here when activity is available.
+                  </p>
+                </div>
+              ) : showAllHistoryCompanies ? (
+                <div
+                  id="deployment-history-company-details"
+                  className="w-full max-h-[min(400px,60vh)] overflow-auto overscroll-contain"
+                  tabIndex={0}
+                  aria-label="Scrollable client company deployment history table"
+                >
+                <table className="w-full min-w-[1120px] table-fixed border-separate border-spacing-0 text-left text-xs">
+                  <colgroup>
+                    <col className="w-[260px]" />
+                    <col className="w-[90px]" />
+                    <col className="w-[105px]" />
+                    <col className="w-[105px]" />
+                    <col className="w-[95px]" />
+                    <col className="w-[100px]" />
+                    <col className="w-[95px]" />
+                    <col className="w-[105px]" />
+                    <col className="w-[80px]" />
+                    <col className="w-[135px]" />
+                  </colgroup>
+
+                  <thead className="sticky top-0 z-20 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:bg-slate-800 dark:text-slate-300 dark:shadow-[0_1px_0_0_rgba(51,65,85,1)]">
                     <tr>
-                      <th className="px-4 py-2.5 font-semibold">
+                      <th className="px-5 py-3 font-bold">
                         Client Company
                       </th>
-                      <th className="px-3 py-2.5 text-right font-semibold">
+                      <th className="px-3 py-3 text-right font-bold">
                         Total
                       </th>
-                      <th className="px-3 py-2.5 text-right font-semibold">
+                      <th className="px-3 py-3 text-right font-bold">
                         Scheduled
                       </th>
-                      <th className="px-3 py-2.5 text-right font-semibold">
+                      <th className="px-3 py-3 text-right font-bold text-emerald-700 dark:text-emerald-300">
                         Deployed
                       </th>
-                      <th className="px-3 py-2.5 text-right font-semibold">
+                      <th className="px-3 py-3 text-right font-bold">
                         No Show
                       </th>
-                      <th className="px-3 py-2.5 text-right font-semibold">
+                      <th className="px-3 py-3 text-right font-bold">
                         Withdrawn
                       </th>
-                      <th className="px-3 py-2.5 text-right font-semibold">
+                      <th className="px-3 py-3 text-right font-bold">
                         Resigned
                       </th>
-                      <th className="px-3 py-2.5 text-right font-semibold">
+                      <th className="px-3 py-3 text-right font-bold">
                         Terminated
                       </th>
-                      <th className="px-3 py-2.5 text-right font-semibold">
+                      <th className="px-3 py-3 text-right font-bold">
                         AWOL
                       </th>
-                      <th className="px-4 py-2.5 text-right font-semibold">
+                      <th className="px-5 py-3 text-right font-bold">
                         Other Separation
                       </th>
                     </tr>
                   </thead>
 
-                  <tbody className="divide-y divide-slate-100 text-slate-700 dark:divide-slate-800 dark:text-slate-200">
+                  <tbody className="divide-y divide-slate-100 text-slate-600 dark:divide-slate-800/80 dark:text-slate-300">
                     {companies.map(
                       (company) => (
                         <tr
                           key={
                             company.company
                           }
-                          className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                          className="transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/35"
                         >
-                          <td className="px-4 py-2.5 font-semibold text-slate-900 dark:text-slate-100">
+                          <td className="break-words px-5 py-3 font-semibold leading-5 text-slate-900 dark:text-slate-100">
                             {company.company ||
                               "Unassigned"}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
+                          <td
+                            className={`px-3 py-3 text-right font-semibold tabular-nums ${getHistoryTableCountClass(
+                              company.totalEvents,
+                              "text-slate-800 dark:text-slate-200"
+                            )}`}
+                          >
                             {Number(
                               company.totalEvents ||
                               0
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
+                          <td
+                            className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.scheduled
+                            )}`}
+                          >
                             {Number(
                               company.scheduled ||
                               0
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
+                          <td
+                            className={`px-3 py-3 text-right font-semibold tabular-nums ${getHistoryTableCountClass(
+                              company.successfullyDeployed,
+                              "text-emerald-700 dark:text-emerald-300"
+                            )}`}
+                          >
                             {Number(
                               company.successfullyDeployed ||
                               0
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
+                          <td
+                            className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.noShow
+                            )}`}
+                          >
                             {Number(
                               company.noShow ||
                               0
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
+                          <td
+                            className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.withdrawn
+                            )}`}
+                          >
                             {Number(
                               company.withdrawn ||
                               0
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
+                          <td
+                            className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.resigned
+                            )}`}
+                          >
                             {Number(
                               company.resigned ||
                               0
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
+                          <td
+                            className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.terminated
+                            )}`}
+                          >
                             {Number(
                               company.terminated ||
                               0
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
+                          <td
+                            className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.awol
+                            )}`}
+                          >
                             {Number(
                               company.awol ||
                               0
                             )}
                           </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">
+                          <td
+                            className={`px-5 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.otherSeparation
+                            )}`}
+                          >
                             {Number(
                               company.otherSeparation ||
                               0
@@ -5422,59 +5552,96 @@ function DeploymentMovementActivity({
                       )
                     )}
 
-                    <tr className="bg-slate-100 font-bold text-slate-900 dark:bg-slate-800 dark:text-slate-100">
-                      <td className="px-4 py-2.5">
+                    <tr className="border-t-2 border-slate-200 bg-slate-100/80 font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100">
+                      <td className="px-5 py-3">
                         OVERALL TOTAL
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.totalEvents
+                        )}`}
+                      >
                         {Number(
                           overallTotal.totalEvents ||
                           0
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.scheduled
+                        )}`}
+                      >
                         {Number(
                           overallTotal.scheduled ||
                           0
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.successfullyDeployed,
+                          "text-emerald-700 dark:text-emerald-300"
+                        )}`}
+                      >
                         {Number(
                           overallTotal.successfullyDeployed ||
                           0
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.noShow
+                        )}`}
+                      >
                         {Number(
                           overallTotal.noShow ||
                           0
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.withdrawn
+                        )}`}
+                      >
                         {Number(
                           overallTotal.withdrawn ||
                           0
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.resigned
+                        )}`}
+                      >
                         {Number(
                           overallTotal.resigned ||
                           0
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.terminated
+                        )}`}
+                      >
                         {Number(
                           overallTotal.terminated ||
                           0
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.awol
+                        )}`}
+                      >
                         {Number(
                           overallTotal.awol ||
                           0
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
+                      <td
+                        className={`px-5 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.otherSeparation
+                        )}`}
+                      >
                         {Number(
                           overallTotal.otherSeparation ||
                           0
@@ -5483,73 +5650,118 @@ function DeploymentMovementActivity({
                     </tr>
                   </tbody>
                 </table>
-              </div>
+                </div>
+              ) : (
+                <div
+                  id="deployment-history-company-details"
+                  className="grid grid-cols-1 gap-3 p-4 sm:p-5 md:grid-cols-2"
+                >
+                  {previewCompanies.map(
+                    (company) => (
+                      <HistoryCompanyPreviewCard
+                        key={
+                          company.company
+                        }
+                        company={
+                          company
+                        }
+                      />
+                    )
+                  )}
+                </div>
+              )}
             </section>
           )}
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Deployment Activity Records
-              </h3>
+            <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3.5 dark:border-slate-800 sm:flex-row sm:items-end sm:justify-between sm:px-5 sm:py-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Deployment Activity Records
+                </h3>
 
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Detailed deployment activity recorded during {periodLabel}.
+                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  Detailed deployment activity recorded during {periodLabel}.
+                </p>
+              </div>
+
+              <p className="shrink-0 text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300">
+                {events.length}{" "}
+                {events.length === 1
+                  ? "record"
+                  : "records"}
               </p>
             </div>
 
             {events.length >
             0 ? (
-              <div className="max-h-[560px] overflow-auto">
+              <div
+                className="w-full max-h-[min(480px,65vh)] overflow-auto overscroll-contain"
+                tabIndex={0}
+                aria-label="Scrollable deployment activity records table"
+              >
                 <table className={`w-full ${
                   isHRCoordinator
-                    ? "min-w-[980px]"
-                    : "min-w-[1160px]"
-                } text-left text-xs`}>
-                  <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    ? "min-w-[1080px]"
+                    : "min-w-[1280px]"
+                } table-fixed border-separate border-spacing-0 text-left text-xs`}>
+                  <colgroup>
+                    <col className="w-[130px]" />
+                    <col className="w-[190px]" />
+                    <col className="w-[150px]" />
+                    {!isHRCoordinator && (
+                      <col className="w-[190px]" />
+                    )}
+                    <col className="w-[175px]" />
+                    <col className="w-[185px]" />
+                    <col className="w-[170px]" />
+                    <col className="w-[250px]" />
+                  </colgroup>
+
+                  <thead className="sticky top-0 z-20 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:bg-slate-800 dark:text-slate-300 dark:shadow-[0_1px_0_0_rgba(51,65,85,1)]">
                     <tr>
-                      <th className="px-4 py-2.5 font-semibold">
+                      <th className="px-4 py-3 font-bold">
                         Date / Time
                       </th>
-                      <th className="px-4 py-2.5 font-semibold">
+                      <th className="px-4 py-3 font-bold">
                         Employee
                       </th>
-                      <th className="px-4 py-2.5 font-semibold">
+                      <th className="px-4 py-3 font-bold">
                         Position
                       </th>
 
                       {!isHRCoordinator && (
-                        <th className="px-4 py-2.5 font-semibold">
+                        <th className="px-4 py-3 font-bold">
                           Client Company
                         </th>
                       )}
 
-                      <th className="px-4 py-2.5 font-semibold">
+                      <th className="px-4 py-3 font-bold">
                         Activity
                       </th>
-                      <th className="px-4 py-2.5 font-semibold">
+                      <th className="px-4 py-3 font-bold">
                         Status Change
                       </th>
-                      <th className="px-4 py-2.5 font-semibold">
+                      <th className="px-4 py-3 font-bold">
                         Performed By
                       </th>
-                      <th className="px-4 py-2.5 font-semibold">
+                      <th className="px-4 py-3 font-bold">
                         Reason
                       </th>
                     </tr>
                   </thead>
 
-                  <tbody className="divide-y divide-slate-100 text-slate-700 dark:divide-slate-800 dark:text-slate-200">
+                  <tbody className="divide-y divide-slate-100 text-slate-600 dark:divide-slate-800/80 dark:text-slate-300">
                     {events.map(
                       (event) => (
                         <tr
                           key={
                             event.id
                           }
-                          className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                          className="align-top transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/35"
                         >
-                          <td className="whitespace-nowrap px-4 py-2.5">
-                            <p>
+                          <td className="whitespace-nowrap px-4 py-3.5">
+                            <p className="font-semibold text-slate-800 dark:text-slate-200">
                               {formatReportDate(
                                 event.eventDate
                               )}
@@ -5559,7 +5771,7 @@ function DeploymentMovementActivity({
                               event?.scheduledTime ??
                               event?.scheduled_time
                             ) && (
-                              <p className="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                              <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
                                 <FiClock
                                   size={11}
                                   aria-hidden="true"
@@ -5572,33 +5784,37 @@ function DeploymentMovementActivity({
                             )}
                           </td>
 
-                          <td className="px-4 py-2.5">
-                            <p className="font-semibold text-slate-900 dark:text-slate-100">
+                          <td className="px-4 py-3.5">
+                            <p className="break-words font-semibold leading-5 text-slate-900 dark:text-slate-100">
                               {event.employeeName ||
                                 "Unknown Employee"}
                             </p>
 
-                            <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                               Employee ID: {event.employeeId ||
                                 "-"}
                             </p>
                           </td>
 
-                          <td className="px-4 py-2.5">
-                            {event.position ||
-                              "-"}
+                          <td className="px-4 py-3.5 leading-5">
+                            <span className="break-words">
+                              {event.position ||
+                                "-"}
+                            </span>
                           </td>
 
                           {!isHRCoordinator && (
-                            <td className="px-4 py-2.5">
-                              {event.company ||
-                                "Unassigned"}
+                            <td className="px-4 py-3.5 font-medium leading-5 text-slate-800 dark:text-slate-200">
+                              <span className="break-words">
+                                {event.company ||
+                                  "Unassigned"}
+                              </span>
                             </td>
                           )}
 
-                          <td className="px-4 py-2.5">
+                          <td className="px-4 py-3.5">
                             <span
-                              className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${getMovementBadgeClass(
+                              className={`inline-flex max-w-full whitespace-normal rounded-lg border px-2.5 py-1 text-[11px] font-semibold leading-4 ${getMovementBadgeClass(
                                 event.movement
                               )}`}
                             >
@@ -5607,9 +5823,9 @@ function DeploymentMovementActivity({
                             </span>
                           </td>
 
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-1.5 whitespace-nowrap">
-                              <span>
+                          <td className="px-4 py-3.5">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 leading-5">
+                              <span className="text-slate-500 dark:text-slate-400">
                                 {event.fromStatus ||
                                   "-"}
                               </span>
@@ -5628,14 +5844,14 @@ function DeploymentMovementActivity({
                             </div>
                           </td>
 
-                          <td className="px-4 py-2.5">
-                            <p className="font-medium text-slate-800 dark:text-slate-200">
+                          <td className="px-4 py-3.5">
+                            <p className="break-words font-medium leading-5 text-slate-800 dark:text-slate-200">
                               {event.performedBy ||
                                 "-"}
                             </p>
 
                             {event.performedByRole && (
-                              <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                              <p className="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
                                 {formatRoleLabel(
                                   event.performedByRole
                                 )}
@@ -5643,14 +5859,8 @@ function DeploymentMovementActivity({
                             )}
                           </td>
 
-                          <td className="max-w-[260px] px-4 py-2.5">
-                            <p
-                              className="line-clamp-2"
-                              title={
-                                event.reason ||
-                                ""
-                              }
-                            >
+                          <td className="px-4 py-3.5">
+                            <p className="whitespace-normal break-words leading-5 text-slate-600 dark:text-slate-300">
                               {event.reason ||
                                 "-"}
                             </p>
@@ -5677,6 +5887,162 @@ function DeploymentMovementActivity({
   );
 }
 
+function HistoryCompanyPreviewCard({
+  company,
+}) {
+  const totalActivities =
+    Number(
+      company?.totalEvents ||
+      0
+    );
+  const statusCounts = [
+    {
+      label: "Scheduled",
+      value: Number(
+        company?.scheduled ||
+        0
+      ),
+      emphasis: "neutral",
+    },
+    {
+      label: "Deployed",
+      value: Number(
+        company?.successfullyDeployed ||
+        0
+      ),
+      emphasis: "positive",
+    },
+    {
+      label: "No Show",
+      value: Number(
+        company?.noShow ||
+        0
+      ),
+      emphasis: "attention",
+    },
+    {
+      label: "Withdrawn",
+      value: Number(
+        company?.withdrawn ||
+        0
+      ),
+      emphasis: "neutral",
+    },
+    {
+      label: "Resigned",
+      value: Number(
+        company?.resigned ||
+        0
+      ),
+      emphasis: "neutral",
+    },
+    {
+      label: "Terminated",
+      value: Number(
+        company?.terminated ||
+        0
+      ),
+      emphasis: "critical",
+    },
+    {
+      label: "AWOL",
+      value: Number(
+        company?.awol ||
+        0
+      ),
+      emphasis: "attention",
+    },
+    {
+      label: "Other Separation",
+      value: Number(
+        company?.otherSeparation ||
+        0
+      ),
+      emphasis: "neutral",
+    },
+  ].filter(
+    (status) =>
+      status.value > 0
+  );
+  const valueClasses = {
+    positive:
+      "text-emerald-700 dark:text-emerald-300",
+    attention:
+      "text-amber-700 dark:text-amber-300",
+    critical:
+      "text-rose-700 dark:text-rose-300",
+    neutral:
+      "text-slate-800 dark:text-slate-200",
+  };
+
+  return (
+    <article className="flex h-full min-w-0 flex-col rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/35 sm:p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Client company
+          </p>
+
+          <h4 className="mt-1 break-words text-base font-bold leading-6 text-slate-900 dark:text-slate-100">
+            {company?.company ||
+              "Unassigned"}
+          </h4>
+        </div>
+
+        <div className="shrink-0 sm:text-right">
+          <p className="text-2xl font-extrabold tabular-nums text-slate-900 dark:text-white">
+            {totalActivities}
+          </p>
+
+          <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+            {totalActivities === 1
+              ? "history activity"
+              : "history activities"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-800">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Activity breakdown
+        </p>
+
+        {statusCounts.length > 0 ? (
+          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+            {statusCounts.map(
+              (status) => (
+                <div
+                  key={status.label}
+                  className="flex items-center justify-between gap-3 border-b border-slate-200/70 py-1.5 last:border-b-0 dark:border-slate-800"
+                >
+                  <dt className="text-xs leading-5 text-slate-600 dark:text-slate-300">
+                    {status.label}
+                  </dt>
+
+                  <dd
+                    className={`text-sm font-bold tabular-nums ${
+                      valueClasses[
+                        status.emphasis
+                      ] ||
+                      valueClasses.neutral
+                    }`}
+                  >
+                    {status.value}
+                  </dd>
+                </div>
+              )
+            )}
+          </dl>
+        ) : (
+          <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            No categorized status activity is available.
+          </p>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function MovementSummaryCard({
   label,
   value,
@@ -5684,38 +6050,38 @@ function MovementSummaryCard({
 }) {
   const toneStyles = {
     slate:
-      "border-slate-200 bg-slate-50 text-slate-800 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-200",
+      "bg-slate-400 dark:bg-slate-500",
     indigo:
-      "border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300",
+      "bg-indigo-500 dark:bg-indigo-400",
     emerald:
-      "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300",
+      "bg-emerald-500 dark:bg-emerald-400",
     amber:
-      "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
+      "bg-amber-500 dark:bg-amber-400",
     sky:
-      "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300",
+      "bg-sky-500 dark:bg-sky-400",
     rose:
-      "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300",
+      "bg-rose-500 dark:bg-rose-400",
     orange:
-      "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-500/25 dark:bg-orange-500/10 dark:text-orange-300",
+      "bg-orange-500 dark:bg-orange-400",
     violet:
-      "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-300",
+      "bg-violet-500 dark:bg-violet-400",
   };
 
   return (
-    <div
-      className={[
-        "flex min-w-[145px] max-w-[180px] flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2",
-        toneStyles[tone] ||
-          toneStyles.slate,
-      ].join(
-        " "
-      )}
-    >
-      <p className="text-[10px] font-bold uppercase tracking-wide opacity-75">
+    <div className="relative min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3 dark:border-slate-800 dark:bg-slate-950/35">
+      <span
+        aria-hidden="true"
+        className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${
+          toneStyles[tone] ||
+          toneStyles.slate
+        }`}
+      />
+
+      <p className="min-h-8 pl-1.5 text-[11px] font-semibold leading-4 text-slate-500 dark:text-slate-400">
         {label}
       </p>
 
-      <p className="text-base font-extrabold tabular-nums">
+      <p className="mt-1 pl-1.5 text-xl font-extrabold tabular-nums text-slate-900 dark:text-slate-100">
         {value}
       </p>
     </div>
@@ -5759,15 +6125,21 @@ function ClientDeploymentSummary({
       ]
     );
 
+  const companyCount =
+    summaryData.companies.length;
+  const hasAdditionalCompanies =
+    companyCount > 2;
   const visibleCompanies =
-    showAllCompanies
+    showAllCompanies &&
+    hasAdditionalCompanies
       ? summaryData.companies
       : summaryData.companies.slice(
           0,
-          6
+          2
         );
 
   if (
+    companyCount === 0 ||
     summaryData.totalDeployments ===
     0
   ) {
@@ -5788,34 +6160,39 @@ function ClientDeploymentSummary({
             <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
               {isHRCoordinator
                 ? "Deployment activity and separation history for your assigned client company."
-                : `Historical and active deployment records across ${summaryData.totalCompanies} client companies. Showing ${visibleCompanies.length}.`}
+                : `Historical and active deployment records across ${companyCount} ${companyCount === 1 ? "client company" : "client companies"}. Showing ${visibleCompanies.length}.`}
             </p>
           </div>
 
-          {!isHRCoordinator &&
-            summaryData.companies
-              .length >
-              6 && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  setShowAllCompanies(
-                    (
-                      currentValue
-                    ) =>
-                      !currentValue
-                  )
-                }
-              >
-                {showAllCompanies
-                  ? "Show Top 6"
-                  : `View All ${summaryData.companies.length}`}
-              </Button>
-            )}
+          {hasAdditionalCompanies && (
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-controls="client-company-summary-list"
+              aria-expanded={
+                showAllCompanies
+              }
+              className="shrink-0 self-start sm:self-auto"
+              onClick={() =>
+                setShowAllCompanies(
+                  (
+                    currentValue
+                  ) =>
+                    !currentValue
+                )
+              }
+            >
+              {showAllCompanies
+                ? "Show Less"
+                : `View All ${companyCount} Companies`}
+            </Button>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <div
+          id="client-company-summary-list"
+          className="grid grid-cols-1 gap-3 md:grid-cols-2"
+        >
           {visibleCompanies.map(
             (
               item,
@@ -5830,9 +6207,6 @@ function ClientDeploymentSummary({
                 }
                 rank={
                   index + 1
-                }
-                totalDeployments={
-                  summaryData.totalDeployments
                 }
                 showRank={
                   !isHRCoordinator
@@ -5849,7 +6223,6 @@ function ClientDeploymentSummary({
 function ClientCompanyRow({
   item,
   rank,
-  totalDeployments,
   showRank = true,
 }) {
   const total = Number(item?.total || 0);
@@ -5879,70 +6252,125 @@ function ClientCompanyRow({
       item?.ended ||
       0
     );
-  const percentage =
-    totalDeployments > 0
-      ? Math.round((total / totalDeployments) * 100)
-      : 0;
+  const separationStatuses = [
+    {
+      label: "Resigned",
+      value: resigned,
+    },
+    {
+      label: "Terminated",
+      value: terminated,
+    },
+    {
+      label: "AWOL",
+      value: awol,
+    },
+    {
+      label: "Other Separation",
+      value: ended,
+    },
+  ];
+  const separationTotal =
+    separationStatuses.reduce(
+      (sum, status) =>
+        sum + status.value,
+      0
+    );
+
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
-      <div className="flex items-start gap-3">
+    <article className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/35">
+      <div className="flex min-w-0 items-start gap-3">
         {showRank && (
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[11px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
             #{rank}
           </div>
         )}
+
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h4 className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
-                {item.company}
+              <h4 className="break-words text-sm font-bold leading-5 text-slate-900 dark:text-slate-100">
+                {item.company ||
+                  "Unassigned"}
               </h4>
-              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                {percentage}% of all deployment records
+
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Total deployment records
               </p>
             </div>
-            <div className="shrink-0 text-right">
-              <p className="text-sm font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                {total} records
+
+            <div className="shrink-0 sm:text-right">
+              <p className="text-xl font-extrabold tabular-nums text-slate-900 dark:text-slate-100">
+                {total}
+              </p>
+
+              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                {total === 1
+                  ? "record"
+                  : "records"}
               </p>
             </div>
           </div>
-          <div
-            className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
-            role="progressbar"
-            aria-label={`${item.company} deployment percentage`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percentage}
-          >
-            <div
-              className="h-full rounded-full bg-indigo-500 transition-all"
-              style={{
-                width: `${Math.min(percentage, 100)}%`,
-              }}
-            />
+
+          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Deployed
+              </p>
+
+              <p className="mt-1 text-base font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                {deployed}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Separations
+              </p>
+
+              <p className="mt-1 text-base font-bold tabular-nums text-slate-700 dark:text-slate-200">
+                {separationTotal}
+              </p>
+            </div>
           </div>
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-            <span className="font-semibold text-emerald-600 dark:text-emerald-300">
-              {deployed} deployed
-            </span>
 
-            <span className="font-semibold text-sky-600 dark:text-sky-300">
-              {resigned} resigned
-            </span>
+          <details className="group mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-md text-xs font-semibold text-slate-600 outline-none transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-indigo-500/50 dark:text-slate-300 dark:hover:text-slate-100 [&::-webkit-details-marker]:hidden">
+              <span>
+                Separation details
+              </span>
 
-            <span className="font-semibold text-rose-600 dark:text-rose-300">
-              {terminated} terminated
-            </span>
+              <span
+                aria-hidden="true"
+                className="text-slate-400 transition-transform group-open:rotate-180"
+              >
+                ↓
+              </span>
+            </summary>
 
-            <span className="font-semibold text-amber-600 dark:text-amber-300">
-              {awol} AWOL
-            </span>
+            <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {separationStatuses.map(
+                (status) => (
+                  <div
+                    key={status.label}
+                    className={`flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-900/70 ${
+                      status.value === 0
+                        ? "text-slate-400 dark:text-slate-500"
+                        : "text-slate-600 dark:text-slate-300"
+                    }`}
+                  >
+                    <dt>
+                      {status.label}
+                    </dt>
 
-            <span className="font-semibold text-slate-600 dark:text-slate-300">
-              {ended} other separation
-            </span>
-          </div>
+                    <dd className="font-bold tabular-nums text-slate-700 dark:text-slate-200">
+                      {status.value}
+                    </dd>
+                  </div>
+                )
+              )}
+            </dl>
+          </details>
         </div>
       </div>
     </article>
