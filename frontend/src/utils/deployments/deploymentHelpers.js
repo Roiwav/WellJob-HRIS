@@ -592,9 +592,21 @@ export function normalizeSeparationReason(
 }
 
 export function buildDeploymentStatusPayload({
+  separationDate,
   separationReason,
   separationRemarks,
 }) {
+  const endDate =
+    formatDateForInput(
+      separationDate
+    );
+
+  if (!endDate) {
+    throw new Error(
+      "Select a valid assignment end date before saving."
+    );
+  }
+
   const reason =
     String(
       separationReason ||
@@ -618,6 +630,8 @@ export function buildDeploymentStatusPayload({
     return {
       status:
         "Completed",
+
+      endDate,
 
       endReason:
         reason,
@@ -669,6 +683,8 @@ export function buildDeploymentStatusPayload({
       status:
         "Cancelled",
 
+      endDate,
+
       endReason:
         "Terminated",
 
@@ -686,6 +702,8 @@ export function buildDeploymentStatusPayload({
     return {
       status:
         "Cancelled",
+
+      endDate,
 
       endReason:
         cancelledReason,

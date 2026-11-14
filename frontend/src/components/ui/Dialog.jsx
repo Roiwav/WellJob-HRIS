@@ -336,7 +336,7 @@ export default function Dialog({
         {showHeader && (
           <header
             className={[
-              "flex shrink-0 items-start justify-between gap-4 px-6 py-5 text-white",
+              "flex shrink-0 items-start justify-between gap-3 px-4 py-4 text-white sm:gap-4 sm:px-6 sm:py-5",
               stickyHeader
                 ? "sticky top-0 z-20"
                 : "",
@@ -398,7 +398,7 @@ export default function Dialog({
             scrollBody
               ? "overflow-y-auto"
               : "overflow-visible",
-            bodyClassName || "p-6",
+            bodyClassName || "p-4 sm:p-6",
           ]
             .filter(Boolean)
             .join(" ")}
@@ -409,8 +409,8 @@ export default function Dialog({
         {footer && (
           <footer
             className={[
-              "flex shrink-0 flex-wrap justify-end gap-3",
-              "border-t border-gray-200 bg-white px-6 py-4",
+              "flex shrink-0 flex-wrap justify-end gap-2 sm:gap-3",
+              "border-t border-gray-200 bg-white px-4 py-3 sm:px-6 sm:py-4",
               "dark:border-white/10 dark:bg-slate-900",
               stickyFooter
                 ? "sticky bottom-0 z-20"

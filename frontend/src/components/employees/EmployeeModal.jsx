@@ -3679,6 +3679,12 @@ function DeploymentGroup({
               label="End Date"
               value={deployment.endDate ? formatDate(deployment.endDate) : "—"}
             />
+            {deployment.endReason && (
+              <InfoRow
+                label="End Reason"
+                value={deployment.endReason}
+              />
+            )}
           </dl>
         </article>
       ))}

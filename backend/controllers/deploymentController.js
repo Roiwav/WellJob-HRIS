@@ -102,8 +102,49 @@ const MAX_DEPLOYMENT_PAGE_SIZE = 100;
  * Converting that reference to +08:00 is safe here
  * because the Philippines uses UTC+08:00 year-round.
  */
-const MANILA_CURRENT_DATE_SQL =
-  "DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))";
+function normalizeDateOnly(value) {
+  const raw =
+    String(value ?? "").trim();
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return raw;
+}
+
+function getManilaToday() {
+  const parts = new Intl.DateTimeFormat(
+    "en-US",
+    {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }
+  ).formatToParts(new Date());
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  );
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
 
 function normalizeDate(value) {
   if (!value) {
@@ -788,6 +829,8 @@ function mapEmployeeDeploymentHistoryAssignment(
       mapped.contractEnd === "-"
         ? ""
         : mapped.contractEnd,
+    endReason:
+      mapped.endReason,
     status:
       mapped.status,
     displayStatus:
@@ -2944,10 +2987,28 @@ exports.updateDeploymentStatus =
 
     const {
       status,
+      endDate,
       endReason,
       endRemarks,
     } =
       req.body || {};
+
+    const finalEndDate =
+      normalizeDateOnly(endDate);
+
+    if (!finalEndDate) {
+      return res.status(400).json({
+        error:
+          "A valid assignment end date in YYYY-MM-DD format is required.",
+      });
+    }
+
+    if (finalEndDate > getManilaToday()) {
+      return res.status(400).json({
+        error:
+          "Assignment end date cannot be in the future.",
+      });
+    }
 
     const normalizedDeploymentId =
       String(
@@ -3287,6 +3348,24 @@ exports.updateDeploymentStatus =
       const activeAssignment =
         assignmentRows[0];
 
+      const assignmentStartDate =
+        normalizeDateOnly(
+          activeAssignment.start_date
+        );
+
+      if (
+        assignmentStartDate &&
+        finalEndDate < assignmentStartDate
+      ) {
+        await connection.rollback();
+        transactionStarted = false;
+
+        return res.status(400).json({
+          error:
+            "Assignment end date cannot be earlier than the deployment start date.",
+        });
+      }
+
       if (
         activeAssignment.status !==
         "Active"
@@ -3374,7 +3453,7 @@ exports.updateDeploymentStatus =
 
           SET
             end_date =
-              ${MANILA_CURRENT_DATE_SQL},
+              ?,
 
             end_reason = ?,
 
@@ -3392,6 +3471,7 @@ exports.updateDeploymentStatus =
             status = 'Active'
           `,
           [
+            finalEndDate,
             finalReason,
             finalRemarks,
             status,
@@ -3429,7 +3509,7 @@ exports.updateDeploymentStatus =
             workforce_status = ?,
 
             contractEnd =
-              ${MANILA_CURRENT_DATE_SQL},
+              ?,
 
             contractEndReason = ?,
 
@@ -3445,6 +3525,7 @@ exports.updateDeploymentStatus =
             employeeStatus,
             employmentStatus,
             workforceStatus,
+            finalEndDate,
             finalReason,
             finalRemarks,
             employeeId,
@@ -3484,7 +3565,7 @@ exports.updateDeploymentStatus =
           ?,
           ?,
           ?,
-          UTC_TIMESTAMP(),
+          ?,
           ?,
           ?,
           'DEPLOYMENT_STATUS_UPDATED',
@@ -3495,6 +3576,7 @@ exports.updateDeploymentStatus =
           employeeId,
           employee.status,
           employeeStatus,
+          `${finalEndDate} 00:00:00`,
           finalReason,
           finalRemarks,
           actorUserId,
@@ -3509,9 +3591,9 @@ exports.updateDeploymentStatus =
           `INSERT INTO employee_employment_history
             (employee_id, from_status, to_status, effective_at, reason,
              remarks, source_event, changed_by_user_id)
-           VALUES (?, ?, ?, UTC_TIMESTAMP(), ?, ?, 'EMPLOYMENT_SEPARATED', ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, 'EMPLOYMENT_SEPARATED', ?)`,
           [employeeId, previousEmploymentStatus, employmentStatus,
-            finalReason, finalRemarks, actorUserId]
+            `${finalEndDate} 00:00:00`, finalReason, finalRemarks, actorUserId]
         );
       }
 
@@ -3557,7 +3639,7 @@ exports.updateDeploymentStatus =
             `${activeAssignment.company || "Unknown Company"}) from ` +
             `${activeAssignment.status} to ${deploymentDisplayStatus}. Employee status changed ` +
             `from ${employee.status} to ${employeeStatus}. Reason: ` +
-            `${finalReason}.${remarksAuditText}`,
+            `${finalReason}. Effective assignment end date: ${finalEndDate}.${remarksAuditText}`,
         },
         {
           connection,
@@ -3607,6 +3689,9 @@ exports.updateDeploymentStatus =
         employeeStatus,
         employmentStatus,
         workforceStatus,
+
+        endDate:
+          finalEndDate,
 
         endReason:
           finalReason,

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test --experimental-loader ./test/employee-form-helper-loader.mjs test/deploymentHelpers.test.js test/employeeDeploymentHistory.test.js test/severityDecayHelpers.test.js test/kpiPresentationHelpers.test.js test/investigationEligibility.test.js test/kpiDecisionParity.test.js test/employeeValidation.test.js test/kpiDecisionRequest.test.js test/complianceTimezone.test.js test/revisionGuide.test.js",
+    "test": "node --test --experimental-loader ./test/employee-form-helper-loader.mjs test/deploymentHelpers.test.js test/deploymentEndAssignmentPolicy.test.js test/employeeDeploymentHistory.test.js test/severityDecayHelpers.test.js test/kpiPresentationHelpers.test.js test/investigationEligibility.test.js test/kpiDecisionParity.test.js test/employeeValidation.test.js test/kpiDecisionRequest.test.js test/complianceTimezone.test.js test/revisionGuide.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

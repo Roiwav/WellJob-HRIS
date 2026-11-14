@@ -44,6 +44,27 @@ test("supports previous-only and separated deployment histories", () => {
   assert.equal(result.previous[0].displayStatus, "Resigned");
 });
 
+test("preserves a recorded assignment end reason without inventing one", () => {
+  const result = groupEmployeeDeployments([
+    {
+      id: 1,
+      company: "Client A",
+      status: "Completed",
+      endDate: "2026-05-20",
+      endReason: "Transferred / Reassigned",
+    },
+    {
+      id: 2,
+      company: "Client B",
+      status: "Completed",
+      endDate: "2026-06-20",
+    },
+  ]);
+
+  assert.equal(result.previous[1].endReason, "Transferred / Reassigned");
+  assert.equal(result.previous[0].endReason, "");
+});
+
 test("deduplicates assignment IDs and preserves verified missing details as empty", () => {
   const result = groupEmployeeDeployments([
     { id: 7, company: "Client A", status: "Completed" },

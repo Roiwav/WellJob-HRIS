@@ -65,61 +65,60 @@ export default function Sidebar({ toggleTheme, darkMode }) {
     <aside
       className="
         group/sidebar relative z-50 flex h-screen w-16 shrink-0
-        flex-col justify-between overflow-hidden border-r border-gray-200
+        flex-col overflow-hidden border-r border-gray-200
         bg-white transition-[width] duration-200 ease-out hover:w-48
+        supports-[height:100dvh]:h-dvh
         dark:border-white/10 dark:bg-slate-950
       "
     >
-      <div className="min-w-0">
-        {/* Logo and system name */}
-        <div className="flex h-16 items-center justify-center px-3 transition-all duration-200 group-hover/sidebar:justify-start group-hover/sidebar:gap-3">
-          <img
-            src={logo}
-            alt="Welljob Logo"
-            draggable="false"
-            className="h-8 shrink-0 select-none object-contain"
-          />
+      {/* Logo and system name */}
+      <div className="flex h-16 shrink-0 items-center justify-center px-3 transition-all duration-200 group-hover/sidebar:justify-start group-hover/sidebar:gap-3">
+        <img
+          src={logo}
+          alt="Welljob Logo"
+          draggable="false"
+          className="h-8 shrink-0 select-none object-contain"
+        />
 
-          <span
-            className="
-              pointer-events-none absolute -translate-x-2 whitespace-nowrap
-              text-lg font-semibold text-gray-900 opacity-0 transition-all
-              duration-150 group-hover/sidebar:relative
-              group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100
-              dark:text-white
-            "
-          >
-            HR System
-          </span>
-        </div>
-
-        {/* Main navigation */}
-        <nav
-          className="mt-5 flex flex-col gap-1"
-          aria-label="Main navigation"
+        <span
+          className="
+            pointer-events-none absolute -translate-x-2 whitespace-nowrap
+            text-lg font-semibold text-gray-900 opacity-0 transition-all
+            duration-150 group-hover/sidebar:relative
+            group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100
+            dark:text-white
+          "
         >
-          {filteredItems.map((item) => (
-            <SidebarItem
-              key={item.path}
-              to={item.path}
-              icon={iconMap[item.title] || <FiHome />}
-              label={getSidebarLabel(item.title)}
-            />
-          ))}
-
-          {/* IT Support navigation */}
-          {userRole === ROLES.IT_SUPPORT && (
-            <SidebarItem
-              to="/system-maintenance"
-              icon={<FiTool className="text-red-500" />}
-              label="System Maintenance"
-            />
-          )}
-        </nav>
+          HR System
+        </span>
       </div>
 
+      {/* Main navigation */}
+      <nav
+        className="mt-5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden"
+        aria-label="Main navigation"
+      >
+        {filteredItems.map((item) => (
+          <SidebarItem
+            key={item.path}
+            to={item.path}
+            icon={iconMap[item.title] || <FiHome />}
+            label={getSidebarLabel(item.title)}
+          />
+        ))}
+
+        {/* IT Support navigation */}
+        {userRole === ROLES.IT_SUPPORT && (
+          <SidebarItem
+            to="/system-maintenance"
+            icon={<FiTool className="text-red-500" />}
+            label="System Maintenance"
+          />
+        )}
+      </nav>
+
       {/* Theme toggle */}
-      <div className="border-t border-gray-200 p-3 dark:border-white/10">
+      <div className="shrink-0 border-t border-gray-200 p-3 dark:border-white/10">
         <button
           type="button"
           onClick={toggleTheme}

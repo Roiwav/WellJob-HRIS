@@ -536,7 +536,7 @@ export default function DeploymentModal({
             <section>
               <div className="mb-2 flex items-center justify-between gap-3">
                 <h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
-                  Separation Details
+                  Assignment End Details
                 </h3>
               </div>
 
@@ -548,7 +548,7 @@ export default function DeploymentModal({
                       aria-hidden="true"
                     />
                   }
-                  label="Separation Date"
+                  label="Assignment End Date"
                   value={
                     hasSeparationDate
                       ? formatLongDisplayDate(
@@ -565,7 +565,7 @@ export default function DeploymentModal({
                       aria-hidden="true"
                     />
                   }
-                  label="Separation Reason"
+                  label="Assignment End Reason"
                   value={
                     separationReason ||
                     displayStatus ||

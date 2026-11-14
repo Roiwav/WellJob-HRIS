@@ -92,6 +92,11 @@ export function normalizeEmployeeDeployment(
           deployment.end_date ??
           deployment.contractEnd
       ),
+    endReason:
+      cleanText(
+        deployment.endReason ??
+          deployment.end_reason
+      ),
     status:
       cleanText(
         deployment.status

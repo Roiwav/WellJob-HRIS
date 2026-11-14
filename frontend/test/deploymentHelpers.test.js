@@ -10,6 +10,9 @@ import {
   normalizeSeparationReason,
 } from "../src/utils/deployments/deploymentHelpers.js";
 
+const TEST_ASSIGNMENT_END_DATE =
+  "2026-09-18";
+
 test(
   "normalizeDeploymentStatus preserves supported internal lifecycle values",
   () => {
@@ -183,6 +186,8 @@ test(
   () => {
     assert.deepEqual(
       buildDeploymentStatusPayload({
+        separationDate:
+          TEST_ASSIGNMENT_END_DATE,
         separationReason:
           "Completed Contract",
         separationRemarks:
@@ -191,6 +196,8 @@ test(
       {
         status:
           "Completed",
+        endDate:
+          TEST_ASSIGNMENT_END_DATE,
         endReason:
           "Completed Contract",
         endRemarks:
@@ -200,6 +207,8 @@ test(
 
     assert.deepEqual(
       buildDeploymentStatusPayload({
+        separationDate:
+          TEST_ASSIGNMENT_END_DATE,
         separationReason:
           "End of Assignment / Pulled Out by Client",
         separationRemarks:
@@ -208,6 +217,8 @@ test(
       {
         status:
           "Completed",
+        endDate:
+          TEST_ASSIGNMENT_END_DATE,
         endReason:
           "End of Assignment / Pulled Out by Client",
         endRemarks:
@@ -217,6 +228,8 @@ test(
 
     assert.deepEqual(
       buildDeploymentStatusPayload({
+        separationDate:
+          TEST_ASSIGNMENT_END_DATE,
         separationReason:
           "Transferred / Reassigned",
         separationRemarks:
@@ -225,6 +238,8 @@ test(
       {
         status:
           "Completed",
+        endDate:
+          TEST_ASSIGNMENT_END_DATE,
         endReason:
           "Transferred / Reassigned",
         endRemarks:
@@ -239,6 +254,8 @@ test(
   () => {
     assert.deepEqual(
       buildDeploymentStatusPayload({
+        separationDate:
+          TEST_ASSIGNMENT_END_DATE,
         separationReason:
           "Resignation",
         separationRemarks:
@@ -247,6 +264,8 @@ test(
       {
         status:
           "Cancelled",
+        endDate:
+          TEST_ASSIGNMENT_END_DATE,
         endReason:
           "Resigned",
         endRemarks:
@@ -256,6 +275,8 @@ test(
 
     assert.deepEqual(
       buildDeploymentStatusPayload({
+        separationDate:
+          TEST_ASSIGNMENT_END_DATE,
         separationReason:
           "Resigned",
         separationRemarks:
@@ -264,6 +285,8 @@ test(
       {
         status:
           "Cancelled",
+        endDate:
+          TEST_ASSIGNMENT_END_DATE,
         endReason:
           "Resigned",
         endRemarks:
@@ -278,6 +301,8 @@ test(
   () => {
     assert.deepEqual(
       buildDeploymentStatusPayload({
+        separationDate:
+          TEST_ASSIGNMENT_END_DATE,
         separationReason:
           "Termination",
         separationRemarks:
@@ -286,6 +311,8 @@ test(
       {
         status:
           "Cancelled",
+        endDate:
+          TEST_ASSIGNMENT_END_DATE,
         endReason:
           "Terminated",
         endRemarks:
@@ -295,6 +322,8 @@ test(
 
     assert.deepEqual(
       buildDeploymentStatusPayload({
+        separationDate:
+          TEST_ASSIGNMENT_END_DATE,
         separationReason:
           "Terminated",
         separationRemarks:
@@ -303,6 +332,8 @@ test(
       {
         status:
           "Cancelled",
+        endDate:
+          TEST_ASSIGNMENT_END_DATE,
         endReason:
           "Terminated",
         endRemarks:
@@ -317,6 +348,8 @@ test(
   () => {
     assert.deepEqual(
       buildDeploymentStatusPayload({
+        separationDate:
+          TEST_ASSIGNMENT_END_DATE,
         separationReason:
           "AWOL",
         separationRemarks:
@@ -325,6 +358,8 @@ test(
       {
         status:
           "Cancelled",
+        endDate:
+          TEST_ASSIGNMENT_END_DATE,
         endReason:
           "AWOL",
         endRemarks:
@@ -340,6 +375,8 @@ test(
     assert.throws(
       () =>
         buildDeploymentStatusPayload({
+          separationDate:
+            TEST_ASSIGNMENT_END_DATE,
           separationReason:
             "Other Separation",
           separationRemarks:
@@ -350,6 +387,8 @@ test(
 
     assert.deepEqual(
       buildDeploymentStatusPayload({
+        separationDate:
+          TEST_ASSIGNMENT_END_DATE,
         separationReason:
           "Other Separation",
         separationRemarks:
@@ -358,6 +397,8 @@ test(
       {
         status:
           "Cancelled",
+        endDate:
+          TEST_ASSIGNMENT_END_DATE,
         endReason:
           "Terminated",
         endRemarks:
@@ -430,6 +471,8 @@ test(
     assert.throws(
       () =>
         buildDeploymentStatusPayload({
+          separationDate:
+            TEST_ASSIGNMENT_END_DATE,
           separationReason:
             "Cancelled",
           separationRemarks:
@@ -441,12 +484,32 @@ test(
     assert.throws(
       () =>
         buildDeploymentStatusPayload({
+          separationDate:
+            TEST_ASSIGNMENT_END_DATE,
           separationReason:
             "",
           separationRemarks:
             "",
         }),
       /valid deployment end reason/i
+    );
+  }
+);
+
+test(
+  "buildDeploymentStatusPayload requires an assignment end date",
+  () => {
+    assert.throws(
+      () =>
+        buildDeploymentStatusPayload({
+          separationDate:
+            "",
+          separationReason:
+            "Transferred / Reassigned",
+          separationRemarks:
+            "Moving to another client.",
+        }),
+      /valid assignment end date/i
     );
   }
 );

@@ -57,7 +57,7 @@ export default function MainLayout() {
     ROLES.HR_COORDINATOR;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-gray-100 dark:bg-slate-950">
+    <div className="flex h-screen w-full overflow-hidden bg-gray-100 supports-[height:100dvh]:h-dvh dark:bg-slate-950">
       {/*
        * ==================================================
        * EXISTING SIDEBAR

@@ -15,11 +15,15 @@ import {
   getDeploymentDisplayStatus,
   normalizeDeploymentStatus,
 } from "../../../utils/deployments/deploymentHelpers";
-const SEPARATION_REASON_OPTIONS = [
+const ASSIGNMENT_COMPLETION_REASON_OPTIONS = [
+  "Completed Contract",
+  "End of Assignment / Pulled Out by Client",
+  "Transferred / Reassigned",
+];
+const EMPLOYMENT_SEPARATION_REASON_OPTIONS = [
   "Resignation",
   "Termination",
   "AWOL",
-  "Other Separation",
 ];
 function getDeploymentKey(deployment, index) {
   return (
@@ -56,7 +60,7 @@ function getEmployeePosition(deployment) {
     ""
   );
 }
-function SeparationModal({
+function EndAssignmentModal({
   deployment,
   onClose,
   onSubmit,
@@ -85,23 +89,14 @@ function SeparationModal({
     }
     clearError();
     if (!separationDate) {
-      setError("Please select the employee's separation date.");
+      setError("Please select the assignment end date.");
       return;
     }
     if (!separationReason) {
-      setError("Please select a separation reason.");
+      setError("Please select an assignment end reason.");
       return;
     }
     const cleanRemarks = separationRemarks.trim();
-    if (
-      separationReason === "Other Separation" &&
-      !cleanRemarks
-    ) {
-      setError(
-        "Please provide details for Other Separation."
-      );
-      return;
-    }
     try {
       setIsSubmitting(true);
       const wasSaved = await onSubmit?.({
@@ -112,16 +107,16 @@ function SeparationModal({
       });
       if (!wasSaved) {
         setError(
-          "The separation could not be saved. Please review the information and try again."
+          "The assignment end could not be saved. Please review the information and try again."
         );
       }
     } catch (submitError) {
       console.error(
-        "Deployment separation submit failed:",
+        "End assignment submit failed:",
         submitError
       );
       setError(
-        "Unable to save the employee separation. Please try again."
+        "Unable to end the assignment. Please try again."
       );
     } finally {
       setIsSubmitting(false);
@@ -142,8 +137,8 @@ function SeparationModal({
     <Dialog
       open
       onClose={handleClose}
-      title="Record Employee Separation"
-      description="End the active deployment and record the employee's separation information."
+      title="End Assignment"
+      description="Complete the active assignment or record a genuine employment separation."
       size="lg"
       tone="warning"
       closeOnOverlay={!isSubmitting}
@@ -168,7 +163,7 @@ function SeparationModal({
             disabled={isSubmitting}
             onClick={handleSubmit}
           >
-            Confirm Separation
+            Confirm Assignment End
           </Button>
         </div>
       }
@@ -207,14 +202,15 @@ function SeparationModal({
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label
-            htmlFor="deployment-separation-date"
+            htmlFor="deployment-assignment-end-date"
             className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300"
           >
-            Separation Date
+            Assignment End Date
           </label>
           <input
-            id="deployment-separation-date"
+            id="deployment-assignment-end-date"
             type="date"
+            max={formatDateForInput(new Date())}
             value={separationDate}
             disabled={isSubmitting}
             onChange={(event) => {
@@ -227,13 +223,13 @@ function SeparationModal({
 
         <div>
           <label
-            htmlFor="deployment-separation-reason"
+            htmlFor="deployment-assignment-end-reason"
             className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300"
           >
-            Separation Reason
+            Assignment End Reason
           </label>
           <select
-            id="deployment-separation-reason"
+            id="deployment-assignment-end-reason"
             value={separationReason}
             disabled={isSubmitting}
             onChange={(event) => {
@@ -243,34 +239,41 @@ function SeparationModal({
             className="ui-select"
           >
             <option value="">Select reason...</option>
-            {SEPARATION_REASON_OPTIONS.map((reason) => (
-              <option key={reason} value={reason}>
-                {reason}
-              </option>
-            ))}
+            <optgroup label="Assignment completion — employment remains Active">
+              {ASSIGNMENT_COMPLETION_REASON_OPTIONS.map((reason) => (
+                <option key={reason} value={reason}>
+                  {reason}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Employment separation — employment status changes">
+              {EMPLOYMENT_SEPARATION_REASON_OPTIONS.map((reason) => (
+                <option key={reason} value={reason}>
+                  {reason}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </div>
       </div>
 
       <div>
         <label
-          htmlFor="deployment-separation-details"
+          htmlFor="deployment-assignment-end-details"
           className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300"
         >
-          Separation Details
+          Assignment End Details
           <span className="ml-1 text-xs font-medium text-slate-400">
-            {separationReason === "Other Separation"
-              ? "required"
-              : "optional"}
+            optional
           </span>
         </label>
         <textarea
-          id="deployment-separation-details"
+          id="deployment-assignment-end-details"
           value={separationRemarks}
           disabled={isSubmitting}
           rows={3}
           maxLength={1000}
-          placeholder="Add an optional HR note or separation detail..."
+          placeholder="Add an optional HR note or assignment end detail..."
           onChange={(event) => {
             setSeparationRemarks(event.target.value);
             clearError();
@@ -298,7 +301,7 @@ function SeparationModal({
       )}
 
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-        Saving this information ends the active deployment and adds the separation to the employee's deployment history.
+        Assignment completion and transfer reasons retain Active employment and return the employee to Floating / Standby. Resignation, Termination, and AWOL change employment status. Use Transferred / Reassigned for transfers; do not record a transfer as a separation.
       </div>
     </Dialog>
   );
@@ -312,7 +315,7 @@ export default function DeploymentTable({
   isReadOnly = false,
   isHrCoordinator = false,
 }) {
-  const [separationTarget, setSeparationTarget] = useState(null);
+  const [endAssignmentTarget, setEndAssignmentTarget] = useState(null);
   const readOnly =
     isSuperAdmin ||
     isReadOnly;
@@ -388,7 +391,7 @@ export default function DeploymentTable({
           status: "25%",
           actions: "13%",
         };
-  const handleOpenSeparationModal = useCallback(
+  const handleOpenEndAssignmentModal = useCallback(
     (deployment) => {
       const status = normalizeDeploymentStatus(
         deployment?.status
@@ -399,18 +402,18 @@ export default function DeploymentTable({
       ) {
         return;
       }
-      setSeparationTarget(
+      setEndAssignmentTarget(
         deployment
       );
     },
     [readOnly]
   );
-  const handleCloseSeparationModal = useCallback(() => {
-    setSeparationTarget(
+  const handleCloseEndAssignmentModal = useCallback(() => {
+    setEndAssignmentTarget(
       null
     );
   }, []);
-  const handleSubmitSeparation = useCallback(
+  const handleSubmitEndAssignment = useCallback(
     async (updatedDeployment) => {
       if (
         readOnly ||
@@ -423,7 +426,7 @@ export default function DeploymentTable({
           updatedDeployment
         );
       if (wasSaved) {
-        setSeparationTarget(
+        setEndAssignmentTarget(
           null
         );
       }
@@ -453,7 +456,7 @@ export default function DeploymentTable({
                 ? "Review deployment records for your assigned client company."
                 : readOnly
                   ? "Review employee assignments and deployment history."
-                  : "Review active assignments and recorded employee separations."}
+                  : "Review active assignments and recorded assignment outcomes."}
             </p>
           </div>
 
@@ -504,7 +507,7 @@ export default function DeploymentTable({
                     scope="col"
                     className="px-4 py-3"
                   >
-                    Separation Details
+                    Assignment End Details
                   </th>
                 )}
                 <th scope="col" className="px-4 py-3">
@@ -542,7 +545,7 @@ export default function DeploymentTable({
                           separationReason,
                           separationRemarks
                         );
-                  const canSeparateEmployee =
+                  const canEndAssignment =
                     !readOnly &&
                     internalStatus === "Active";
                   const separationDate =
@@ -630,13 +633,13 @@ export default function DeploymentTable({
                                 className="mt-0.5 max-w-[180px] truncate text-xs text-slate-500 dark:text-slate-400"
                               >
                                 {separationReason ||
-                                  "Separation recorded"}
+                                  "Assignment ended"}
                               </p>
                             </div>
                           ) : (
                             <span
                               className="text-sm text-slate-400"
-                              aria-label="No separation"
+                              aria-label="No assignment end"
                             >
                               —
                             </span>
@@ -667,14 +670,14 @@ export default function DeploymentTable({
                             <FiEye aria-hidden="true" />
                           </IconButton>
 
-                          {canSeparateEmployee && (
+                          {canEndAssignment && (
                             <IconButton
-                              label={`Record separation for ${employeeName}`}
-                              title="Record employee separation"
+                              label={`End assignment for ${employeeName}`}
+                              title="End assignment"
                               variant="warning"
                               size="sm"
                               onClick={() =>
-                                handleOpenSeparationModal(
+                                handleOpenEndAssignmentModal(
                                   deployment
                                 )
                               }
@@ -715,16 +718,16 @@ export default function DeploymentTable({
         </div>
       </section>
 
-      {!readOnly && separationTarget && (
-        <SeparationModal
+      {!readOnly && endAssignmentTarget && (
+        <EndAssignmentModal
           key={
-            separationTarget.deploymentId ||
-            separationTarget.id ||
-            separationTarget.employeeId
+            endAssignmentTarget.deploymentId ||
+            endAssignmentTarget.id ||
+            endAssignmentTarget.employeeId
           }
-          deployment={separationTarget}
-          onClose={handleCloseSeparationModal}
-          onSubmit={handleSubmitSeparation}
+          deployment={endAssignmentTarget}
+          onClose={handleCloseEndAssignmentModal}
+          onSubmit={handleSubmitEndAssignment}
         />
       )}
     </>

@@ -109,12 +109,14 @@ test("authorized deployed coordinator receives company-scoped current and histor
     employeeRows: [{ id: 77 }],
     assignmentRows: [
       { deploymentId: 2, employeeId: 77, company: "Current Client", position: "Guard", startDate: "2026-01-01", endDate: null, deploymentStatus: "Active" },
-      { deploymentId: 1, employeeId: 77, company: "Current Client", position: "Guard", startDate: "2025-01-01", endDate: "2025-12-01", deploymentStatus: "Completed" },
+      { deploymentId: 1, employeeId: 77, company: "Current Client", position: "Guard", startDate: "2025-01-01", endDate: "2025-12-01", endReason: "Transferred / Reassigned", deploymentStatus: "Completed" },
     ],
   });
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body.deployments.map((item) => item.displayStatus), ["Deployed", "Completed"]);
+  assert.equal(res.body.deployments[0].endReason, "");
+  assert.equal(res.body.deployments[1].endReason, "Transferred / Reassigned");
   assert.equal(res.body.deployments[0].location, "");
   assert.equal(queries.length, 2);
   assert.match(queries[0].sql, /e\.workforce_status = 'Deployed'/);
