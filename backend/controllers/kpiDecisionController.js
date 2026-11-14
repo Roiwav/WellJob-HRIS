@@ -75,6 +75,21 @@ const SEVERITY_WEIGHTS =
       5,
   });
 
+function formatCount(
+  count,
+  singular,
+  plural = `${singular}s`
+) {
+  const safeCount =
+    Number(count || 0);
+
+  return `${safeCount} ${
+    safeCount === 1
+      ? singular
+      : plural
+  }`;
+}
+
 const RECOMMENDATION_LABELS = {
   RETAIN:
     "Retain / Maintain Good Standing",
@@ -779,14 +794,14 @@ function getDecisionConfidenceReason({
     confidence ===
     DECISION_CONFIDENCE.HIGH
   ) {
-    return `High confidence because the employee record shows strong decision indicators such as ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), ${severityScore} severity score, and ${riskLevel} status. HR review is required before final action.`;
+    return `High confidence because the employee record shows strong decision indicators such as ${formatCount(violationCount, "violation")}, ${formatCount(criticalIncidentCount, "critical case")}, ${severityScore} severity score, and ${riskLevel} status. HR review is required before final action.`;
   }
 
   if (
     confidence ===
     DECISION_CONFIDENCE.MODERATE
   ) {
-    return `Moderate confidence because the employee has enough recorded concern for HR validation, including ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), and ${severityScore} severity score.`;
+    return `Moderate confidence because the employee has enough recorded concern for HR validation, including ${formatCount(violationCount, "violation")}, ${formatCount(criticalIncidentCount, "critical case")}, and ${severityScore} severity score.`;
   }
 
   if (
@@ -809,7 +824,7 @@ function getSuggestedHRActionReason({
     suggestedHRAction
   ) {
     case HR_ACTION_WORKFLOW.TERMINATION:
-      return `Termination review is suggested because the employee has severe indicators such as ${violationCount} violation(s), ${criticalIncidentCount} critical case(s), and ${severityScore} severity score. This is only for HR Manager validation and not an automatic termination decision.`;
+      return `Termination review is suggested because the employee has severe indicators such as ${formatCount(violationCount, "violation")}, ${formatCount(criticalIncidentCount, "critical case")}, and ${severityScore} severity score. This is only for HR Manager validation and not an automatic termination decision.`;
 
     case HR_ACTION_WORKFLOW.SUSPENSION:
       return "Suspension review is suggested because the employee has a critical incident or high-risk evaluation. Final action must still be validated by HR management.";
@@ -1262,17 +1277,17 @@ function buildDynamicBasis({
     commonViolation.count >=
     2
   ) {
-    return `${violationCount} recorded violation(s), including ${commonViolation.count} recurring ${commonViolationName} case(s), with ${severitySummary} classification and a total severity score of ${severityScore}.`;
+    return `${formatCount(violationCount, "recorded violation")}, including ${formatCount(commonViolation.count, `recurring ${commonViolationName} case`)}, with ${severitySummary} classification and a total severity score of ${severityScore}.`;
   }
 
   if (
     criticalIncidentCount >=
     1
   ) {
-    return `${criticalIncidentCount} critical incident(s), ${violationCount} total recorded violation(s), and a severity score of ${severityScore}.`;
+    return `${formatCount(criticalIncidentCount, "critical incident")}, ${formatCount(violationCount, "total recorded violation")}, and a severity score of ${severityScore}.`;
   }
 
-  return `${violationCount} recorded violation(s), ${severitySummary} classification, KPI level of ${normalizedKPI}, risk level of ${normalizedRisk}, and total severity score of ${severityScore}.`;
+  return `${formatCount(violationCount, "recorded violation")}, ${severitySummary} classification, KPI level of ${normalizedKPI}, risk level of ${normalizedRisk}, and total severity score of ${severityScore}.`;
 }
 
 function buildDynamicReason({
@@ -1314,10 +1329,10 @@ function buildDynamicReason({
       commonViolation.count >=
         2
     ) {
-      return `Employee requires a Performance Improvement Plan because recurring ${commonViolationName} was detected ${commonViolation.count} time(s), showing a repeated KPI standing concern.`;
+      return `Employee requires a Performance Improvement Plan because recurring ${commonViolationName} was detected ${formatCount(commonViolation.count, "time")}, showing a repeated KPI standing concern.`;
     }
 
-    return `Employee requires a Performance Improvement Plan because there are ${violationCount} recorded violation(s), resulting in ${normalizedKPI} and ${normalizedRisk} status.`;
+    return `Employee requires a Performance Improvement Plan because there are ${formatCount(violationCount, "recorded violation")}, resulting in ${normalizedKPI} and ${normalizedRisk} status.`;
   }
 
   if (
@@ -1327,7 +1342,7 @@ function buildDynamicReason({
     const baseViolation =
       commonViolation.count >=
       2
-        ? `recurring ${commonViolationName} was detected ${commonViolation.count} time(s)`
+        ? `recurring ${commonViolationName} was detected ${formatCount(commonViolation.count, "time")}`
         : "repeated task, quality, or performance-related concern was detected";
 
     return `Employee may need reassignment review because ${baseViolation}. This may indicate possible role mismatch in the current assignment.`;
@@ -1349,7 +1364,7 @@ function buildDynamicReason({
       commonViolation.count >=
         2
     ) {
-      return `Employee is recommended for a refresher seminar or webinar because recurring ${commonViolationName} was detected ${commonViolation.count} time(s), indicating the need for policy awareness reinforcement.`;
+      return `Employee is recommended for a refresher seminar or webinar because recurring ${commonViolationName} was detected ${formatCount(commonViolation.count, "time")}, indicating the need for policy awareness reinforcement.`;
     }
 
     if (
@@ -1365,7 +1380,7 @@ function buildDynamicReason({
     primaryCode ===
     "VERBAL_COUNSELING"
   ) {
-    return `Employee is recommended for verbal counseling because there is an early KPI standing concern with ${violationCount} recorded violation(s), allowing HR to correct the issue before it becomes repeated.`;
+    return `Employee is recommended for verbal counseling because there is an early KPI standing concern with ${formatCount(violationCount, "recorded violation")}, allowing HR to correct the issue before it becomes repeated.`;
   }
 
   return "Employee recommendation is based on the recorded violation pattern, KPI level, risk level, and severity score.";

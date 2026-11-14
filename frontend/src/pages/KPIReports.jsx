@@ -32,6 +32,7 @@ import {
   buildKPIEmployees,
   hasCurrentKPIDecisionReview,
 } from "../utils/kpi/kpiHelpers";
+import { formatCount } from "../utils/kpi/kpiPresentationHelpers";
 
 import {
   INITIAL_KPI_FILTERS,
@@ -483,15 +484,15 @@ export default function KPIReports() {
       return [
         {
           level: "HIGH",
-          text: `${activeCriticalCases} active critical case(s) requiring priority HR attention`,
+          text: `${formatCount(activeCriticalCases, "active critical case")} requiring priority HR attention`,
         },
         {
           level: "MEDIUM",
-          text: `${underInvestigation} non-critical case(s) under investigation or review`,
+          text: `${formatCount(underInvestigation, "non-critical case")} under investigation or review`,
         },
         {
           level: "LOW",
-          text: `${openMonitoring} non-critical open case(s) for monitoring`,
+          text: `${formatCount(openMonitoring, "non-critical open case")} for monitoring`,
         },
       ];
     }, [incidentsRaw]);

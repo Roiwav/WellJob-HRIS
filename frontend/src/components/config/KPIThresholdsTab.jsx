@@ -1,4 +1,7 @@
-import { formatRoleLabel } from "../../utils/userDisplay";
+import {
+  formatRoleLabel,
+  getConfigurationActorDisplay,
+} from "../../utils/userDisplay";
 import { hrErrorMessage } from "../../utils/hrErrors";
 import {
   useCallback,
@@ -241,6 +244,9 @@ function getDefaultConfiguration() {
       updatedAt: null,
       updatedBy: null,
       updatedByRole: null,
+      updatedByUserId: null,
+      updatedByUsername: null,
+      updatedByDisplayName: null,
     },
   };
 }
@@ -368,6 +374,12 @@ function normalizeConfiguration(value) {
         value?.metadata?.updatedBy || null,
       updatedByRole:
         value?.metadata?.updatedByRole || null,
+      updatedByUserId:
+        value?.metadata?.updatedByUserId || null,
+      updatedByUsername:
+        value?.metadata?.updatedByUsername || null,
+      updatedByDisplayName:
+        value?.metadata?.updatedByDisplayName || null,
     },
   };
 }
@@ -2130,7 +2142,9 @@ export default function KPIThresholdsTab({
                     configuration.metadata?.updatedAt
                   )}
                   {configuration.metadata?.updatedBy
-                    ? ` by ${configuration.metadata.updatedBy}`
+                    ? ` by ${getConfigurationActorDisplay(
+                        configuration.metadata
+                      )}`
                     : ""}
                   {configuration.metadata?.updatedByRole
                     ? ` (${formatRoleLabel(configuration.metadata.updatedByRole)})`

@@ -8,3 +8,9 @@ export function getIncidentDaysOpen(incident, now = Date.now()) {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
   return Math.floor((end - start) / 86400000);
 }
+
+export function getIncidentDaysOpenLabel(incident, now = Date.now()) {
+  const days = getIncidentDaysOpen(incident, now);
+  if (days === null) return "Duration unavailable";
+  return `${days} ${days === 1 ? "day" : "days"}`;
+}

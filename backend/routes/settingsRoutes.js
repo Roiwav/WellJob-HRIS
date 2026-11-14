@@ -21,6 +21,7 @@ const {
   getDefaultPerformanceEvaluationConfiguration,
   normalizePerformanceEvaluationConfiguration,
   getPerformanceEvaluationConfiguration,
+  resolvePerformanceEvaluationActorDisplay,
 } = require("../utils/performanceEvaluationService");
 
 const {
@@ -96,6 +97,25 @@ function normalizeSingleLineText(value) {
   return String(value ?? "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function getCurrentUserDisplayName(user) {
+  const username =
+    normalizeSingleLineText(
+      user?.username
+    );
+
+  const candidate =
+    normalizeSingleLineText(
+      user?.full_name ||
+        user?.fullName ||
+        user?.name
+    );
+
+  return candidate &&
+    candidate !== username
+    ? candidate
+    : null;
 }
 
 function parsePositiveInteger(value) {
@@ -775,13 +795,18 @@ router.get(
         });
       }
 
+      const displayConfiguration =
+        await resolvePerformanceEvaluationActorDisplay(
+          configuration
+        );
+
       return res.status(200).json({
         success: true,
         configured: true,
-        schemaVersion: configuration.schemaVersion,
-        ratingScale: configuration.ratingScale,
-        kpiFactors: configuration.kpiFactors,
-        metadata: configuration.metadata,
+        schemaVersion: displayConfiguration.schemaVersion,
+        ratingScale: displayConfiguration.ratingScale,
+        kpiFactors: displayConfiguration.kpiFactors,
+        metadata: displayConfiguration.metadata,
       });
     } catch (error) {
       console.error(
@@ -823,6 +848,14 @@ router.put(
         updatedBy: getCurrentUserName(req.user),
         updatedByRole:
           req.user?.role || "Authorized User",
+        updatedByUserId:
+          req.user?.userId ?? req.user?.id ?? null,
+        updatedByUsername:
+          req.user?.username || null,
+        updatedByDisplayName:
+          getCurrentUserDisplayName(
+            req.user
+          ),
       },
     };
 

@@ -439,6 +439,9 @@ function getDefaultPerformanceEvaluationConfiguration() {
       updatedAt: null,
       updatedBy: null,
       updatedByRole: null,
+      updatedByUserId: null,
+      updatedByUsername: null,
+      updatedByDisplayName: null,
     },
   };
 }
@@ -1143,6 +1146,164 @@ function parsePerformanceEvaluationSetting(
           ?.metadata
           ?.updatedByRole ||
         null,
+
+      updatedByUserId:
+        parsedValue
+          ?.metadata
+          ?.updatedByUserId ||
+        null,
+
+      updatedByUsername:
+        parsedValue
+          ?.metadata
+          ?.updatedByUsername ||
+        null,
+
+      updatedByDisplayName:
+        parsedValue
+          ?.metadata
+          ?.updatedByDisplayName ||
+        null,
+    },
+  };
+}
+
+function normalizeMetadataText(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getStoredActorSnapshotDisplayName(metadata = {}) {
+  const explicitDisplayName =
+    normalizeMetadataText(
+      metadata.updatedByDisplayName
+    );
+
+  if (explicitDisplayName) {
+    return explicitDisplayName;
+  }
+
+  const storedIdentity =
+    normalizeMetadataText(
+      metadata.updatedBy
+    );
+
+  const storedUsername =
+    normalizeMetadataText(
+      metadata.updatedByUsername
+    );
+
+  if (
+    storedIdentity &&
+    storedIdentity !== storedUsername &&
+    /\s/.test(storedIdentity)
+  ) {
+    return storedIdentity;
+  }
+
+  return null;
+}
+
+async function resolvePerformanceEvaluationActorDisplay(
+  configuration,
+  {
+    connection = null,
+  } = {}
+) {
+  if (!configuration) {
+    return configuration;
+  }
+
+  const metadata = {
+    ...(configuration.metadata || {}),
+  };
+
+  const storedUserId =
+    Number.parseInt(
+      String(
+        metadata.updatedByUserId ??
+          ""
+      ),
+      10
+    );
+
+  const username =
+    normalizeMetadataText(
+      metadata.updatedByUsername ||
+        metadata.updatedBy
+    );
+
+  let resolvedDisplayName = null;
+
+  if (
+    Number.isSafeInteger(storedUserId) &&
+    storedUserId > 0
+  ) {
+    const queryTarget =
+      connection ||
+      db.promise();
+
+    const [users] =
+      await queryTarget.query(
+        `
+        SELECT
+          id,
+          username,
+          full_name
+        FROM users
+        WHERE id = ?
+        LIMIT 2
+        `,
+        [storedUserId]
+      );
+
+    if (users.length === 1) {
+      resolvedDisplayName =
+        normalizeMetadataText(
+          users[0].full_name
+        ) || null;
+    }
+  } else if (username) {
+    const queryTarget =
+      connection ||
+      db.promise();
+
+    const [users] =
+      await queryTarget.query(
+        `
+        SELECT
+          id,
+          username,
+          full_name
+        FROM users
+        WHERE username = ?
+        LIMIT 2
+        `,
+        [username]
+      );
+
+    if (users.length === 1) {
+      resolvedDisplayName =
+        normalizeMetadataText(
+          users[0].full_name
+        ) || null;
+    }
+  }
+
+  const snapshotDisplayName =
+    getStoredActorSnapshotDisplayName(
+      metadata
+    );
+
+  return {
+    ...configuration,
+    metadata: {
+      ...metadata,
+      updatedByDisplayName:
+        resolvedDisplayName ||
+        snapshotDisplayName ||
+        null,
     },
   };
 }
@@ -1194,6 +1355,7 @@ module.exports = {
   normalizeKpiFactors,
   normalizePerformanceEvaluationConfiguration,
   parsePerformanceEvaluationSetting,
+  resolvePerformanceEvaluationActorDisplay,
 
   getPerformanceEvaluationConfiguration,
 };

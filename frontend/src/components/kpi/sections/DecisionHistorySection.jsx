@@ -29,6 +29,7 @@ import {
   useDeleteKPIDecisionMutation,
   useKPIDecisionHistoryPageQuery,
 } from "../../../hooks/useKPIDecisionQueries";
+import { clarifyActiveAssessmentText } from "../../../utils/kpi/kpiPresentationHelpers";
 
 const DECISION_FILTER_OPTIONS = [
   {
@@ -233,11 +234,13 @@ function HistoryCard({
     "Recorded";
 
   const reviewBasis =
-    record?.correctiveActionBasis ||
-    record?.suggestedHRActionReason ||
-    record?.decisionConfidenceReason ||
-    record?.recommendationReason ||
-    "No review basis was recorded.";
+    clarifyActiveAssessmentText(
+      record?.correctiveActionBasis ||
+        record?.suggestedHRActionReason ||
+        record?.decisionConfidenceReason ||
+        record?.recommendationReason ||
+        "No review basis was recorded."
+    );
 
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">

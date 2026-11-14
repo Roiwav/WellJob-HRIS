@@ -1,4 +1,5 @@
 import { NORMALIZED_VIOLATION_RULES } from "../data/violationRules";
+import { formatCount } from "./kpi/kpiPresentationHelpers";
 
 const SEVERITY_SCORE = {
   Minor: 1,
@@ -823,7 +824,7 @@ export function getSmartAlerts(
         "Overdue case",
 
       message:
-        `This case is ${aging.ageDays} day(s) old and exceeded the ${aging.slaDays}-day target.`,
+        `This case is ${formatCount(aging.ageDays, "day")} old and exceeded the ${aging.slaDays}-day target.`,
     });
   }
 

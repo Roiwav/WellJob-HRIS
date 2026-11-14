@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { getNotificationDestination, TARGET_UNAVAILABLE } from "../src/utils/notifications/notificationTarget.js";
 import { hrErrorMessage } from "../src/utils/hrErrors.js";
-import { getIncidentDaysOpen } from "../src/utils/incidents/incidentDuration.js";
-import { getUserFullName, formatRoleLabel } from "../src/utils/userDisplay.js";
+import { getIncidentDaysOpen, getIncidentDaysOpenLabel } from "../src/utils/incidents/incidentDuration.js";
+import { getUserFullName, getConfigurationActorDisplay, formatRoleLabel } from "../src/utils/userDisplay.js";
+import { getSmartAlerts } from "../src/utils/incidentIntelligence.js";
 import { requestKPIDecisionJson } from "../src/hooks/useKPIDecisionQueries.js";
 import { saveAttendanceRecord } from "../src/utils/attendance/attendanceApi.js";
 
@@ -73,6 +74,9 @@ test("closed incident duration stops at approval, including old and same-day clo
   assert.equal(getIncidentDaysOpen({ ...incident, reviewedAt: null }), null);
   assert.equal(getIncidentDaysOpen({ ...incident, reviewedAt: "invalid" }), null);
   assert.equal(getIncidentDaysOpen({ ...incident, reviewedAt: "2024-01-01" }), null);
+  assert.equal(getIncidentDaysOpenLabel(incident), "3 days");
+  assert.equal(getIncidentDaysOpenLabel({ ...incident, reviewedAt: "2025-02-02T00:00:00Z" }), "1 day");
+  assert.equal(getIncidentDaysOpenLabel({ ...incident, reviewedAt: "invalid" }), "Duration unavailable");
 });
 test("active or reopened incident elapsed duration uses now and respects timezone offsets", () => {
   const incident = { reportedAt: "2026-11-10T23:30:00+08:00", reviewedAt: "2025-01-01", status: "Investigating" };
@@ -87,6 +91,48 @@ test("actor presentation resolves actual full/partial names and readable roles w
   assert.equal(getUserFullName({ name: "hm01", username: "hm01" }), "Reviewer name unavailable");
   assert.equal(formatRoleLabel("HR_MANAGER"), "HR Manager");
   assert.equal(formatRoleLabel("unrecognized_role"), "Role unavailable");
+  assert.equal(getConfigurationActorDisplay({ updatedByDisplayName: "Maria Santos", updatedBy: "hm02" }), "Maria Santos");
+  assert.equal(getConfigurationActorDisplay({ updatedBy: "hm02" }), "Account name unavailable (username: hm02)");
+  assert.equal(getConfigurationActorDisplay({}), "Account name unavailable");
+});
+
+test("incident duration presentation stays consistent across table and modal source paths", async () => {
+  const incident = {
+    reportedAt: "2026-04-07T01:00:00+08:00",
+    reviewedAt: "2026-04-10T00:59:59+08:00",
+    status: "Closed",
+  };
+  assert.equal(getIncidentDaysOpenLabel(incident), "2 days");
+
+  const [{ readFile }, { fileURLToPath }, { dirname, resolve }] = await Promise.all([
+    import("node:fs/promises"),
+    import("node:url"),
+    import("node:path"),
+  ]);
+  const testDirectory = dirname(fileURLToPath(import.meta.url));
+  const [badgeSource, modalSource] = await Promise.all([
+    readFile(resolve(testDirectory, "../src/components/incidents/badges/IncidentBadges.jsx"), "utf8"),
+    readFile(resolve(testDirectory, "../src/components/incidents/modals/ViewIncidentModal.jsx"), "utf8"),
+  ]);
+  assert.match(badgeSource, /getIncidentDaysOpenLabel/);
+  assert.match(modalSource, /getIncidentDaysOpenLabel/);
+});
+
+test("incident smart alerts use count-aware day wording without changing SLA calculations", () => {
+  const now = Date.now();
+  const threeDays = getSmartAlerts({
+    status: "Open",
+    severity: "Critical",
+    reportedAt: new Date(now - (3 * 86400000)).toISOString(),
+  });
+  const manyDays = getSmartAlerts({
+    status: "Open",
+    severity: "Critical",
+    reportedAt: new Date(now - (30 * 86400000)).toISOString(),
+  });
+  assert.match(threeDays.map((alert) => alert.message).join(" "), /3 days old/);
+  assert.match(manyDays.map((alert) => alert.message).join(" "), /30 days old/);
+  assert.equal(manyDays.some((alert) => /30 day\(s\)/.test(alert.message)), false);
 });
 
 test("attendance provider error stays in diagnostics and the UI receives a retry message; JWT is never forwarded", async () => {

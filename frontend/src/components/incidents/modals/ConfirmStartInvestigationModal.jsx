@@ -15,6 +15,7 @@ import {
 import {
   formatDateTime,
 } from "../../../utils/incidents/incidentHelpers";
+import { formatCount } from "../../../utils/kpi/kpiPresentationHelpers";
 
 import Button from "../../ui/Button";
 
@@ -339,10 +340,13 @@ export default function ConfirmStartInvestigationModal({
 
           <Detail
             label="Case Age"
-            value={`${Number(
+            value={formatCount(
+              Number(
               safeIncident.caseAgeDays ||
                 0
-            )} day(s)`}
+              ),
+              "day"
+            )}
           />
         </InfoCard>
 

@@ -29,6 +29,7 @@ import {
   HR_ACTION_WORKFLOW,
   RECOMMENDATION_LABELS,
 } from "../../../utils/kpi/kpiHelpers";
+import { formatCount } from "../../../utils/kpi/kpiPresentationHelpers";
 
 const ACTION_GROUPS = {
   ALL: "ALL",
@@ -457,7 +458,10 @@ export default function RiskTable({
             </div>
 
             <span className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400 sm:mt-0">
-              {processedEmployees.length} employee(s)
+              {formatCount(
+                processedEmployees.length,
+                "employee"
+              )}
             </span>
           </div>
         </div>
@@ -791,7 +795,10 @@ export default function RiskTable({
                           <RiskBadge level={riskLevel} />
 
                           <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {Number(employee?.violationCount) || 0} violation(s)
+                            {formatCount(
+                              employee?.violationCount,
+                              "violation"
+                            )}
                           </span>
                         </div>
                       </td>

@@ -6,6 +6,7 @@ import {
   FiUsers,
   FiZap,
 } from "react-icons/fi";
+import { formatCount } from "../../../utils/kpi/kpiPresentationHelpers";
 
 function formatEmployeeId(id) {
   return String(id || "-").replace(/^KPI-/i, "");
@@ -94,7 +95,12 @@ function PriorityEmployeeRow({ employee }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-12 text-[10px] font-bold text-slate-600 dark:text-slate-300 md:justify-end md:pl-0">
-        <span>{Number(employee?.violationCount) || 0} violation(s)</span>
+        <span>
+          {formatCount(
+            employee?.violationCount,
+            "violation"
+          )}
+        </span>
         <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
           •
         </span>

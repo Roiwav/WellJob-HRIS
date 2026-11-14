@@ -20,6 +20,7 @@ import {
 import {
   formatDateTime,
 } from "../../../utils/incidents/incidentHelpers";
+import { formatCount } from "../../../utils/kpi/kpiPresentationHelpers";
 
 import {
   BaseModal,
@@ -397,10 +398,13 @@ export default function ReviewCaseModal({
 
             <Detail
               label="Case Age"
-              value={`${Number(
+              value={formatCount(
+                Number(
                 incident.caseAgeDays ||
                   0
-              )} day(s)`}
+                ),
+                "day"
+              )}
             />
           </InfoCard>
 

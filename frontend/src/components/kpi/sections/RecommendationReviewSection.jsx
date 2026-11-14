@@ -32,6 +32,10 @@ import {
   getDecisionConfidenceClasses,
   hasCurrentKPIDecisionReview,
 } from "../../../utils/kpi/kpiHelpers";
+import {
+  clarifyActiveAssessmentText,
+  formatCount,
+} from "../../../utils/kpi/kpiPresentationHelpers";
 
 import {
   mergeKpiEvaluationSnapshot,
@@ -227,14 +231,18 @@ function ReviewRecommendationModal({
     DECISION_CONFIDENCE.LOW;
 
   const recommendationReason =
-    assessmentEmployee?.recommendationReason ||
-    assessmentEmployee?.correctiveActionReason ||
-    "No recommendation explanation is available.";
+    clarifyActiveAssessmentText(
+      assessmentEmployee?.recommendationReason ||
+        assessmentEmployee?.correctiveActionReason ||
+        "No recommendation explanation is available."
+    );
 
   const followUpReason =
-    assessmentEmployee?.suggestedHRActionReason ||
-    assessmentEmployee?.decisionConfidenceReason ||
-    "No follow-up explanation is available.";
+    clarifyActiveAssessmentText(
+      assessmentEmployee?.suggestedHRActionReason ||
+        assessmentEmployee?.decisionConfidenceReason ||
+        "No follow-up explanation is available."
+    );
 
   const [decisionChoice, setDecisionChoice] =
     useState("");
@@ -526,9 +534,10 @@ function ReviewRecommendationModal({
             ) > 0 && (
               <div className="mt-3 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">
                 <FiAlertCircle aria-hidden="true" />
-                {Number(
-                  assessmentEmployee.criticalIncidentCount || 0
-                )} critical incident(s) recorded
+                {formatCount(
+                  assessmentEmployee.criticalIncidentCount,
+                  "critical incident"
+                )} recorded
               </div>
             )}
           </section>
@@ -849,9 +858,11 @@ function PendingRecommendationCard({
             </p>
 
             <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              {employee.recommendationReason ||
-                employee.correctiveActionReason ||
-                "No recommendation explanation is available."}
+              {clarifyActiveAssessmentText(
+                employee.recommendationReason ||
+                  employee.correctiveActionReason ||
+                  "No recommendation explanation is available."
+              )}
             </p>
           </div>
 
@@ -865,9 +876,11 @@ function PendingRecommendationCard({
             </p>
 
             <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              {employee.suggestedHRActionReason ||
-                employee.decisionConfidenceReason ||
-                "No follow-up explanation is available."}
+              {clarifyActiveAssessmentText(
+                employee.suggestedHRActionReason ||
+                  employee.decisionConfidenceReason ||
+                  "No follow-up explanation is available."
+              )}
             </p>
           </div>
         </div>

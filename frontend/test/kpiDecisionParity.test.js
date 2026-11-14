@@ -613,3 +613,88 @@ test(
     );
   }
 );
+
+test(
+  "backend and frontend KPI messages use count-aware wording without changing scoring or decisions",
+  () => {
+    const fixtures = [
+      [],
+      [
+        {
+          id: 401,
+          employee_id: 7001,
+          violation_type: "Fictional critical incident",
+          severity: "Critical",
+          status: "Open",
+          incident_date: "2026-10-01",
+        },
+      ],
+      [
+        {
+          id: 402,
+          employee_id: 7001,
+          violation_type: "Late",
+          severity: "Minor",
+          status: "Open",
+          incident_date: "2026-10-01",
+        },
+        {
+          id: 403,
+          employee_id: 7001,
+          violation_type: "Late",
+          severity: "Minor",
+          status: "Open",
+          incident_date: "2026-10-02",
+        },
+      ],
+    ];
+
+    for (const incidents of fixtures) {
+      const frontendEmployee =
+        buildFrontendEmployee(
+          incidents
+        );
+      const backendSnapshot =
+        buildTrustedDecisionSnapshot(
+          incidents,
+          EVALUATION_DATE
+        );
+
+      assert.equal(
+        frontendEmployee.activeViolationCount,
+        backendSnapshot.activeViolationCount
+      );
+      assert.equal(
+        frontendEmployee.activeCriticalIncidentCount,
+        backendSnapshot.activeCriticalIncidentCount
+      );
+      assert.equal(
+        frontendEmployee.activeSeverityScore,
+        backendSnapshot.activeSeverityScore
+      );
+      assert.equal(
+        frontendEmployee.suggestedHRAction,
+        backendSnapshot.suggestedHRAction
+      );
+      assert.equal(
+        frontendEmployee.correctiveActionBasis,
+        backendSnapshot.correctiveActionBasis
+      );
+      assert.equal(
+        frontendEmployee.suggestedHRActionReason,
+        backendSnapshot.suggestedHRActionReason
+      );
+
+      const generatedText = [
+        frontendEmployee.correctiveActionBasis,
+        frontendEmployee.suggestedHRActionReason,
+        frontendEmployee.decisionConfidenceReason,
+      ].join(" ");
+
+      assert.doesNotMatch(
+        generatedText,
+        /\b(?:incident|violation|case|time)\(s\)/i
+      );
+    }
+  }
+);

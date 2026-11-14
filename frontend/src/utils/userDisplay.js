@@ -14,3 +14,16 @@ export function getUserFullName(user = {}) {
   return [user.firstName || user.first_name, user.middleName || user.middle_name, user.lastName || user.last_name]
     .map((part) => String(part || "").trim()).filter(Boolean).join(" ") || "Reviewer name unavailable";
 }
+
+export function getConfigurationActorDisplay(metadata = {}) {
+  const displayName = String(metadata.updatedByDisplayName || "").trim();
+  if (displayName) return displayName;
+
+  const username = String(
+    metadata.updatedByUsername || metadata.updatedBy || ""
+  ).trim();
+
+  return username
+    ? `Account name unavailable (username: ${username})`
+    : "Account name unavailable";
+}

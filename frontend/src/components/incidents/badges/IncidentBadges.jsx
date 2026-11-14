@@ -4,6 +4,10 @@ import {
   FiCheckCircle,
   FiInfo,
 } from "react-icons/fi";
+import {
+  getIncidentDaysOpen,
+  getIncidentDaysOpenLabel,
+} from "../../../utils/incidents/incidentDuration";
 
 const SEVERITY_CONFIG = {
   Minor: {
@@ -174,17 +178,15 @@ export function StatusBadge({
 export function CaseAgeBadge({
   incident,
 }) {
-  const rawDays = Number(
-    incident?.caseAgeDays ??
-      incident?.case_age_days ??
-      0
-  );
-
   const days =
-    Number.isFinite(rawDays) &&
-    rawDays >= 0
-      ? Math.floor(rawDays)
-      : 0;
+    getIncidentDaysOpen(
+      incident
+    );
+
+  const durationLabel =
+    getIncidentDaysOpenLabel(
+      incident
+    );
 
   const isOverdue = Boolean(
     incident?.isOverdue ??
@@ -197,16 +199,16 @@ export function CaseAgeBadge({
 
   return (
     <span
-      title={`${days} day${
-        days === 1 ? "" : "s"
-      }${
+      title={`${durationLabel}${
         isOverdue
           ? " • Overdue"
           : ""
       }`}
       className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[11px] font-extrabold ${className}`}
     >
-      {days}d
+      {days === null
+        ? durationLabel
+        : `${days}d`}
     </span>
   );
 }
