@@ -1058,9 +1058,44 @@ function addDeploymentStatusFilter(
   }
 }
 
+function normalizeDeploymentEndReasonFilter(value) {
+  const reason = normalizeNullableText(value);
+
+  if (!reason) {
+    return null;
+  }
+
+  return reason.slice(0, 255);
+}
+
+function addDeploymentEndReasonFilter(
+  where,
+  params,
+  endReason,
+  assignmentAlias = "da"
+) {
+  if (!endReason) {
+    return;
+  }
+
+  where.push(`
+    LOWER(
+      TRIM(
+        COALESCE(
+          ${assignmentAlias}.end_reason,
+          ''
+        )
+      )
+    ) = ?
+  `);
+
+  params.push(endReason.toLowerCase());
+}
+
 function buildDeploymentSummaryFilters({
   search,
   status,
+  endReason,
   month,
   year,
   coordinatorCompany = null,
@@ -1099,6 +1134,13 @@ function buildDeploymentSummaryFilters({
     where,
     params,
     status,
+    "da"
+  );
+
+  addDeploymentEndReasonFilter(
+    where,
+    params,
+    endReason,
     "da"
   );
 
@@ -1960,6 +2002,11 @@ exports.getDeployments = async (
             )
           : null;
 
+      const endReason =
+        normalizeDeploymentEndReasonFilter(
+          req.query?.endReason
+        );
+
       const isAllStatusFilter =
         [
           "all",
@@ -2061,6 +2108,7 @@ exports.getDeployments = async (
         buildDeploymentSummaryFilters({
           search,
           status,
+          endReason,
           month,
           year,
           coordinatorCompany,
@@ -2289,11 +2337,32 @@ exports.getDeployments = async (
           year DESC
       `;
 
+      const endReasonOptionsSql = `
+        SELECT DISTINCT
+          TRIM(da.end_reason) AS endReason
+
+        FROM deployment_assignments AS da
+
+        INNER JOIN employees AS e
+          ON e.id = da.employee_id
+
+        WHERE
+          (e.archived = 0 OR da.status <> 'Active')
+
+          AND NULLIF(TRIM(da.end_reason), '') IS NOT NULL
+
+          ${companyScopeSql}
+
+        ORDER BY
+          endReason ASC
+      `;
+
       const [
         dataResult,
         countResult,
         companySummaryResult,
         yearOptionsResult,
+        endReasonOptionsResult,
       ] =
         await Promise.all([
           db
@@ -2323,6 +2392,13 @@ exports.getDeployments = async (
               yearOptionsSql,
               companyScopeParams
             ),
+
+          db
+            .promise()
+            .query(
+              endReasonOptionsSql,
+              companyScopeParams
+            ),
         ]);
 
       const [rows] =
@@ -2340,6 +2416,11 @@ exports.getDeployments = async (
         yearOptionRows,
       ] =
         yearOptionsResult;
+
+      const [
+        endReasonOptionRows,
+      ] =
+        endReasonOptionsResult;
 
       const total =
         Number(
@@ -2384,11 +2465,20 @@ exports.getDeployments = async (
               .filter(
                 Number.isInteger
               ),
+          endReasons:
+            endReasonOptionRows
+              .map((row) =>
+                normalizeNullableText(
+                  row.endReason
+                )
+              )
+              .filter(Boolean),
         },
 
         filters: {
           search,
           status,
+          endReason,
           month,
           year,
         },
@@ -2748,6 +2838,11 @@ exports.getDeploymentReport =
             )
           : null;
 
+      const endReason =
+        normalizeDeploymentEndReasonFilter(
+          req.query?.endReason
+        );
+
       const isAllStatusFilter =
         [
           "all",
@@ -2848,6 +2943,7 @@ exports.getDeploymentReport =
         buildDeploymentSummaryFilters({
           search,
           status,
+          endReason,
           month,
           year,
           coordinatorCompany,
@@ -2919,6 +3015,7 @@ exports.getDeploymentReport =
         filters: {
           search,
           status,
+          endReason,
           month,
           year,
         },
@@ -2941,6 +3038,16 @@ exports.getDeploymentReport =
         });
     }
   };
+
+if (
+  typeof process !== "undefined" &&
+  process.env.NODE_ENV === "test"
+) {
+  exports.__test = {
+    buildDeploymentSummaryFilters,
+    normalizeDeploymentEndReasonFilter,
+  };
+}
 
 /*
  * ==================================================

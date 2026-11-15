@@ -6,9 +6,48 @@ import {
   buildLegacySeparationPayload,
   formatDateForInput,
   getDeploymentDisplayStatus,
+  getDeploymentEndReasonDisplay,
+  getDeploymentTimelineInfo,
   normalizeDeploymentStatus,
   normalizeSeparationReason,
 } from "../src/utils/deployments/deploymentHelpers.js";
+
+test("deployment end reason presentation preserves raw meanings and maps the legacy label", () => {
+  assert.equal(
+    getDeploymentEndReasonDisplay("Completed Contract"),
+    "Deployment Ended"
+  );
+  assert.equal(
+    getDeploymentEndReasonDisplay("Transferred / Reassigned"),
+    "Transferred / Reassigned"
+  );
+  assert.equal(
+    getDeploymentEndReasonDisplay("Legacy Client Pullout"),
+    "Legacy Client Pullout"
+  );
+  assert.equal(getDeploymentEndReasonDisplay("", "Deployment ended"), "Deployment ended");
+});
+
+test("deployment timeline distinguishes completion from employment separation", () => {
+  assert.match(
+    getDeploymentTimelineInfo(
+      "2026-01-01",
+      "2026-09-18",
+      "Completed",
+      "Transferred / Reassigned"
+    ),
+    /^Deployment ended on /
+  );
+  assert.match(
+    getDeploymentTimelineInfo(
+      "2026-01-01",
+      "2026-09-18",
+      "Cancelled",
+      "Resigned"
+    ),
+    /^Employment separation recorded on /
+  );
+});
 
 const TEST_ASSIGNMENT_END_DATE =
   "2026-09-18";
@@ -497,7 +536,7 @@ test(
 );
 
 test(
-  "buildDeploymentStatusPayload requires an assignment end date",
+  "buildDeploymentStatusPayload requires a deployment end date",
   () => {
     assert.throws(
       () =>
@@ -509,7 +548,7 @@ test(
           separationRemarks:
             "Moving to another client.",
         }),
-      /valid assignment end date/i
+      /valid deployment end date/i
     );
   }
 );

@@ -13,10 +13,10 @@ import {
   formatDateForInput,
   formatDisplayDate,
   getDeploymentDisplayStatus,
+  getDeploymentEndReasonDisplay,
   normalizeDeploymentStatus,
 } from "../../../utils/deployments/deploymentHelpers";
 const ASSIGNMENT_COMPLETION_REASON_OPTIONS = [
-  "Completed Contract",
   "End of Assignment / Pulled Out by Client",
   "Transferred / Reassigned",
 ];
@@ -89,11 +89,11 @@ function EndAssignmentModal({
     }
     clearError();
     if (!separationDate) {
-      setError("Please select the assignment end date.");
+      setError("Please select the deployment end date.");
       return;
     }
     if (!separationReason) {
-      setError("Please select an assignment end reason.");
+      setError("Please select a deployment end reason.");
       return;
     }
     const cleanRemarks = separationRemarks.trim();
@@ -107,16 +107,16 @@ function EndAssignmentModal({
       });
       if (!wasSaved) {
         setError(
-          "The assignment end could not be saved. Please review the information and try again."
+          "The deployment end could not be saved. Please review the information and try again."
         );
       }
     } catch (submitError) {
       console.error(
-        "End assignment submit failed:",
+        "End deployment submit failed:",
         submitError
       );
       setError(
-        "Unable to end the assignment. Please try again."
+        "Unable to end the deployment. Please try again."
       );
     } finally {
       setIsSubmitting(false);
@@ -137,8 +137,8 @@ function EndAssignmentModal({
     <Dialog
       open
       onClose={handleClose}
-      title="End Assignment"
-      description="Complete the active assignment or record a genuine employment separation."
+      title="End Deployment"
+      description="Complete the active deployment or record a genuine employment separation."
       size="lg"
       tone="warning"
       closeOnOverlay={!isSubmitting}
@@ -163,7 +163,7 @@ function EndAssignmentModal({
             disabled={isSubmitting}
             onClick={handleSubmit}
           >
-            Confirm Assignment End
+            Confirm Deployment End
           </Button>
         </div>
       }
@@ -190,7 +190,7 @@ function EndAssignmentModal({
 
               <p className="break-words">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">
-                  Client Site:
+                  Location:
                 </span>{" "}
                 {deployment.location || "-"}
               </p>
@@ -205,7 +205,7 @@ function EndAssignmentModal({
             htmlFor="deployment-assignment-end-date"
             className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300"
           >
-            Assignment End Date
+            Deployment End Date
           </label>
           <input
             id="deployment-assignment-end-date"
@@ -226,7 +226,7 @@ function EndAssignmentModal({
             htmlFor="deployment-assignment-end-reason"
             className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300"
           >
-            Assignment End Reason
+            Deployment End Reason
           </label>
           <select
             id="deployment-assignment-end-reason"
@@ -239,7 +239,7 @@ function EndAssignmentModal({
             className="ui-select"
           >
             <option value="">Select reason...</option>
-            <optgroup label="Assignment completion — employment remains Active">
+            <optgroup label="Deployment end — employment remains Active">
               {ASSIGNMENT_COMPLETION_REASON_OPTIONS.map((reason) => (
                 <option key={reason} value={reason}>
                   {reason}
@@ -262,7 +262,7 @@ function EndAssignmentModal({
           htmlFor="deployment-assignment-end-details"
           className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300"
         >
-          Assignment End Details
+          Deployment End Details
           <span className="ml-1 text-xs font-medium text-slate-400">
             optional
           </span>
@@ -273,7 +273,7 @@ function EndAssignmentModal({
           disabled={isSubmitting}
           rows={3}
           maxLength={1000}
-          placeholder="Add an optional HR note or assignment end detail..."
+          placeholder="Add an optional HR note or deployment end detail..."
           onChange={(event) => {
             setSeparationRemarks(event.target.value);
             clearError();
@@ -299,10 +299,6 @@ function EndAssignmentModal({
           </div>
         </div>
       )}
-
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-        Assignment completion and transfer reasons retain Active employment and return the employee to Floating / Standby. Resignation, Termination, and AWOL change employment status. Use Transferred / Reassigned for transfers; do not record a transfer as a separation.
-      </div>
     </Dialog>
   );
 }
@@ -324,7 +320,7 @@ export default function DeploymentTable({
     : [];
 
   // HR Coordinators are already restricted to their assigned company
-  // by backend scope, so repeating Client Company / Site in every row
+  // by backend scope, so repeating Client Company / Location in every row
   // adds noise without adding useful information.
   const showCompanyLocation = !isHrCoordinator;
 
@@ -496,7 +492,7 @@ export default function DeploymentTable({
                     scope="col"
                     className="px-4 py-3"
                   >
-                    Client Company / Site
+                    Client Company / Location
                   </th>
                 )}
                 <th scope="col" className="px-4 py-3">
@@ -507,7 +503,7 @@ export default function DeploymentTable({
                     scope="col"
                     className="px-4 py-3"
                   >
-                    Assignment End Details
+                    Deployment End Details
                   </th>
                 )}
                 <th scope="col" className="px-4 py-3">
@@ -537,6 +533,11 @@ export default function DeploymentTable({
                     deployment.endRemarks ||
                     deployment.end_remarks ||
                     "";
+                  const separationReasonDisplay =
+                    getDeploymentEndReasonDisplay(
+                      separationReason,
+                      "Deployment ended"
+                    );
                   const displayStatus =
                     internalStatus === "Active"
                       ? "Deployed"
@@ -606,7 +607,7 @@ export default function DeploymentTable({
                               title={deployment.location || "-"}
                               className="mt-0.5 max-w-[220px] truncate text-xs text-slate-500 dark:text-slate-400"
                             >
-                              Site: {deployment.location || "-"}
+                              Location: {deployment.location || "-"}
                             </p>
                           </div>
                         </td>
@@ -629,17 +630,16 @@ export default function DeploymentTable({
                                 )}
                               </p>
                               <p
-                                title={separationReason || ""}
+                                title={separationReasonDisplay}
                                 className="mt-0.5 max-w-[180px] truncate text-xs text-slate-500 dark:text-slate-400"
                               >
-                                {separationReason ||
-                                  "Assignment ended"}
+                                {separationReasonDisplay}
                               </p>
                             </div>
                           ) : (
                             <span
                               className="text-sm text-slate-400"
-                              aria-label="No assignment end"
+                              aria-label="No deployment end"
                             >
                               —
                             </span>
@@ -672,8 +672,8 @@ export default function DeploymentTable({
 
                           {canEndAssignment && (
                             <IconButton
-                              label={`End assignment for ${employeeName}`}
-                              title="End assignment"
+                              label={`End deployment for ${employeeName}`}
+                              title="End deployment"
                               variant="warning"
                               size="sm"
                               onClick={() =>

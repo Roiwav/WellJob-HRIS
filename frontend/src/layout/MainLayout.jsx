@@ -1,4 +1,5 @@
 
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet } from "react-router-dom";
 
 import Navbar from "../components/Navbar";
@@ -38,6 +39,9 @@ import useTheme from "../hooks/useTheme";
  */
 
 export default function MainLayout() {
+  const [mobileNavigationOpen, setMobileNavigationOpen] =
+    useState(false);
+  const mobileNavigationButtonRef = useRef(null);
   const {
     darkMode,
     toggleTheme,
@@ -56,6 +60,25 @@ export default function MainLayout() {
     user?.role ===
     ROLES.HR_COORDINATOR;
 
+  const closeMobileNavigation = useCallback(() => {
+    setMobileNavigationOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const desktopMediaQuery = window.matchMedia("(min-width: 1024px)");
+    const handleDesktopChange = (event) => {
+      if (event.matches) {
+        closeMobileNavigation();
+      }
+    };
+
+    desktopMediaQuery.addEventListener("change", handleDesktopChange);
+
+    return () => {
+      desktopMediaQuery.removeEventListener("change", handleDesktopChange);
+    };
+  }, [closeMobileNavigation]);
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-gray-100 supports-[height:100dvh]:h-dvh dark:bg-slate-950">
       {/*
@@ -71,6 +94,15 @@ export default function MainLayout() {
         darkMode={
           darkMode
         }
+        mobileOpen={
+          mobileNavigationOpen
+        }
+        onMobileClose={
+          closeMobileNavigation
+        }
+        mobileTriggerRef={
+          mobileNavigationButtonRef
+        }
       />
 
       {/*
@@ -80,9 +112,22 @@ export default function MainLayout() {
        */}
 
       <div className="flex min-w-0 flex-1 flex-col text-gray-900 dark:text-white">
-        <Navbar />
+        <Navbar
+          onOpenMobileNavigation={() =>
+            setMobileNavigationOpen(true)
+          }
+          mobileNavigationOpen={
+            mobileNavigationOpen
+          }
+          mobileNavigationButtonRef={
+            mobileNavigationButtonRef
+          }
+          onLogout={
+            closeMobileNavigation
+          }
+        />
 
-        <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
+        <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-0 sm:p-2 lg:p-6">
           <Outlet />
         </main>
       </div>

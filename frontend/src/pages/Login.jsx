@@ -413,7 +413,7 @@ export default function Login() {
     !recoveryFullName.trim();
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-slate-50 text-slate-900 transition-colors dark:bg-[#020817] dark:text-white lg:h-screen lg:overflow-hidden">
+    <div className="relative flex min-h-screen min-w-0 flex-col overflow-x-hidden bg-slate-50 text-slate-900 transition-colors supports-[height:100dvh]:min-h-dvh dark:bg-[#020817] dark:text-white lg:h-screen lg:overflow-hidden lg:supports-[height:100dvh]:h-dvh">
       <style>{`
         @keyframes login-grid-shift {
           from { background-position: 0 0; }
@@ -506,7 +506,7 @@ export default function Login() {
         <div className="absolute -bottom-20 left-[-8%] h-32 w-[116%] rounded-[50%] border-t border-cyan-400/25 shadow-[0_-10px_36px_rgba(34,211,238,0.12)]" />
       </div>
 
-      <header className="relative z-20 shrink-0 border-b border-slate-200/80 bg-white/90 px-5 py-3 backdrop-blur-xl dark:border-white/[0.07] dark:bg-slate-950 sm:px-8 lg:px-10">
+      <header className="relative z-20 shrink-0 border-b border-slate-200/80 bg-white/90 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-xl dark:border-white/[0.07] dark:bg-slate-950 sm:px-8 sm:py-3 lg:px-10">
         <div className="mx-auto flex w-full max-w-[1380px] items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-13 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-blue-200 bg-white p-1.5 shadow-sm dark:border-blue-400/20 dark:bg-slate-950 dark:shadow-[0_0_24px_rgba(59,130,246,0.14)]">
@@ -536,7 +536,7 @@ export default function Login() {
         </div>
       </header>
 
-      <main className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-4 sm:px-6 lg:overflow-hidden lg:px-8 lg:py-3">
+      <main className="relative z-10 flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-x-hidden overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:px-6 sm:py-4 lg:overflow-hidden lg:px-8 lg:py-3">
         <div className="mx-auto grid w-full max-w-[1160px] items-center gap-7 lg:grid-cols-[0.92fr_1.08fr] lg:gap-8 xl:gap-10">
           <section className="login-brand-panel hidden lg:block">
             <div className="max-w-lg">

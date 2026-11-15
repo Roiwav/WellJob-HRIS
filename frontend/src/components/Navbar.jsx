@@ -10,6 +10,7 @@ import {
   FiClock,
   FiEye,
   FiLogOut,
+  FiMenu,
   FiSettings,
   FiUser,
 } from "react-icons/fi";
@@ -231,7 +232,13 @@ function AvatarCircle({ imageUrl, roleConfig, showUserIcon = false, size = "smal
 
   </div>);
 }
-export default function Navbar({ title = "Welljob Solutions & General Services", }) {
+export default function Navbar({
+  title = "Welljob Solutions & General Services",
+  onOpenMobileNavigation,
+  mobileNavigationOpen = false,
+  mobileNavigationButtonRef,
+  onLogout,
+}) {
   const navigate = useNavigate();
   const { user, setUser, } = useAuth();
   const [openProfile, setOpenProfile] = useState(false);
@@ -607,6 +614,7 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
     navigate("/profile-settings");
   };
   const handleLogout = () => {
+    onLogout?.();
     recoveryRequestSequenceRef.current +=
       1;
     localStorage.removeItem("user");
@@ -620,13 +628,29 @@ export default function Navbar({ title = "Welljob Solutions & General Services",
   };
   return (<>
 
-   <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4 transition-colors duration-300 dark:border-white/10 dark:bg-slate-950">
+   <div className="flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-3 py-3 transition-colors duration-300 sm:px-4 lg:px-6 lg:py-4 dark:border-white/10 dark:bg-slate-950">
 
-    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+
+     <button
+      ref={mobileNavigationButtonRef}
+      type="button"
+      onClick={onOpenMobileNavigation}
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-700 transition hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-indigo-500/20 lg:hidden dark:text-gray-200 dark:hover:bg-white/10"
+      aria-label="Open navigation menu"
+      aria-expanded={mobileNavigationOpen}
+      aria-controls="mobile-navigation-drawer"
+     >
+      <FiMenu size={22} aria-hidden="true"/>
+     </button>
+
+     <h2 className="truncate text-base font-semibold text-gray-900 sm:text-lg dark:text-white">
 
      {title}
 
-    </h2>
+     </h2>
+
+    </div>
 
     <div className="flex items-center gap-3">
 

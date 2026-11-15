@@ -5,6 +5,8 @@ const {
   AUDIT_CATEGORY,
 } = require("../utils/auditLogger");
 
+const movementReport = require("../utils/deploymentMovementReport");
+
 /*
  * ================================================================
  * WELLJOB HRIS
@@ -64,24 +66,7 @@ const SOURCE_EVENT = Object.freeze({
   WITHDRAWN: "DEPLOYMENT_ATTEMPT_WITHDRAWN",
 });
 
-const MOVEMENT_TYPE = Object.freeze({
-  SCHEDULED:
-    "Scheduled for Deployment",
-  DEPLOYED:
-    "Successfully Deployed",
-  NO_SHOW:
-    "No Show",
-  WITHDRAWN:
-    "Withdrawn",
-  RESIGNED:
-    "Resigned",
-  TERMINATED:
-    "Terminated",
-  AWOL:
-    "AWOL",
-  OTHER_SEPARATION:
-    "Other Separation",
-});
+const MOVEMENT_TYPE = movementReport.MOVEMENT_TYPE;
 
 const MOVEMENT_REPORT_ROLES =
   new Set([
@@ -1902,1056 +1887,430 @@ exports.getDeploymentAttempts =
  * - HR_COORDINATOR: assigned company only
  *
  * Filters:
+ * - company: authorized historical company snapshot, optional
  * - month: 0..11, optional; blank / ALL = all months
  * - year: four-digit year; defaults to current Philippine year
- *
- * There is intentionally NO company filter.
+ * - page / pageSize: bounded activity pagination
+ * - export=all: full authorized filtered dataset for PDF export
  *
  * Movement categories:
  * - Scheduled for Deployment
  * - Successfully Deployed
  * - No Show
  * - Withdrawn
+ * - Transferred / Reassigned
+ * - Deployment Ended / Pulled Out
+ * - Other Deployment Completion
  * - Resigned
  * - Terminated
  * - AWOL
  * - Other Separation
  *
  * Date source:
- * - Scheduled -> scheduled_date
- * - Successfully Deployed -> actual_arrival_date
- * - No Show -> scheduled_date
- * - Withdrawn -> resolved_at
- * - Separation -> deployment end_date / ended_at
- *
- * Completed-contract style records are intentionally omitted from
- * this report because the current Welljob process does not expose a
- * user-facing Completed movement category.
+ * Occurrence timestamps and effective/business dates remain separate.
+ * Historical company and position come only from attempt/assignment
+ * snapshots; current employee designation is never substituted.
  * ================================================================
  */
-exports.getDeploymentMovementReport =
-  async (
-    req,
-    res
-  ) => {
-    const actor =
-      getActor(
-        req
-      );
+/*
+ * Canonical Deployment Activity History implementation.
+ *
+ * The existing route/export remains stable. Source tables remain read-only.
+ */
+exports.getDeploymentMovementReport = async (req, res) => {
+  const actor = getActor(req);
+  if (!MOVEMENT_REPORT_ROLES.has(actor.role)) {
+    return sendRoleDenied(res, "You are not authorized to access deployment movement reporting.");
+  }
+  if (actor.role === "HR_COORDINATOR" && !actor.assignedCompany) {
+    return sendRoleDenied(res, "No assigned company is configured for this HR Coordinator.");
+  }
 
-    if (
-      !MOVEMENT_REPORT_ROLES.has(
-        actor.role
+  const monthResult = normalizeMovementReportMonth(req?.query?.month);
+  const yearResult = normalizeMovementReportYear(req?.query?.year);
+  if (!monthResult.ok) {
+    return sendBadRequest(res, "Movement report month must be between 0 and 11.");
+  }
+  if (!yearResult.ok) {
+    return sendBadRequest(res, "Invalid movement report year.");
+  }
+
+  const requestedCompany = movementReport.normalizeCompanyFilter(req?.query?.company);
+  if (
+    actor.role === "HR_COORDINATOR" &&
+    requestedCompany &&
+    !movementReport.companyMatches(requestedCompany, actor.assignedCompany)
+  ) {
+    return sendRoleDenied(res, "HR Coordinators may only report on their assigned company.");
+  }
+
+  const page = parsePositiveInteger(req?.query?.page) || 1;
+  const requestedPageSize = parsePositiveInteger(req?.query?.pageSize) || DEFAULT_PAGE_SIZE;
+  const pageSize = Math.min(requestedPageSize, MAX_PAGE_SIZE);
+  const exportAll = ["1", "true", "all"].includes(
+    normalizeComparable(req?.query?.export)
+  );
+  const month = monthResult.value;
+  const year = yearResult.value;
+  const period = buildMovementReportPeriod(year, month);
+  const effectiveCompany =
+    actor.role === "HR_COORDINATOR" ? actor.assignedCompany : requestedCompany;
+  const attemptScope = buildCoordinatorCompanyScope(actor, "da");
+  const assignmentScope = buildCoordinatorCompanyScope(actor, "assignments");
+  const attemptMetaScope = buildCoordinatorCompanyScope(actor, "attempt_meta");
+  const assignmentMetaScope = buildCoordinatorCompanyScope(actor, "assignment_meta");
+
+  let connection;
+  try {
+    connection = await db.promise().getConnection();
+    const [attemptRows] = await connection.query(
+      `
+      SELECT
+        da.id AS attemptId,
+        da.employee_id AS employeeId,
+        e.name AS employeeName,
+        da.company,
+        da.position,
+        DATE_FORMAT(da.scheduled_date, '%Y-%m-%d') AS scheduledDate,
+        DATE_FORMAT(da.scheduled_time, '%H:%i') AS scheduledTime,
+        DATE_FORMAT(da.actual_arrival_date, '%Y-%m-%d') AS actualArrivalDate,
+        DATE_FORMAT(da.created_at, '%Y-%m-%dT%H:%i:%s.000Z') AS createdAt,
+        DATE_FORMAT(da.resolved_at, '%Y-%m-%dT%H:%i:%s.000Z') AS resolvedAt,
+        DATE_FORMAT(DATE(CONVERT_TZ(da.created_at, '+00:00', '+08:00')), '%Y-%m-%d') AS createdDate,
+        DATE_FORMAT(DATE(CONVERT_TZ(da.resolved_at, '+00:00', '+08:00')), '%Y-%m-%d') AS resolvedDate,
+        da.status,
+        da.outcome_reason AS outcomeReason,
+        da.remarks,
+        da.created_by_user_id AS createdByUserId,
+        da.resolved_by_user_id AS resolvedByUserId,
+        da.deployment_assignment_id AS deploymentAssignmentId
+      FROM deployment_attempts AS da
+      INNER JOIN employees AS e ON e.id = da.employee_id
+      WHERE (
+        (DATE(CONVERT_TZ(da.created_at, '+00:00', '+08:00')) >= ?
+          AND DATE(CONVERT_TZ(da.created_at, '+00:00', '+08:00')) < ?)
+        OR
+        (COALESCE(DATE(CONVERT_TZ(da.resolved_at, '+00:00', '+08:00')), da.actual_arrival_date) >= ?
+          AND COALESCE(DATE(CONVERT_TZ(da.resolved_at, '+00:00', '+08:00')), da.actual_arrival_date) < ?)
       )
-    ) {
-      return sendRoleDenied(
-        res,
-        "You are not authorized to access deployment movement reporting."
-      );
-    }
-
-    if (
-      actor.role ===
-        "HR_COORDINATOR" &&
-      !actor.assignedCompany
-    ) {
-      return sendRoleDenied(
-        res,
-        "No assigned company is configured for this HR Coordinator."
-      );
-    }
-
-    const monthResult =
-      normalizeMovementReportMonth(
-        req?.query?.month
-      );
-
-    if (
-      !monthResult.ok
-    ) {
-      return sendBadRequest(
-        res,
-        "Movement report month must be between 0 and 11."
-      );
-    }
-
-    const yearResult =
-      normalizeMovementReportYear(
-        req?.query?.year
-      );
-
-    if (
-      !yearResult.ok
-    ) {
-      return sendBadRequest(
-        res,
-        "Invalid movement report year."
-      );
-    }
-
-    const month =
-      monthResult.value;
-
-    const year =
-      yearResult.value;
-
-    const period =
-      buildMovementReportPeriod(
-        year,
-        month
-      );
-
-    const attemptScope =
-      buildCoordinatorCompanyScope(
-        actor,
-        "da"
-      );
-
-    const assignmentScope =
-      buildCoordinatorCompanyScope(
-        actor,
-        "assignments"
-      );
-
-    let connection;
-
-    try {
-      connection =
-        await db
-          .promise()
-          .getConnection();
-
-      /*
-       * One deployment attempt may legitimately create two movement
-       * rows in the same or different periods:
-       *
-       * 1. the scheduling event
-       * 2. its eventual outcome
-       *
-       * Example:
-       * Scheduled in September, successfully deployed in October.
-       */
-      /*
-       * deployment_attempts.resolved_at is written by this
-       * controller with UTC_TIMESTAMP(). The database session
-       * itself runs in UTC, so derive its reporting date only
-       * after an explicit UTC -> Manila conversion.
-       *
-       * scheduled_date and actual_arrival_date are DATE columns
-       * and must remain unchanged calendar-date values.
-       */
-      const [attemptRows] =
-        await connection.query(
-          `
-          SELECT
-            da.id AS attemptId,
-            da.employee_id AS employeeId,
-            e.name AS employeeName,
-            da.company,
-            da.position,
-
-            DATE_FORMAT(
-              da.scheduled_date,
-              '%Y-%m-%d'
-            ) AS scheduledDate,
-
-            DATE_FORMAT(
-              da.scheduled_time,
-              '%H:%i'
-            ) AS scheduledTime,
-
-            DATE_FORMAT(
-              da.actual_arrival_date,
-              '%Y-%m-%d'
-            ) AS actualArrivalDate,
-
-            DATE_FORMAT(
-              DATE(
-                CONVERT_TZ(
-                  da.resolved_at,
-                  '+00:00',
-                  '+08:00'
-                )
-              ),
-              '%Y-%m-%d'
-            ) AS resolvedDate,
-
-            da.status,
-            da.outcome_reason AS outcomeReason,
-            da.remarks,
-            da.created_by_user_id AS createdByUserId,
-            da.resolved_by_user_id AS resolvedByUserId,
-            da.deployment_assignment_id AS deploymentAssignmentId
-
-          FROM
-            deployment_attempts AS da
-
-          INNER JOIN
-            employees AS e
-              ON e.id =
-                da.employee_id
-
-          WHERE
-            (
-              (
-                da.scheduled_date >= ?
-                AND da.scheduled_date < ?
-              )
-
-              OR (
-                da.actual_arrival_date >= ?
-                AND da.actual_arrival_date < ?
-              )
-
-              OR (
-                DATE(
-                  CONVERT_TZ(
-                    da.resolved_at,
-                    '+00:00',
-                    '+08:00'
-                  )
-                ) >= ?
-                AND DATE(
-                  CONVERT_TZ(
-                    da.resolved_at,
-                    '+00:00',
-                    '+08:00'
-                  )
-                ) < ?
-              )
-            )
-
-            ${attemptScope.sql}
-
-          ORDER BY
-            da.scheduled_date ASC,
-            COALESCE(
-              da.scheduled_time,
-              '23:59:59'
-            ) ASC,
-            da.id ASC
-          `,
-          [
-            period.start,
-            period.endExclusive,
-            period.start,
-            period.endExclusive,
-            period.start,
-            period.endExclusive,
-            ...attemptScope.params,
-          ]
-        );
-
-      const [separationRows] =
-        await connection.query(
-          `
-          SELECT
-            assignments.id AS deploymentAssignmentId,
-            assignments.employee_id AS employeeId,
-            e.name AS employeeName,
-            assignments.company,
-            assignments.position,
-            assignments.status AS assignmentStatus,
-            assignments.end_reason AS endReason,
-            assignments.end_remarks AS endRemarks,
-
-            DATE_FORMAT(
-              COALESCE(
-                assignments.end_date,
-                DATE(
-                  assignments.ended_at
-                )
-              ),
-              '%Y-%m-%d'
-            ) AS separationDate,
-
-            (
-              SELECT
-                history.changed_by_user_id
-
-              FROM
-                employee_status_history AS history
-
-              WHERE
-                history.employee_id =
-                  assignments.employee_id
-
-                AND history.changed_by_user_id
-                  IS NOT NULL
-
-                AND DATE(
-                  history.effective_at
-                ) =
-                COALESCE(
-                  assignments.end_date,
-                  DATE(
-                    assignments.ended_at
-                  )
-                )
-
-                AND history.source_event IN (
-                  'DEPLOYMENT_STATUS_UPDATED',
-                  'DEPLOYMENT_ENDED',
-                  'EMPLOYEE_SEPARATED',
-                  'EMPLOYMENT_STATUS_UPDATED'
-                )
-
-              ORDER BY
-                history.effective_at DESC,
-                history.id DESC
-
-              LIMIT 1
-            ) AS performedByUserId
-
-          FROM
-            deployment_assignments AS assignments
-
-          INNER JOIN
-            employees AS e
-              ON e.id =
-                assignments.employee_id
-
-          WHERE
-            COALESCE(
-              assignments.end_date,
-              DATE(
-                assignments.ended_at
-              )
-            ) >= ?
-
-            AND COALESCE(
-              assignments.end_date,
-              DATE(
-                assignments.ended_at
-              )
-            ) < ?
-
-            AND (
-              LOWER(
-                TRIM(
-                  COALESCE(
-                    assignments.end_reason,
-                    ''
-                  )
-                )
-              ) IN (
-                'resigned',
-                'terminated',
-                'awol'
-              )
-
-              OR LOWER(
-                TRIM(
-                  COALESCE(
-                    assignments.status,
-                    ''
-                  )
-                )
-              ) IN (
-                'cancelled',
-                'canceled',
-                'separated',
-                'ended'
-              )
-
-              OR COALESCE(
-                assignments.end_remarks,
-                ''
-              ) LIKE
-                '[Other Separation]%'
-            )
-
-            ${assignmentScope.sql}
-
-          ORDER BY
-            separationDate ASC,
-            assignments.id ASC
-          `,
-          [
-            period.start,
-            period.endExclusive,
-            ...assignmentScope.params,
-          ]
-        );
-
-      const events = [];
-
-      for (
-        const row of attemptRows
-      ) {
-        if (
-          isDateInsideMovementPeriod(
-            row.scheduledDate,
-            period
-          )
-        ) {
-          events.push({
-            id:
-              `attempt-${row.attemptId}-scheduled`,
-
-            source:
-              "deployment_attempt",
-
-            sourceId:
-              Number(
-                row.attemptId
-              ),
-
-            attemptId:
-              Number(
-                row.attemptId
-              ),
-
-            deploymentAssignmentId:
-              row.deploymentAssignmentId
-                ? Number(
-                    row.deploymentAssignmentId
-                  )
-                : null,
-
-            eventDate:
-              row.scheduledDate,
-
-            scheduledTime:
-              row.scheduledTime ||
-              null,
-
-            employeeId:
-              Number(
-                row.employeeId
-              ),
-
-            employeeName:
-              row.employeeName ||
-              "Unknown Employee",
-
-            company:
-              row.company ||
-              "Unassigned",
-
-            position:
-              row.position ||
-              null,
-
-            movement:
-              MOVEMENT_TYPE.SCHEDULED,
-
-            fromStatus:
-              WORKFORCE_STATUS.FLOATING,
-
-            toStatus:
-              WORKFORCE_STATUS.FOR_DEPLOYMENT,
-
-            reason:
-              "Scheduled for deployment",
-
-            remarks:
-              row.remarks ||
-              null,
-
-            performedByUserId:
-              row.createdByUserId
-                ? Number(
-                    row.createdByUserId
-                  )
-                : null,
-          });
-        }
-
-        if (
-          row.status ===
-            ATTEMPT_STATUS.DEPLOYED &&
-          isDateInsideMovementPeriod(
-            row.actualArrivalDate,
-            period
-          )
-        ) {
-          events.push({
-            id:
-              `attempt-${row.attemptId}-deployed`,
-
-            source:
-              "deployment_attempt",
-
-            sourceId:
-              Number(
-                row.attemptId
-              ),
-
-            attemptId:
-              Number(
-                row.attemptId
-              ),
-
-            deploymentAssignmentId:
-              row.deploymentAssignmentId
-                ? Number(
-                    row.deploymentAssignmentId
-                  )
-                : null,
-
-            eventDate:
-              row.actualArrivalDate,
-
-            employeeId:
-              Number(
-                row.employeeId
-              ),
-
-            employeeName:
-              row.employeeName ||
-              "Unknown Employee",
-
-            company:
-              row.company ||
-              "Unassigned",
-
-            position:
-              row.position ||
-              null,
-
-            movement:
-              MOVEMENT_TYPE.DEPLOYED,
-
-            fromStatus:
-              WORKFORCE_STATUS.FOR_DEPLOYMENT,
-
-            toStatus:
-              WORKFORCE_STATUS.DEPLOYED,
-
-            reason:
-              row.outcomeReason ||
-              "Arrival confirmed",
-
-            remarks:
-              row.remarks ||
-              null,
-
-            performedByUserId:
-              row.resolvedByUserId
-                ? Number(
-                    row.resolvedByUserId
-                  )
-                : null,
-          });
-        }
-
-        if (
-          row.status ===
-            ATTEMPT_STATUS.NO_SHOW &&
-          isDateInsideMovementPeriod(
-            row.scheduledDate,
-            period
-          )
-        ) {
-          events.push({
-            id:
-              `attempt-${row.attemptId}-no-show`,
-
-            source:
-              "deployment_attempt",
-
-            sourceId:
-              Number(
-                row.attemptId
-              ),
-
-            attemptId:
-              Number(
-                row.attemptId
-              ),
-
-            deploymentAssignmentId:
-              null,
-
-            eventDate:
-              row.scheduledDate,
-
-            scheduledTime:
-              row.scheduledTime ||
-              null,
-
-            employeeId:
-              Number(
-                row.employeeId
-              ),
-
-            employeeName:
-              row.employeeName ||
-              "Unknown Employee",
-
-            company:
-              row.company ||
-              "Unassigned",
-
-            position:
-              row.position ||
-              null,
-
-            movement:
-              MOVEMENT_TYPE.NO_SHOW,
-
-            fromStatus:
-              WORKFORCE_STATUS.FOR_DEPLOYMENT,
-
-            toStatus:
-              WORKFORCE_STATUS.FLOATING,
-
-            reason:
-              row.outcomeReason ||
-              "Employee did not report to site",
-
-            remarks:
-              row.remarks ||
-              null,
-
-            performedByUserId:
-              row.resolvedByUserId
-                ? Number(
-                    row.resolvedByUserId
-                  )
-                : null,
-          });
-        }
-
-        if (
-          row.status ===
-            ATTEMPT_STATUS.WITHDRAWN &&
-          isDateInsideMovementPeriod(
-            row.resolvedDate,
-            period
-          )
-        ) {
-          events.push({
-            id:
-              `attempt-${row.attemptId}-withdrawn`,
-
-            source:
-              "deployment_attempt",
-
-            sourceId:
-              Number(
-                row.attemptId
-              ),
-
-            attemptId:
-              Number(
-                row.attemptId
-              ),
-
-            deploymentAssignmentId:
-              null,
-
-            eventDate:
-              row.resolvedDate,
-
-            employeeId:
-              Number(
-                row.employeeId
-              ),
-
-            employeeName:
-              row.employeeName ||
-              "Unknown Employee",
-
-            company:
-              row.company ||
-              "Unassigned",
-
-            position:
-              row.position ||
-              null,
-
-            movement:
-              MOVEMENT_TYPE.WITHDRAWN,
-
-            fromStatus:
-              WORKFORCE_STATUS.FOR_DEPLOYMENT,
-
-            toStatus:
-              WORKFORCE_STATUS.FLOATING,
-
-            reason:
-              row.outcomeReason ||
-              "Deployment schedule withdrawn",
-
-            remarks:
-              row.remarks ||
-              null,
-
-            performedByUserId:
-              row.resolvedByUserId
-                ? Number(
-                    row.resolvedByUserId
-                  )
-                : null,
-          });
-        }
-      }
-
-      for (
-        const row of separationRows
-      ) {
-        const movement =
-          normalizeMovementSeparationType(
-            row.assignmentStatus,
-            row.endReason,
-            row.endRemarks
-          );
-
-        if (
-          !movement ||
-          !isDateInsideMovementPeriod(
-            row.separationDate,
-            period
-          )
-        ) {
-          continue;
-        }
-
+      ${attemptScope.sql}
+      `,
+      [
+        period.start,
+        period.endExclusive,
+        period.start,
+        period.endExclusive,
+        ...attemptScope.params,
+      ]
+    );
+
+    const [assignmentRows] = await connection.query(
+      `
+      SELECT
+        assignments.id AS deploymentAssignmentId,
+        assignments.employee_id AS employeeId,
+        e.name AS employeeName,
+        assignments.company,
+        assignments.position,
+        assignments.status AS assignmentStatus,
+        assignments.end_reason AS endReason,
+        assignments.end_remarks AS endRemarks,
+        DATE_FORMAT(assignments.end_date, '%Y-%m-%d') AS endDate,
+        DATE_FORMAT(assignments.ended_at, '%Y-%m-%dT%H:%i:%s.000Z') AS endedAt,
+        DATE_FORMAT(DATE(CONVERT_TZ(assignments.ended_at, '+00:00', '+08:00')), '%Y-%m-%d') AS endedDate
+      FROM deployment_assignments AS assignments
+      INNER JOIN employees AS e ON e.id = assignments.employee_id
+      WHERE COALESCE(
+        DATE(CONVERT_TZ(assignments.ended_at, '+00:00', '+08:00')),
+        assignments.end_date
+      ) >= ?
+        AND COALESCE(
+          DATE(CONVERT_TZ(assignments.ended_at, '+00:00', '+08:00')),
+          assignments.end_date
+        ) < ?
+        AND LOWER(TRIM(COALESCE(assignments.status, ''))) IN (
+          'completed', 'cancelled', 'canceled', 'separated', 'ended'
+        )
+      ${assignmentScope.sql}
+      `,
+      [period.start, period.endExclusive, ...assignmentScope.params]
+    );
+
+    const events = [];
+    for (const row of attemptRows) {
+      const common = {
+        sourceType: "deployment_attempt",
+        source: "deployment_attempt",
+        sourceId: Number(row.attemptId),
+        attemptId: Number(row.attemptId),
+        deploymentAssignmentId: row.deploymentAssignmentId
+          ? Number(row.deploymentAssignmentId)
+          : null,
+        employeeId: Number(row.employeeId),
+        employeeName: row.employeeName || "Unknown Employee",
+        historicalCompany: row.company || null,
+        company: row.company || "Unassigned",
+        historicalPosition: row.position || null,
+        position: row.position || null,
+        scheduledDate: row.scheduledDate || null,
+        scheduledTime: row.scheduledTime || null,
+        actualArrivalDate: row.actualArrivalDate || null,
+        remarks: row.remarks || null,
+      };
+      if (isDateInsideMovementPeriod(row.createdDate || row.scheduledDate, period)) {
+        const eventKey = `attempt-${row.attemptId}-scheduled`;
         events.push({
-          id:
-            `assignment-${row.deploymentAssignmentId}-separation`,
-
-          source:
-            "deployment_assignment",
-
-          sourceId:
-            Number(
-              row.deploymentAssignmentId
-            ),
-
-          attemptId:
-            null,
-
-          deploymentAssignmentId:
-            Number(
-              row.deploymentAssignmentId
-            ),
-
-          eventDate:
-            row.separationDate,
-
-          employeeId:
-            Number(
-              row.employeeId
-            ),
-
-          employeeName:
-            row.employeeName ||
-            "Unknown Employee",
-
-          company:
-            row.company ||
-            "Unassigned",
-
-          position:
-            row.position ||
-            null,
-
-          movement,
-
-          fromStatus:
-            WORKFORCE_STATUS.DEPLOYED,
-
-          toStatus:
-            movement,
-
-          reason:
-            row.endReason ||
-            (
-              movement ===
-                MOVEMENT_TYPE.OTHER_SEPARATION
-                ? "Other separation"
-                : movement
-            ),
-
-          remarks:
-            row.endRemarks ||
-            null,
-
-          performedByUserId:
-            row.performedByUserId
-              ? Number(
-                  row.performedByUserId
-                )
-              : null,
+          ...common,
+          id: eventKey,
+          eventKey,
+          eventType: SOURCE_EVENT.SCHEDULED,
+          displayActivity: MOVEMENT_TYPE.SCHEDULED,
+          movement: MOVEMENT_TYPE.SCHEDULED,
+          occurredAt: row.createdAt || null,
+          businessDate: row.scheduledDate || row.createdDate,
+          effectiveDate: row.scheduledDate || null,
+          eventDate: row.createdDate || row.scheduledDate,
+          fromStatus: WORKFORCE_STATUS.FLOATING,
+          previousStatus: WORKFORCE_STATUS.FLOATING,
+          toStatus: WORKFORCE_STATUS.FOR_DEPLOYMENT,
+          newStatus: WORKFORCE_STATUS.FOR_DEPLOYMENT,
+          rawReason: "Scheduled for deployment",
+          displayReason: "Scheduled for deployment",
+          reason: "Scheduled for deployment",
+          performedByUserId: row.createdByUserId ? Number(row.createdByUserId) : null,
         });
       }
-
-      events.sort(
-        (
-          firstEvent,
-          secondEvent
-        ) => {
-          const dateCompare =
-            String(
-              secondEvent.eventDate
-            ).localeCompare(
-              String(
-                firstEvent.eventDate
-              )
-            );
-
-          if (
-            dateCompare !==
-            0
-          ) {
-            return dateCompare;
-          }
-
-          return String(
-            secondEvent.id
-          ).localeCompare(
-            String(
-              firstEvent.id
-            )
-          );
-        }
-      );
-
-      const enrichedEvents =
-        await resolveMovementActors(
-          connection,
-          events
-        );
-
-      const summary =
-        buildMovementSummary(
-          enrichedEvents
-        );
-
-      const attemptYearScope =
-        buildCoordinatorCompanyScope(
-          actor,
-          "attempt_years"
-        );
-
-      const assignmentYearScope =
-        buildCoordinatorCompanyScope(
-          actor,
-          "assignment_years"
-        );
-
-      const [yearRows] =
-        await connection.query(
-          `
-          SELECT DISTINCT
-            source.year
-
-          FROM (
-            SELECT
-              YEAR(
-                attempt_years.scheduled_date
-              ) AS year
-            FROM
-              deployment_attempts AS attempt_years
-            WHERE
-              attempt_years.scheduled_date
-                IS NOT NULL
-              ${attemptYearScope.sql}
-
-            UNION
-
-            SELECT
-              YEAR(
-                attempt_years.actual_arrival_date
-              ) AS year
-            FROM
-              deployment_attempts AS attempt_years
-            WHERE
-              attempt_years.actual_arrival_date
-                IS NOT NULL
-              ${attemptYearScope.sql}
-
-            UNION
-
-            SELECT
-              YEAR(
-                CONVERT_TZ(
-                  attempt_years.resolved_at,
-                  '+00:00',
-                  '+08:00'
-                )
-              ) AS year
-            FROM
-              deployment_attempts AS attempt_years
-            WHERE
-              attempt_years.resolved_at
-                IS NOT NULL
-              ${attemptYearScope.sql}
-
-            UNION
-
-            SELECT
-              YEAR(
-                COALESCE(
-                  assignment_years.end_date,
-                  DATE(
-                    assignment_years.ended_at
-                  )
-                )
-              ) AS year
-            FROM
-              deployment_assignments AS assignment_years
-            WHERE
-              COALESCE(
-                assignment_years.end_date,
-                DATE(
-                  assignment_years.ended_at
-                )
-              ) IS NOT NULL
-
-              AND (
-                LOWER(
-                  TRIM(
-                    COALESCE(
-                      assignment_years.end_reason,
-                      ''
-                    )
-                  )
-                ) IN (
-                  'resigned',
-                  'terminated',
-                  'awol'
-                )
-
-                OR LOWER(
-                  TRIM(
-                    COALESCE(
-                      assignment_years.status,
-                      ''
-                    )
-                  )
-                ) IN (
-                  'cancelled',
-                  'canceled',
-                  'separated',
-                  'ended'
-                )
-
-                OR COALESCE(
-                  assignment_years.end_remarks,
-                  ''
-                ) LIKE
-                  '[Other Separation]%'
-              )
-
-              ${assignmentYearScope.sql}
-          ) AS source
-
-          WHERE
-            source.year
-              IS NOT NULL
-
-          ORDER BY
-            source.year DESC
-          `,
-          [
-            ...attemptYearScope.params,
-            ...attemptYearScope.params,
-            ...attemptYearScope.params,
-            ...assignmentYearScope.params,
-          ]
-        );
-
-      const availableYears =
-        yearRows
-          .map(
-            (row) =>
-              Number(
-                row.year
-              )
-          )
-          .filter(
-            Number.isInteger
-          );
-
-      return res.json({
-        success:
-          true,
-
-        filters: {
-          month,
-          year,
-          periodLabel:
-            period.label,
-          periodStart:
-            period.start,
-          periodEndExclusive:
-            period.endExclusive,
-        },
-
-        scope: {
-          company:
-            actor.role ===
-              "HR_COORDINATOR"
-              ? actor.assignedCompany
-              : null,
-
-          role:
-            actor.role,
-        },
-
-        summary:
-          summary.overall,
-
-        companies:
-          summary.companies,
-
-        overallTotal:
-          summary.companyTotals,
-
-        events:
-          enrichedEvents,
-
-        count:
-          enrichedEvents.length,
-
-        filterMeta: {
-          years:
-            availableYears,
-        },
-
-        meta: {
-          generatedAt:
-            new Date()
-              .toISOString(),
-
-          totalsMatch:
-            summary.totalsMatch,
-
-          companyRows:
-            summary.companies.length,
-
-          eventRows:
-            enrichedEvents.length,
-
-          completedCategoryIncluded:
-            false,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "Get deployment movement report error:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          success:
-            false,
-
-          error:
-            "Failed to load deployment movement report.",
+      if (
+        row.status === ATTEMPT_STATUS.DEPLOYED &&
+        isDateInsideMovementPeriod(row.resolvedDate || row.actualArrivalDate, period)
+      ) {
+        const eventKey = `attempt-${row.attemptId}-deployed`;
+        events.push({
+          ...common,
+          id: eventKey,
+          eventKey,
+          eventType: SOURCE_EVENT.ARRIVAL_CONFIRMED,
+          displayActivity: MOVEMENT_TYPE.DEPLOYED,
+          movement: MOVEMENT_TYPE.DEPLOYED,
+          occurredAt: row.resolvedAt || null,
+          businessDate: row.actualArrivalDate || row.resolvedDate,
+          effectiveDate: row.actualArrivalDate || null,
+          eventDate: row.resolvedDate || row.actualArrivalDate,
+          fromStatus: WORKFORCE_STATUS.FOR_DEPLOYMENT,
+          previousStatus: WORKFORCE_STATUS.FOR_DEPLOYMENT,
+          toStatus: WORKFORCE_STATUS.DEPLOYED,
+          newStatus: WORKFORCE_STATUS.DEPLOYED,
+          rawReason: row.outcomeReason || null,
+          displayReason: row.outcomeReason || "Arrival confirmed",
+          reason: row.outcomeReason || "Arrival confirmed",
+          performedByUserId: row.resolvedByUserId ? Number(row.resolvedByUserId) : null,
         });
-    } finally {
-      await releaseConnection(
-        connection
-      );
+      }
+      if (
+        row.status === ATTEMPT_STATUS.NO_SHOW &&
+        isDateInsideMovementPeriod(row.resolvedDate || row.scheduledDate, period)
+      ) {
+        const eventKey = `attempt-${row.attemptId}-no-show`;
+        events.push({
+          ...common,
+          id: eventKey,
+          eventKey,
+          eventType: SOURCE_EVENT.NO_SHOW,
+          displayActivity: MOVEMENT_TYPE.NO_SHOW,
+          movement: MOVEMENT_TYPE.NO_SHOW,
+          occurredAt: row.resolvedAt || null,
+          businessDate: row.scheduledDate || row.resolvedDate,
+          effectiveDate: row.scheduledDate || null,
+          eventDate: row.resolvedDate || row.scheduledDate,
+          fromStatus: WORKFORCE_STATUS.FOR_DEPLOYMENT,
+          previousStatus: WORKFORCE_STATUS.FOR_DEPLOYMENT,
+          toStatus: WORKFORCE_STATUS.FLOATING,
+          newStatus: WORKFORCE_STATUS.FLOATING,
+          rawReason: row.outcomeReason || null,
+          displayReason: row.outcomeReason || "Employee did not report to site",
+          reason: row.outcomeReason || "Employee did not report to site",
+          performedByUserId: row.resolvedByUserId ? Number(row.resolvedByUserId) : null,
+        });
+      }
+      if (
+        row.status === ATTEMPT_STATUS.WITHDRAWN &&
+        isDateInsideMovementPeriod(row.resolvedDate, period)
+      ) {
+        const eventKey = `attempt-${row.attemptId}-withdrawn`;
+        events.push({
+          ...common,
+          id: eventKey,
+          eventKey,
+          eventType: SOURCE_EVENT.WITHDRAWN,
+          displayActivity: MOVEMENT_TYPE.WITHDRAWN,
+          movement: MOVEMENT_TYPE.WITHDRAWN,
+          occurredAt: row.resolvedAt || null,
+          businessDate: row.resolvedDate,
+          effectiveDate: row.resolvedDate,
+          eventDate: row.resolvedDate,
+          fromStatus: WORKFORCE_STATUS.FOR_DEPLOYMENT,
+          previousStatus: WORKFORCE_STATUS.FOR_DEPLOYMENT,
+          toStatus: WORKFORCE_STATUS.FLOATING,
+          newStatus: WORKFORCE_STATUS.FLOATING,
+          rawReason: row.outcomeReason || null,
+          displayReason: row.outcomeReason || "Deployment schedule withdrawn",
+          reason: row.outcomeReason || "Deployment schedule withdrawn",
+          performedByUserId: row.resolvedByUserId ? Number(row.resolvedByUserId) : null,
+        });
+      }
     }
-  };
+
+    for (const row of assignmentRows) {
+      const movement = movementReport.getAssignmentMovement(
+        row.assignmentStatus,
+        row.endReason,
+        row.endRemarks
+      );
+      if (!movement) continue;
+      const eventKey = movementReport.getAssignmentEventKey(
+        row.deploymentAssignmentId,
+        movement
+      );
+      const isCompletion = row.assignmentStatus === "Completed";
+      const displayReason = movementReport.getAssignmentDisplayReason(movement, row.endReason);
+      events.push({
+        id: eventKey,
+        eventKey,
+        sourceType: "deployment_assignment",
+        source: "deployment_assignment",
+        sourceId: Number(row.deploymentAssignmentId),
+        eventType: isCompletion ? "DEPLOYMENT_COMPLETED" : "EMPLOYMENT_SEPARATED",
+        displayActivity: movement,
+        movement,
+        attemptId: null,
+        deploymentAssignmentId: Number(row.deploymentAssignmentId),
+        employeeId: Number(row.employeeId),
+        employeeName: row.employeeName || "Unknown Employee",
+        historicalCompany: row.company || null,
+        company: row.company || "Unassigned",
+        historicalPosition: row.position || null,
+        position: row.position || null,
+        occurredAt: row.endedAt || null,
+        businessDate: row.endDate || row.endedDate,
+        effectiveDate: row.endDate || null,
+        eventDate: row.endedDate || row.endDate,
+        fromStatus: WORKFORCE_STATUS.DEPLOYED,
+        previousStatus: WORKFORCE_STATUS.DEPLOYED,
+        toStatus: isCompletion ? WORKFORCE_STATUS.FLOATING : movement,
+        newStatus: isCompletion ? WORKFORCE_STATUS.FLOATING : movement,
+        rawReason: row.endReason || null,
+        displayReason,
+        reason: displayReason,
+        remarks: row.endRemarks || null,
+        // deployment_assignments has no direct end-action actor foreign key.
+        // Do not infer an actor from employee history rows that lack an
+        // assignment identity; legacy and assignment-end actors stay unknown.
+        performedByUserId: null,
+      });
+    }
+
+    const authorizedEvents = movementReport
+      .deduplicateEvents(events)
+      .filter((event) => movementReport.companyMatches(event.company, effectiveCompany))
+      .sort(movementReport.compareEventsNewestFirst);
+    const enrichedEvents = await resolveMovementActors(connection, authorizedEvents);
+    const summary = movementReport.buildSummary(enrichedEvents);
+    const pageResult = exportAll
+      ? {
+          events: enrichedEvents,
+          pagination: {
+            page: 1,
+            pageSize: enrichedEvents.length,
+            total: enrichedEvents.length,
+            totalPages: enrichedEvents.length ? 1 : 0,
+          },
+        }
+      : movementReport.paginateEvents(enrichedEvents, page, pageSize);
+
+    const [filterRows] = await connection.query(
+      `
+      SELECT source.company, source.eventDate
+      FROM (
+        SELECT attempt_meta.company,
+          COALESCE(
+            DATE(CONVERT_TZ(attempt_meta.resolved_at, '+00:00', '+08:00')),
+            DATE(CONVERT_TZ(attempt_meta.created_at, '+00:00', '+08:00')),
+            attempt_meta.scheduled_date
+          ) AS eventDate
+        FROM deployment_attempts AS attempt_meta
+        WHERE TRIM(COALESCE(attempt_meta.company, '')) <> ''
+        ${attemptMetaScope.sql}
+        UNION ALL
+        SELECT assignment_meta.company,
+          COALESCE(
+            DATE(CONVERT_TZ(assignment_meta.ended_at, '+00:00', '+08:00')),
+            assignment_meta.end_date
+          ) AS eventDate
+        FROM deployment_assignments AS assignment_meta
+        WHERE TRIM(COALESCE(assignment_meta.company, '')) <> ''
+          AND LOWER(TRIM(COALESCE(assignment_meta.status, ''))) IN (
+            'completed', 'cancelled', 'canceled', 'separated', 'ended'
+          )
+        ${assignmentMetaScope.sql}
+      ) AS source
+      WHERE source.eventDate IS NOT NULL
+      `,
+      [...attemptMetaScope.params, ...assignmentMetaScope.params]
+    );
+    const companyMap = new Map();
+    const availableYears = new Set([year]);
+    for (const row of filterRows) {
+      const company = movementReport.normalizeText(row.company);
+      if (company) companyMap.set(movementReport.normalizeComparable(company), company);
+      const rowYear = Number(String(row.eventDate || "").slice(0, 4));
+      if (Number.isInteger(rowYear)) availableYears.add(rowYear);
+    }
+
+    return res.json({
+      success: true,
+      filters: {
+        company: effectiveCompany || null,
+        month,
+        year,
+        periodLabel: period.label,
+        periodStart: period.start,
+        periodEndExclusive: period.endExclusive,
+      },
+      scope: {
+        company: actor.role === "HR_COORDINATOR" ? actor.assignedCompany : effectiveCompany || null,
+        role: actor.role,
+        companyLocked: actor.role === "HR_COORDINATOR",
+      },
+      summary: summary.overall,
+      companies: summary.companies,
+      overallTotal: summary.companyTotals,
+      events: pageResult.events,
+      count: pageResult.events.length,
+      pagination: pageResult.pagination,
+      filterMeta: {
+        companies: Array.from(companyMap.values()).sort((a, b) => a.localeCompare(b)),
+        years: Array.from(availableYears).sort((a, b) => b - a),
+      },
+      meta: {
+        generatedAt: new Date().toISOString(),
+        totalsMatch: summary.totalsMatch,
+        companyRows: summary.companies.length,
+        eventRows: pageResult.events.length,
+        filteredEventRows: enrichedEvents.length,
+        completedCategoryIncluded: true,
+        exportAll,
+      },
+    });
+  } catch (error) {
+    console.error("Get deployment movement report error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to load deployment movement report.",
+    });
+  } finally {
+    await releaseConnection(connection);
+  }
+};
 
 /*
  * ================================================================

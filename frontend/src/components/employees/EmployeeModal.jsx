@@ -34,6 +34,9 @@ import {
 import {
   groupEmployeeDeployments,
 } from "../../utils/employees/employeeDeploymentHistory";
+import {
+  getDeploymentEndReasonDisplay,
+} from "../../utils/deployments/deploymentHelpers";
 import authenticatedFetch from "../../utils/authenticatedFetch";
 import { fetchEmployeeDocumentPreview } from "../../utils/employees/employeeDocumentPreview";
 import { API_BASE } from "../../config/api";
@@ -3663,26 +3666,28 @@ function DeploymentGroup({
             </StatusPill>
           </div>
           <dl className="mt-3 grid gap-x-4 text-xs sm:grid-cols-2">
+            {deployment.location && (
+              <InfoRow
+                label="Location"
+                value={deployment.location}
+              />
+            )}
             <InfoRow
-              label="Client Site / Location"
-              value={deployment.location || "Not recorded"}
-            />
-            <InfoRow
-              label="Assigned Position"
+              label="Deployment Position"
               value={deployment.position || "Not recorded"}
             />
             <InfoRow
-              label="Start Date"
+              label="Deployment Start Date"
               value={deployment.startDate ? formatDate(deployment.startDate) : "Not recorded"}
             />
             <InfoRow
-              label="End Date"
+              label="Deployment End Date"
               value={deployment.endDate ? formatDate(deployment.endDate) : "—"}
             />
             {deployment.endReason && (
               <InfoRow
-                label="End Reason"
-                value={deployment.endReason}
+                label="Deployment End Reason"
+                value={getDeploymentEndReasonDisplay(deployment.endReason)}
               />
             )}
           </dl>

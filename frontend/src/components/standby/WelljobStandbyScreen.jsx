@@ -90,7 +90,7 @@ export default function WelljobStandbyScreen({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] overflow-hidden bg-[#020817] text-white"
+      className="fixed inset-0 z-[9999] overflow-x-hidden overflow-y-auto overscroll-y-contain bg-[#020817] text-white lg:overflow-hidden"
       role="presentation"
       onClick={
         isIntro
@@ -236,10 +236,10 @@ export default function WelljobStandbyScreen({
       <span className="welljob-star absolute right-[7%] top-[30%] h-1 w-1 rounded-full bg-violet-300 shadow-[0_0_12px_rgba(196,181,253,0.95)] [animation-delay:-2.4s]" />
       <span className="welljob-star absolute bottom-[18%] left-[32%] h-1 w-1 rounded-full bg-sky-300 shadow-[0_0_12px_rgba(125,211,252,0.95)] [animation-delay:-.8s]" />
 
-      <div className="relative flex min-h-screen flex-col">
-        <header className="flex items-center justify-between px-5 py-4 sm:px-8 lg:px-12">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-blue-400/20 bg-slate-950/80 p-1.5 shadow-[0_0_24px_rgba(59,130,246,0.16)] backdrop-blur">
+      <div className="relative flex min-h-screen min-w-0 flex-col supports-[height:100dvh]:min-h-dvh">
+        <header className="flex items-center justify-between px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-8 sm:py-4 lg:px-12">
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+            <div className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-blue-400/20 bg-slate-950/80 p-1.5 shadow-[0_0_24px_rgba(59,130,246,0.16)] backdrop-blur sm:h-11 sm:w-14">
               <img
                 src={welljobLogo}
                 alt="Welljob Solutions"
@@ -249,11 +249,11 @@ export default function WelljobStandbyScreen({
             </div>
 
             <div className="min-w-0">
-              <p className="truncate text-sm font-extrabold tracking-wide text-white sm:text-base">
+              <p className="text-xs font-extrabold tracking-wide text-white sm:text-base">
                 WELLJOB SOLUTIONS
               </p>
 
-              <p className="truncate text-[9px] font-bold uppercase tracking-[0.28em] text-slate-400 sm:text-[10px]">
+              <p className="mt-0.5 max-w-[230px] text-[8px] font-bold uppercase leading-3 tracking-[0.14em] text-slate-400 sm:max-w-none sm:text-[10px] sm:tracking-[0.28em]">
                 Human Resource Information System
               </p>
             </div>
@@ -284,10 +284,10 @@ export default function WelljobStandbyScreen({
           </div>
         </header>
 
-        <main className="flex flex-1 items-center justify-center px-5 pb-6 pt-1 sm:px-8 lg:px-12">
-          <div className="mx-auto grid w-full max-w-[1380px] items-center gap-6 lg:grid-cols-[minmax(0,0.88fr)_minmax(440px,1.12fr)] lg:gap-8 xl:gap-10">
-            <section className="order-2 flex flex-col justify-center text-center lg:order-1 lg:min-h-[420px] lg:text-left">
-              <div className="mb-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] font-bold uppercase tracking-[0.28em] text-sky-300/80 lg:justify-start">
+        <main className="flex min-w-0 flex-1 items-center justify-center px-4 pb-5 pt-2 sm:px-8 sm:pb-6 lg:px-12 lg:pt-1">
+          <div className="mx-auto grid min-w-0 w-full max-w-[1380px] items-center gap-6 lg:grid-cols-[minmax(0,0.88fr)_minmax(440px,1.12fr)] lg:gap-8 xl:gap-10">
+            <section className="flex min-w-0 flex-col justify-center text-center lg:order-1 lg:min-h-[420px] lg:text-left">
+              <div className="mb-3 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[9px] font-bold uppercase tracking-[0.2em] text-sky-300/80 sm:mb-4 sm:text-[10px] sm:tracking-[0.28em] lg:justify-start">
                 <span>People</span>
                 <span className="text-slate-600">•</span>
                 <span>Deployment</span>
@@ -297,7 +297,7 @@ export default function WelljobStandbyScreen({
                 <span>Growth</span>
               </div>
 
-              <div className="mb-5 h-px w-full max-w-[540px] bg-gradient-to-r from-sky-400/70 via-indigo-400/30 to-transparent lg:mx-0" />
+              <div className="mb-4 h-px w-full max-w-[540px] bg-gradient-to-r from-sky-400/70 via-indigo-400/30 to-transparent sm:mb-5 lg:mx-0" />
 
               <div className="mb-4 inline-flex items-center justify-center gap-2 self-center rounded-full border border-cyan-400/15 bg-cyan-400/[0.05] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200 lg:self-start">
                 {isIntro ? (
@@ -313,7 +313,7 @@ export default function WelljobStandbyScreen({
                 )}
               </div>
 
-              <h1 className="text-[clamp(2.8rem,5vw,5.45rem)] font-extrabold leading-[0.9] tracking-[-0.05em] text-white">
+              <h1 className="break-words text-[clamp(2.05rem,10vw,2.8rem)] font-extrabold leading-[0.94] tracking-[-0.045em] text-white lg:text-[clamp(2.8rem,5vw,5.45rem)] lg:leading-[0.9] lg:tracking-[-0.05em]">
                 WELLJOB
 
                 <span className="mt-1 block bg-gradient-to-r from-cyan-300 via-sky-300 to-violet-400 bg-clip-text text-transparent">
@@ -321,13 +321,13 @@ export default function WelljobStandbyScreen({
                 </span>
               </h1>
 
-              <p className="mx-auto mt-5 max-w-[640px] text-sm leading-6 text-slate-300 sm:text-[15px] lg:mx-0 lg:max-w-[590px]">
+              <p className="mx-auto mt-4 max-w-[640px] break-words text-sm leading-6 text-slate-300 sm:mt-5 sm:text-[15px] lg:mx-0 lg:max-w-[590px]">
                 {isIntro
                   ? "A centralized platform for workforce records, deployment monitoring, incident management, compliance, and HR decision support."
                   : "Your current workspace is preserved. Move the mouse, press any key, click, touch, or scroll to continue exactly where you left off."}
               </p>
 
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 lg:justify-start">
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:mt-5 sm:text-[10px] sm:tracking-[0.16em] lg:justify-start">
                 <span>Centralized Records</span>
                 <span className="text-cyan-500/50">•</span>
                 <span>Secure Access</span>
@@ -336,7 +336,7 @@ export default function WelljobStandbyScreen({
               </div>
 
               {isIntro ? (
-                <div className="mt-7">
+                <div className="mt-6 sm:mt-7">
                   <button
                     type="button"
                     onClick={onDismiss}
@@ -373,7 +373,7 @@ export default function WelljobStandbyScreen({
               )}
             </section>
 
-            <section className="order-1 flex justify-center lg:order-2">
+            <section className="hidden justify-center lg:order-2 lg:flex">
               <div className="relative h-[340px] w-[340px] sm:h-[400px] sm:w-[400px] xl:h-[455px] xl:w-[455px]">
                 <div className="absolute inset-[4%] rounded-full bg-indigo-500/10 blur-3xl" />
 
@@ -446,8 +446,8 @@ export default function WelljobStandbyScreen({
           </div>
         </main>
 
-        <footer className="px-5 pb-4 sm:px-8 lg:px-12">
-          <div className="mx-auto flex max-w-[1380px] flex-col gap-2 border-t border-white/[0.07] pt-3 text-[9px] text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+        <footer className="px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8 lg:px-12">
+          <div className="mx-auto flex max-w-[1380px] flex-col gap-1.5 border-t border-white/[0.07] pt-3 text-[9px] leading-4 text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
             <span>
               WELLJOB Solutions &amp; General Services Inc.
             </span>

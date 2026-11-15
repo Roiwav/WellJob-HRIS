@@ -60,6 +60,22 @@ const COMPLETED_DEPLOYMENT_REASONS =
     "Transferred / Reassigned",
   ]);
 
+const DEPLOYMENT_END_REASON_DISPLAY_LABELS =
+  Object.freeze({
+    "Completed Contract":
+      "Deployment Ended",
+  });
+
+const EMPLOYMENT_SEPARATION_REASONS =
+  new Set([
+    "Resignation",
+    "Resigned",
+    "Termination",
+    "Terminated",
+    "AWOL",
+    "Other Separation",
+  ]);
+
 const CANCELLED_DEPLOYMENT_REASON_MAP = {
   Resignation: "Resigned",
   Resigned: "Resigned",
@@ -433,6 +449,33 @@ export function getDeploymentDisplayStatus(
   );
 }
 
+/*
+ * HR-facing deployment end-reason presentation.
+ *
+ * The returned label must never replace the raw stored/API value.
+ * Unknown historical reasons are returned unchanged so they remain
+ * readable and filterable.
+ */
+export function getDeploymentEndReasonDisplay(
+  reason,
+  fallback = ""
+) {
+  const rawReason =
+    String(
+      reason || ""
+    ).trim();
+
+  if (!rawReason) {
+    return fallback;
+  }
+
+  return (
+    DEPLOYMENT_END_REASON_DISPLAY_LABELS[
+      rawReason
+    ] || rawReason
+  );
+}
+
 export function formatDisplayDate(
   dateValue
 ) {
@@ -535,7 +578,10 @@ export function getStatusBadgeClass(
 
 export function getDeploymentTimelineInfo(
   deploymentStart,
-  separationDate
+  separationDate,
+  status = "",
+  endReason = "",
+  endRemarks = ""
 ) {
   if (
     !deploymentStart ||
@@ -548,10 +594,35 @@ export function getDeploymentTimelineInfo(
     !separationDate ||
     separationDate === "-"
   ) {
-    return "Deployment is continuous and remains active until an authorized separation is recorded.";
+    return "Deployment is continuous and remains active until an authorized deployment end is recorded.";
   }
 
-  return `Separated on ${formatLongDisplayDate(
+  const displayStatus =
+    getDeploymentDisplayStatus(
+      status,
+      endReason,
+      endRemarks
+    );
+  const isEmploymentSeparation =
+    EMPLOYMENT_SEPARATION_REASONS.has(
+      String(
+        endReason || ""
+      ).trim()
+    ) ||
+    [
+      "Resigned",
+      "Terminated",
+      "AWOL",
+      "Other Separation",
+    ].includes(
+      displayStatus
+    );
+
+  return `${
+    isEmploymentSeparation
+      ? "Employment separation recorded on"
+      : "Deployment ended on"
+  } ${formatLongDisplayDate(
     separationDate
   )}.`;
 }
@@ -603,7 +674,7 @@ export function buildDeploymentStatusPayload({
 
   if (!endDate) {
     throw new Error(
-      "Select a valid assignment end date before saving."
+      "Select a valid deployment end date before saving."
     );
   }
 

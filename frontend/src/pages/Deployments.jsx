@@ -33,10 +33,16 @@ import ErrorState from "../components/ui/ErrorState";
 import EmptyState from "../components/ui/EmptyState";
 import {
   buildDeploymentStatusPayload,
+  getDeploymentEndReasonDisplay,
   getMonthOptions,
   normalizeDeploymentStatus,
   normalizeSeparationReason,
 } from "../utils/deployments/deploymentHelpers";
+import {
+  DEPLOYMENT_END_REASON_GROUPS,
+  getDeploymentEndReasonOptions,
+  reconcileDeploymentEndReason,
+} from "../utils/deployments/deploymentRecordFilters";
 const DEPLOYMENT_API_URL =
   `${API_BASE}/deployments`;
 const DEPLOYMENT_ATTEMPT_API_URL =
@@ -57,6 +63,12 @@ const SEARCH_DEBOUNCE_MS =
   350;
 const DEPLOYMENT_PAGE_SIZE =
   50;
+const MOVEMENT_PAGE_SIZE =
+  50;
+const MOVEMENT_POLL_INTERVAL_MS =
+  60000;
+const MOVEMENT_FOCUS_REFRESH_THROTTLE_MS =
+  15000;
 const DEPLOYMENT_STATUS_OPTIONS = [
   {
     label:
@@ -69,6 +81,12 @@ const DEPLOYMENT_STATUS_OPTIONS = [
       "Deployed",
     value:
       "Deployed",
+  },
+  {
+    label:
+      "Completed",
+    value:
+      "Completed",
   },
   {
     label:
@@ -210,6 +228,20 @@ async function requestJson(
 ) {
   const controller =
     new AbortController();
+  const externalSignal =
+    options.signal;
+  const handleExternalAbort =
+    () => controller.abort();
+
+  if (externalSignal?.aborted) {
+    controller.abort();
+  } else {
+    externalSignal?.addEventListener(
+      "abort",
+      handleExternalAbort,
+      { once: true }
+    );
+  }
   const timeoutId =
     window.setTimeout(
       () => {
@@ -285,6 +317,10 @@ async function requestJson(
     }
     throw error;
   } finally {
+    externalSignal?.removeEventListener(
+      "abort",
+      handleExternalAbort
+    );
     window.clearTimeout(
       timeoutId
     );
@@ -351,7 +387,6 @@ function normalizeDeployment(
       item.location ||
       item.deploymentLocation ||
       item.deployment_location ||
-      item.company ||
       "-",
     start,
     status:
@@ -591,18 +626,59 @@ function formatReportTime(
   return `${hour12}:${minute} ${period}`;
 }
 
-function getMovementEventDateTimeLabel(
+function getMovementEventDateTimeParts(
   event
 ) {
   const dateLabel =
     formatReportDate(
-      event?.eventDate
+      event?.eventDate ||
+        event?.businessDate
     );
 
+  const occurredAt =
+    String(
+      event?.occurredAt ||
+        ""
+    ).trim();
+  const occurredDate =
+    occurredAt
+      ? new Date(occurredAt)
+      : null;
   const timeLabel =
-    formatReportTime(
-      event?.scheduledTime ??
-      event?.scheduled_time
+    occurredDate &&
+    !Number.isNaN(
+      occurredDate.getTime()
+    )
+      ? new Intl.DateTimeFormat(
+          "en-PH",
+          {
+            timeZone:
+              "Asia/Manila",
+            hour:
+              "numeric",
+            minute:
+              "2-digit",
+          }
+        ).format(
+          occurredDate
+        )
+      : "";
+
+  return {
+    dateLabel,
+    timeLabel,
+  };
+}
+
+function getMovementEventDateTimeLabel(
+  event
+) {
+  const {
+    dateLabel,
+    timeLabel,
+  } =
+    getMovementEventDateTimeParts(
+      event
     );
 
   if (!timeLabel) {
@@ -1078,9 +1154,9 @@ async function exportDeploymentReportPDF({
         ]
       : []),
     "Deployment Date",
-    "End Date",
-    "Status",
-    "Reason",
+    "Deployment End Date",
+    "Record Status",
+    "Deployment End Reason",
   ]];
 
   const body =
@@ -1149,8 +1225,8 @@ async function exportDeploymentReportPDF({
           getVisibleDeploymentStatus(
             deployment
           ),
-          String(
-            endReason ||
+          getDeploymentEndReasonDisplay(
+            endReason,
             "-"
           ),
         ];
@@ -1382,6 +1458,45 @@ function getMovementSummaryItems(
     },
     {
       key:
+        "transferredReassigned",
+      label:
+        "Transferred / Reassigned",
+      value:
+        Number(
+          summary.transferredReassigned ||
+          0
+        ),
+      tone:
+        "violet",
+    },
+    {
+      key:
+        "deploymentEnded",
+      label:
+        "Deployment Ended / Pulled Out",
+      value:
+        Number(
+          summary.deploymentEnded ||
+          0
+        ),
+      tone:
+        "blue",
+    },
+    {
+      key:
+        "otherCompletion",
+      label:
+        "Other Completion",
+      value:
+        Number(
+          summary.otherCompletion ||
+          0
+        ),
+      tone:
+        "cyan",
+    },
+    {
+      key:
         "resigned",
       label:
         "Resigned",
@@ -1471,6 +1586,27 @@ function getMovementBadgeClass(
     "withdrawn"
   ) {
     return "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300";
+  }
+
+  if (
+    normalized ===
+    "transferred / reassigned"
+  ) {
+    return "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-300";
+  }
+
+  if (
+    normalized ===
+    "deployment ended / pulled out"
+  ) {
+    return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-300";
+  }
+
+  if (
+    normalized ===
+    "other deployment completion"
+  ) {
+    return "border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-500/25 dark:bg-cyan-500/10 dark:text-cyan-300";
   }
 
   if (
@@ -1610,7 +1746,7 @@ async function exportDeploymentMovementReportPDF({
   );
 
   document.text(
-    "DEPLOYMENT HISTORY REPORT",
+    "DEPLOYMENT ACTIVITY HISTORY REPORT",
     14,
     22
   );
@@ -1694,6 +1830,18 @@ async function exportDeploymentMovementReportPDF({
 
   document.text(
     [
+      `Transferred ${Number(
+        summary.transferredReassigned ||
+        0
+      )}`,
+      `Ended / Pulled Out ${Number(
+        summary.deploymentEnded ||
+        0
+      )}`,
+      `Other Completion ${Number(
+        summary.otherCompletion ||
+        0
+      )}`,
       `Resigned ${Number(
         summary.resigned ||
         0
@@ -1737,6 +1885,9 @@ async function exportDeploymentMovementReportPDF({
           "Deployed",
           "No Show",
           "Withdrawn",
+          "Transferred",
+          "Ended / Pulled Out",
+          "Other Completion",
           "Resigned",
           "Terminated",
           "AWOL",
@@ -1765,6 +1916,18 @@ async function exportDeploymentMovementReportPDF({
               ),
               Number(
                 company.withdrawn ||
+                0
+              ),
+              Number(
+                company.transferredReassigned ||
+                0
+              ),
+              Number(
+                company.deploymentEnded ||
+                0
+              ),
+              Number(
+                company.otherCompletion ||
                 0
               ),
               Number(
@@ -1895,7 +2058,7 @@ async function exportDeploymentMovementReportPDF({
                 ),
                 [
                   event.performedBy ||
-                    "-",
+                    "Not recorded",
                   formatRoleLabel(
                     event.performedByRole
                   ),
@@ -2142,6 +2305,14 @@ export default function Deployments() {
     setSelectedStatus,
   ] = useState("");
   const [
+    selectedEndReason,
+    setSelectedEndReason,
+  ] = useState("");
+  const [
+    availableEndReasons,
+    setAvailableEndReasons,
+  ] = useState([]);
+  const [
     selectedMonth,
     setSelectedMonth,
   ] = useState("");
@@ -2153,6 +2324,14 @@ export default function Deployments() {
     movementMonth,
     setMovementMonth,
   ] = useState("");
+  const [
+    movementCompany,
+    setMovementCompany,
+  ] = useState(
+    isHRCoordinator
+      ? assignedCompany
+      : ""
+  );
   const [
     movementYear,
     setMovementYear,
@@ -2172,6 +2351,9 @@ export default function Deployments() {
       successfullyDeployed: 0,
       noShow: 0,
       withdrawn: 0,
+      transferredReassigned: 0,
+      deploymentEnded: 0,
+      otherCompletion: 0,
       resigned: 0,
       terminated: 0,
       awol: 0,
@@ -2184,6 +2366,9 @@ export default function Deployments() {
       successfullyDeployed: 0,
       noShow: 0,
       withdrawn: 0,
+      transferredReassigned: 0,
+      deploymentEnded: 0,
+      otherCompletion: 0,
       resigned: 0,
       terminated: 0,
       awol: 0,
@@ -2192,7 +2377,15 @@ export default function Deployments() {
     events: [],
     count: 0,
     filterMeta: {
+      companies: [],
       years: [],
+    },
+    pagination: {
+      page: 1,
+      pageSize:
+        MOVEMENT_PAGE_SIZE,
+      total: 0,
+      totalPages: 0,
     },
     filters: null,
     scope: null,
@@ -2206,6 +2399,10 @@ export default function Deployments() {
     movementRefreshing,
     setMovementRefreshing,
   ] = useState(false);
+  const [
+    movementPage,
+    setMovementPage,
+  ] = useState(1);
 
   const [
     pendingArrivals,
@@ -2264,8 +2461,12 @@ export default function Deployments() {
     useRef(0);
   const movementFetchingRef =
     useRef(false);
+  const movementAbortControllerRef =
+    useRef(null);
   const movementLoadedRef =
     useRef(false);
+  const movementLastFocusRefreshRef =
+    useRef(0);
   const pendingArrivalRequestIdRef =
     useRef(0);
   const pendingArrivalsFetchingRef =
@@ -2307,6 +2508,14 @@ export default function Deployments() {
       [
         availableYears,
       ]
+    );
+  const endReasonOptions =
+    useMemo(
+      () =>
+        getDeploymentEndReasonOptions(
+          availableEndReasons
+        ),
+      [availableEndReasons]
     );
   const movementYearOptions =
     useMemo(
@@ -2383,12 +2592,63 @@ export default function Deployments() {
         movementYear,
       ]
     );
+  const movementCompanyOptions =
+    useMemo(
+      () => {
+        const companies =
+          Array.isArray(
+            movementReport
+              ?.filterMeta
+              ?.companies
+          )
+            ? movementReport
+                .filterMeta
+                .companies
+            : [];
+
+        if (isHRCoordinator) {
+          return assignedCompany
+            ? [
+                {
+                  label:
+                    assignedCompany,
+                  value:
+                    assignedCompany,
+                },
+              ]
+            : [];
+        }
+
+        return [
+          {
+            label:
+              "All Companies",
+            value:
+              "",
+          },
+          ...companies.map(
+            (company) => ({
+              label:
+                String(company),
+              value:
+                String(company),
+            })
+          ),
+        ];
+      },
+      [
+        assignedCompany,
+        isHRCoordinator,
+        movementReport,
+      ]
+    );
   useEffect(() => {
     isMountedRef.current =
       true;
     return () => {
       isMountedRef.current =
         false;
+      movementAbortControllerRef.current?.abort();
       if (
         dataUpdateTimerRef.current
       ) {
@@ -2398,6 +2658,24 @@ export default function Deployments() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      !isHRCoordinator
+    ) {
+      return;
+    }
+
+    setMovementCompany(
+      assignedCompany
+    );
+    setMovementPage(
+      1
+    );
+  }, [
+    assignedCompany,
+    isHRCoordinator,
+  ]);
   useEffect(() => {
     const timer =
       window.setTimeout(
@@ -2474,6 +2752,8 @@ export default function Deployments() {
                 debouncedSearch,
               status:
                 selectedStatus,
+              endReason:
+                selectedEndReason,
               month:
                 selectedMonth,
               year:
@@ -2626,6 +2906,14 @@ export default function Deployments() {
                   )
               : []
           );
+          setAvailableEndReasons(
+            Array.isArray(
+              data?.filterMeta
+                ?.endReasons
+            )
+              ? data.filterMeta.endReasons
+              : []
+          );
           if (
             nextTotalPages >
               0 &&
@@ -2684,6 +2972,7 @@ export default function Deployments() {
         debouncedSearch,
         page,
         selectedStatus,
+        selectedEndReason,
         selectedMonth,
         selectedYear,
       ]
@@ -2706,6 +2995,12 @@ export default function Deployments() {
 
         movementRequestIdRef.current =
           requestId;
+
+        movementAbortControllerRef.current?.abort();
+        const requestController =
+          new AbortController();
+        movementAbortControllerRef.current =
+          requestController;
 
         movementFetchingRef.current =
           true;
@@ -2744,7 +3039,24 @@ export default function Deployments() {
                 String(
                   movementYear
                 ),
+              page:
+                String(
+                  movementPage
+                ),
+              pageSize:
+                String(
+                  MOVEMENT_PAGE_SIZE
+                ),
             });
+
+          if (
+            movementCompany
+          ) {
+            params.set(
+              "company",
+              movementCompany
+            );
+          }
 
           if (
             movementMonth !==
@@ -2758,7 +3070,11 @@ export default function Deployments() {
 
           const data =
             await requestJson(
-              `${DEPLOYMENT_MOVEMENT_REPORT_API_URL}?${params.toString()}`
+              `${DEPLOYMENT_MOVEMENT_REPORT_API_URL}?${params.toString()}`,
+              {
+                signal:
+                  requestController.signal,
+              }
             );
 
           if (
@@ -2779,6 +3095,9 @@ export default function Deployments() {
                 successfullyDeployed: 0,
                 noShow: 0,
                 withdrawn: 0,
+                transferredReassigned: 0,
+                deploymentEnded: 0,
+                otherCompletion: 0,
                 resigned: 0,
                 terminated: 0,
                 awol: 0,
@@ -2812,7 +3131,19 @@ export default function Deployments() {
             filterMeta:
               data?.filterMeta ||
               {
+                companies: [],
                 years: [],
+              },
+
+            pagination:
+              data?.pagination ||
+              {
+                page:
+                  movementPage,
+                pageSize:
+                  MOVEMENT_PAGE_SIZE,
+                total: 0,
+                totalPages: 0,
               },
 
             filters:
@@ -2831,12 +3162,35 @@ export default function Deployments() {
           movementLoadedRef.current =
             true;
 
+          const responsePage =
+            Number(
+              data?.pagination
+                ?.page ||
+                movementPage
+            );
+
+          if (
+            responsePage !==
+              movementPage
+          ) {
+            setMovementPage(
+              responsePage
+            );
+          }
+
           return true;
         } catch (error) {
           if (
             requestId !==
               movementRequestIdRef
                 .current
+          ) {
+            return false;
+          }
+
+          if (
+            requestController.signal
+              .aborted
           ) {
             return false;
           }
@@ -2869,6 +3223,14 @@ export default function Deployments() {
               false;
 
             if (
+              movementAbortControllerRef.current ===
+              requestController
+            ) {
+              movementAbortControllerRef.current =
+                null;
+            }
+
+            if (
               isMountedRef.current
             ) {
               setMovementLoading(
@@ -2883,7 +3245,9 @@ export default function Deployments() {
         }
       },
       [
+        movementCompany,
         movementMonth,
+        movementPage,
         movementYear,
       ]
     );
@@ -3086,6 +3450,100 @@ export default function Deployments() {
   }, [
     activeView,
     fetchMovementReport,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeView !==
+        DEPLOYMENT_VIEW.MOVEMENT ||
+      !user
+    ) {
+      return undefined;
+    }
+
+    const refreshVisibleHistory =
+      () => {
+        if (
+          document.visibilityState !==
+            "visible" ||
+          movementFetchingRef.current
+        ) {
+          return;
+        }
+
+        void fetchMovementReport({
+          showError:
+            false,
+        });
+      };
+
+    const refreshAfterFocus =
+      () => {
+        if (
+          document.visibilityState !==
+          "visible"
+        ) {
+          return;
+        }
+
+        const now =
+          Date.now();
+
+        if (
+          now -
+            movementLastFocusRefreshRef.current <
+          MOVEMENT_FOCUS_REFRESH_THROTTLE_MS
+        ) {
+          return;
+        }
+
+        movementLastFocusRefreshRef.current =
+          now;
+        refreshVisibleHistory();
+      };
+
+    const handleVisibilityChange =
+      () => {
+        if (
+          document.visibilityState ===
+          "visible"
+        ) {
+          refreshAfterFocus();
+        }
+      };
+
+    const intervalId =
+      window.setInterval(
+        refreshVisibleHistory,
+        MOVEMENT_POLL_INTERVAL_MS
+      );
+
+    window.addEventListener(
+      "focus",
+      refreshAfterFocus
+    );
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    return () => {
+      window.clearInterval(
+        intervalId
+      );
+      window.removeEventListener(
+        "focus",
+        refreshAfterFocus
+      );
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+    };
+  }, [
+    activeView,
+    fetchMovementReport,
+    user,
   ]);
 
   useEffect(() => {
@@ -3648,6 +4106,15 @@ export default function Deployments() {
           }
 
           if (
+            selectedEndReason
+          ) {
+            params.set(
+              "endReason",
+              selectedEndReason
+            );
+          }
+
+          if (
             selectedMonth !==
             ""
           ) {
@@ -3734,6 +4201,7 @@ export default function Deployments() {
         isExporting,
         search,
         selectedMonth,
+        selectedEndReason,
         selectedStatus,
         selectedYear,
         user,
@@ -3764,7 +4232,18 @@ export default function Deployments() {
                 String(
                   movementYear
                 ),
+              export:
+                "all",
             });
+
+          if (
+            movementCompany
+          ) {
+            params.set(
+              "company",
+              movementCompany
+            );
+          }
 
           if (
             movementMonth !==
@@ -3790,6 +4269,9 @@ export default function Deployments() {
             Number(
               reportData?.count ||
               reportData
+                ?.pagination
+                ?.total ||
+              reportData
                 ?.events
                 ?.length ||
               0
@@ -3809,14 +4291,14 @@ export default function Deployments() {
           );
         } catch (error) {
           console.error(
-            "Export deployment history PDF error:",
+            "Export deployment activity history PDF error:",
             error
           );
 
           setFetchError(
             getRequestError(
               error,
-              "Unable to export the deployment history PDF."
+              "Unable to export the deployment activity history PDF."
             )
           );
         } finally {
@@ -3831,9 +4313,76 @@ export default function Deployments() {
       },
       [
         isExporting,
+        movementCompany,
         movementMonth,
         movementYear,
         user,
+      ]
+    );
+
+  const handleMovementCompanyChange =
+    useCallback(
+      (value) => {
+        setMovementCompany(
+          value
+        );
+        setMovementPage(
+          1
+        );
+      },
+      []
+    );
+
+  const handleMovementMonthChange =
+    useCallback(
+      (value) => {
+        setMovementMonth(
+          value
+        );
+        setMovementPage(
+          1
+        );
+      },
+      []
+    );
+
+  const handleMovementYearChange =
+    useCallback(
+      (value) => {
+        setMovementYear(
+          value
+        );
+        setMovementPage(
+          1
+        );
+      },
+      []
+    );
+
+  const handleResetMovementFilters =
+    useCallback(
+      () => {
+        setMovementCompany(
+          isHRCoordinator
+            ? assignedCompany
+            : ""
+        );
+        setMovementMonth(
+          ""
+        );
+        setMovementYear(
+          String(
+            new Date()
+              .getFullYear()
+          )
+        );
+        setMovementPage(
+          1
+        );
+      },
+      [
+        assignedCompany,
+        isHRCoordinator,
       ]
     );
 
@@ -3841,6 +4390,9 @@ export default function Deployments() {
     useCallback(() => {
       setSearch("");
       setSelectedStatus(
+        ""
+      );
+      setSelectedEndReason(
         ""
       );
       setSelectedMonth(
@@ -3859,6 +4411,7 @@ export default function Deployments() {
     Boolean(
       search.trim() ||
       selectedStatus ||
+      selectedEndReason ||
       selectedMonth ||
       selectedYear
     );
@@ -3892,8 +4445,8 @@ export default function Deployments() {
     isMovementView
       ? isHRCoordinator
         ? assignedCompany
-          ? `Review deployment history for ${assignedCompany}.`
-          : "Review deployment history for your assigned client company."
+          ? `Review deployment activity history for ${assignedCompany}.`
+          : "Review deployment activity history for your assigned client company."
         : "Review deployment scheduling, arrival outcomes, and separation history across client companies."
       : isHRCoordinator
         ? assignedCompany
@@ -4055,7 +4608,7 @@ export default function Deployments() {
             <FiActivity
               aria-hidden="true"
             />
-            Deployment History
+            Deployment Activity History
           </button>
         </div>
       </section>
@@ -4065,7 +4618,7 @@ export default function Deployments() {
           compact
           title={
             isMovementView
-              ? "Unable to Load Deployment History"
+              ? "Unable to Load Deployment Activity History"
               : "Unable to Load Deployments"
           }
           message={
@@ -4094,11 +4647,20 @@ export default function Deployments() {
           monthOptions={
             monthOptions
           }
+          companyOptions={
+            movementCompanyOptions
+          }
+          selectedCompany={
+            movementCompany
+          }
+          onCompanyChange={
+            handleMovementCompanyChange
+          }
           selectedMonth={
             movementMonth
           }
           onMonthChange={
-            setMovementMonth
+            handleMovementMonthChange
           }
           yearOptions={
             movementYearOptions
@@ -4107,7 +4669,22 @@ export default function Deployments() {
             movementYear
           }
           onYearChange={
-            setMovementYear
+            handleMovementYearChange
+          }
+          onClearFilters={
+            handleResetMovementFilters
+          }
+          onRefresh={
+            handleRefresh
+          }
+          onExport={
+            handleExportMovementPDF
+          }
+          page={
+            movementPage
+          }
+          onPageChange={
+            setMovementPage
           }
           isHRCoordinator={
             isHRCoordinator
@@ -4163,7 +4740,7 @@ export default function Deployments() {
       )}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
         <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
-          <div className="min-w-0 xl:col-span-5">
+          <div className="min-w-0 xl:col-span-4">
             <SearchInput
               label="Search Deployment Records"
               placeholder={
@@ -4188,12 +4765,12 @@ export default function Deployments() {
             />
           </div>
 
-          <div className="min-w-0 xl:col-span-3">
+          <div className="min-w-0 xl:col-span-2">
             <label
               htmlFor="deployment-status-filter"
               className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200"
             >
-              Status
+              Record Status
             </label>
             <select
               id="deployment-status-filter"
@@ -4204,7 +4781,14 @@ export default function Deployments() {
                 isExporting
               }
               onChange={(event) => {
-                setSelectedStatus(event.target.value);
+                const nextStatus = event.target.value;
+                setSelectedStatus(nextStatus);
+                setSelectedEndReason((currentReason) =>
+                  reconcileDeploymentEndReason(
+                    nextStatus,
+                    currentReason
+                  )
+                );
                 setPage(1);
               }}
               className={SELECT_CLASS_NAME}
@@ -4217,6 +4801,74 @@ export default function Deployments() {
                   {statusOption.label}
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div className="min-w-0 xl:col-span-2">
+            <label
+              htmlFor="deployment-end-reason-filter"
+              className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200"
+            >
+              Deployment End Reason
+            </label>
+            <select
+              id="deployment-end-reason-filter"
+              value={selectedEndReason}
+              disabled={
+                isLoading ||
+                isRefreshing ||
+                isExporting
+              }
+              onChange={(event) => {
+                setSelectedEndReason(event.target.value);
+                setPage(1);
+              }}
+              className={SELECT_CLASS_NAME}
+            >
+              <option value="">All Reasons</option>
+              <optgroup label="Deployment end">
+                {endReasonOptions
+                  .filter((option) =>
+                    option.group ===
+                    DEPLOYMENT_END_REASON_GROUPS.DEPLOYMENT_END
+                  )
+                  .map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Employment separation">
+                {endReasonOptions
+                  .filter((option) =>
+                    option.group ===
+                    DEPLOYMENT_END_REASON_GROUPS.EMPLOYMENT_SEPARATION
+                  )
+                  .map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+              </optgroup>
+              {endReasonOptions.some(
+                (option) =>
+                  option.group ===
+                  DEPLOYMENT_END_REASON_GROUPS.HISTORICAL
+              ) && (
+                <optgroup label="Other recorded reasons">
+                  {endReasonOptions
+                    .filter(
+                      (option) =>
+                        option.group ===
+                        DEPLOYMENT_END_REASON_GROUPS.HISTORICAL
+                    )
+                    .map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
@@ -5067,12 +5719,20 @@ function DeploymentMovementActivity({
   isLoading = false,
   isRefreshing = false,
   isExporting = false,
+  companyOptions = [],
+  selectedCompany = "",
+  onCompanyChange,
   monthOptions = [],
   selectedMonth = "",
   onMonthChange,
   yearOptions = [],
   selectedYear,
   onYearChange,
+  onClearFilters,
+  onRefresh,
+  onExport,
+  page = 1,
+  onPageChange,
   isHRCoordinator = false,
   assignedCompany = "",
 }) {
@@ -5115,6 +5775,27 @@ function DeploymentMovementActivity({
   const overallTotal =
     report?.overallTotal ||
     {};
+  const pagination =
+    report?.pagination ||
+    {
+      page,
+      pageSize:
+        MOVEMENT_PAGE_SIZE,
+      total: 0,
+      totalPages: 0,
+    };
+  const hasActiveFilters =
+    Boolean(
+      selectedCompany ||
+      selectedMonth ||
+      String(
+        selectedYear || ""
+      ) !==
+        String(
+          new Date()
+            .getFullYear()
+        )
+    );
 
   const periodLabel =
     report?.filters
@@ -5132,7 +5813,7 @@ function DeploymentMovementActivity({
   return (
     <section
       role="tabpanel"
-      aria-label="Deployment history"
+      aria-label="Deployment activity history"
       className="min-w-0 space-y-5"
     >
       <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-5 sm:py-4">
@@ -5147,21 +5828,92 @@ function DeploymentMovementActivity({
 
               <div>
                 <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 sm:text-base">
-                  Deployment History
+                  Deployment Activity History
                 </h2>
 
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500 dark:text-slate-400">
                   {isHRCoordinator
                     ? assignedCompany
-                      ? `Deployment history for ${assignedCompany}.`
-                      : "Deployment history for your assigned company."
+                      ? `Deployment activity history for ${assignedCompany}.`
+                      : "Deployment activity history for your assigned company."
                     : "Deployment schedules, arrival outcomes, and separation history across client companies."}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto lg:min-w-[420px]">
+          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[720px] xl:grid-cols-3">
+            <div className="sm:col-span-2 xl:col-span-1">
+              <label
+                htmlFor="movement-company-filter"
+                className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300"
+              >
+                {isHRCoordinator
+                  ? "Assigned Company"
+                  : "Company"}
+              </label>
+
+              <select
+                id="movement-company-filter"
+                value={
+                  isHRCoordinator
+                    ? assignedCompany
+                    : selectedCompany
+                }
+                disabled={
+                  controlsDisabled ||
+                  isHRCoordinator
+                }
+                aria-readonly={
+                  isHRCoordinator
+                }
+                onChange={(
+                  event
+                ) =>
+                  onCompanyChange?.(
+                    event.target
+                      .value
+                  )
+                }
+                className={`${SELECT_CLASS_NAME} max-w-full truncate`}
+                title={
+                  isHRCoordinator
+                    ? assignedCompany ||
+                      "No assigned company"
+                    : selectedCompany ||
+                      "All Companies"
+                }
+              >
+                {companyOptions.length >
+                0 ? (
+                  companyOptions.map(
+                    (company) => (
+                      <option
+                        key={`${company.label}-${company.value}`}
+                        value={
+                          company.value
+                        }
+                      >
+                        {company.label}
+                      </option>
+                    )
+                  )
+                ) : (
+                  <option value="">
+                    {isHRCoordinator
+                      ? "No assigned company"
+                      : "All Companies"}
+                  </option>
+                )}
+              </select>
+
+              {isHRCoordinator && (
+                <p className="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                  Company scope is locked to your authorized assignment.
+                </p>
+              )}
+            </div>
+
             <div>
               <label
                 htmlFor="movement-month-filter"
@@ -5255,32 +6007,93 @@ function DeploymentMovementActivity({
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-          <span className="font-semibold text-slate-700 dark:text-slate-300">
-            {periodLabel}
-          </span>
-
-          <span className="before:mr-3 before:text-slate-300 before:content-['•'] dark:before:text-slate-700">
-            {Number(
-              summary.totalEvents ||
-              events.length ||
-              0
-            )}{" "}
-            activity{" "}
-            {Number(
-              summary.totalEvents ||
-              events.length ||
-              0
-            ) === 1
-              ? "record"
-              : "records"}
-          </span>
-
-          {isRefreshing && (
-            <span className="font-medium text-indigo-600 dark:text-indigo-300">
-              Updating history...
+        <div className="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              {periodLabel}
             </span>
-          )}
+
+            <span className="before:mr-3 before:text-slate-300 before:content-['•'] dark:before:text-slate-700">
+              {Number(
+                summary.totalEvents ||
+                0
+              )}{" "}
+              activity{" "}
+              {Number(
+                summary.totalEvents ||
+                0
+              ) === 1
+                ? "record"
+                : "records"}
+            </span>
+
+            {isRefreshing && (
+              <span className="font-medium text-indigo-600 dark:text-indigo-300">
+                Updating history...
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={
+                controlsDisabled ||
+                !hasActiveFilters
+              }
+              onClick={
+                onClearFilters
+              }
+            >
+              Clear Filters
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={
+                <FiRefreshCw
+                  className={
+                    isRefreshing
+                      ? "animate-spin"
+                      : ""
+                  }
+                  aria-hidden="true"
+                />
+              }
+              disabled={
+                controlsDisabled
+              }
+              onClick={
+                onRefresh
+              }
+            >
+              Refresh
+            </Button>
+
+            <Button
+              size="sm"
+              leftIcon={
+                <FiDownload
+                  aria-hidden="true"
+                />
+              }
+              loading={
+                isExporting
+              }
+              disabled={
+                isLoading ||
+                isRefreshing ||
+                isExporting
+              }
+              onClick={
+                onExport
+              }
+            >
+              Export PDF
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -5300,12 +6113,12 @@ function DeploymentMovementActivity({
                 </h3>
 
                 <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  Overall deployment history counts for {periodLabel}.
+                  Overall deployment activity counts for {periodLabel}.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-9">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">
               <MovementSummaryCard
                 label="Total Activity"
                 value={
@@ -5348,7 +6161,7 @@ function DeploymentMovementActivity({
                   </h3>
 
                   <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    Deployment history activity by client company for {periodLabel}.
+                    Deployment activity by client company for {periodLabel}.
                   </p>
                 </div>
 
@@ -5384,7 +6197,7 @@ function DeploymentMovementActivity({
                   </p>
 
                   <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    Client company deployment history will appear here when activity is available.
+                    Client company deployment activity will appear here when activity is available.
                   </p>
                 </div>
               ) : showAllHistoryCompanies ? (
@@ -5394,7 +6207,7 @@ function DeploymentMovementActivity({
                   tabIndex={0}
                   aria-label="Scrollable client company deployment history table"
                 >
-                <table className="w-full min-w-[1120px] table-fixed border-separate border-spacing-0 text-left text-xs">
+                  <table className="w-full min-w-[1450px] table-fixed border-separate border-spacing-0 text-left text-xs">
                   <colgroup>
                     <col className="w-[260px]" />
                     <col className="w-[90px]" />
@@ -5402,6 +6215,9 @@ function DeploymentMovementActivity({
                     <col className="w-[105px]" />
                     <col className="w-[95px]" />
                     <col className="w-[100px]" />
+                    <col className="w-[110px]" />
+                    <col className="w-[145px]" />
+                    <col className="w-[125px]" />
                     <col className="w-[95px]" />
                     <col className="w-[105px]" />
                     <col className="w-[80px]" />
@@ -5427,6 +6243,15 @@ function DeploymentMovementActivity({
                       </th>
                       <th className="px-3 py-3 text-right font-bold">
                         Withdrawn
+                      </th>
+                      <th className="px-3 py-3 text-right font-bold">
+                        Transferred
+                      </th>
+                      <th className="px-3 py-3 text-right font-bold">
+                        Ended / Pulled Out
+                      </th>
+                      <th className="px-3 py-3 text-right font-bold">
+                        Other Completion
                       </th>
                       <th className="px-3 py-3 text-right font-bold">
                         Resigned
@@ -5505,6 +6330,36 @@ function DeploymentMovementActivity({
                           >
                             {Number(
                               company.withdrawn ||
+                              0
+                            )}
+                          </td>
+                          <td
+                            className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.transferredReassigned
+                            )}`}
+                          >
+                            {Number(
+                              company.transferredReassigned ||
+                              0
+                            )}
+                          </td>
+                          <td
+                            className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.deploymentEnded
+                            )}`}
+                          >
+                            {Number(
+                              company.deploymentEnded ||
+                              0
+                            )}
+                          </td>
+                          <td
+                            className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                              company.otherCompletion
+                            )}`}
+                          >
+                            {Number(
+                              company.otherCompletion ||
                               0
                             )}
                           </td>
@@ -5609,6 +6464,36 @@ function DeploymentMovementActivity({
                       </td>
                       <td
                         className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.transferredReassigned
+                        )}`}
+                      >
+                        {Number(
+                          overallTotal.transferredReassigned ||
+                          0
+                        )}
+                      </td>
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.deploymentEnded
+                        )}`}
+                      >
+                        {Number(
+                          overallTotal.deploymentEnded ||
+                          0
+                        )}
+                      </td>
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
+                          overallTotal.otherCompletion
+                        )}`}
+                      >
+                        {Number(
+                          overallTotal.otherCompletion ||
+                          0
+                        )}
+                      </td>
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${getHistoryTableCountClass(
                           overallTotal.resigned
                         )}`}
                       >
@@ -5686,8 +6571,20 @@ function DeploymentMovementActivity({
               </div>
 
               <p className="shrink-0 text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300">
-                {events.length}{" "}
-                {events.length === 1
+                Page {Number(
+                  pagination.page ||
+                  page
+                )} of {Number(
+                  pagination.totalPages ||
+                  0
+                ) || 1} · {Number(
+                  pagination.total ||
+                  0
+                )}{" "}
+                {Number(
+                  pagination.total ||
+                  0
+                ) === 1
                   ? "record"
                   : "records"}
               </p>
@@ -5702,50 +6599,50 @@ function DeploymentMovementActivity({
               >
                 <table className={`w-full ${
                   isHRCoordinator
-                    ? "min-w-[1080px]"
-                    : "min-w-[1280px]"
+                    ? "min-w-[1010px]"
+                    : "min-w-[1180px]"
                 } table-fixed border-separate border-spacing-0 text-left text-xs`}>
                   <colgroup>
-                    <col className="w-[130px]" />
-                    <col className="w-[190px]" />
-                    <col className="w-[150px]" />
+                    <col className="w-[112px]" />
+                    <col className="w-[160px]" />
+                    <col className="w-[120px]" />
                     {!isHRCoordinator && (
-                      <col className="w-[190px]" />
+                      <col className="w-[155px]" />
                     )}
-                    <col className="w-[175px]" />
-                    <col className="w-[185px]" />
-                    <col className="w-[170px]" />
-                    <col className="w-[250px]" />
+                    <col className="w-[150px]" />
+                    <col className="w-[145px]" />
+                    <col className="w-[140px]" />
+                    <col className="w-[198px]" />
                   </colgroup>
 
                   <thead className="sticky top-0 z-20 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:bg-slate-800 dark:text-slate-300 dark:shadow-[0_1px_0_0_rgba(51,65,85,1)]">
                     <tr>
-                      <th className="px-4 py-3 font-bold">
+                      <th className="px-3 py-2.5 font-bold">
                         Date / Time
                       </th>
-                      <th className="px-4 py-3 font-bold">
+                      <th className="px-3 py-2.5 font-bold">
                         Employee
                       </th>
-                      <th className="px-4 py-3 font-bold">
+                      <th className="px-3 py-2.5 font-bold">
                         Position
                       </th>
 
                       {!isHRCoordinator && (
-                        <th className="px-4 py-3 font-bold">
+                        <th className="px-3 py-2.5 font-bold">
                           Client Company
                         </th>
                       )}
 
-                      <th className="px-4 py-3 font-bold">
+                      <th className="px-3 py-2.5 font-bold">
                         Activity
                       </th>
-                      <th className="px-4 py-3 font-bold">
+                      <th className="px-3 py-2.5 font-bold">
                         Status Change
                       </th>
-                      <th className="px-4 py-3 font-bold">
+                      <th className="px-3 py-2.5 font-bold">
                         Performed By
                       </th>
-                      <th className="px-4 py-3 font-bold">
+                      <th className="px-3 py-2.5 font-bold">
                         Reason
                       </th>
                     </tr>
@@ -5753,50 +6650,71 @@ function DeploymentMovementActivity({
 
                   <tbody className="divide-y divide-slate-100 text-slate-600 dark:divide-slate-800/80 dark:text-slate-300">
                     {events.map(
-                      (event) => (
-                        <tr
-                          key={
-                            event.id
-                          }
-                          className="align-top transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/35"
-                        >
-                          <td className="whitespace-nowrap px-4 py-3.5">
-                            <p className="font-semibold text-slate-800 dark:text-slate-200">
-                              {formatReportDate(
-                                event.eventDate
-                              )}
+                      (event) => {
+                        const {
+                          dateLabel,
+                          timeLabel,
+                        } =
+                          getMovementEventDateTimeParts(
+                            event
+                          );
+
+                        return (
+                          <tr
+                            key={
+                              event.id
+                            }
+                            className="align-top transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/35"
+                          >
+                          <td className="px-3 py-3">
+                            <p className="whitespace-nowrap font-semibold leading-4 text-slate-800 dark:text-slate-200">
+                              {dateLabel}
                             </p>
 
-                            {formatReportTime(
-                              event?.scheduledTime ??
-                              event?.scheduled_time
-                            ) && (
-                              <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                                <FiClock
-                                  size={11}
-                                  aria-hidden="true"
-                                />
-                                {formatReportTime(
-                                  event?.scheduledTime ??
-                                  event?.scheduled_time
-                                )}
+                            {timeLabel && (
+                              <p className="mt-0.5 whitespace-nowrap text-[11px] font-medium leading-4 text-slate-500 dark:text-slate-400">
+                                {timeLabel}
                               </p>
                             )}
+
+                            {event.businessDate &&
+                              event.businessDate !==
+                                event.eventDate && (
+                                <p className="mt-1 whitespace-normal text-[11px] font-medium leading-4 text-slate-500 dark:text-slate-400">
+                                  {event.movement ===
+                                  "Scheduled for Deployment"
+                                    ? "Planned arrival"
+                                    : "Effective date"}
+                                  :{" "}
+                                  {formatReportDate(
+                                    event.businessDate
+                                  )}
+                                  {event.movement ===
+                                    "Scheduled for Deployment" &&
+                                  formatReportTime(
+                                    event.scheduledTime
+                                  )
+                                    ? ` · ${formatReportTime(
+                                        event.scheduledTime
+                                      )}`
+                                    : ""}
+                                </p>
+                              )}
                           </td>
 
-                          <td className="px-4 py-3.5">
-                            <p className="break-words font-semibold leading-5 text-slate-900 dark:text-slate-100">
+                          <td className="px-3 py-3">
+                            <p className="break-words font-semibold leading-4 text-slate-900 dark:text-slate-100">
                               {event.employeeName ||
                                 "Unknown Employee"}
                             </p>
 
-                            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                              Employee ID: {event.employeeId ||
+                            <p className="mt-0.5 break-words text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                              ID: {event.employeeId ||
                                 "-"}
                             </p>
                           </td>
 
-                          <td className="px-4 py-3.5 leading-5">
+                          <td className="px-3 py-3 leading-4">
                             <span className="break-words">
                               {event.position ||
                                 "-"}
@@ -5804,7 +6722,7 @@ function DeploymentMovementActivity({
                           </td>
 
                           {!isHRCoordinator && (
-                            <td className="px-4 py-3.5 font-medium leading-5 text-slate-800 dark:text-slate-200">
+                            <td className="px-3 py-3 font-medium leading-4 text-slate-800 dark:text-slate-200">
                               <span className="break-words">
                                 {event.company ||
                                   "Unassigned"}
@@ -5812,9 +6730,9 @@ function DeploymentMovementActivity({
                             </td>
                           )}
 
-                          <td className="px-4 py-3.5">
+                          <td className="px-3 py-3">
                             <span
-                              className={`inline-flex max-w-full whitespace-normal rounded-lg border px-2.5 py-1 text-[11px] font-semibold leading-4 ${getMovementBadgeClass(
+                              className={`inline-flex max-w-full whitespace-normal rounded-lg border px-2 py-1 text-[11px] font-semibold leading-4 ${getMovementBadgeClass(
                                 event.movement
                               )}`}
                             >
@@ -5823,8 +6741,8 @@ function DeploymentMovementActivity({
                             </span>
                           </td>
 
-                          <td className="px-4 py-3.5">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 leading-5">
+                          <td className="px-3 py-3">
+                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 leading-4">
                               <span className="text-slate-500 dark:text-slate-400">
                                 {event.fromStatus ||
                                   "-"}
@@ -5844,10 +6762,10 @@ function DeploymentMovementActivity({
                             </div>
                           </td>
 
-                          <td className="px-4 py-3.5">
-                            <p className="break-words font-medium leading-5 text-slate-800 dark:text-slate-200">
+                          <td className="px-3 py-3">
+                            <p className="break-words font-medium leading-4 text-slate-800 dark:text-slate-200">
                               {event.performedBy ||
-                                "-"}
+                                "Not recorded"}
                             </p>
 
                             {event.performedByRole && (
@@ -5859,14 +6777,15 @@ function DeploymentMovementActivity({
                             )}
                           </td>
 
-                          <td className="px-4 py-3.5">
-                            <p className="whitespace-normal break-words leading-5 text-slate-600 dark:text-slate-300">
+                          <td className="px-3 py-3">
+                            <p className="whitespace-normal break-words leading-4 text-slate-600 dark:text-slate-300">
                               {event.reason ||
                                 "-"}
                             </p>
                           </td>
-                        </tr>
-                      )
+                          </tr>
+                        );
+                      }
                     )}
                   </tbody>
                 </table>
@@ -5878,6 +6797,89 @@ function DeploymentMovementActivity({
                   title="No deployment activity"
                   description={`No deployment activity was recorded for ${periodLabel}.`}
                 />
+              </div>
+            )}
+
+            {Number(
+              pagination.totalPages ||
+              0
+            ) > 1 && (
+              <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5 dark:border-slate-800">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Showing {events.length} of {Number(
+                    pagination.total ||
+                    0
+                  )} filtered activities.
+                </p>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={
+                      controlsDisabled ||
+                      Number(
+                        pagination.page ||
+                        page
+                      ) <= 1
+                    }
+                    onClick={() =>
+                      onPageChange?.(
+                        Math.max(
+                          1,
+                          Number(
+                            pagination.page ||
+                            page
+                          ) - 1
+                        )
+                      )
+                    }
+                  >
+                    Previous
+                  </Button>
+
+                  <span className="min-w-24 text-center text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300">
+                    Page {Number(
+                      pagination.page ||
+                      page
+                    )} / {Number(
+                      pagination.totalPages ||
+                      1
+                    )}
+                  </span>
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={
+                      controlsDisabled ||
+                      Number(
+                        pagination.page ||
+                        page
+                      ) >=
+                        Number(
+                          pagination.totalPages ||
+                          0
+                        )
+                    }
+                    onClick={() =>
+                      onPageChange?.(
+                        Math.min(
+                          Number(
+                            pagination.totalPages ||
+                            1
+                          ),
+                          Number(
+                            pagination.page ||
+                            page
+                          ) + 1
+                        )
+                      )
+                    }
+                  >
+                    Next
+                  </Button>
+                </div>
               </div>
             )}
           </section>
@@ -5924,6 +6926,30 @@ function HistoryCompanyPreviewCard({
       label: "Withdrawn",
       value: Number(
         company?.withdrawn ||
+        0
+      ),
+      emphasis: "neutral",
+    },
+    {
+      label: "Transferred / Reassigned",
+      value: Number(
+        company?.transferredReassigned ||
+        0
+      ),
+      emphasis: "neutral",
+    },
+    {
+      label: "Deployment Ended / Pulled Out",
+      value: Number(
+        company?.deploymentEnded ||
+        0
+      ),
+      emphasis: "neutral",
+    },
+    {
+      label: "Other Completion",
+      value: Number(
+        company?.otherCompletion ||
         0
       ),
       emphasis: "neutral",
@@ -6065,6 +7091,10 @@ function MovementSummaryCard({
       "bg-orange-500 dark:bg-orange-400",
     violet:
       "bg-violet-500 dark:bg-violet-400",
+    blue:
+      "bg-blue-500 dark:bg-blue-400",
+    cyan:
+      "bg-cyan-500 dark:bg-cyan-400",
   };
 
   return (
@@ -6159,8 +7189,8 @@ function ClientDeploymentSummary({
 
             <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
               {isHRCoordinator
-                ? "Deployment activity and separation history for your assigned client company."
-                : `Historical and active deployment records across ${companyCount} ${companyCount === 1 ? "client company" : "client companies"}. Showing ${visibleCompanies.length}.`}
+                ? "Overall client company summary of deployment activity and separation history for your assigned company."
+                : `Overall client company summary across ${companyCount} ${companyCount === 1 ? "client company" : "client companies"}. Showing ${visibleCompanies.length}.`}
             </p>
           </div>
 

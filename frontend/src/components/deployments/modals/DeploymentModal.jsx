@@ -15,6 +15,7 @@ import IconButton from "../../ui/IconButton";
 import {
   formatLongDisplayDate,
   getDeploymentDisplayStatus,
+  getDeploymentEndReasonDisplay,
   getDeploymentTimelineInfo,
   getStatusBadgeClass,
   normalizeDeploymentStatus,
@@ -306,6 +307,12 @@ export default function DeploymentModal({
       separationReason,
       separationRemarks
     );
+  const separationReasonDisplay =
+    getDeploymentEndReasonDisplay(
+      separationReason,
+      displayStatus ||
+        "Deployment ended"
+    );
 
   const employeeName =
     deployment.employee ||
@@ -351,7 +358,10 @@ export default function DeploymentModal({
   const timelineInfo =
     getDeploymentTimelineInfo(
       deploymentStartDate,
-      separationDate
+      separationDate,
+      internalStatus,
+      separationReason,
+      separationRemarks
     );
 
   const isAttention =
@@ -536,7 +546,7 @@ export default function DeploymentModal({
             <section>
               <div className="mb-2 flex items-center justify-between gap-3">
                 <h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
-                  Assignment End Details
+                  Deployment End Details
                 </h3>
               </div>
 
@@ -548,7 +558,7 @@ export default function DeploymentModal({
                       aria-hidden="true"
                     />
                   }
-                  label="Assignment End Date"
+                  label="Deployment End Date"
                   value={
                     hasSeparationDate
                       ? formatLongDisplayDate(
@@ -565,11 +575,9 @@ export default function DeploymentModal({
                       aria-hidden="true"
                     />
                   }
-                  label="Assignment End Reason"
+                  label="Deployment End Reason"
                   value={
-                    separationReason ||
-                    displayStatus ||
-                    "Ended"
+                    separationReasonDisplay
                   }
                 />
 
