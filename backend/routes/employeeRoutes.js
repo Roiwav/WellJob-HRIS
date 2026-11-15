@@ -341,8 +341,9 @@ router.delete(
  * END EMPLOYEE DEPLOYMENT CONTRACT
  * ==================================================
  *
- * HR Staff maintains employee and deployment-record
- * information, including employment/deployment data.
+ * Legacy compatibility entry point retained for HR Staff only.
+ * It records the authenticated ending actor on the exact active
+ * deployment assignment and cannot bypass actor attribution.
  *
  * This remains separate from archive, restore, and
  * permanent-delete management actions.

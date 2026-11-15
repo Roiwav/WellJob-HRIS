@@ -120,6 +120,60 @@ const MIGRATIONS = [
   },
 
   {
+    name:
+      "add_deployment_assignment_end_actor.sql",
+
+    isApplied: async (connection) => {
+      const actorColumn =
+        await columnExists(
+          connection,
+          "deployment_assignments",
+          "ended_by_user_id"
+        );
+
+      const actorIndex =
+        await indexExists(
+          connection,
+          "deployment_assignments",
+          "idx_deployment_assignments_ended_by"
+        );
+
+      const actorForeignKey =
+        await foreignKeyExists(
+          connection,
+          {
+            tableName:
+              "deployment_assignments",
+
+            constraintName:
+              "fk_deployment_assignments_ended_by",
+
+            columnName:
+              "ended_by_user_id",
+
+            referencedTableName:
+              "users",
+
+            referencedColumnName:
+              "id",
+
+            updateRule:
+              "CASCADE",
+
+            deleteRule:
+              "SET NULL",
+          }
+        );
+
+      return (
+        actorColumn &&
+        actorIndex &&
+        actorForeignKey
+      );
+    },
+  },
+
+  {
     name: "add_employee_documents_employee_id_index.sql",
     isApplied: async (connection) =>
       indexExists(

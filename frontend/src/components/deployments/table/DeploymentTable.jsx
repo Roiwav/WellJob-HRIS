@@ -310,6 +310,7 @@ export default function DeploymentTable({
   isSuperAdmin = false,
   isReadOnly = false,
   isHrCoordinator = false,
+  canEndDeployments = false,
 }) {
   const [endAssignmentTarget, setEndAssignmentTarget] = useState(null);
   const readOnly =
@@ -547,6 +548,7 @@ export default function DeploymentTable({
                           separationRemarks
                         );
                   const canEndAssignment =
+                    canEndDeployments &&
                     !readOnly &&
                     internalStatus === "Active";
                   const separationDate =

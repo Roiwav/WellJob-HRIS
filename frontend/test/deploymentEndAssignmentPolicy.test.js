@@ -9,6 +9,13 @@ const source = fs.readFileSync(
   ),
   "utf8"
 );
+const pageSource = fs.readFileSync(
+  new URL(
+    "../src/pages/Deployments.jsx",
+    import.meta.url
+  ),
+  "utf8"
+);
 
 test("Deployment Tracking exposes the required End Deployment terminology", () => {
   for (const label of [
@@ -51,7 +58,18 @@ test("deployment end and employment separation reasons are visibly grouped", () 
 test("frontend action remains unavailable to read-only roles and inactive assignments", () => {
   assert.match(
     source,
-    /const canEndAssignment =\s*!readOnly &&\s*internalStatus === "Active";/
+    /const canEndAssignment =\s*canEndDeployments &&\s*!readOnly &&\s*internalStatus === "Active";/
   );
   assert.match(source, /\{canEndAssignment && \(/);
+});
+
+test("only HR Manager and HR Staff receive End Deployment UI permission", () => {
+  const permissionBlock = pageSource.slice(
+    pageSource.indexOf("const canEndDeployments"),
+    pageSource.indexOf("const [", pageSource.indexOf("const canEndDeployments"))
+  );
+  assert.match(permissionBlock, /ROLES\.HR_MANAGER/);
+  assert.match(permissionBlock, /ROLES\.HR_STAFF/);
+  assert.doesNotMatch(permissionBlock, /ROLES\.HR_COORDINATOR|ROLES\.SUPER_ADMIN|ROLES\.IT_SUPPORT/);
+  assert.match(pageSource, /canEndDeployments=\{\s*canEndDeployments\s*\}/);
 });

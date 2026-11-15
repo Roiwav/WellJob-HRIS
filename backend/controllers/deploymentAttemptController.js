@@ -2015,6 +2015,7 @@ exports.getDeploymentMovementReport = async (req, res) => {
         assignments.status AS assignmentStatus,
         assignments.end_reason AS endReason,
         assignments.end_remarks AS endRemarks,
+        assignments.ended_by_user_id AS endedByUserId,
         DATE_FORMAT(assignments.end_date, '%Y-%m-%d') AS endDate,
         DATE_FORMAT(assignments.ended_at, '%Y-%m-%dT%H:%i:%s.000Z') AS endedAt,
         DATE_FORMAT(DATE(CONVERT_TZ(assignments.ended_at, '+00:00', '+08:00')), '%Y-%m-%d') AS endedDate
@@ -2202,10 +2203,10 @@ exports.getDeploymentMovementReport = async (req, res) => {
         displayReason,
         reason: displayReason,
         remarks: row.endRemarks || null,
-        // deployment_assignments has no direct end-action actor foreign key.
-        // Do not infer an actor from employee history rows that lack an
-        // assignment identity; legacy and assignment-end actors stay unknown.
-        performedByUserId: null,
+        // Use only the actor stored on this exact assignment-end transaction.
+        // Historical NULLs remain unknown; never infer from assignment creator
+        // or employee history rows that are not assignment-linked.
+        performedByUserId: row.endedByUserId ? Number(row.endedByUserId) : null,
       });
     }
 

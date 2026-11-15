@@ -358,6 +358,7 @@ CREATE TABLE IF NOT EXISTS deployment_assignments (
     ) STORED,
 
   ended_at DATETIME DEFAULT NULL,
+  ended_by_user_id INT DEFAULT NULL,
   created_by_user_id INT DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -391,6 +392,10 @@ CREATE TABLE IF NOT EXISTS deployment_assignments (
     created_by_user_id
   ),
 
+  KEY idx_deployment_assignments_ended_by (
+    ended_by_user_id
+  ),
+
   CONSTRAINT fk_deployment_assignments_employee
     FOREIGN KEY (employee_id)
     REFERENCES employees(id)
@@ -399,6 +404,12 @@ CREATE TABLE IF NOT EXISTS deployment_assignments (
 
   CONSTRAINT fk_deployment_assignments_created_by
     FOREIGN KEY (created_by_user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  CONSTRAINT fk_deployment_assignments_ended_by
+    FOREIGN KEY (ended_by_user_id)
     REFERENCES users(id)
     ON UPDATE CASCADE
     ON DELETE SET NULL

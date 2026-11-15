@@ -2200,6 +2200,13 @@ export default function Deployments() {
   const isHRCoordinator =
     user?.role ===
     ROLES.HR_COORDINATOR;
+  const canEndDeployments =
+    [
+      ROLES.HR_MANAGER,
+      ROLES.HR_STAFF,
+    ].includes(
+      user?.role
+    );
   const [
     activeView,
     setActiveView,
@@ -5000,6 +5007,9 @@ export default function Deployments() {
           }
           isHrCoordinator={
             isHRCoordinator
+          }
+          canEndDeployments={
+            canEndDeployments
           }
         />
       ) : (

@@ -147,7 +147,7 @@ test("controller enforces company authorization, full export, snapshots, and no 
   assert.match(controllerSource, /exportAll/);
   assert.match(controllerSource, /historicalCompany:\s*row\.company/);
   assert.match(controllerSource, /historicalPosition:\s*row\.position/);
-  assert.match(controllerSource, /performedByUserId:\s*null/);
+  assert.match(controllerSource, /assignments\.ended_by_user_id AS endedByUserId/);
 
   const canonicalBlock = controllerSource.slice(
     controllerSource.indexOf("Canonical Deployment Activity History implementation"),
@@ -160,7 +160,7 @@ test("controller enforces company authorization, full export, snapshots, and no 
   assert.doesNotMatch(canonicalBlock, /INSERT\s+INTO\s+deployment_/i);
 });
 
-test("actor mapping uses direct attempt actor IDs and does not infer assignment-end actors", () => {
+test("actor mapping uses direct attempt and assignment-end actor IDs without inference", () => {
   assert.match(
     controllerSource,
     /performedByUserId:\s*row\.createdByUserId\s*\?\s*Number\(row\.createdByUserId\)\s*:\s*null/
@@ -175,6 +175,9 @@ test("actor mapping uses direct attempt actor IDs and does not infer assignment-
     controllerSource.indexOf("const authorizedEvents", controllerSource.indexOf("for (const row of assignmentRows)"))
   );
 
-  assert.match(assignmentEventBlock, /performedByUserId:\s*null/);
-  assert.doesNotMatch(assignmentEventBlock, /changed_by_user_id|created_by_user_id/i);
+  assert.match(
+    assignmentEventBlock,
+    /performedByUserId:\s*row\.endedByUserId\s*\?\s*Number\(row\.endedByUserId\)\s*:\s*null/
+  );
+  assert.doesNotMatch(assignmentEventBlock, /changed_by_user_id|createdByUserId/i);
 });

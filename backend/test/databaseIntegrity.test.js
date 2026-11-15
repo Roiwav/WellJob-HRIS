@@ -228,7 +228,7 @@ test(
 
     assert.equal(
       MIGRATION_NAMES.length,
-      24
+      25
     );
 
     assert.equal(
@@ -263,6 +263,38 @@ test(
     assert.doesNotMatch(
       setup,
       /const\s+EXPECTED_MIGRATIONS\s*=\s*\[/
+    );
+  }
+);
+
+
+test(
+  "Deployment assignment end actor migration is nullable, authoritative, and non-backfilling",
+  () => {
+    const baseline = readSource(
+      "database/baseline.sql"
+    );
+    const migration = readSource(
+      "database/add_deployment_assignment_end_actor.sql"
+    );
+    const runner = readSource(
+      "scripts/migrateDatabase.cjs"
+    );
+
+    for (const source of [baseline, migration]) {
+      assert.match(source, /ended_by_user_id\s+INT\s+(?:DEFAULT\s+)?NULL/i);
+      assert.match(source, /fk_deployment_assignments_ended_by/i);
+      assert.match(source, /REFERENCES\s+users\s*\(\s*id\s*\)/i);
+      assert.match(source, /ON DELETE SET NULL/i);
+    }
+
+    assert.doesNotMatch(migration, /UPDATE\s+deployment_assignments/i);
+    assert.doesNotMatch(migration, /created_by_user_id\s*=|changed_by_user_id/i);
+    assert.match(runner, /name:\s*"add_deployment_assignment_end_actor\.sql"/);
+    assert.ok(
+      MIGRATION_NAMES.includes(
+        "add_deployment_assignment_end_actor.sql"
+      )
     );
   }
 );

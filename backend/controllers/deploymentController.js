@@ -3245,6 +3245,18 @@ exports.updateDeploymentStatus =
     const actorUserId =
       actor.userId;
 
+    if (
+      !Number.isSafeInteger(
+        Number(actorUserId)
+      ) ||
+      Number(actorUserId) <= 0
+    ) {
+      return res.status(401).json({
+        error:
+          "A verified authenticated user is required to end a deployment.",
+      });
+    }
+
     let connection =
       null;
 
@@ -3569,7 +3581,9 @@ exports.updateDeploymentStatus =
             status = ?,
 
             ended_at =
-              UTC_TIMESTAMP()
+              UTC_TIMESTAMP(),
+
+            ended_by_user_id = ?
 
           WHERE
             id = ?
@@ -3582,6 +3596,7 @@ exports.updateDeploymentStatus =
             finalReason,
             finalRemarks,
             status,
+            actorUserId,
             canonicalDeploymentId,
           ]
         );

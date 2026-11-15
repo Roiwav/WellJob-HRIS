@@ -39,6 +39,13 @@ test("deployment activity UI exposes company scope, completion categories, and p
   assert.match(source, /event\.performedBy \|\|\s*"Not recorded"/);
 });
 
+test("activity table and PDF share reliable actor name and friendly role mapping", () => {
+  assert.match(source, /event\.performedBy \|\|\s*"Not recorded"/);
+  assert.match(source, /formatRoleLabel\(\s*event\.performedByRole\s*\)/);
+  assert.match(source, /performedByRole[\s\S]{0,240}\.join\(\s*" · "/);
+  assert.match(source, /\[\s*"hr",\s*"it",\s*\]\.includes/);
+});
+
 test("activity records split date and time while using a more compact table layout", () => {
   assert.match(source, /getMovementEventDateTimeParts/);
   assert.match(source, /\{dateLabel\}/);

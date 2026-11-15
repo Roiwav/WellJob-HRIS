@@ -4415,6 +4415,18 @@ exports.updateContractEnd = async (
     const actor =
       getActor(req);
 
+    if (
+      !Number.isSafeInteger(
+        Number(actor.userId)
+      ) ||
+      Number(actor.userId) <= 0
+    ) {
+      return res.status(401).json({
+        error:
+          "A verified authenticated user is required to end a deployment.",
+      });
+    }
+
     const {
       value:
         finalContractEnd,
@@ -4673,7 +4685,8 @@ exports.updateContractEnd = async (
         end_reason = ?,
         end_remarks = ?,
         status = ?,
-        ended_at = UTC_TIMESTAMP()
+        ended_at = UTC_TIMESTAMP(),
+        ended_by_user_id = ?
       WHERE id = ?
         AND status = 'Active'
       `,
@@ -4682,6 +4695,7 @@ exports.updateContractEnd = async (
         finalReason,
         finalRemarks,
         reasonRule.deploymentStatus,
+        actor.userId,
         activeAssignment.id,
       ]
     );
