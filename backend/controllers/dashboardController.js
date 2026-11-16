@@ -8,6 +8,11 @@ const {
   isCurrentWorkforceStatus,
 } = require("../utils/workforceScope");
 
+const {
+  buildAnnualReportPeriod,
+  buildMonthlyReportPeriod,
+} = require("../utils/dashboardReportingPeriod");
+
 const EXPIRABLE_DOCUMENTS = [
   "Barangay Clearance",
   "NBI/Police Clearance",
@@ -341,95 +346,6 @@ function normalizeMonthlyReportYear(
   }
 
   return parsed;
-}
-
-function formatSqlDateUtc(date) {
-  const year =
-    date
-      .getUTCFullYear();
-
-  const month =
-    String(
-      date.getUTCMonth() +
-        1
-    ).padStart(
-      2,
-      "0"
-    );
-
-  const day =
-    String(
-      date.getUTCDate()
-    ).padStart(
-      2,
-      "0"
-    );
-
-  return `${year}-${month}-${day}`;
-}
-
-function buildMonthlyReportPeriod(
-  year,
-  month
-) {
-  const start =
-    new Date(
-      Date.UTC(
-        year,
-        month,
-        1
-      )
-    );
-
-  const endExclusive =
-    new Date(
-      Date.UTC(
-        year,
-        month + 1,
-        1
-      )
-    );
-
-  const monthLabel =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        month:
-          "long",
-        timeZone:
-          "UTC",
-      }
-    ).format(
-      start
-    );
-
-  return {
-    start:
-      formatSqlDateUtc(
-        start
-      ),
-
-    endExclusive:
-      formatSqlDateUtc(
-        endExclusive
-      ),
-
-    label:
-      `${monthLabel} ${year}`,
-  };
-}
-
-function buildAnnualReportPeriod(
-  year
-) {
-  return {
-    start:
-      `${year}-01-01`,
-    endExclusive:
-      `${year + 1}-01-01`,
-    label:
-      `Full Year ${year}`,
-  };
 }
 
 function normalizeMonthlyCategory(
@@ -1447,6 +1363,8 @@ exports.getDashboardMonthlyWorkforce =
             period.start,
           periodEndExclusive:
             period.endExclusive,
+          snapshotKind:
+            period.snapshotKind,
         },
 
         /*
@@ -1481,9 +1399,13 @@ exports.getDashboardMonthlyWorkforce =
             WORKFORCE_SCOPE_KEY,
 
           classification:
-            month === "ALL"
-              ? "YEAR_END_WORKFORCE_SNAPSHOT_WITH_YEAR_ACTIVITY"
-              : "MONTH_END_WORKFORCE_SNAPSHOT_WITH_MONTH_ACTIVITY",
+            period.snapshotKind ===
+            "CURRENT_DATE"
+              ? "CURRENT_DATE_WORKFORCE_SNAPSHOT_WITH_YEAR_TO_DATE_ACTIVITY"
+              : period.snapshotKind ===
+                  "YEAR_END"
+                ? "YEAR_END_WORKFORCE_SNAPSHOT_WITH_YEAR_ACTIVITY"
+                : "MONTH_END_WORKFORCE_SNAPSHOT_WITH_MONTH_ACTIVITY",
 
           employeeRowsEvaluated:
             historicalRows.length,

@@ -15,6 +15,7 @@ function read(relativePath) {
 const employee = read("frontend/src/components/employees/EmployeeModal.jsx");
 const attendance = read("frontend/src/pages/Attendance.jsx");
 const dashboard = read("frontend/src/pages/Dashboard.jsx");
+const dashboardPeriod = read("frontend/src/utils/dashboard/dashboardPeriod.js");
 const incidents = read("frontend/src/utils/incidents/incidentPdfExport.js");
 const kpi = read("frontend/src/utils/kpi/kpiPdfExport.js");
 const professionalDeployments = read("frontend/src/utils/deployments/deploymentPdfExport.js");
@@ -93,8 +94,9 @@ test("employee profile PDF uses authorized current and previous deployment histo
 });
 
 test("dashboard PDF distinguishes full-year activity from monthly workforce reporting", () => {
-  assert.match(dashboard, /Full Year \$\{selectedYear\}/);
+  assert.match(dashboardPeriod, /Full Year \$\{normalizedYear\}/);
   assert.match(dashboard, /Current authorized workforce snapshot/);
+  assert.doesNotMatch(dashboard, />\s*Workforce Overview\s*</);
   assert.match(dashboard, /Workforce and Activity Summary by Client Company/);
   assert.match(dashboard, /Ended Deployments/);
   assert.match(dashboard, /Highest Monthly Deployment Activity/);

@@ -49,3 +49,22 @@ test("monthly workforce route remains restricted to established dashboard roles"
   assert.match(routeBlock, /authorizeRoles\(\s*\.\.\.DASHBOARD_ROLES/);
   assert.match(routeSource, /"SUPER_ADMIN"[\s\S]*"HR_MANAGER"[\s\S]*"HR_STAFF"/);
 });
+
+test("monthly workforce endpoint applies requested month and year to the report period", () => {
+  assert.match(
+    monthlyWorkforceSource,
+    /normalizeMonthlyReportMonth\([\s\S]*?req\.query\?\.month/
+  );
+  assert.match(
+    monthlyWorkforceSource,
+    /normalizeMonthlyReportYear\([\s\S]*?req\.query\?\.year/
+  );
+  assert.match(
+    monthlyWorkforceSource,
+    /month === "ALL"[\s\S]*?buildAnnualReportPeriod\([\s\S]*?year[\s\S]*?buildMonthlyReportPeriod\([\s\S]*?year[\s\S]*?month/
+  );
+  assert.match(
+    monthlyWorkforceSource,
+    /endedDeploymentRows[\s\S]*?incidentActivityRows[\s\S]*?period\.start[\s\S]*?period\.endExclusive/
+  );
+});

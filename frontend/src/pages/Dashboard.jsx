@@ -23,6 +23,15 @@ import EditEmployeeModal from "../components/employees/EditEmployeeModal";
 import { buildExecutiveActionItems } from "../utils/dashboard/prescriptiveAnalytics";
 import { buildDashboardInsights } from "../utils/dashboard/dashboardInsights";
 import { buildDashboardCompanyActivityRows } from "../utils/dashboard/dashboardReport";
+import {
+  DASHBOARD_REPORTING_YEARS,
+  buildDashboardWorkforceRequestUrl,
+  getDashboardPeriodLabel,
+  isLatestDashboardRequest,
+  normalizeDashboardReportingYear,
+  shouldShowDashboardReportingPanels,
+} from "../utils/dashboard/dashboardPeriod";
+import { buildDashboardIncidentSummary } from "../utils/dashboard/dashboardIncidentSummary";
 import authenticatedFetch from "../utils/authenticatedFetch";
 import { API_BASE } from "../config/api";
 import RoleGuard from "../components/auth/RoleGuard";
@@ -609,7 +618,8 @@ function getRecordDate(record) {
 function isInSelectedDashboardRange(
   value,
   selectedYear,
-  selectedMonth
+  selectedMonth,
+  periodEndExclusive = ""
 ) {
   const dateValue =
     normalizeDateValue(value);
@@ -635,6 +645,12 @@ function isInSelectedDashboardRange(
         selectedMonth
       ).padStart(2, "0")
     );
+  }
+  if (
+    periodEndExclusive &&
+    dateValue >= periodEndExclusive
+  ) {
+    return false;
   }
   return true;
 }
@@ -1023,30 +1039,16 @@ function normalizeMonthlyWorkforceReport(
         payload?.meta
           ?.totalsMatch !==
         false,
+      classification:
+        payload?.meta
+          ?.classification ||
+        "",
+      snapshotKind:
+        payload?.filters
+          ?.snapshotKind ||
+        "",
     },
   };
-}
-
-function getMonthlyWorkforcePeriodLabel(
-  selectedMonth,
-  selectedYear
-) {
-  if (Number(selectedMonth) === 0) {
-    return `Full Year ${selectedYear}`;
-  }
-
-  const monthIndex =
-    Number(
-      selectedMonth
-    ) - 1;
-
-  const monthLabel =
-    FULL_MONTH_LIST[
-      monthIndex
-    ] ||
-    "Selected Month";
-
-  return `${monthLabel} ${selectedYear}`;
 }
 
 function getDashboardUserDisplayName(
@@ -1186,374 +1188,165 @@ function MonthlyWorkforceSummary({
   selectedMonth,
   selectedYear,
 }) {
-  const overall =
-    report?.overall ||
-    normalizeMonthlyWorkforceBucket();
-
-  const companies =
-    Array.isArray(
-      report?.companies
-    )
-      ? report.companies
-      : [];
-
-  const overallTotal =
-    report?.overallTotal ||
-    overall;
-
-  const periodLabel =
-    getMonthlyWorkforcePeriodLabel(
-      selectedMonth,
-      selectedYear
-    );
-
+  const overall = report?.overall || normalizeMonthlyWorkforceBucket();
+  const periodLabel = getDashboardPeriodLabel({
+    selectedMonth,
+    selectedYear,
+    report,
+    monthNames: FULL_MONTH_LIST,
+  });
+  const isFullYear = Number(selectedMonth) === 0;
   const summaryItems = [
-    {
-      label:
-        "Total Employees",
-      value:
-        overall.totalEmployees,
-      tone:
-        "slate",
-    },
-    {
-      label:
-        "Deployed",
-      value:
-        overall.deployed,
-      tone:
-        "emerald",
-    },
-    {
-      label:
-        "For Deployment",
-      value:
-        overall.forDeployment,
-      tone:
-        "indigo",
-    },
-    {
-      label:
-        "Floating / Standby",
-      value:
-        overall.floatingStandby,
-      tone:
-        "amber",
-    },
-    {
-      label:
-        "Resigned",
-      value:
-        overall.resigned,
-      tone:
-        "sky",
-    },
-    {
-      label:
-        "Terminated",
-      value:
-        overall.terminated,
-      tone:
-        "rose",
-    },
-    {
-      label:
-        "AWOL",
-      value:
-        overall.awol,
-      tone:
-        "orange",
-    },
-    {
-      label:
-        "Other Separation",
-      value:
-        overall.otherSeparation,
-      tone:
-        "violet",
-    },
+    ["Total Employees", overall.totalEmployees],
+    ["Deployed", overall.deployed],
+    ["For Deployment", overall.forDeployment],
+    ["Floating / Standby", overall.floatingStandby],
+    ["Resigned", overall.resigned],
+    ["Terminated", overall.terminated],
+    ["AWOL", overall.awol],
+    ["Other Separation", overall.otherSeparation],
   ];
-
-  const toneClasses = {
-    slate:
-      "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-950/40",
-    emerald:
-      "border-emerald-200 bg-emerald-50 dark:border-emerald-500/25 dark:bg-emerald-500/10",
-    indigo:
-      "border-indigo-200 bg-indigo-50 dark:border-indigo-500/25 dark:bg-indigo-500/10",
-    amber:
-      "border-amber-200 bg-amber-50 dark:border-amber-500/25 dark:bg-amber-500/10",
-    sky:
-      "border-sky-200 bg-sky-50 dark:border-sky-500/25 dark:bg-sky-500/10",
-    rose:
-      "border-rose-200 bg-rose-50 dark:border-rose-500/25 dark:bg-rose-500/10",
-    orange:
-      "border-orange-200 bg-orange-50 dark:border-orange-500/25 dark:bg-orange-500/10",
-    violet:
-      "border-violet-200 bg-violet-50 dark:border-violet-500/25 dark:bg-violet-500/10",
-  };
 
   return (
     <section
       aria-labelledby="monthly-workforce-summary-title"
       className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
     >
-      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 sm:px-6">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2
-              id="monthly-workforce-summary-title"
-              className="text-lg font-bold text-slate-900 dark:text-slate-100"
-            >
-              Monthly Workforce Summary
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Overall workforce counts by client company for {periodLabel}.
-            </p>
-          </div>
-
-          <span className="w-fit rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
-            Month-End Snapshot
-          </span>
-        </div>
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:px-5">
+        <h2 id="monthly-workforce-summary-title" className="text-base font-bold text-slate-900 dark:text-slate-100">
+          {isFullYear ? "Annual Workforce Summary" : "Monthly Workforce Summary"}
+        </h2>
+        <p className="mt-0.5 break-words text-xs font-medium text-slate-500 dark:text-slate-400">
+          {periodLabel}
+        </p>
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4 xl:grid-cols-8 sm:p-6">
-          {Array.from({
-            length:
-              8,
-          }).map(
-            (
-              _,
-              index
-            ) => (
-              <div
-                key={
-                  index
-                }
-                className="h-20 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800"
-              />
-            )
-          )}
+        <div className="grid grid-cols-2 gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div key={index} className="h-[62px] animate-pulse bg-slate-100 dark:bg-slate-900" />
+          ))}
         </div>
       ) : error ? (
-        <div className="p-5 sm:p-6">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300">
+        <div className="p-4 sm:px-5">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-medium text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300">
             {error}
           </div>
         </div>
       ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4 xl:grid-cols-8 sm:p-6">
-            {summaryItems.map(
-              (item) => (
-                <article
-                  key={
-                    item.label
-                  }
-                  className={`min-w-0 rounded-xl border px-3 py-3 ${toneClasses[
-                    item.tone
-                  ]}`}
-                >
-                  <p className="truncate text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {
-                      item.label
-                    }
-                  </p>
-
-                  <p className="mt-1.5 text-xl font-extrabold tabular-nums text-slate-900 dark:text-white">
-                    {
-                      item.value
-                    }
-                  </p>
-                </article>
-              )
-            )}
-          </div>
-
-          <div className="border-t border-slate-200 dark:border-slate-800">
-            <div className="flex flex-col gap-1 px-5 py-4 sm:px-6">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Client Company Summary
-              </h3>
-
-              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                Workforce totals for each client company in the selected period.
+        <div className="grid grid-cols-2 gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-4">
+          {summaryItems.map(([label, value]) => (
+            <article key={label} className="min-w-0 bg-white px-3 py-2.5 dark:bg-slate-900 sm:px-4">
+              <p className="min-h-8 break-words text-[10px] font-semibold uppercase leading-4 tracking-[0.06em] text-slate-500 dark:text-slate-400">
+                {label}
               </p>
-            </div>
+              <p className="mt-0.5 text-xl font-extrabold tabular-nums text-slate-900 dark:text-white">
+                {value}
+              </p>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
-            <div className="max-h-[520px] overflow-auto">
-              <table className="w-full min-w-[1120px] text-left text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:bg-slate-800 dark:text-slate-300 dark:shadow-[0_1px_0_0_rgba(51,65,85,1)]">
-                  <tr>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wide">
-                      Client Company
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
-                      Total
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
-                      Deployed
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
-                      For Deployment
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
-                      Floating / Standby
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
-                      Resigned
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
-                      Terminated
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
-                      AWOL
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wide">
-                      Other Separation
-                    </th>
-                  </tr>
-                </thead>
+function SelectedPeriodIncidentSummary({
+  summary,
+  periodLabel,
+  loading = false,
+  error = "",
+}) {
+  const severityTone = {
+    Minor:
+      "text-sky-700 dark:text-sky-300",
+    Major:
+      "text-amber-700 dark:text-amber-300",
+    Critical:
+      "text-rose-700 dark:text-rose-300",
+    "Other / Unspecified":
+      "text-slate-600 dark:text-slate-300",
+  };
 
-                <tbody className="divide-y divide-slate-100 text-slate-700 dark:divide-slate-800 dark:text-slate-200">
-                  {companies.length >
-                  0 ? (
-                    companies.map(
-                      (
-                        company
-                      ) => (
-                        <tr
-                          key={
-                            company.company
-                          }
-                          className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                        >
-                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-                            {
-                              company.company
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {
-                              company.totalEmployees
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {
-                              company.deployed
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {
-                              company.forDeployment
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {
-                              company.floatingStandby
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {
-                              company.resigned
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {
-                              company.terminated
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {
-                              company.awol
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {
-                              company.otherSeparation
-                            }
-                          </td>
-                        </tr>
-                      )
-                    )
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={
-                          9
-                        }
-                        className="px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-400"
-                      >
-                        No workforce records are available for {periodLabel}.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
+  return (
+    <section
+      aria-labelledby="selected-period-incidents-title"
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+    >
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:px-5">
+        <h2
+          id="selected-period-incidents-title"
+          className="text-base font-bold text-slate-900 dark:text-slate-100"
+        >
+          Incidents in Selected Period
+        </h2>
+        <p className="mt-0.5 break-words text-xs font-medium text-slate-500 dark:text-slate-400">
+          {periodLabel}
+        </p>
+      </div>
 
-                {companies.length >
-                  0 && (
-                  <tfoot className="sticky bottom-0 bg-slate-100 font-bold text-slate-900 shadow-[0_-1px_0_0_rgba(226,232,240,1)] dark:bg-slate-800 dark:text-slate-100 dark:shadow-[0_-1px_0_0_rgba(51,65,85,1)]">
-                    <tr>
-                      <td className="px-4 py-3">
-                        OVERALL TOTAL
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {
-                          overallTotal.totalEmployees
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {
-                          overallTotal.deployed
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {
-                          overallTotal.forDeployment
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {
-                          overallTotal.floatingStandby
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {
-                          overallTotal.resigned
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {
-                          overallTotal.terminated
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {
-                          overallTotal.awol
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {
-                          overallTotal.otherSeparation
-                        }
-                      </td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
-
-            {!report?.meta
-              ?.totalsMatch && (
-              <div className="border-t border-amber-200 bg-amber-50 px-5 py-3 text-xs font-semibold text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300 sm:px-6">
-                Client company totals do not match the overall summary. Please refresh before exporting.
-              </div>
-            )}
+      {loading ? (
+        <div className="grid grid-cols-2 gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-[62px] animate-pulse bg-slate-100 dark:bg-slate-900"
+            />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="p-4 sm:px-5">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-medium text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300">
+            Incident reporting is unavailable for the selected period. {error}
           </div>
-        </>
+        </div>
+      ) : (
+        <div>
+          <div className="grid grid-cols-2 gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-4">
+            <article className="min-w-0 bg-white px-3 py-2.5 dark:bg-slate-900 sm:px-4">
+              <p className="min-h-8 break-words text-[10px] font-semibold uppercase leading-4 tracking-[0.06em] text-slate-500 dark:text-slate-400">
+                Total Recorded Incidents
+              </p>
+              <p className="mt-0.5 text-xl font-extrabold tabular-nums text-slate-900 dark:text-white">
+                {summary.total}
+              </p>
+            </article>
+            {summary.severityRows.map((row) => (
+              <article
+                key={row.label}
+                className="min-w-0 bg-white px-3 py-2.5 dark:bg-slate-900 sm:px-4"
+              >
+                <p className={`min-h-8 break-words text-[10px] font-semibold uppercase leading-4 tracking-[0.06em] ${severityTone[row.label] || severityTone["Other / Unspecified"]}`}>
+                  {row.label}
+                </p>
+                <p className={`mt-0.5 text-xl font-extrabold tabular-nums ${severityTone[row.label] || severityTone["Other / Unspecified"]}`}>
+                  {row.count}
+                </p>
+              </article>
+            ))}
+          </div>
+          {summary.statusRows.length > 0 && (
+            <div
+              aria-label="Current case status for selected-period incidents"
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-200 px-3 py-1.5 text-[10px] leading-4 dark:border-slate-800 sm:px-4"
+            >
+              <span className="font-bold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+                Current Case Status
+              </span>
+              {summary.statusRows.map((row) => (
+                <span
+                  key={row.label}
+                  className="whitespace-normal text-slate-600 dark:text-slate-300"
+                >
+                  {row.label}{" "}
+                  <strong className="tabular-nums text-slate-900 dark:text-white">
+                    {row.count}
+                  </strong>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </section>
   );
@@ -1831,14 +1624,20 @@ export default function Dashboard() {
     getManilaCurrentDateParts();
 
   const currentYear =
-    currentDateParts.year;
+    normalizeDashboardReportingYear(
+      currentDateParts.year
+    );
 
   const currentMonth =
     currentDateParts.month;
   const [
     selectedYear,
     setSelectedYear,
-  ] = useState(currentYear);
+  ] = useState(() =>
+    normalizeDashboardReportingYear(
+      currentYear
+    )
+  );
   const [
     selectedMonth,
     setSelectedMonth,
@@ -2103,32 +1902,24 @@ export default function Dashboard() {
         }
 
         try {
-          const params =
-            new URLSearchParams({
-              month:
-                Number(selectedMonth) === 0
-                  ? "all"
-                  : String(
-                      Number(
-                        selectedMonth
-                      ) - 1
-                    ),
-              year:
-                String(
-                  selectedYear
-                ),
-            });
-
           const payload =
             await requestJson(
-              `${DASHBOARD_MONTHLY_WORKFORCE_API_URL}?${params.toString()}`
+              buildDashboardWorkforceRequestUrl(
+                DASHBOARD_MONTHLY_WORKFORCE_API_URL,
+                {
+                  selectedMonth,
+                  selectedYear,
+                }
+              )
             );
 
           if (
             !isMountedRef.current ||
-            requestId !==
+            !isLatestDashboardRequest(
+              requestId,
               monthlyWorkforceRequestIdRef
                 .current
+            )
           ) {
             return false;
           }
@@ -2280,69 +2071,14 @@ export default function Dashboard() {
   const isCurrentYear =
     selectedYear ===
     currentYear;
-  const availableYears =
-    useMemo(() => {
-      const years = new Set([
-        currentYear,
-        String(
-          selectedYear
-        ),
-      ]);
-
-      data.workforce.forEach(
-        (item) => {
-          if (item?.date) {
-            years.add(
-              item.date.slice(0, 4)
-            );
-          }
-        }
-      );
-
-      data.incidents.forEach(
-        (item) => {
-          if (item?.date) {
-            years.add(
-              item.date.slice(0, 4)
-            );
-          }
-        }
-      );
-
-      (
-        monthlyWorkforceReport
-          ?.filterMeta?.years ||
-        []
-      ).forEach(
-        (year) => {
-          if (
-            Number.isInteger(
-              Number(
-                year
-              )
-            )
-          ) {
-            years.add(
-              String(
-                year
-              )
-            );
-          }
-        }
-      );
-
-      return [...years].sort(
-        (first, second) =>
-          Number(second) -
-          Number(first)
-      );
-    }, [
-      data.workforce,
-      data.incidents,
-      monthlyWorkforceReport,
-      currentYear,
+  const showReportingPanels =
+    shouldShowDashboardReportingPanels({
+      selectedMonth,
       selectedYear,
-    ]);
+      currentYear,
+    });
+  const availableYears =
+    DASHBOARD_REPORTING_YEARS;
   const availableMonths =
     useMemo(() => {
       return monthList.map(
@@ -2371,7 +2107,9 @@ export default function Dashboard() {
     useCallback(
       (event) => {
         const nextYear =
-          event.target.value;
+          normalizeDashboardReportingYear(
+            event.target.value
+          );
         const nextMonth =
           nextYear ===
             currentYear &&
@@ -2508,6 +2246,13 @@ export default function Dashboard() {
     ]);
   const reportScope =
     useMemo(() => {
+      const periodEndExclusive =
+        String(
+          monthlyWorkforceReport
+            ?.filters
+            ?.periodEndExclusive ||
+            ""
+        ).trim();
       const scopedIncidents =
         data.rawIncidents.filter(
           (incident) =>
@@ -2516,7 +2261,8 @@ export default function Dashboard() {
                 incident
               ),
               selectedYear,
-              selectedMonth
+              selectedMonth,
+              periodEndExclusive
             )
         );
       return {
@@ -2527,6 +2273,9 @@ export default function Dashboard() {
       data.rawIncidents,
       selectedYear,
       selectedMonth,
+      monthlyWorkforceReport
+        ?.filters
+        ?.periodEndExclusive,
     ]);
   const currentKPIS =
     data.kpis;
@@ -2567,9 +2316,29 @@ export default function Dashboard() {
       [reportScope.incidents]
     );
   const selectedPeriodLabel =
-    getMonthlyWorkforcePeriodLabel(
+    getDashboardPeriodLabel({
       selectedMonth,
-      selectedYear
+      selectedYear,
+      report:
+        monthlyWorkforceReport,
+      monthNames:
+        FULL_MONTH_LIST,
+    });
+  const selectedPeriodIncidentSummary =
+    useMemo(
+      () =>
+        buildDashboardIncidentSummary(
+          reportScope.incidents,
+          monthlyWorkforceReport
+            ?.overallTotal
+            ?.incidents
+        ),
+      [
+        reportScope.incidents,
+        monthlyWorkforceReport
+          ?.overallTotal
+          ?.incidents,
+      ]
     );
   const executiveActions =
     useMemo(() => {
@@ -2872,16 +2641,12 @@ export default function Dashboard() {
 
       if (
         exportingPDF ||
-        (
-          hasSpecificMonth &&
-          monthlyWorkforceLoading
-        )
+        monthlyWorkforceLoading
       ) {
         return;
       }
 
       if (
-        hasSpecificMonth &&
         monthlyWorkforceError
       ) {
         setFetchError(
@@ -2891,7 +2656,6 @@ export default function Dashboard() {
       }
 
       if (
-        hasSpecificMonth &&
         !monthlyWorkforceReport
           ?.meta?.totalsMatch
       ) {
@@ -3092,7 +2856,11 @@ export default function Dashboard() {
           doc.setFontSize(7.5);
           doc.setTextColor(71, 85, 105);
           doc.text(
-            `Workforce figures are the ${selectedYear} year-end snapshot; ended deployments and incidents are recorded events during ${selectedYear}.`,
+            monthlyWorkforceReport?.meta
+              ?.snapshotKind ===
+            "CURRENT_DATE"
+              ? `Workforce figures are observed as of the report date; ended deployments and incidents are year-to-date events during ${selectedYear}.`
+              : `Workforce figures are the ${selectedYear} year-end snapshot; ended deployments and incidents are recorded events during ${selectedYear}.`,
             14,
             secondTableFinalY + 14,
             { maxWidth: 182 }
@@ -3186,7 +2954,14 @@ export default function Dashboard() {
           orientation: "landscape",
           metadata: [
             ["Reporting period", selectedPeriodLabel],
-            ["Report scope", "Month-end workforce by authorized client company"],
+            [
+              "Report scope",
+              monthlyWorkforceReport?.meta
+                ?.snapshotKind ===
+              "CURRENT_DATE"
+                ? "As-of-date workforce and year-to-date activity by authorized client company"
+                : "Month-end workforce by authorized client company",
+            ],
             ["Prepared by", generatedBy],
             ["Role", generatedRole],
             ["Generated on", generatedAt],
@@ -3761,36 +3536,43 @@ export default function Dashboard() {
           handleOpenDrilldown
         }
       />
-      {Number(
-        selectedMonth
-      ) > 0 ? (
-        <MonthlyWorkforceSummary
-          report={
-            monthlyWorkforceReport
-          }
-          loading={
-            monthlyWorkforceLoading
-          }
-          error={
-            monthlyWorkforceError
-          }
-          selectedMonth={
-            selectedMonth
-          }
-          selectedYear={
-            selectedYear
-          }
-        />
-      ) : (
-        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-6">
-          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-            Monthly Workforce Summary
-          </h2>
-
-          <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-            All Months is selected. The charts and trends below cover the full selected year. Select a specific month to view the month-end workforce summary by client company.
-          </p>
-        </section>
+      {showReportingPanels && (
+        <div
+          data-testid="dashboard-reporting-panels"
+          className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2"
+        >
+          <MonthlyWorkforceSummary
+            report={
+              monthlyWorkforceReport
+            }
+            loading={
+              monthlyWorkforceLoading
+            }
+            error={
+              monthlyWorkforceError
+            }
+            selectedMonth={
+              selectedMonth
+            }
+            selectedYear={
+              selectedYear
+            }
+          />
+          <SelectedPeriodIncidentSummary
+            summary={
+              selectedPeriodIncidentSummary
+            }
+            periodLabel={
+              selectedPeriodLabel
+            }
+            loading={
+              monthlyWorkforceLoading
+            }
+            error={
+              monthlyWorkforceError
+            }
+          />
+        </div>
       )}
       <WorkforceHealthBanner
         health={
