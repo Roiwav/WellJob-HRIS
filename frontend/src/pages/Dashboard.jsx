@@ -22,10 +22,22 @@ import DashboardDrilldownModal from "../components/dashboard/modals/DashboardDri
 import EditEmployeeModal from "../components/employees/EditEmployeeModal";
 import { buildExecutiveActionItems } from "../utils/dashboard/prescriptiveAnalytics";
 import { buildDashboardInsights } from "../utils/dashboard/dashboardInsights";
+import { buildDashboardCompanyActivityRows } from "../utils/dashboard/dashboardReport";
 import authenticatedFetch from "../utils/authenticatedFetch";
 import { API_BASE } from "../config/api";
 import RoleGuard from "../components/auth/RoleGuard";
 import { PERMISSIONS } from "../constants/permissions";
+import {
+  addReportContinuationHeader,
+  addReportFooters,
+  addReportHeader,
+  addReportSectionTitle,
+  formatReportDateTime,
+  getReportTableStyles,
+  getReportUserName,
+  getReportUserRole,
+  loadWelljobLogoDataUrl,
+} from "../utils/pdf/reportPdf";
 import KPICards from "../components/dashboard/cards/KPICards";
 import DeploymentTrendChart from "../components/dashboard/charts/DeploymentTrendChart";
 import IncidentTrendChart from "../components/dashboard/charts/IncidentTrendChart";
@@ -935,6 +947,14 @@ function normalizeMonthlyWorkforceBucket(
       Number(
         value?.otherSeparation
       ) || 0,
+    endedDeployments:
+      Number(
+        value?.endedDeployments
+      ) || 0,
+    incidents:
+      Number(
+        value?.incidents
+      ) || 0,
   };
 }
 
@@ -1011,6 +1031,10 @@ function getMonthlyWorkforcePeriodLabel(
   selectedMonth,
   selectedYear
 ) {
+  if (Number(selectedMonth) === 0) {
+    return `Full Year ${selectedYear}`;
+  }
+
   const monthIndex =
     Number(
       selectedMonth
@@ -2079,37 +2103,16 @@ export default function Dashboard() {
         }
 
         try {
-          if (
-            Number(
-              selectedMonth
-            ) === 0
-          ) {
-            if (
-              isMountedRef.current &&
-              requestId ===
-                monthlyWorkforceRequestIdRef
-                  .current
-            ) {
-              setMonthlyWorkforceError(
-                ""
-              );
-
-              setMonthlyWorkforceLoading(
-                false
-              );
-            }
-
-            return true;
-          }
-
           const params =
             new URLSearchParams({
               month:
-                String(
-                  Number(
-                    selectedMonth
-                  ) - 1
-                ),
+                Number(selectedMonth) === 0
+                  ? "all"
+                  : String(
+                      Number(
+                        selectedMonth
+                      ) - 1
+                    ),
               year:
                 String(
                   selectedYear
@@ -2861,7 +2864,7 @@ export default function Dashboard() {
         : "N/A";
     }, [filteredSeverity]);
   const handleExportPDF =
-    useCallback(() => {
+    useCallback(async () => {
       const hasSpecificMonth =
         Number(
           selectedMonth
@@ -2903,56 +2906,50 @@ export default function Dashboard() {
       );
 
       try {
+        const logoDataUrl =
+          await loadWelljobLogoDataUrl();
+
         if (
           !hasSpecificMonth
         ) {
           const doc =
-            new jsPDF();
+            new jsPDF({
+              orientation:
+                "portrait",
+              unit:
+                "mm",
+              format:
+                "a4",
+            });
 
-          doc.setFontSize(
-            16
-          );
+          const contentStartY = addReportHeader({
+            doc,
+            logoDataUrl,
+            title: "Workforce Operations Dashboard Report",
+            metadata: [
+              ["Activity period", selectedPeriodLabel],
+              ["Workforce figures", "Current authorized workforce snapshot"],
+              ["Prepared by", getReportUserName(user)],
+              ["Role", getReportUserRole(user)],
+              ["Generated on", formatReportDateTime()],
+            ],
+          });
 
-          doc.text(
-            "Welljob Solutions & General Services Inc.",
-            14,
-            18
-          );
-
-          doc.setFontSize(
-            12
-          );
-
-          doc.text(
-            "Workforce Operations Dashboard Report",
-            14,
-            26
-          );
-
-          doc.text(
-            `Reporting Period: ${selectedPeriodLabel}`,
-            14,
-            34
-          );
-
-          doc.text(
-            `Generated: ${
-              lastUpdated ||
-              formatLastUpdated()
-            }`,
-            14,
-            42
+          addReportSectionTitle(
+            doc,
+            "Current Workforce Operations Overview",
+            contentStartY + 2
           );
 
           autoTable(
             doc,
             {
               startY:
-                52,
+                contentStartY + 6,
               head: [
                 [
-                  "Metric",
-                  "Value",
+                  "Current Workforce Indicator",
+                  "Current Value",
                 ],
               ],
               body: [
@@ -2961,7 +2958,7 @@ export default function Dashboard() {
                   currentKPIS.total,
                 ],
                 [
-                  "Deployed Employees",
+                  "Currently Deployed Employees",
                   currentKPIS.deployed,
                 ],
                 [
@@ -2977,39 +2974,33 @@ export default function Dashboard() {
                   currentKPIS.activeIncidents,
                 ],
                 [
-                  "Expiring Documents",
+                  "Documents Expiring Soon",
                   currentKPIS.expiringDocs,
                 ],
                 [
-                  "Incident Reports in Scope",
+                  `Incident Reports (${selectedPeriodLabel})`,
                   totalIncidentsForPeriod,
                 ],
                 [
-                  "Total Year Incidents",
+                  `Total Incident Reports in ${selectedYear}`,
                   totalIncidentsForYear,
                 ],
                 [
-                  "Peak Deployment Activity",
+                  `Highest Monthly Deployment Activity (${selectedYear})`,
                   peakDeploymentMonth,
                 ],
                 [
-                  "Highest Incident Activity",
+                  `Highest Monthly Incident Activity (${selectedYear})`,
                   highestIncidentMonth,
                 ],
                 [
-                  "Most Common Severity in Scope",
+                  `Most Common Incident Severity (${selectedPeriodLabel})`,
                   topSeverity,
                 ],
               ],
-              theme:
-                "grid",
-              headStyles: {
-                fillColor: [
-                  79,
-                  70,
-                  229,
-                ],
-              },
+              ...getReportTableStyles({ fontSize: 8.3, cellPadding: 2.1 }),
+              margin: { left: 14, right: 14, top: 16, bottom: 17 },
+              rowPageBreak: "avoid",
             }
           );
 
@@ -3090,61 +3081,44 @@ export default function Dashboard() {
           );
 
           const secondTableFinalY =
-            doc.lastAutoTable
-              ?.finalY ||
-            firstTableFinalY +
-              10;
+            doc.lastAutoTable?.finalY || firstTableFinalY + 10;
 
-          autoTable(
+          addReportSectionTitle(
             doc,
-            {
-              startY:
-                secondTableFinalY +
-                10,
-              head: [
-                [
-                  "Month",
-                  "Deployment",
-                  "Incidents",
-                ],
-              ],
-              body:
-                monthList.map(
-                  (month) => {
-                    const deployment =
-                      workforceTrend.find(
-                        (item) =>
-                          item.label ===
-                          month
-                      );
-
-                    const incident =
-                      incidentTrend.find(
-                        (item) =>
-                          item.label ===
-                          month
-                      );
-
-                    return [
-                      month,
-                      deployment?.value ??
-                        0,
-                      incident?.value ??
-                        0,
-                    ];
-                  }
-                ),
-              theme:
-                "striped",
-              headStyles: {
-                fillColor: [
-                  30,
-                  41,
-                  59,
-                ],
-              },
-            }
+            "Workforce and Activity Summary by Client Company",
+            secondTableFinalY + 9
           );
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.5);
+          doc.setTextColor(71, 85, 105);
+          doc.text(
+            `Workforce figures are the ${selectedYear} year-end snapshot; ended deployments and incidents are recorded events during ${selectedYear}.`,
+            14,
+            secondTableFinalY + 14,
+            { maxWidth: 182 }
+          );
+          autoTable(doc, {
+            startY: secondTableFinalY + 18,
+            head: [[
+              "Client Company",
+              "Floating / Standby",
+              "Deployed",
+              "Ended Deployments",
+              "Incidents",
+            ]],
+            body: buildDashboardCompanyActivityRows(
+              monthlyWorkforceReport?.companies
+            ),
+            ...getReportTableStyles({ fontSize: 7.4, cellPadding: 1.8 }),
+            columnStyles: { 0: { cellWidth: 72 } },
+            margin: { left: 14, right: 14, top: 18, bottom: 17 },
+            rowPageBreak: "avoid",
+          });
+
+          addReportFooters(doc, {
+            reportTitle: "Workforce Operations Dashboard Report",
+            advisory: "Management workforce report — authorized use only.",
+          });
 
           doc.save(
             `Welljob_Dashboard_Report_${selectedYear}.pdf`
@@ -3162,11 +3136,6 @@ export default function Dashboard() {
             format:
               "a4",
           });
-
-        const pageWidth =
-          doc.internal
-            .pageSize
-            .getWidth();
 
         const generatedBy =
           getDashboardUserDisplayName(
@@ -3205,85 +3174,36 @@ export default function Dashboard() {
                 .companies
             : [];
 
-        const overallTotal =
-          monthlyWorkforceReport
-            ?.overallTotal ||
-          overall;
-
         /*
          * ==================================================
          * PAGE 1 — MONTHLY WORKFORCE SUMMARY
          * ==================================================
          */
-        doc.setFont(
-          "helvetica",
-          "bold"
-        );
+        const monthlyContentStartY = addReportHeader({
+          doc,
+          logoDataUrl,
+          title: "Workforce Operations Dashboard Report",
+          orientation: "landscape",
+          metadata: [
+            ["Reporting period", selectedPeriodLabel],
+            ["Report scope", "Month-end workforce by authorized client company"],
+            ["Prepared by", generatedBy],
+            ["Role", generatedRole],
+            ["Generated on", generatedAt],
+          ],
+        });
 
-        doc.setFontSize(
-          16
-        );
-
-        doc.text(
-          "Welljob Solutions & General Services Inc.",
-          14,
-          16
-        );
-
-        doc.setFontSize(
-          12
-        );
-
-        doc.text(
-          "Monthly Workforce Summary",
-          14,
-          24
-        );
-
-        doc.setFont(
-          "helvetica",
-          "normal"
-        );
-
-        doc.setFontSize(
-          9
-        );
-
-        doc.text(
-          `Reporting Period: ${selectedPeriodLabel}`,
-          14,
-          31
-        );
-
-        doc.text(
-          `Generated By: ${generatedBy}`,
-          14,
-          37
-        );
-
-        doc.text(
-          `Role: ${generatedRole}`,
-          14,
-          43
-        );
-
-        doc.text(
-          `Generated On: ${generatedAt}`,
-          pageWidth / 2,
-          31
-        );
-
-        doc.text(
-          "Scope: Overall workforce by client company",
-          pageWidth / 2,
-          37
+        addReportSectionTitle(
+          doc,
+          "Workforce Operations Overview",
+          monthlyContentStartY + 2
         );
 
         autoTable(
           doc,
           {
             startY:
-              50,
+              monthlyContentStartY + 6,
             head: [
               [
                 "Workforce Metric",
@@ -3296,7 +3216,7 @@ export default function Dashboard() {
                 overall.totalEmployees,
               ],
               [
-                "Deployed",
+                "Currently Deployed",
                 overall.deployed,
               ],
               [
@@ -3443,173 +3363,7 @@ export default function Dashboard() {
 
         /*
          * ==================================================
-         * PAGE 2 — COMPANY BREAKDOWN
-         * ==================================================
-         */
-        doc.addPage(
-          "a4",
-          "landscape"
-        );
-
-        doc.setFont(
-          "helvetica",
-          "bold"
-        );
-
-        doc.setFontSize(
-          14
-        );
-
-        doc.text(
-          "Client Company Summary",
-          14,
-          16
-        );
-
-        doc.setFont(
-          "helvetica",
-          "normal"
-        );
-
-        doc.setFontSize(
-          9
-        );
-
-        doc.text(
-          `Reporting Period: ${selectedPeriodLabel}`,
-          14,
-          23
-        );
-
-        autoTable(
-          doc,
-          {
-            startY:
-              29,
-            head: [
-              [
-                "Client Company",
-                "Total",
-                "Deployed",
-                "For Deployment",
-                "Floating / Standby",
-                "Resigned",
-                "Terminated",
-                "AWOL",
-                "Other Separation",
-              ],
-            ],
-            body: [
-              ...companies.map(
-                (company) => [
-                  company.company,
-                  company.totalEmployees,
-                  company.deployed,
-                  company.forDeployment,
-                  company.floatingStandby,
-                  company.resigned,
-                  company.terminated,
-                  company.awol,
-                  company.otherSeparation,
-                ]
-              ),
-              [
-                "OVERALL TOTAL",
-                overallTotal.totalEmployees,
-                overallTotal.deployed,
-                overallTotal.forDeployment,
-                overallTotal.floatingStandby,
-                overallTotal.resigned,
-                overallTotal.terminated,
-                overallTotal.awol,
-                overallTotal.otherSeparation,
-              ],
-            ],
-            theme:
-              "grid",
-            headStyles: {
-              fillColor: [
-                79,
-                70,
-                229,
-              ],
-              fontSize:
-                7.5,
-            },
-            styles: {
-              fontSize:
-                7.5,
-              cellPadding:
-                1.8,
-              valign:
-                "middle",
-            },
-            columnStyles: {
-              0: {
-                cellWidth:
-                  52,
-              },
-              1: {
-                halign:
-                  "right",
-              },
-              2: {
-                halign:
-                  "right",
-              },
-              3: {
-                halign:
-                  "right",
-              },
-              4: {
-                halign:
-                  "right",
-              },
-              5: {
-                halign:
-                  "right",
-              },
-              6: {
-                halign:
-                  "right",
-              },
-              7: {
-                halign:
-                  "right",
-              },
-              8: {
-                halign:
-                  "right",
-              },
-            },
-            didParseCell: (
-              hookData
-            ) => {
-              const isOverallTotal =
-                hookData.section ===
-                  "body" &&
-                hookData.row.index ===
-                  companies.length;
-
-              if (
-                isOverallTotal
-              ) {
-                hookData.cell.styles.fontStyle =
-                  "bold";
-
-                hookData.cell.styles.fillColor = [
-                  241,
-                  245,
-                  249,
-                ];
-              }
-            },
-          }
-        );
-
-        /*
-         * ==================================================
-         * PAGE 3 — MANAGEMENT ACTIONS
+         * PAGE 2 — MANAGEMENT ACTIONS AND COMPANY SUMMARY — MANAGEMENT ACTIONS
          * ==================================================
          */
         doc.addPage(
@@ -3699,74 +3453,81 @@ export default function Dashboard() {
                   100,
               },
             },
+            margin: {
+              top:
+                18,
+              bottom:
+                17,
+            },
+            rowPageBreak:
+              "avoid",
+            didDrawPage: (
+              data
+            ) => {
+              if (
+                data.pageNumber >
+                1
+              ) {
+                addReportContinuationHeader(
+                  doc,
+                  "Workforce Operations Dashboard Report"
+                );
+              }
+            },
           }
         );
 
         const actionsFinalY =
-          doc.lastAutoTable
-            ?.finalY ||
-          24;
+          doc.lastAutoTable?.finalY || 24;
 
-        autoTable(
+        addReportSectionTitle(
           doc,
-          {
-            startY:
-              actionsFinalY +
-              8,
-            head: [
-              [
-                "Month",
-                "Deployment Activity",
-                "Incident Reports",
-              ],
-            ],
-            body:
-              monthList.map(
-                (month) => {
-                  const deployment =
-                    workforceTrend.find(
-                      (item) =>
-                        item.label ===
-                        month
-                    );
-
-                  const incident =
-                    incidentTrend.find(
-                      (item) =>
-                        item.label ===
-                        month
-                    );
-
-                  return [
-                    month,
-                    deployment?.value ??
-                      0,
-                    incident?.value ??
-                      0,
-                  ];
-                }
-              ),
-            theme:
-              "striped",
-            headStyles: {
-              fillColor: [
-                30,
-                41,
-                59,
-              ],
-            },
-            styles: {
-              fontSize:
-                8,
-            },
-          }
+          "Workforce and Activity Summary by Client Company",
+          actionsFinalY + 9
         );
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(
+          `Workforce figures are the month-end snapshot for ${selectedPeriodLabel}; ended deployments and incidents are recorded events during the same period.`,
+          14,
+          actionsFinalY + 14,
+          { maxWidth: 260 }
+        );
+        autoTable(doc, {
+          startY: actionsFinalY + 18,
+          head: [[
+            "Client Company",
+            "Floating / Standby",
+            "Deployed",
+            "Ended Deployments",
+            "Incidents",
+          ]],
+          body: buildDashboardCompanyActivityRows(companies),
+          ...getReportTableStyles({ fontSize: 7.7, cellPadding: 1.9 }),
+          columnStyles: { 0: { cellWidth: 105 } },
+          margin: { left: 14, right: 14, top: 18, bottom: 17 },
+          rowPageBreak: "avoid",
+          didDrawPage: (data) => {
+            if (data.pageNumber > 1) {
+              addReportContinuationHeader(
+                doc,
+                "Workforce Operations Dashboard Report"
+              );
+            }
+          },
+        });
 
         const safePeriod =
           selectedPeriodLabel.replace(
             /[^a-zA-Z0-9_-]+/g,
             "_"
           );
+
+        addReportFooters(doc, {
+          reportTitle: "Workforce Operations Dashboard Report",
+          advisory: "Management workforce report — authorized use only.",
+        });
 
         doc.save(
           `Welljob_Dashboard_Report_${safePeriod}.pdf`
@@ -3784,7 +3545,6 @@ export default function Dashboard() {
       selectedMonth,
       selectedYear,
       selectedPeriodLabel,
-      lastUpdated,
       user,
       currentKPIS,
       utilizationRate,
@@ -3794,8 +3554,6 @@ export default function Dashboard() {
       highestIncidentMonth,
       topSeverity,
       executiveActions,
-      workforceTrend,
-      incidentTrend,
     ]);
 
   if (loading) {

@@ -11,6 +11,10 @@ const deploymentsSource = fs.readFileSync(
   new URL("../src/pages/Deployments.jsx", import.meta.url),
   "utf8"
 );
+const deploymentPdfSource = fs.readFileSync(
+  new URL("../src/utils/deployments/deploymentPdfExport.js", import.meta.url),
+  "utf8"
+);
 const deploymentTableSource = fs.readFileSync(
   new URL("../src/components/deployments/table/DeploymentTable.jsx", import.meta.url),
   "utf8"
@@ -109,10 +113,10 @@ test("all required deployment presentation paths use the central reason mapping"
   assert.match(deploymentTableSource, /getDeploymentEndReasonDisplay\(/);
   assert.match(deploymentModalSource, /getDeploymentEndReasonDisplay\(/);
   assert.match(employeeModalSource, /getDeploymentEndReasonDisplay\(/);
-  assert.match(deploymentsSource, /getDeploymentEndReasonDisplay\(/);
-  assert.match(deploymentsSource, /"Deployment End Date"/);
-  assert.match(deploymentsSource, /"Record Status"/);
-  assert.match(deploymentsSource, /"Deployment End Reason"/);
+  assert.match(deploymentPdfSource, /getDeploymentEndReasonDisplay\(/);
+  assert.match(deploymentPdfSource, /"Deployment End"/);
+  assert.match(deploymentPdfSource, /"Record status"/);
+  assert.match(deploymentPdfSource, /"Deployment End Reason"/);
 });
 
 test("ordinary deployment presentation files do not hardcode the legacy phrase", () => {
@@ -121,6 +125,7 @@ test("ordinary deployment presentation files do not hardcode the legacy phrase",
     deploymentModalSource,
     employeeModalSource,
     deploymentsSource,
+    deploymentPdfSource,
   ]) {
     assert.doesNotMatch(source, /Completed Contract/);
   }

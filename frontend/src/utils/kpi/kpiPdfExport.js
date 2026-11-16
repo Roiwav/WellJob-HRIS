@@ -1,774 +1,288 @@
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import {
+  addReportContinuationHeader,
+  addReportFooters,
+  addReportHeader,
+  addReportSectionTitle,
+  formatReportDateTime,
+  formatReportPercentage,
+  getReportTableStyles,
+  getReportUserName,
+  getReportUserRole,
+  loadWelljobLogoDataUrl,
+} from "../pdf/reportPdf.js";
 
-const KPI_REPORT_TIME_ZONE =
-  "Asia/Manila";
+const REPORT_TITLE = "KPI and Performance Report";
+const CASE_STATUS_ORDER = ["Open", "Investigating", "For Review", "Closed"];
 
-function formatKpiReportGeneratedAt() {
-  return new Intl.DateTimeFormat(
-    "en-PH",
-    {
-      timeZone:
-        KPI_REPORT_TIME_ZONE,
-      year:
-        "numeric",
-      month:
-        "short",
-      day:
-        "2-digit",
-      hour:
-        "numeric",
-      minute:
-        "2-digit",
-      second:
-        "2-digit",
-      hour12:
-        true,
-    }
-  ).format(
-    new Date()
-  );
+const safeArray = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
+const safeNumber = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
+const clean = (value, fallback = "Unassigned") => String(value ?? "").trim() || fallback;
+
+function friendlyStatus(value) {
+  return clean(value, "Unspecified")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function getSafeArray(value) {
-  return Array.isArray(value)
-    ? value.filter(Boolean)
-    : [];
-}
-
-function getSafeNumber(
-  value,
-  fallback = 0
-) {
-  const number = Number(value);
-
-  return Number.isFinite(number)
-    ? number
-    : fallback;
-}
-
-function countBy(
-  employees = [],
-  key,
-  fallback = "Unspecified"
-) {
-  const safeEmployees =
-    getSafeArray(employees);
-
-  return safeEmployees.reduce(
-    (accumulator, employee) => {
-      const value =
-        employee?.[key] ||
-        fallback;
-
-      accumulator[value] =
-        (accumulator[value] || 0) +
-        1;
-
-      return accumulator;
-    },
-    {}
-  );
-}
-
-function toSummaryRows(
-  summary = {},
-  total = 0
-) {
-  const safeTotal = Math.max(
-    0,
-    getSafeNumber(total)
-  );
-
-  const entries =
-    Object.entries(
-      summary || {}
-    );
-
-  if (entries.length === 0) {
-    return [
-      [
-        "No data available",
-        0,
-        "0%",
-      ],
-    ];
-  }
-
-  return entries
-    .sort(
-      (
-        firstEntry,
-        secondEntry
-      ) =>
-        getSafeNumber(
-          secondEntry[1]
-        ) -
-        getSafeNumber(
-          firstEntry[1]
-        )
-    )
-    .map(
-      ([label, count]) => {
-        const safeCount =
-          Math.max(
-            0,
-            getSafeNumber(count)
-          );
-
-        return [
-          label,
-          safeCount,
-          safeTotal > 0
-            ? `${Math.round(
-                (safeCount /
-                  safeTotal) *
-                  100
-              )}%`
-            : "0%",
-        ];
-      }
-    );
-}
-
-function getTotal(
-  employees = [],
-  key
-) {
-  const safeEmployees =
-    getSafeArray(employees);
-
-  return safeEmployees.reduce(
-    (sum, employee) =>
-      sum +
-      getSafeNumber(
-        employee?.[key]
-      ),
+function totalBy(employees, key, fallbackKey = "") {
+  return safeArray(employees).reduce(
+    (total, employee) => total + safeNumber(employee?.[key] ?? (fallbackKey ? employee?.[fallbackKey] : 0)),
     0
   );
 }
 
-function addSectionTitle(
-  doc,
-  title,
-  y
-) {
-  doc.setFontSize(12);
-  doc.setFont(
-    undefined,
-    "bold"
-  );
+function countBy(employees, key, fallback) {
+  return safeArray(employees).reduce((summary, employee) => {
+    const label = clean(employee?.[key], fallback);
+    summary[label] = (summary[label] || 0) + 1;
+    return summary;
+  }, {});
+}
 
-  doc.text(title, 14, y);
+export function buildKpiSummaryRows(summary, total, preferredOrder = []) {
+  const entries = Object.entries(summary || {});
+  if (!entries.length) return [["No data available", 0, "0%"]];
+  const order = new Map(preferredOrder.map((label, index) => [label, index]));
+  return entries
+    .sort((left, right) => {
+      const leftOrder = order.has(left[0]) ? order.get(left[0]) : Number.MAX_SAFE_INTEGER;
+      const rightOrder = order.has(right[0]) ? order.get(right[0]) : Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder || safeNumber(right[1]) - safeNumber(left[1]) || left[0].localeCompare(right[0]);
+    })
+    .map(([label, count]) => [label, safeNumber(count), formatReportPercentage(count, total)]);
+}
 
-  doc.setFont(
-    undefined,
-    "normal"
+export function buildKpiCaseStatusSummary(incidents = []) {
+  const counts = new Map();
+  for (const incident of safeArray(incidents)) {
+    const status = friendlyStatus(incident?.status);
+    counts.set(status, (counts.get(status) || 0) + 1);
+  }
+  const order = new Map(CASE_STATUS_ORDER.map((status, index) => [status, index]));
+  const rows = [...counts.entries()]
+    .sort((left, right) => {
+      const leftOrder = order.has(left[0]) ? order.get(left[0]) : Number.MAX_SAFE_INTEGER;
+      const rightOrder = order.has(right[0]) ? order.get(right[0]) : Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder || left[0].localeCompare(right[0]);
+    })
+    .map(([status, count]) => ({ status, count }));
+  return { rows, total: rows.reduce((total, row) => total + row.count, 0) };
+}
+
+export function buildKpiCompanySummary(employees = [], incidents = []) {
+  const companies = new Map();
+  const ensureCompany = (company) => {
+    const name = clean(company);
+    if (!companies.has(name)) {
+      companies.set(name, {
+        company: name,
+        employeesCovered: 0,
+        lowRisk: 0,
+        monitor: 0,
+        repeat: 0,
+        highRisk: 0,
+        caseStatuses: {},
+        totalCases: 0,
+        countedViolations: 0,
+        currentIncidents: 0,
+        historicalIncidents: 0,
+      });
+    }
+    return companies.get(name);
+  };
+
+  safeArray(employees).forEach((employee) => {
+    const company = ensureCompany(employee?.company);
+    company.employeesCovered += 1;
+    company.countedViolations += safeNumber(employee?.activeViolationCount);
+    switch (clean(employee?.riskLevel, "Low Risk")) {
+      case "Monitor": company.monitor += 1; break;
+      case "Repeat": company.repeat += 1; break;
+      case "High Risk": company.highRisk += 1; break;
+      default: company.lowRisk += 1; break;
+    }
+
+    safeArray(employee?.scoredIncidents).forEach((incident) => {
+      const incidentCompany = ensureCompany(
+        incident?.company ||
+          incident?.clientCompany
+      );
+      incidentCompany.historicalIncidents += 1;
+      if (incident?.isActive) {
+        incidentCompany.currentIncidents += 1;
+      }
+    });
+  });
+
+  safeArray(incidents).forEach((incident) => {
+    const company = ensureCompany(incident?.company || incident?.clientCompany);
+    const status = friendlyStatus(incident?.status);
+    company.caseStatuses[status] = (company.caseStatuses[status] || 0) + 1;
+    company.totalCases += 1;
+  });
+
+  return [...companies.values()].sort(
+    (left, right) => right.employeesCovered - left.employeesCovered || left.company.localeCompare(right.company)
   );
 }
 
-function getNextY(
-  doc,
-  spacing = 10
-) {
-  return (
-    (doc.lastAutoTable?.finalY ||
-      40) + spacing
-  );
+function addSummaryTable(doc, { title, label, rows, startY }) {
+  addReportSectionTitle(doc, title, startY);
+  autoTable(doc, {
+    startY: startY + 4,
+    head: [[label, "Employees", "Percentage"]],
+    body: rows,
+    ...getReportTableStyles({ fontSize: 8.5, cellPadding: 2.2 }),
+    margin: { left: 14, right: 14, top: 16, bottom: 17 },
+    columnStyles: { 1: { halign: "right" }, 2: { halign: "right" } },
+    rowPageBreak: "avoid",
+  });
 }
 
-function getPageBottomLimit(
-  doc,
-  marginBottom = 20
-) {
-  const pageHeight =
-    doc.internal.pageSize.getHeight();
-
-  return (
-    pageHeight -
-    marginBottom
-  );
-}
-
-export function exportKPIReportPDF({
+export async function exportKPIReportPDF({
   user,
   totalEmployees = 0,
   deployedEmployees = 0,
-  complianceRate = 0,
-  repeatOffenders = 0,
-  highRiskEmployees = 0,
   goodStandingEmployees = 0,
   criticalAlerts = [],
   employees = [],
+  incidents = [],
+  save = true,
 }) {
-  const safeEmployees =
-    getSafeArray(employees);
-
-  const safeCriticalAlerts =
-    getSafeArray(
-      criticalAlerts
-    );
-
-  const safeTotalEmployees =
-    Math.max(
-      0,
-      getSafeNumber(
-        totalEmployees
-      )
-    );
-
-  const safeDeployedEmployees =
-    Math.max(
-      0,
-      getSafeNumber(
-        deployedEmployees
-      )
-    );
-
-  const safeComplianceRate =
-    Math.max(
-      0,
-      getSafeNumber(
-        complianceRate
-      )
-    );
-
-  const safeRepeatOffenders =
-    Math.max(
-      0,
-      getSafeNumber(
-        repeatOffenders
-      )
-    );
-
-  const safeHighRiskEmployees =
-    Math.max(
-      0,
-      getSafeNumber(
-        highRiskEmployees
-      )
-    );
-
-  const safeGoodStandingEmployees =
-    Math.max(
-      0,
-      getSafeNumber(
-        goodStandingEmployees
-      )
-    );
-
-  const doc = new jsPDF();
-
-  const generatedBy =
-    user?.name ||
-    user?.username ||
-    "System User";
-
-  const generatedOn =
-    formatKpiReportGeneratedAt();
-
-  const totalViolations =
-    getTotal(
-      safeEmployees,
-      "violationCount"
-    );
-
-  const totalActiveSeverityScore =
-    getTotal(
-      safeEmployees,
-      "activeSeverityScore"
-    );
-
-  const totalHistoricalSeverityScore =
-    getTotal(
-      safeEmployees,
-      "historicalSeverityScore"
-    );
-
-  const totalCriticalCases =
-    getTotal(
-      safeEmployees,
-      "criticalIncidentCount"
-    );
-
-  const totalOpenCases =
-    getTotal(
-      safeEmployees,
-      "openIncidentCount"
-    );
-
-  const kpiLevelSummary =
-    countBy(
-      safeEmployees,
-      "kpiLevel",
-      "Unspecified KPI"
-    );
-
-  const riskLevelSummary =
-    countBy(
-      safeEmployees,
-      "riskLevel",
-      "Unspecified Risk"
-    );
-
-  const severitySummary =
-    countBy(
-      safeEmployees,
-      "severityLabel",
-      "Unspecified Severity"
-    );
-
-  const confidenceSummary =
-    countBy(
-      safeEmployees,
-      "decisionConfidence",
-      "Unspecified Confidence"
-    );
-
-  const suggestedActionSummary =
-    countBy(
-      safeEmployees,
-      "suggestedHRAction",
-      "Unspecified Suggested Action"
-    );
-
-  const recommendationSummary =
-    countBy(
-      safeEmployees,
-      "recommendation",
-      "Unspecified Recommendation"
-    );
-
-  doc.setFontSize(16);
-  doc.setFont(
-    undefined,
-    "bold"
-  );
-
-  doc.text(
-    "Welljob Solutions KPI Report",
-    14,
-    15
-  );
-
-  doc.setFontSize(10);
-  doc.setFont(
-    undefined,
-    "normal"
-  );
-
-  doc.text(
-    `Generated by: ${generatedBy}`,
-    14,
-    22
-  );
-
-  doc.text(
-    `Generated on: ${generatedOn}`,
-    14,
-    28
-  );
-
-  doc.setFontSize(9);
-  doc.setTextColor(90);
-
-  doc.text(
-    "Current KPI and HR recommendations use active severity scores. Historical scores remain available for audit.",
-    14,
-    34
-  );
-
-  doc.setTextColor(0);
-
-  addSectionTitle(
+  const safeEmployees = safeArray(employees);
+  const safeIncidents = safeArray(incidents);
+  const safeTotalEmployees = safeNumber(totalEmployees) || safeEmployees.length;
+  const countedViolations = totalBy(safeEmployees, "activeViolationCount", "violationCount");
+  const caseSummary = buildKpiCaseStatusSummary(safeIncidents);
+  const logoDataUrl = await loadWelljobLogoDataUrl();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const contentStartY = addReportHeader({
     doc,
-    "KPI Summary",
-    42
-  );
-
-  autoTable(doc, {
-    startY: 46,
-
-    head: [
-      [
-        "Metric",
-        "Value",
-      ],
+    title: REPORT_TITLE,
+    logoDataUrl,
+    metadata: [
+      ["Report scope", "Current authorized workforce"],
+      ["Prepared by", getReportUserName(user)],
+      ["Role", getReportUserRole(user)],
+      ["Generated on", formatReportDateTime(new Date())],
     ],
+  });
 
+  addReportSectionTitle(doc, "Employee Performance Overview", contentStartY + 2);
+  autoTable(doc, {
+    startY: contentStartY + 6,
+    head: [["Employee Performance Measure", "Count"]],
     body: [
-      [
-        "Total Active Employees",
-        safeTotalEmployees,
-      ],
-      [
-        "Currently Deployed Employees",
-        safeDeployedEmployees,
-      ],
-      [
-        "Compliance Rate",
-        `${safeComplianceRate}%`,
-      ],
-      [
-        "Good Standing Employees",
-        safeGoodStandingEmployees,
-      ],
-      [
-        "Repeat Offenders",
-        safeRepeatOffenders,
-      ],
-      [
-        "High Risk Employees",
-        safeHighRiskEmployees,
-      ],
-      [
-        "Total Recorded Violations",
-        totalViolations,
-      ],
-      [
-        "Total Active Severity Score",
-        totalActiveSeverityScore,
-      ],
-      [
-        "Total Historical Severity Score",
-        totalHistoricalSeverityScore,
-      ],
-      [
-        "Total Critical Cases",
-        totalCriticalCases,
-      ],
-      [
-        "Total Open / Active Cases",
-        totalOpenCases,
-      ],
+      ["Total Employees Evaluated", safeTotalEmployees],
+      ["Currently Deployed Employees", safeNumber(deployedEmployees)],
+      ["Good Standing", safeNumber(goodStandingEmployees)],
+      ["Monitor", safeEmployees.filter((employee) => employee?.riskLevel === "Monitor").length],
+      ["Repeat", safeEmployees.filter((employee) => employee?.riskLevel === "Repeat").length],
+      ["High Risk", safeEmployees.filter((employee) => employee?.riskLevel === "High Risk").length],
+      ["KPI-Counted Violation Records", countedViolations],
     ],
-
-    styles: {
-      fontSize: 9,
-      cellPadding: 3,
-    },
-
-    headStyles: {
-      fillColor: [
-        22,
-        163,
-        74,
-      ],
-    },
+    ...getReportTableStyles({ fontSize: 9, cellPadding: 2.4 }),
+    tableWidth: 180,
+    columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
+    margin: { left: 14, right: 14, top: 16, bottom: 17 },
   });
 
-  addSectionTitle(
-    doc,
-    "Critical Alerts",
-    getNextY(doc)
-  );
-
+  addReportSectionTitle(doc, "Incident Case Summary", doc.lastAutoTable.finalY + 8);
   autoTable(doc, {
-    startY:
-      getNextY(doc, 4),
-
-    head: [
-      [
-        "Level",
-        "Alert",
-      ],
+    startY: doc.lastAutoTable.finalY + 12,
+    head: [["Case Status", "Number of Cases"]],
+    body: [
+      ...(caseSummary.rows.length ? caseSummary.rows.map((row) => [row.status, row.count]) : [["No recorded cases", 0]]),
+      ["Total Recorded Cases", caseSummary.total],
     ],
-
-    body:
-      safeCriticalAlerts.length >
-      0
-        ? safeCriticalAlerts.map(
-            (alert) => [
-              alert?.level ||
-                "Unknown",
-
-              alert?.text ||
-                "No alert details available",
-            ]
-          )
-        : [
-            [
-              "None",
-              "No critical alerts available",
-            ],
-          ],
-
-    styles: {
-      fontSize: 9,
-      cellPadding: 3,
-    },
-
-    headStyles: {
-      fillColor: [
-        239,
-        68,
-        68,
-      ],
-    },
+    ...getReportTableStyles({ fontSize: 8.5, cellPadding: 2 }),
+    tableWidth: 180,
+    columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
+    margin: { left: 14, right: 14, top: 16, bottom: 17 },
   });
 
-  addSectionTitle(
-    doc,
-    "KPI Level Distribution",
-    getNextY(doc)
-  );
-
-  autoTable(doc, {
-    startY:
-      getNextY(doc, 4),
-
-    head: [
-      [
-        "KPI Level",
-        "Employees",
-        "Percentage",
-      ],
-    ],
-
-    body: toSummaryRows(
-      kpiLevelSummary,
-      safeTotalEmployees
-    ),
-
-    styles: {
-      fontSize: 9,
-      cellPadding: 3,
-    },
-
-    headStyles: {
-      fillColor: [
-        37,
-        99,
-        235,
-      ],
-    },
-  });
-
-  addSectionTitle(
-    doc,
-    "Risk Level Distribution",
-    getNextY(doc)
-  );
-
-  autoTable(doc, {
-    startY:
-      getNextY(doc, 4),
-
-    head: [
-      [
-        "Risk Level",
-        "Employees",
-        "Percentage",
-      ],
-    ],
-
-    body: toSummaryRows(
-      riskLevelSummary,
-      safeTotalEmployees
-    ),
-
-    styles: {
-      fontSize: 9,
-      cellPadding: 3,
-    },
-
-    headStyles: {
-      fillColor: [
-        99,
-        102,
-        241,
-      ],
-    },
-  });
-
-  addSectionTitle(
-    doc,
-    "Severity Distribution",
-    getNextY(doc)
-  );
-
-  autoTable(doc, {
-    startY:
-      getNextY(doc, 4),
-
-    head: [
-      [
-        "Severity Level",
-        "Employees",
-        "Percentage",
-      ],
-    ],
-
-    body: toSummaryRows(
-      severitySummary,
-      safeTotalEmployees
-    ),
-
-    styles: {
-      fontSize: 9,
-      cellPadding: 3,
-    },
-
-    headStyles: {
-      fillColor: [
-        245,
-        158,
-        11,
-      ],
-    },
-  });
-
-  addSectionTitle(
-    doc,
-    "Decision Confidence Summary",
-    getNextY(doc)
-  );
-
-  autoTable(doc, {
-    startY:
-      getNextY(doc, 4),
-
-    head: [
-      [
-        "Decision Confidence",
-        "Employees",
-        "Percentage",
-      ],
-    ],
-
-    body: toSummaryRows(
-      confidenceSummary,
-      safeTotalEmployees
-    ),
-
-    styles: {
-      fontSize: 9,
-      cellPadding: 3,
-    },
-
-    headStyles: {
-      fillColor: [
-        124,
-        58,
-        237,
-      ],
-    },
-  });
-
-  addSectionTitle(
-    doc,
-    "Suggested HR Action Summary",
-    getNextY(doc)
-  );
-
-  autoTable(doc, {
-    startY:
-      getNextY(doc, 4),
-
-    head: [
-      [
-        "Suggested HR Action",
-        "Employees",
-        "Percentage",
-      ],
-    ],
-
-    body: toSummaryRows(
-      suggestedActionSummary,
-      safeTotalEmployees
-    ),
-
-    styles: {
-      fontSize: 9,
-      cellPadding: 3,
-    },
-
-    headStyles: {
-      fillColor: [
-        14,
-        165,
-        233,
-      ],
-    },
-  });
-
-  addSectionTitle(
-    doc,
-    "System Recommendation Summary",
-    getNextY(doc)
-  );
-
-  autoTable(doc, {
-    startY:
-      getNextY(doc, 4),
-
-    head: [
-      [
-        "System Recommendation",
-        "Employees",
-        "Percentage",
-      ],
-    ],
-
-    body: toSummaryRows(
-      recommendationSummary,
-      safeTotalEmployees
-    ),
-
-    styles: {
-      fontSize: 9,
-      cellPadding: 3,
-    },
-
-    headStyles: {
-      fillColor: [
-        16,
-        185,
-        129,
-      ],
-    },
-  });
-
-  const reminderText =
-    "Decision-support reminder: System-generated KPI outputs are intended to assist HR review and do not replace final HR judgment.";
-
-  const finalY =
-    getNextY(doc, 8);
-
-  const pageBottomLimit =
-    getPageBottomLimit(doc);
-
-  if (
-    finalY > pageBottomLimit
-  ) {
-    doc.addPage();
-
-    doc.setFontSize(9);
-    doc.setTextColor(90);
-
-    doc.text(
-      reminderText,
-      14,
-      20,
-      {
-        maxWidth: 180,
-      }
-    );
-  } else {
-    doc.setFontSize(9);
-    doc.setTextColor(90);
-
-    doc.text(
-      reminderText,
-      14,
-      finalY,
-      {
-        maxWidth: 180,
-      }
-    );
+  const alerts = safeArray(criticalAlerts);
+  if (alerts.length) {
+    addReportSectionTitle(doc, "Current HR Attention Items", doc.lastAutoTable.finalY + 8);
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 12,
+      head: [["Priority", "Attention Item"]],
+      body: alerts.map((alert) => [clean(alert?.level, "Unspecified"), clean(alert?.text, "No details available")]),
+      ...getReportTableStyles({ fontSize: 8, cellPadding: 2 }),
+      margin: { left: 14, right: 14, top: 16, bottom: 17 },
+      rowPageBreak: "avoid",
+    });
   }
 
-  doc.save(
-    "Welljob_KPI_Report.pdf"
-  );
+  doc.addPage("a4", "portrait");
+  addReportContinuationHeader(doc, REPORT_TITLE);
+  addSummaryTable(doc, {
+    title: "Employee Risk and Performance Summary",
+    label: "Employee Risk Level",
+    rows: buildKpiSummaryRows(
+      countBy(safeEmployees, "riskLevel", "Unspecified Risk"),
+      safeTotalEmployees,
+      ["Low Risk", "Monitor", "Repeat", "High Risk"]
+    ),
+    startY: 18,
+  });
+  addSummaryTable(doc, {
+    title: "Employee Performance Categories",
+    label: "Performance Category",
+    rows: buildKpiSummaryRows(
+      countBy(safeEmployees, "kpiLevel", "Unspecified KPI"),
+      safeTotalEmployees,
+      ["Good Standing", "Minor Concern", "Needs Improvement", "Critical Concern"]
+    ),
+    startY: doc.lastAutoTable.finalY + 9,
+  });
+
+  const companySummary = buildKpiCompanySummary(safeEmployees, safeIncidents);
+  const representedStatuses = [...new Set(companySummary.flatMap((company) => Object.keys(company.caseStatuses || {})))];
+  const statusColumns = [
+    ...CASE_STATUS_ORDER.filter((status) => representedStatuses.includes(status)),
+    ...representedStatuses.filter((status) => !CASE_STATUS_ORDER.includes(status)).sort(),
+  ];
+  doc.addPage("a4", "portrait");
+  addReportContinuationHeader(doc, REPORT_TITLE);
+  addReportSectionTitle(doc, "Company Performance Overview", 18);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text("Employee classifications and incident case statuses are reported separately.", 14, 23);
+  const companyStyles = getReportTableStyles({ fontSize: statusColumns.length > 3 ? 6.1 : 6.7, cellPadding: 1.35 });
+  autoTable(doc, {
+    startY: 27,
+    head: [["Client Company", "Employees", "Low", "Monitor", "Repeat", "High", ...statusColumns, "Total Cases"]],
+    body: companySummary.length
+      ? companySummary.map((company) => [
+          company.company,
+          company.employeesCovered,
+          company.lowRisk,
+          company.monitor,
+          company.repeat,
+          company.highRisk,
+          ...statusColumns.map((status) => safeNumber(company.caseStatuses?.[status])),
+          company.totalCases,
+        ])
+      : [["No company data available", 0, 0, 0, 0, 0, ...statusColumns.map(() => 0), 0]],
+    ...companyStyles,
+    styles: { ...companyStyles.styles, minCellWidth: 0 },
+    columnStyles: { 0: { cellWidth: 48 } },
+    margin: { left: 8, right: 8, top: 16, bottom: 17 },
+    rowPageBreak: "avoid",
+    didDrawPage: (data) => {
+      if (data.pageNumber > 1) addReportContinuationHeader(doc, `${REPORT_TITLE} — Company Performance Overview`);
+    },
+  });
+
+  addReportFooters(doc, {
+    reportTitle: REPORT_TITLE,
+    advisory: "Confidential workforce performance report — authorized HR use only.",
+  });
+  if (save) doc.save(`Welljob_KPI_Performance_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+  return doc;
 }

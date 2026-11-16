@@ -9,6 +9,10 @@ const source = fs.readFileSync(
   path.resolve(testDirectory, "../src/pages/Deployments.jsx"),
   "utf8"
 );
+const pdfSource = fs.readFileSync(
+  path.resolve(testDirectory, "../src/utils/deployments/deploymentActivityPdfExport.js"),
+  "utf8"
+);
 
 test("deployment activity requests include authorized filters and pagination", () => {
   assert.match(source, /params\.set\(\s*"company",\s*movementCompany/);
@@ -39,11 +43,20 @@ test("deployment activity UI exposes company scope, completion categories, and p
   assert.match(source, /event\.performedBy \|\|\s*"Not recorded"/);
 });
 
-test("activity table and PDF share reliable actor name and friendly role mapping", () => {
+test("activity table retains actor data while the PDF omits actor identity", () => {
   assert.match(source, /event\.performedBy \|\|\s*"Not recorded"/);
   assert.match(source, /formatRoleLabel\(\s*event\.performedByRole\s*\)/);
-  assert.match(source, /performedByRole[\s\S]{0,240}\.join\(\s*" · "/);
   assert.match(source, /\[\s*"hr",\s*"it",\s*\]\.includes/);
+  assert.doesNotMatch(pdfSource, /performedBy|performedByRole|Performed By/);
+  assert.match(pdfSource, /buildDeploymentActivityColumns/);
+});
+
+test("deployment report actions are distinct and the activity tab has one export button", () => {
+  assert.match(source, /"Export Activity History"/);
+  assert.match(source, /"Export Deployment Report"/);
+  assert.equal((source.match(/handleExportMovementPDF/g) || []).length >= 2, true);
+  assert.doesNotMatch(source, /onExport=\{[\s\S]{0,80}handleExportMovementPDF/);
+  assert.doesNotMatch(source, /function DeploymentMovementActivity\([\s\S]{0,260}\bonExport\b/);
 });
 
 test("activity records split date and time while using a more compact table layout", () => {

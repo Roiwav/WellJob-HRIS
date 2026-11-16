@@ -27,6 +27,11 @@ import PageHeader from "../components/ui/PageHeader";
 import SearchInput from "../components/ui/SearchInput";
 import welljobLogoUrl from "../assets/Logo.png";
 import { useAuth } from "../context/useAuth";
+import {
+  addReportContinuationHeader,
+  addReportFooters,
+  getReportUserRole,
+} from "../utils/pdf/reportPdf";
 import { EMPLOYEE_API_URL } from "../utils/employees/employeeFormHelpers";
 import {
   getAttendanceByDate,
@@ -559,52 +564,6 @@ async function loadAttendanceReportLogo() {
   }
 }
 
-function addAttendanceReportFooters(
-  doc
-) {
-  const pageCount =
-    doc.internal.getNumberOfPages();
-
-  for (
-    let pageNumber = 1;
-    pageNumber <= pageCount;
-    pageNumber += 1
-  ) {
-    doc.setPage(
-      pageNumber
-    );
-
-    const pageWidth =
-      doc.internal.pageSize.getWidth();
-
-    const pageHeight =
-      doc.internal.pageSize.getHeight();
-
-    doc.setFontSize(
-      7
-    );
-
-    doc.setFont(
-      undefined,
-      "normal"
-    );
-
-    doc.setTextColor(
-      100
-    );
-
-    doc.text(
-      `Attendance Record Report | Page ${pageNumber} of ${pageCount}`,
-      pageWidth - 14,
-      pageHeight - 7,
-      {
-        align:
-          "right",
-      }
-    );
-  }
-}
-
 async function exportAttendanceRecordPdf({
   record,
   detail,
@@ -661,7 +620,7 @@ async function exportAttendanceRecordPdf({
   );
 
   doc.text(
-    "WELLJOB SOLUTIONS & GENERAL SERVICES INC.",
+    "Welljob Solutions and General Services Inc.",
     38,
     15
   );
@@ -748,6 +707,12 @@ async function exportAttendanceRecordPdf({
     49
   );
 
+  doc.text(
+    `Role: ${getReportUserRole(user)}`,
+    112,
+    54
+  );
+
   if (
     (
       detail?.source ||
@@ -762,7 +727,7 @@ async function exportAttendanceRecordPdf({
           : "None"
       }`,
       112,
-      54
+      59
     );
   }
 
@@ -906,9 +871,10 @@ async function exportAttendanceRecordPdf({
         detailStartY + 4,
 
       margin: {
+        top: 18,
         left: 14,
         right: 14,
-        bottom: 14,
+        bottom: 17,
       },
 
       head: [[
@@ -967,12 +933,30 @@ async function exportAttendanceRecordPdf({
           cellWidth: 57,
         },
       },
+
+      rowPageBreak:
+        "avoid",
+
+      didDrawPage: (
+        data
+      ) => {
+        if (
+          data.pageNumber >
+          1
+        ) {
+          addReportContinuationHeader(
+            doc,
+            "Attendance Record Report"
+          );
+        }
+      },
     }
   );
 
-  addAttendanceReportFooters(
-    doc
-  );
+  addReportFooters(doc, {
+    reportTitle: "Attendance Record Report",
+    advisory: "Confidential attendance record — authorized use only.",
+  });
 
   const safeCompany =
     sanitizeAttendanceFilePart(

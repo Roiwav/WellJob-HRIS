@@ -285,6 +285,13 @@ function normalizeMonthlyReportMonth(
     return fallbackMonth;
   }
 
+  if (
+    raw.toLowerCase() ===
+    "all"
+  ) {
+    return "ALL";
+  }
+
   const parsed =
     Number.parseInt(
       raw,
@@ -409,6 +416,19 @@ function buildMonthlyReportPeriod(
 
     label:
       `${monthLabel} ${year}`,
+  };
+}
+
+function buildAnnualReportPeriod(
+  year
+) {
+  return {
+    start:
+      `${year}-01-01`,
+    endExclusive:
+      `${year + 1}-01-01`,
+    label:
+      `Full Year ${year}`,
   };
 }
 
@@ -545,7 +565,62 @@ function buildMonthlyWorkforceBucket() {
 
     otherSeparation:
       0,
+
+    endedDeployments:
+      0,
+
+    incidents:
+      0,
   };
+}
+
+function addCompanyActivity(
+  summary,
+  rows,
+  key
+) {
+  for (const row of rows) {
+    const company =
+      String(
+        row.company ||
+          "Unassigned"
+      ).trim() ||
+      "Unassigned";
+    let bucket =
+      summary.companies.find(
+        (item) =>
+          item.company ===
+          company
+      );
+    if (!bucket) {
+      bucket = {
+        company,
+        ...buildMonthlyWorkforceBucket(),
+      };
+      summary.companies.push(
+        bucket
+      );
+    }
+    const count =
+      Number(
+        row.count
+      ) || 0;
+    bucket[key] +=
+      count;
+    summary.overall[key] +=
+      count;
+    summary.companyTotals[key] +=
+      count;
+  }
+
+  summary.companies.sort(
+    (first, second) =>
+      second.totalEmployees -
+        first.totalEmployees ||
+      first.company.localeCompare(
+        second.company
+      )
+  );
 }
 
 function addCategoryToMonthlyBucket(
@@ -927,10 +1002,7 @@ exports.getDashboardMonthlyWorkforce =
           currentManilaPeriod.month
         );
 
-      if (
-        month ===
-        null
-      ) {
+      if (month === null) {
         return res
           .status(400)
           .json({
@@ -958,10 +1030,14 @@ exports.getDashboardMonthlyWorkforce =
       }
 
       const period =
-        buildMonthlyReportPeriod(
-          year,
-          month
-        );
+        month === "ALL"
+          ? buildAnnualReportPeriod(
+              year
+            )
+          : buildMonthlyReportPeriod(
+              year,
+              month
+            );
 
       connection =
         await db
@@ -1007,7 +1083,7 @@ exports.getDashboardMonthlyWorkforce =
                   ORDER BY
                     esh.effective_at DESC,
                     esh.id DESC
-                ) AS row_number
+                ) AS status_rank
 
               FROM
                 employee_status_history AS esh
@@ -1017,7 +1093,7 @@ exports.getDashboardMonthlyWorkforce =
             ) AS ranked
 
             WHERE
-              ranked.row_number = 1
+              ranked.status_rank = 1
           ),
 
           latest_assignment AS (
@@ -1047,7 +1123,7 @@ exports.getDashboardMonthlyWorkforce =
                   ORDER BY
                     da.start_date DESC,
                     da.id DESC
-                ) AS row_number
+                ) AS assignment_rank
 
               FROM
                 deployment_assignments AS da
@@ -1057,7 +1133,7 @@ exports.getDashboardMonthlyWorkforce =
             ) AS ranked
 
             WHERE
-              ranked.row_number = 1
+              ranked.assignment_rank = 1
           ),
 
           monthly_separation AS (
@@ -1092,7 +1168,7 @@ exports.getDashboardMonthlyWorkforce =
                       )
                     ) DESC,
                     da.id DESC
-                ) AS row_number
+                ) AS separation_rank
 
               FROM
                 deployment_assignments AS da
@@ -1122,7 +1198,7 @@ exports.getDashboardMonthlyWorkforce =
             ) AS ranked
 
             WHERE
-              ranked.row_number = 1
+              ranked.separation_rank = 1
           )
 
           SELECT
@@ -1221,6 +1297,61 @@ exports.getDashboardMonthlyWorkforce =
           classifiedRows
         );
 
+      const [endedDeploymentRows] =
+        await connection.query(
+          `
+          SELECT
+            COALESCE(NULLIF(TRIM(da.company), ''), 'Unassigned') AS company,
+            COUNT(*) AS count
+          FROM deployment_assignments AS da
+          WHERE COALESCE(da.end_date, DATE(da.ended_at)) >= ?
+            AND COALESCE(da.end_date, DATE(da.ended_at)) < ?
+          GROUP BY COALESCE(NULLIF(TRIM(da.company), ''), 'Unassigned')
+          `,
+          [
+            period.start,
+            period.endExclusive,
+          ]
+        );
+
+      const [incidentActivityRows] =
+        await connection.query(
+          `
+          SELECT
+            COALESCE(
+              NULLIF(TRIM(i.company), ''),
+              NULLIF(TRIM(e.company), ''),
+              'Unassigned'
+            ) AS company,
+            COUNT(*) AS count
+          FROM incidents AS i
+          LEFT JOIN employees AS e
+            ON e.id = i.employee_id
+          WHERE i.incident_date >= ?
+            AND i.incident_date < ?
+          GROUP BY COALESCE(
+            NULLIF(TRIM(i.company), ''),
+            NULLIF(TRIM(e.company), ''),
+            'Unassigned'
+          )
+          `,
+          [
+            period.start,
+            period.endExclusive,
+          ]
+        );
+
+      addCompanyActivity(
+        summary,
+        endedDeploymentRows,
+        "endedDeployments"
+      );
+      addCompanyActivity(
+        summary,
+        incidentActivityRows,
+        "incidents"
+      );
+
       const [yearRows] =
         await connection.query(
           `
@@ -1301,9 +1432,14 @@ exports.getDashboardMonthlyWorkforce =
 
       return res.json({
         filters: {
-          month,
+          month:
+            month === "ALL"
+              ? null
+              : month,
           monthNumber:
-            month + 1,
+            month === "ALL"
+              ? null
+              : month + 1,
           year,
           label:
             period.label,
@@ -1345,7 +1481,9 @@ exports.getDashboardMonthlyWorkforce =
             WORKFORCE_SCOPE_KEY,
 
           classification:
-            "MONTH_END_WORKFORCE_SNAPSHOT",
+            month === "ALL"
+              ? "YEAR_END_WORKFORCE_SNAPSHOT_WITH_YEAR_ACTIVITY"
+              : "MONTH_END_WORKFORCE_SNAPSHOT_WITH_MONTH_ACTIVITY",
 
           employeeRowsEvaluated:
             historicalRows.length,

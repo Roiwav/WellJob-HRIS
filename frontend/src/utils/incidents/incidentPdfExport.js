@@ -1,107 +1,48 @@
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import welljobLogoUrl from "../../assets/Logo.png";
+import { getDateOnly } from "./addIncidentHelpers.js";
 import {
-  formatDateTime,
-  getDateOnly,
-} from "./addIncidentHelpers";
+  addReportContinuationHeader,
+  addReportFooters,
+  addReportHeader,
+  addReportSectionTitle,
+  ensureReportSpace,
+  formatReportDateTime,
+  formatReportPercentage,
+  getReportTableStyles,
+  getReportUserName,
+  getReportUserRole,
+  loadWelljobLogoDataUrl,
+} from "../pdf/reportPdf.js";
 
-const REPORT_TITLE = "Welljob Incident Records Report";
+const REPORT_TITLE = "Incident Records Report";
 
 function clean(value, fallback = "-") {
-  const normalized = String(value ?? "").trim();
-  return normalized || fallback;
+  return String(value ?? "").trim() || fallback;
 }
 
-function normalizeComparable(value) {
-  return String(value ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
+function normalize(value) {
+  return clean(value, "").replace(/\s+/g, " ").toLowerCase();
 }
 
-function getIncidentDate(incident) {
-  const value =
-    incident?.date ||
-    incident?.incidentDate ||
-    incident?.incident_date ||
-    incident?.reportedAt ||
-    incident?.reported_at ||
-    incident?.createdAtTimestamp ||
-    incident?.created_at_timestamp ||
-    incident?.createdAt ||
-    incident?.created_at;
-
-  if (!value) return "-";
-
-  const dateOnly = getDateOnly(value);
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
-    return clean(value);
-  }
-
-  const parsed = new Date(
-    `${dateOnly}T00:00:00+08:00`
-  );
-
-  if (Number.isNaN(parsed.getTime())) {
-    return clean(value);
-  }
-
-  return new Intl.DateTimeFormat("en-PH", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  }).format(parsed);
-}
-
-function formatIncidentCode(id) {
-  const value = clean(id, "");
-  if (!value) return "-";
-  if (value.startsWith("INC-")) return value;
-
-  const numeric = Number(value);
-  return Number.isFinite(numeric)
-    ? `INC-${String(numeric).padStart(4, "0")}`
-    : value;
+function safeArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
 function getIncidentEmployeeName(incident) {
-  return clean(
-    incident?.employee ||
-      incident?.employeeName ||
-      incident?.employee_name,
-    "Unknown Employee"
-  );
+  return clean(incident?.employee || incident?.employeeName || incident?.employee_name, "Unknown Employee");
 }
 
 function getIncidentEmployeeId(incident) {
-  return clean(
-    incident?.employeeId ||
-      incident?.employee_id ||
-      incident?.empId ||
-      incident?.employeeID,
-    "-"
-  );
+  return clean(incident?.employeeId || incident?.employee_id || incident?.empId || incident?.employeeID);
 }
 
 function getIncidentCompany(incident) {
-  return clean(
-    incident?.company ||
-      incident?.clientCompany ||
-      incident?.client_company,
-    "-"
-  );
+  return clean(incident?.company || incident?.clientCompany || incident?.client_company, "Unassigned");
 }
 
-function getIncidentViolation(incident) {
-  return clean(
-    incident?.violation ||
-      incident?.violationType ||
-      incident?.violation_type,
-    "Unspecified Violation"
-  );
+function getIncidentType(incident) {
+  return clean(incident?.violation || incident?.violationType || incident?.violation_type, "Unspecified Concern");
 }
 
 function getIncidentReportedBy(incident) {
@@ -116,576 +57,258 @@ function getIncidentReportedBy(incident) {
   );
 }
 
-function getUserFullName(user) {
-  const firstName = clean(user?.first_name || user?.firstName, "");
-  const lastName = clean(user?.last_name || user?.lastName, "");
-  const composedName = [firstName, lastName].filter(Boolean).join(" ").trim();
-
-  return clean(
-    user?.full_name ||
-      user?.fullName ||
-      composedName ||
-      user?.name,
-    "Authorized User"
-  );
-}
-
-function getSelectedViolationFilter(filters = {}) {
-  const value = clean(
-    filters?.violationType ||
-      filters?.violation_type ||
-      filters?.violation,
-    ""
-  );
-
-  if (!value || normalizeComparable(value) === "all") return "";
-  return value;
-}
-
-function applyReportFilters(incidents, filters) {
-  const selectedViolation = getSelectedViolationFilter(filters);
-  if (!selectedViolation) return incidents;
-
-  const expectedViolation = normalizeComparable(selectedViolation);
-
-  return incidents.filter(
-    (incident) =>
-      normalizeComparable(getIncidentViolation(incident)) === expectedViolation
-  );
-}
-
-function countBy(incidents, getValue, fallback) {
-  return incidents.reduce((summary, incident) => {
-    const label = clean(getValue(incident), fallback);
-    summary[label] = (summary[label] || 0) + 1;
-    return summary;
-  }, {});
-}
-
-function toSummaryRows(summary, total) {
-  const entries = Object.entries(summary).sort(
-    (first, second) => second[1] - first[1]
-  );
-
-  if (entries.length === 0) return [["No records", 0, "0%"]];
-
-  return entries.map(([label, count]) => [
-    label,
-    count,
-    total > 0 ? `${Math.round((count / total) * 100)}%` : "0%",
-  ]);
-}
-
-function getMostFrequentViolation(incidents) {
-  const summary = countBy(
-    incidents,
-    getIncidentViolation,
-    "Unspecified Violation"
-  );
-
-  const topEntry = Object.entries(summary).sort(
-    (first, second) => second[1] - first[1]
-  )[0];
-
-  if (!topEntry) return "No records";
-
-  const [violation, count] = topEntry;
-  return `${violation} (${count})`;
-}
-
-function groupIncidentsByEmployee(incidents) {
-  const groups = new Map();
-
-  incidents.forEach((incident) => {
-    const employeeName = getIncidentEmployeeName(incident);
-    const employeeId = getIncidentEmployeeId(incident);
-
-    const key =
-      employeeId !== "-"
-        ? `id:${normalizeComparable(employeeId)}`
-        : `name:${normalizeComparable(employeeName)}`;
-
-    if (!groups.has(key)) {
-      groups.set(key, {
-        employeeName,
-        employeeId,
-        company: getIncidentCompany(incident),
-        incidents: [],
-      });
-    }
-
-    groups.get(key).incidents.push(incident);
-  });
-
-  return Array.from(groups.values()).sort((first, second) => {
-    const frequencyDifference =
-      second.incidents.length - first.incidents.length;
-
-    if (frequencyDifference !== 0) return frequencyDifference;
-    return first.employeeName.localeCompare(second.employeeName);
-  });
-}
-
-function getIncidentTimestamp(incident) {
+function getIncidentDate(incident) {
   const value =
     incident?.date ||
     incident?.incidentDate ||
     incident?.incident_date ||
     incident?.reportedAt ||
     incident?.reported_at ||
-    incident?.createdAtTimestamp ||
-    incident?.created_at_timestamp ||
     incident?.createdAt ||
-    incident?.created_at ||
-    "";
-
-  if (!value) return 0;
-
+    incident?.created_at;
+  if (!value) return "-";
   const dateOnly = getDateOnly(value);
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
-    return 0;
-  }
-
-  const timestamp = new Date(
-    `${dateOnly}T00:00:00+08:00`
-  ).getTime();
-
-  return Number.isNaN(timestamp)
-    ? 0
-    : timestamp;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return clean(value);
+  const parsed = new Date(`${dateOnly}T00:00:00+08:00`);
+  if (Number.isNaN(parsed.getTime())) return clean(value);
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  }).format(parsed);
 }
 
-function buildGroupedIncidentRows(
-  groups,
-  {
-    showCompanyColumn = true,
-  } = {}
-) {
-  if (groups.length === 0) {
-    const emptyRow = [
-      "No incident records matched the selected filters.",
-      "-",
-      ...(showCompanyColumn ? ["-"] : []),
-      "-",
-      "-",
-      "-",
-      "-",
-      "-",
-      "-",
-      "-",
-    ];
+function formatCaseNumber(id) {
+  const value = clean(id, "");
+  if (!value) return "-";
+  if (/^INC-/i.test(value)) return value;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `INC-${String(numeric).padStart(4, "0")}` : value;
+}
 
-    return [emptyRow];
-  }
+function summarize(records, getLabel) {
+  return safeArray(records).reduce((summary, record) => {
+    const label = clean(getLabel(record), "Unspecified");
+    summary[label] = (summary[label] || 0) + 1;
+    return summary;
+  }, {});
+}
 
-  const rows = [];
+function summaryRows(summary, total) {
+  const entries = Object.entries(summary || {});
+  return entries.length
+    ? entries
+        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+        .map(([label, count]) => [label, count, formatReportPercentage(count, total)])
+    : [["No records", 0, "0%"]];
+}
 
-  groups.forEach((group) => {
-    const sortedIncidents = [...group.incidents].sort(
-      (first, second) =>
-        getIncidentTimestamp(second) - getIncidentTimestamp(first)
-    );
-
-    sortedIncidents.forEach((incident, index) => {
-      const isFirstRow = index === 0;
-
-      rows.push([
-        isFirstRow ? group.employeeName : "",
-        isFirstRow ? group.employeeId : "",
-        ...(showCompanyColumn
-          ? [isFirstRow ? group.company : ""]
-          : []),
-        isFirstRow ? group.incidents.length : "",
-        formatIncidentCode(incident?.id),
-        getIncidentDate(incident),
-        getIncidentViolation(incident),
-        clean(incident?.severity),
-        clean(incident?.status),
-        getIncidentReportedBy(incident),
-      ]);
-    });
+export function buildIncidentCompanyOverview(incidents = [], authorizedCompanies = []) {
+  const groups = new Map();
+  safeArray(incidents).forEach((incident) => {
+    const company = getIncidentCompany(incident);
+    if (!groups.has(company)) groups.set(company, []);
+    groups.get(company).push(incident);
   });
 
-  return rows;
+  const withIncidents = [...groups.entries()]
+    .map(([company, records]) => ({
+      company,
+      employeesInvolved: new Set(records.map((record) => getIncidentEmployeeId(record) || getIncidentEmployeeName(record))).size,
+      incidentRecords: records.length,
+      records,
+    }))
+    .sort((left, right) => right.incidentRecords - left.incidentRecords || left.company.localeCompare(right.company));
+
+  const incidentCompanies = new Set(withIncidents.map((group) => normalize(group.company)));
+  const roster = [...new Set(safeArray(authorizedCompanies).map((company) => clean(company, "")).filter(Boolean))];
+  const withoutIncidents = roster
+    .filter((company) => !incidentCompanies.has(normalize(company)))
+    .sort((left, right) => left.localeCompare(right));
+
+  return { withIncidents, withoutIncidents, rosterAvailable: roster.length > 0 };
 }
 
-function addSectionTitle(doc, title, y) {
-  doc.setFontSize(11);
-  doc.setFont(undefined, "bold");
-  doc.setTextColor(15, 23, 42);
-  doc.text(title, 14, y);
-  doc.setFont(undefined, "normal");
+function getPeriodLabel(filters = {}) {
+  const month = clean(filters?.month, "");
+  const year = clean(filters?.year, "");
+  if ((!month || normalize(month) === "all") && (!year || normalize(year) === "all")) return "All available records";
+  if (!month || normalize(month) === "all") return `Full Year ${year}`;
+  const monthIndex = Number(month) - 1;
+  const monthLabel = Number.isInteger(monthIndex) && monthIndex >= 0 && monthIndex < 12
+    ? new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, monthIndex, 1)))
+    : month;
+  return `${monthLabel}${year && normalize(year) !== "all" ? ` ${year}` : ""}`;
 }
 
-function getNextY(doc, spacing = 8) {
-  return (doc.lastAutoTable?.finalY || 36) + spacing;
-}
-
-function fileToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("Unable to read Welljob logo."));
-    reader.readAsDataURL(blob);
+function drawCompactSummary(doc, { title, head, body, startY }) {
+  addReportSectionTitle(doc, title, startY);
+  autoTable(doc, {
+    startY: startY + 4,
+    head: [head],
+    body,
+    ...getReportTableStyles({ fontSize: 7.6, cellPadding: 1.7 }),
+    margin: { left: 14, right: 14, top: 16, bottom: 17 },
+    rowPageBreak: "avoid",
   });
-}
-
-async function loadLogoDataUrl() {
-  try {
-    const response = await fetch(welljobLogoUrl);
-    if (!response.ok) return "";
-
-    const blob = await response.blob();
-    return await fileToDataUrl(blob);
-  } catch {
-    // Logo failure must not block an authorized report.
-    return "";
-  }
-}
-
-function getReportCompany({ scopeCompany, filters }) {
-  return clean(
-    scopeCompany ||
-      filters?.company ||
-      filters?.companyName ||
-      filters?.company_name,
-    "All authorized companies"
-  );
-}
-
-function isCompanySpecificReport(reportCompany) {
-  const normalized = normalizeComparable(reportCompany);
-
-  return Boolean(
-    normalized &&
-      normalized !== "all authorized companies"
-  );
-}
-
-function getActiveFilters(filters) {
-  const selectedViolation = getSelectedViolationFilter(filters);
-
-  return [
-    filters?.caseTab && filters.caseTab !== "ALL"
-      ? `Case group: ${filters.caseTab}`
-      : "",
-    filters?.status && filters.status !== "ALL"
-      ? `Status: ${filters.status}`
-      : "",
-    filters?.severity && filters.severity !== "ALL"
-      ? `Severity: ${filters.severity}`
-      : "",
-    selectedViolation ? `Violation: ${selectedViolation}` : "",
-    filters?.search ? `Search: ${filters.search}` : "",
-  ].filter(Boolean);
-}
-
-function addReportHeader({
-  doc,
-  logoDataUrl,
-  generatedBy,
-  reportCompany,
-  activeFilters,
-}) {
-  if (logoDataUrl) {
-    try {
-      doc.addImage(logoDataUrl, "PNG", 14, 9, 18, 18);
-    } catch {
-      // Keep the report usable even when image decoding fails.
-    }
-  }
-
-  doc.setFontSize(16);
-  doc.setFont(undefined, "bold");
-  doc.setTextColor(30, 41, 59);
-  doc.text("WELLJOB SOLUTIONS & GENERAL SERVICES INC.", 38, 14);
-
-  doc.setFontSize(13);
-  doc.text(REPORT_TITLE, 38, 20);
-
-  doc.setFontSize(8.5);
-  doc.setFont(undefined, "normal");
-  doc.setTextColor(71, 85, 105);
-
-  doc.text(`Company: ${reportCompany}`, 14, 32);
-  doc.text(`Generated by: ${generatedBy}`, 14, 37);
-  doc.text(
-    `Generated on: ${formatDateTime(
-      new Date().toISOString()
-    )}`,
-    14,
-    42
-  );
-
-  const filterText =
-    activeFilters.length > 0
-      ? activeFilters.join(" | ")
-      : "Filters: All incident records";
-
-  doc.text(filterText, 145, 32, { maxWidth: 138 });
-}
-
-function addPageFooters(doc) {
-  const pageCount = doc.internal.getNumberOfPages();
-
-  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-    doc.setPage(pageNumber);
-
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-
-    doc.setFontSize(7);
-    doc.setFont(undefined, "normal");
-    doc.setTextColor(100);
-    doc.text(
-      `${REPORT_TITLE} | Page ${pageNumber} of ${pageCount}`,
-      pageWidth - 14,
-      pageHeight - 7,
-      { align: "right" }
-    );
-  }
+  return doc.lastAutoTable.finalY;
 }
 
 export async function exportIncidentReportPDF({
   incidents = [],
+  authorizedCompanies = [],
   user,
   scopeCompany = "",
   filters = {},
+  save = true,
 }) {
-  const sourceIncidents = Array.isArray(incidents) ? incidents : [];
-
-  /*
-   * The page should already pass the filtered dataset.
-   * Violation Type is also enforced here so a selected
-   * violation can never accidentally export unrelated
-   * incidents.
-   */
-  const safeIncidents = applyReportFilters(sourceIncidents, filters);
-
-  const doc = new jsPDF({
-    orientation: "landscape",
-    unit: "mm",
-    format: "a4",
-  });
-
-  const total = safeIncidents.length;
-  const employeeGroups = groupIncidentsByEmployee(safeIncidents);
-  const generatedBy = getUserFullName(user);
-  const reportCompany = getReportCompany({ scopeCompany, filters });
-  const showCompanyColumn =
-    !isCompanySpecificReport(reportCompany);
-  const activeFilters = getActiveFilters(filters);
-  const logoDataUrl = await loadLogoDataUrl();
-
-  addReportHeader({
+  const records = safeArray(incidents);
+  const companyOverview = buildIncidentCompanyOverview(records, authorizedCompanies);
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const logoDataUrl = await loadWelljobLogoDataUrl();
+  const contentStartY = addReportHeader({
     doc,
     logoDataUrl,
-    generatedBy,
-    reportCompany,
-    activeFilters,
+    title: REPORT_TITLE,
+    orientation: "landscape",
+    metadata: [
+      ["Report period", getPeriodLabel(filters)],
+      ["Company scope", scopeCompany || "All authorized client companies"],
+      ["Prepared by", getReportUserName(user)],
+      ["Role", getReportUserRole(user)],
+      ["Generated on", formatReportDateTime()],
+    ],
   });
 
-  addSectionTitle(doc, "Report Summary", 53);
-
+  const employeesWithIncidents = new Set(records.map((record) => getIncidentEmployeeId(record) || getIncidentEmployeeName(record))).size;
+  addReportSectionTitle(doc, "Incident Overview", contentStartY + 2);
   autoTable(doc, {
-    startY: 57,
-    head: [[
-      "Employees",
-      "Incident Reports",
-      "Active",
-      "For Review",
-      "Closed",
-      "Critical",
-      "Most Frequent Violation",
-    ]],
-    body: [[
-      employeeGroups.length,
-      total,
-      safeIncidents.filter((incident) =>
-        ["Open", "Investigating"].includes(clean(incident?.status))
-      ).length,
-      safeIncidents.filter(
-        (incident) => clean(incident?.status) === "For Review"
-      ).length,
-      safeIncidents.filter(
-        (incident) => clean(incident?.status) === "Closed"
-      ).length,
-      safeIncidents.filter(
-        (incident) => clean(incident?.severity) === "Critical"
-      ).length,
-      getMostFrequentViolation(safeIncidents),
-    ]],
-    theme: "grid",
-    styles: {
-      fontSize: 8.5,
-      halign: "center",
-      valign: "middle",
-      cellPadding: 2.3,
-    },
-    headStyles: {
-      fillColor: [30, 41, 59],
-    },
-    columnStyles: {
-      6: { cellWidth: 58 },
-    },
-  });
-
-  const violationSummary = countBy(
-    safeIncidents,
-    getIncidentViolation,
-    "Unspecified Violation"
-  );
-  const statusSummary = countBy(
-    safeIncidents,
-    (incident) => incident?.status,
-    "Unspecified Status"
-  );
-  const severitySummary = countBy(
-    safeIncidents,
-    (incident) => incident?.severity,
-    "Unspecified Severity"
-  );
-
-  const firstSummaryY = getNextY(doc, 9);
-  addSectionTitle(doc, "Violation Summary", firstSummaryY);
-
-  autoTable(doc, {
-    startY: firstSummaryY + 4,
-    head: [["Violation Type", "Frequency", "Share"]],
-    body: toSummaryRows(violationSummary, total),
-    theme: "striped",
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [79, 70, 229] },
-    tableWidth: 82,
+    startY: contentStartY + 6,
+    head: [["Overview Measure", "Total"]],
+    body: [
+      ["Total Recorded Incidents", records.length],
+      ["Employees with Recorded Incidents", employeesWithIncidents],
+      ["Companies with Recorded Incidents", companyOverview.withIncidents.length],
+      ...(companyOverview.rosterAvailable
+        ? [["Companies with No Recorded Incidents", companyOverview.withoutIncidents.length]]
+        : []),
+    ],
+    ...getReportTableStyles({ fontSize: 8, cellPadding: 1.8 }),
+    tableWidth: 128,
     margin: { left: 14 },
+    columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
   });
 
-  const parallelSummaryY = doc.lastAutoTable?.startY || firstSummaryY + 4;
+  let y = doc.lastAutoTable.finalY + 7;
+  y = drawCompactSummary(doc, {
+    title: "Types of Reported Incidents",
+    head: ["Type of Concern", "Number of Cases", "Percentage"],
+    body: summaryRows(summarize(records, getIncidentType), records.length),
+    startY: y,
+  }) + 7;
+  y = drawCompactSummary(doc, {
+    title: "Case Status Summary",
+    head: ["Case Status", "Number of Cases", "Percentage"],
+    body: summaryRows(summarize(records, (incident) => incident?.status), records.length),
+    startY: y,
+  }) + 7;
+  y = drawCompactSummary(doc, {
+    title: "Severity Summary",
+    head: ["Severity", "Number of Cases", "Percentage"],
+    body: summaryRows(summarize(records, (incident) => incident?.severity), records.length),
+    startY: y,
+  }) + 8;
 
+  y = ensureReportSpace(doc, { y, requiredHeight: 24, title: REPORT_TITLE, nextPageY: 18 });
+  addReportSectionTitle(doc, "Companies with Recorded Incidents", y);
   autoTable(doc, {
-    startY: parallelSummaryY,
-    head: [["Status", "Records", "Share"]],
-    body: toSummaryRows(statusSummary, total),
-    theme: "striped",
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [14, 165, 233] },
-    tableWidth: 82,
-    margin: { left: 107 },
-  });
-
-  autoTable(doc, {
-    startY: parallelSummaryY,
-    head: [["Severity", "Records", "Share"]],
-    body: toSummaryRows(severitySummary, total),
-    theme: "striped",
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [245, 158, 11] },
-    tableWidth: 82,
-    margin: { left: 200 },
-  });
-
-  doc.addPage();
-  addSectionTitle(doc, "Incident Records by Employee", 14);
-
-  const incidentTableHead = [[
-    "Full Name",
-    "Employee ID",
-    ...(showCompanyColumn ? ["Company"] : []),
-    "Freq.",
-    "Incident ID",
-    "Date",
-    "Violation",
-    "Severity",
-    "Status",
-    "Reported By",
-  ]];
-
-  const incidentTableColumnStyles =
-    showCompanyColumn
-      ? {
-          0: { cellWidth: 32, fontStyle: "bold" },
-          1: { cellWidth: 18 },
-          2: { cellWidth: 32 },
-          3: {
-            cellWidth: 16,
-            halign: "center",
-            fontStyle: "bold",
-          },
-          4: { cellWidth: 19 },
-          5: { cellWidth: 21 },
-          6: { cellWidth: 42 },
-          7: { cellWidth: 18 },
-          8: { cellWidth: 21 },
-          9: { cellWidth: 32 },
-        }
-      : {
-          0: { cellWidth: 40, fontStyle: "bold" },
-          1: { cellWidth: 20 },
-          2: {
-            cellWidth: 16,
-            halign: "center",
-            fontStyle: "bold",
-          },
-          3: { cellWidth: 20 },
-          4: { cellWidth: 22 },
-          5: { cellWidth: 52 },
-          6: { cellWidth: 20 },
-          7: { cellWidth: 20 },
-          8: { cellWidth: 40 },
-        };
-
-  autoTable(doc, {
-    startY: 18,
-    margin: {
-      top: 18,
-      left: 14,
-      right: 14,
-      bottom: 14,
-    },
-    head: incidentTableHead,
-    body: buildGroupedIncidentRows(
-      employeeGroups,
-      {
-        showCompanyColumn,
-      }
-    ),
-    theme: "grid",
-    styles: {
-      fontSize: 6.8,
-      cellPadding: 1.8,
-      overflow: "linebreak",
-      valign: "middle",
-    },
-    headStyles: {
-      fillColor: [30, 41, 59],
-      fontSize: 7.2,
-      overflow: "visible",
-    },
-    alternateRowStyles: {
-      fillColor: [248, 250, 252],
-    },
-    columnStyles:
-      incidentTableColumnStyles,
+    startY: y + 4,
+    head: [["Client Company", "Employees Involved", "Incident Records"]],
+    body: companyOverview.withIncidents.length
+      ? companyOverview.withIncidents.map((group) => [group.company, group.employeesInvolved, group.incidentRecords])
+      : [["No company has recorded incidents in this scope", 0, 0]],
+    ...getReportTableStyles({ fontSize: 8, cellPadding: 1.8 }),
+    margin: { left: 14, right: 14, top: 16, bottom: 17 },
+    rowPageBreak: "avoid",
     didDrawPage: (data) => {
-      if (data.pageNumber > 1) {
-        doc.setFontSize(9);
-        doc.setFont(undefined, "bold");
-        doc.setTextColor(30, 41, 59);
-        doc.text("Incident Records by Employee", 14, 10);
-      }
+      if (data.pageNumber > 1) addReportContinuationHeader(doc, REPORT_TITLE);
     },
   });
 
-  addPageFooters(doc);
+  if (companyOverview.rosterAvailable) {
+    y = ensureReportSpace(doc, {
+      y: doc.lastAutoTable.finalY + 8,
+      requiredHeight: Math.min(50, 12 + companyOverview.withoutIncidents.length * 6),
+      title: REPORT_TITLE,
+      nextPageY: 18,
+    });
+    addReportSectionTitle(doc, "Companies with No Recorded Incidents", y);
+    autoTable(doc, {
+      startY: y + 4,
+      head: [["Client Company", "Incident Records"]],
+      body: companyOverview.withoutIncidents.length
+        ? companyOverview.withoutIncidents.map((company) => [company, 0])
+        : [["None", 0]],
+      ...getReportTableStyles({ fontSize: 8, cellPadding: 1.8 }),
+      margin: { left: 14, right: 14, top: 16, bottom: 17 },
+      rowPageBreak: "avoid",
+    });
+  }
 
-  const dateStamp =
-    getDateOnly(
-      new Date().toISOString()
-    );
+  for (const group of companyOverview.withIncidents) {
+    doc.addPage();
+    addReportContinuationHeader(doc, REPORT_TITLE);
+    addReportSectionTitle(doc, group.company, 18);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Employees with Incidents: ${group.employeesInvolved}   |   Total Recorded Incidents: ${group.incidentRecords}`, 14, 23);
+    autoTable(doc, {
+      startY: 27,
+      head: [[
+        "Employee Name",
+        "Employee ID",
+        "Case No.",
+        "Date Reported",
+        "Type of Concern",
+        "Severity",
+        "Case Status",
+        "Reported By",
+      ]],
+      body: group.records.map((incident, index) => {
+        const previous = group.records[index - 1];
+        const sameEmployee = previous &&
+          (getIncidentEmployeeId(previous) || getIncidentEmployeeName(previous)) ===
+            (getIncidentEmployeeId(incident) || getIncidentEmployeeName(incident));
+        return [
+          sameEmployee ? "" : getIncidentEmployeeName(incident),
+          sameEmployee ? "" : getIncidentEmployeeId(incident),
+          formatCaseNumber(incident?.id),
+          getIncidentDate(incident),
+          getIncidentType(incident),
+          clean(incident?.severity),
+          clean(incident?.status),
+          getIncidentReportedBy(incident),
+        ];
+      }),
+      ...getReportTableStyles({ fontSize: 6.7, cellPadding: 1.6 }),
+      margin: { left: 10, right: 10, top: 22, bottom: 17 },
+      rowPageBreak: "avoid",
+      didDrawPage: (data) => {
+        if (data.pageNumber > 1) {
+          addReportContinuationHeader(doc, `${REPORT_TITLE} — ${group.company} (continued)`);
+        }
+      },
+    });
+  }
 
-  doc.save(
-    `Welljob_Incident_Records_${dateStamp}.pdf`
-  );
+  addReportFooters(doc, {
+    reportTitle: REPORT_TITLE,
+    advisory: "Confidential incident information — authorized HR use only.",
+  });
+  if (save) {
+    doc.save(`Welljob_Incident_Records_${getDateOnly(new Date().toISOString())}.pdf`);
+  }
+  return doc;
 }

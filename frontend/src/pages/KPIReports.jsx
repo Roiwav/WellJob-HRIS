@@ -606,8 +606,8 @@ export default function KPIReports() {
     );
   }
 
-  function handleExportPDF() {
-    exportKPIReportPDF({
+  async function handleExportPDF() {
+    await exportKPIReportPDF({
       user,
       totalEmployees,
       deployedEmployees,
@@ -617,6 +617,7 @@ export default function KPIReports() {
       goodStandingEmployees,
       criticalAlerts,
       employees,
+      incidents: incidentsRaw,
     });
   }
 

@@ -2993,6 +2993,39 @@ exports.getDeploymentReport =
           mapAssignment
         );
 
+      const workforceWhere = [
+        "e.archived = 0",
+        "e.employment_status = 'Active'",
+        "e.workforce_status = 'Floating / Standby'",
+        "TRIM(COALESCE(e.company, '')) <> ''",
+      ];
+      const workforceParams = [];
+
+      if (coordinatorCompany) {
+        workforceWhere.push(
+          "LOWER(TRIM(e.company)) = LOWER(TRIM(?))"
+        );
+        workforceParams.push(
+          coordinatorCompany
+        );
+      }
+
+      const [workforceRows] =
+        await db
+          .promise()
+          .query(
+            `
+            SELECT
+              e.company,
+              COUNT(*) AS floatingStandby
+            FROM employees AS e
+            WHERE ${workforceWhere.join("\nAND ")}
+            GROUP BY e.company
+            ORDER BY e.company ASC
+            `,
+            workforceParams
+          );
+
       return res.json({
         deployments,
 
@@ -3002,6 +3035,18 @@ exports.getDeploymentReport =
         summary:
           buildDeploymentReportSummary(
             deployments
+          ),
+
+        workforceByCompany:
+          workforceRows.map(
+            (row) => ({
+              company:
+                row.company,
+              floatingStandby:
+                Number(
+                  row.floatingStandby
+                ) || 0,
+            })
           ),
 
         scope: {

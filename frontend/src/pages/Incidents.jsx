@@ -3111,6 +3111,9 @@ export default function Incidents() {
           await exportIncidentReportPDF({
             incidents:
               reportIncidents,
+            authorizedCompanies:
+              reportData?.authorizedCompanies ||
+              [],
             user,
             scopeCompany:
               reportData?.scope

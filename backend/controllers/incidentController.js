@@ -3286,10 +3286,11 @@ exports.getIncidentReport =
           }
         );
 
-      const [incidents] =
-        await db
-          .promise()
-          .query(
+      const [
+        [incidents],
+        [companyRows],
+      ] = await Promise.all([
+        db.promise().query(
             `
             SELECT
               i.id,
@@ -3353,7 +3354,22 @@ exports.getIncidentReport =
                 : []),
               ...params,
             ]
-          );
+          ),
+        isHrCoordinator
+          ? Promise.resolve([[{
+              companyName:
+                coordinatorCompany,
+            }]])
+          : db.promise().query(
+              `
+              SELECT
+                cc.company_name AS companyName
+              FROM client_companies AS cc
+              WHERE cc.is_active = 1
+              ORDER BY cc.company_name ASC
+              `
+            ),
+      ]);
 
       const reportIncidents =
         incidents.map(
@@ -3382,6 +3398,17 @@ exports.getIncidentReport =
 
         total:
           reportIncidents.length,
+
+        authorizedCompanies:
+          companyRows
+            .map(
+              (row) =>
+                String(
+                  row.companyName ||
+                  ""
+                ).trim()
+            )
+            .filter(Boolean),
 
         scope: {
           role,
