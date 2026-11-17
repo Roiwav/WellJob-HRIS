@@ -1245,7 +1245,9 @@ export default function Navbar({
 
             {recoveryStatus ===
           "unregistered"
-          ? "Add it from Account Settings."
+          ? currentRole === "SUPER_ADMIN"
+            ? "Register it from Account Settings."
+            : "Contact your Super Admin to register it."
           : "Verify it from Account Settings."}
 
            </p>

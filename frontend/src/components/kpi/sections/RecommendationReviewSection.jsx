@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import {
   FiAlertCircle,
   FiCheckCircle,
+  FiChevronLeft,
+  FiChevronRight,
   FiClock,
   FiEdit3,
   FiFileText,
@@ -36,6 +38,7 @@ import {
   clarifyActiveAssessmentText,
   formatCount,
 } from "../../../utils/kpi/kpiPresentationHelpers";
+import { paginateRecommendations } from "../../../utils/kpi/recommendationPagination";
 
 import {
   mergeKpiEvaluationSnapshot,
@@ -904,6 +907,9 @@ export default function RecommendationReviewSection({
 }) {
   const [search, setSearch] = useState("");
 
+  const [currentPage, setCurrentPage] =
+    useState(1);
+
   const [selectedEmployee, setSelectedEmployee] =
     useState(null);
 
@@ -1018,10 +1024,33 @@ export default function RecommendationReviewSection({
     );
   }, [allPendingEmployees, search]);
 
+  const pagination = useMemo(
+    () =>
+      paginateRecommendations(
+        pendingEmployees,
+        currentPage
+      ),
+    [pendingEmployees, currentPage]
+  );
+
+  if (currentPage !== pagination.currentPage) {
+    setCurrentPage(pagination.currentPage);
+  }
+
   const pageError =
     refreshError || error?.message || "";
 
   const hasSearch = Boolean(search.trim());
+
+  function handleSearchChange(event) {
+    setSearch(event.target.value);
+    setCurrentPage(1);
+  }
+
+  function handleClearSearch() {
+    setSearch("");
+    setCurrentPage(1);
+  }
 
   async function handleRefresh() {
     if (isFetching) return;
@@ -1052,7 +1081,6 @@ export default function RecommendationReviewSection({
 
   async function handleSaved(record) {
     setSelectedEmployee(null);
-    setSearch("");
     setRefreshError("");
 
     onDecisionSaved?.(record);
@@ -1131,10 +1159,8 @@ export default function RecommendationReviewSection({
                 hideLabel
                 placeholder="Search employee, company, recommendation, KPI, or risk..."
                 value={search}
-                onChange={(event) =>
-                  setSearch(event.target.value)
-                }
-                onClear={() => setSearch("")}
+                onChange={handleSearchChange}
+                onClear={handleClearSearch}
               />
             </div>
 
@@ -1148,7 +1174,7 @@ export default function RecommendationReviewSection({
                 variant="ghost"
                 size="sm"
                 disabled={!hasSearch}
-                onClick={() => setSearch("")}
+                onClick={handleClearSearch}
               >
                 Clear Search
               </Button>
@@ -1221,25 +1247,82 @@ export default function RecommendationReviewSection({
               }
               onSecondaryAction={
                 hasSearch
-                  ? () => setSearch("")
+                  ? handleClearSearch
                   : undefined
               }
             />
           </div>
         ) : (
-          <div className="grid gap-3">
-            {pendingEmployees.map((employee) => (
-              <PendingRecommendationCard
-                key={employee.id}
-                employee={employee}
-                canManageDecisions={
-                  canManageDecisions
-                }
-                onReview={
-                  setSelectedEmployee
-                }
-              />
-            ))}
+          <div className="space-y-3">
+            <div className="grid gap-3">
+              {pagination.recommendations.map(
+                (employee) => (
+                  <PendingRecommendationCard
+                    key={employee.id}
+                    employee={employee}
+                    canManageDecisions={
+                      canManageDecisions
+                    }
+                    onReview={
+                      setSelectedEmployee
+                    }
+                  />
+                )
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
+              <p
+                className="text-center text-xs font-medium text-slate-500 dark:text-slate-400 sm:text-left"
+                aria-live="polite"
+              >
+                Showing {pagination.startEntry}–{pagination.endEntry} of{" "}
+                {pagination.totalRecommendations} recommendations
+              </p>
+
+              <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={
+                    <FiChevronLeft aria-hidden="true" />
+                  }
+                  disabled={!pagination.hasPreviousPage}
+                  aria-label="Show previous recommendation page"
+                  onClick={() =>
+                    setCurrentPage(
+                      pagination.currentPage - 1
+                    )
+                  }
+                >
+                  Previous
+                </Button>
+
+                <span className="min-w-[92px] text-center text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Page {pagination.currentPage} of{" "}
+                  {pagination.totalPages}
+                </span>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  rightIcon={
+                    <FiChevronRight aria-hidden="true" />
+                  }
+                  disabled={!pagination.hasNextPage}
+                  aria-label="Show next recommendation page"
+                  onClick={() =>
+                    setCurrentPage(
+                      pagination.currentPage + 1
+                    )
+                  }
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           </div>
         )}
 

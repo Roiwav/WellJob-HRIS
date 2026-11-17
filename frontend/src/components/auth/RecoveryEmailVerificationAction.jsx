@@ -2,6 +2,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { useNavigate } from "react-router-dom";
 
 import {
   FiAlertCircle,
@@ -16,12 +17,23 @@ import {
 import {
   API_BASE,
 } from "../../config/api";
+import Button from "../ui/Button";
+import { useAuth } from "../../context/useAuth";
 
 const STATUS_URL =
   `${API_BASE}/auth/recovery-email-status`;
 
 const REQUEST_URL =
   `${API_BASE}/auth/request-email-verification`;
+
+const REGISTER_URL =
+  `${API_BASE}/users/me/recovery-email`;
+
+const EMAIL_PATTERN =
+  /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i;
+
+const INPUT_CLASS_NAME =
+  "min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500";
 
 function getLoginToken() {
   return String(
@@ -89,6 +101,15 @@ function StatusBadge({
 }
 
 export default function RecoveryEmailVerificationAction() {
+  const navigate = useNavigate();
+  const { user, setUser } = useAuth();
+  const isSuperAdmin =
+    String(user?.role || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, "_") ===
+    "SUPER_ADMIN";
+
   const [
     status,
     setStatus,
@@ -105,14 +126,26 @@ export default function RecoveryEmailVerificationAction() {
   ] = useState("");
 
   const [
-    error,
-    setError,
+    statusError,
+    setStatusError,
+  ] = useState("");
+
+  const [
+    actionError,
+    setActionError,
   ] = useState("");
 
   const [
     refreshKey,
     setRefreshKey,
   ] = useState(0);
+
+  const [email, setEmail] =
+    useState("");
+  const [currentPassword, setCurrentPassword] =
+    useState("");
+  const [isRegistering, setIsRegistering] =
+    useState(false);
 
   useEffect(() => {
     const controller =
@@ -122,7 +155,8 @@ export default function RecoveryEmailVerificationAction() {
       async () => {
         setStatus("loading");
         setMessage("");
-        setError("");
+        setStatusError("");
+        setActionError("");
 
         const token =
           getLoginToken();
@@ -130,7 +164,7 @@ export default function RecoveryEmailVerificationAction() {
         if (!token) {
           setStatus("error");
 
-          setError(
+          setStatusError(
             "Your login session is unavailable. Please sign in again."
           );
 
@@ -219,7 +253,9 @@ export default function RecoveryEmailVerificationAction() {
             );
 
             setMessage(
-              "No recovery email is registered for your account. Please contact your Super Admin."
+              isSuperAdmin
+                ? "No recovery email is registered. Add one below, then sign in again to verify it."
+                : "No recovery email is registered for your account. Please contact your Super Admin."
             );
 
             return;
@@ -242,7 +278,7 @@ export default function RecoveryEmailVerificationAction() {
             "error"
           );
 
-          setError(
+          setStatusError(
             requestError?.message ||
               "Unable to load recovery email status."
           );
@@ -254,7 +290,139 @@ export default function RecoveryEmailVerificationAction() {
     return () => {
       controller.abort();
     };
-  }, [refreshKey]);
+  }, [isSuperAdmin, refreshKey]);
+
+  const handleRegisterRecoveryEmail = async (event) => {
+    event.preventDefault();
+
+    if (
+      isRegistering ||
+      !isSuperAdmin ||
+      status !== "unregistered"
+    ) {
+      return;
+    }
+
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+    setMessage("");
+    setActionError("");
+
+    if (
+      !normalizedEmail ||
+      normalizedEmail.length > 254 ||
+      !EMAIL_PATTERN.test(normalizedEmail)
+    ) {
+      setActionError(
+        "Enter a valid recovery email address (maximum 254 characters)."
+      );
+      setCurrentPassword("");
+      return;
+    }
+
+    if (!currentPassword) {
+      setActionError("Enter your current password.");
+      return;
+    }
+
+    if (currentPassword.length > 128) {
+      setActionError("Enter a valid current password.");
+      setCurrentPassword("");
+      return;
+    }
+
+    const token = getLoginToken();
+
+    if (!token) {
+      setActionError(
+        "Your login session is unavailable. Please sign in again."
+      );
+      setCurrentPassword("");
+      return;
+    }
+
+    setIsRegistering(true);
+
+    try {
+      const response = await fetch(
+        REGISTER_URL,
+        {
+          method: "PUT",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            email: normalizedEmail,
+            currentPassword,
+          }),
+        }
+      );
+
+      const data = await response
+        .json()
+        .catch(() => null);
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          setActionError(
+            data?.message ||
+              "Your current password is incorrect or your session is no longer valid."
+          );
+        } else if (response.status === 409) {
+          setActionError(
+            data?.message ||
+              "That recovery email cannot be registered. Review the current account status or use a different address."
+          );
+        } else if (response.status === 429) {
+          setActionError(
+            "Too many registration attempts. Please wait and try again."
+          );
+        } else {
+          setActionError(
+            data?.message ||
+              "Unable to register the recovery email. Please try again."
+          );
+        }
+
+        return;
+      }
+
+      if (
+        data?.registered !== true ||
+        data?.verified !== false ||
+        data?.sessionInvalidated !== true
+      ) {
+        setActionError(
+          "The server returned an unexpected result. Your registration status may have changed; sign in again and review Recovery Email before retrying."
+        );
+        return;
+      }
+
+      setStatus("unverified");
+      setMessage(data.message || "Recovery email registered but not yet verified.");
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      setUser(null);
+
+      navigate("/login", {
+        replace: true,
+        state: {
+          notice:
+            "Recovery email registered but not yet verified. Your sessions were revoked for security. Sign in again with your existing username and password, then send a verification email from Profile & Account Settings.",
+        },
+      });
+    } catch {
+      setActionError(
+        "The request result is uncertain because the connection was interrupted. Sign in again and review Recovery Email before retrying."
+      );
+    } finally {
+      setCurrentPassword("");
+      setIsRegistering(false);
+    }
+  };
 
   const handleRequestVerification =
     async () => {
@@ -266,7 +434,7 @@ export default function RecoveryEmailVerificationAction() {
       }
 
       setMessage("");
-      setError("");
+      setActionError("");
 
       const token =
         getLoginToken();
@@ -276,7 +444,7 @@ export default function RecoveryEmailVerificationAction() {
           "error"
         );
 
-        setError(
+        setActionError(
           "Your login session is unavailable. Please sign in again."
         );
 
@@ -339,7 +507,7 @@ export default function RecoveryEmailVerificationAction() {
               "error"
             );
 
-            setError(
+            setActionError(
               "Your login session has expired. Please sign in again."
             );
 
@@ -353,7 +521,7 @@ export default function RecoveryEmailVerificationAction() {
               "error"
             );
 
-            setError(
+            setActionError(
               "An active WELLJOB HRIS account is required."
             );
 
@@ -363,7 +531,7 @@ export default function RecoveryEmailVerificationAction() {
           if (
             response.status === 429
           ) {
-            setError(
+            setActionError(
               "Please wait before requesting another verification email."
             );
 
@@ -373,14 +541,14 @@ export default function RecoveryEmailVerificationAction() {
           if (
             response.status === 503
           ) {
-            setError(
+            setActionError(
               "Verification email is temporarily unavailable. Please try again later."
             );
 
             return;
           }
 
-          setError(
+          setActionError(
             data?.message ||
               "Unable to request email verification. Please try again."
           );
@@ -415,7 +583,7 @@ export default function RecoveryEmailVerificationAction() {
           "Verification email sent. Check your inbox and spam folder, then open the verification link."
         );
       } catch {
-        setError(
+        setActionError(
           "Network error. Check your connection and try again."
         );
       } finally {
@@ -436,6 +604,8 @@ export default function RecoveryEmailVerificationAction() {
       setStatus(
         "loading"
       );
+      setStatusError("");
+      setActionError("");
 
       setRefreshKey(
         (current) =>
@@ -464,7 +634,8 @@ export default function RecoveryEmailVerificationAction() {
 
   const isBusy =
     isLoading ||
-    isSubmitting;
+    isSubmitting ||
+    isRegistering;
 
   return (
     <div className="space-y-4">
@@ -581,6 +752,89 @@ export default function RecoveryEmailVerificationAction() {
         </div>
       </div>
 
+      {isUnregistered && isSuperAdmin && (
+        <form
+          onSubmit={handleRegisterRecoveryEmail}
+          className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-5"
+          noValidate
+        >
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+              Register Recovery Email
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              This initial registration requires your current password. The address will remain unverified until you complete the existing email verification flow after signing in again.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="recovery-email-registration"
+              className="block text-sm font-semibold text-slate-700 dark:text-slate-200"
+            >
+              Email Address
+            </label>
+            <input
+              id="recovery-email-registration"
+              name="recoveryEmail"
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              required
+              maxLength={254}
+              disabled={isRegistering}
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setActionError("");
+              }}
+              placeholder="name@example.com"
+              className={INPUT_CLASS_NAME}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="recovery-email-current-password"
+              className="block text-sm font-semibold text-slate-700 dark:text-slate-200"
+            >
+              Current Password
+            </label>
+            <input
+              id="recovery-email-current-password"
+              name="currentPassword"
+              type="password"
+              autoComplete="current-password"
+              required
+              maxLength={128}
+              disabled={isRegistering}
+              value={currentPassword}
+              onChange={(event) => {
+                setCurrentPassword(event.target.value);
+                setActionError("");
+              }}
+              placeholder="Enter your current password"
+              className={INPUT_CLASS_NAME}
+            />
+          </div>
+
+          <Button
+            type="submit"
+            fullWidth
+            loading={isRegistering}
+            disabled={
+              isRegistering ||
+              !email.trim() ||
+              !currentPassword
+            }
+          >
+            {isRegistering
+              ? "Registering Recovery Email..."
+              : "Register Recovery Email"}
+          </Button>
+        </form>
+      )}
+
       {canRequest && (
         <button
           type="button"
@@ -651,9 +905,10 @@ export default function RecoveryEmailVerificationAction() {
         </button>
       )}
 
-      {error && (
+      {statusError && (
         <div
           role="alert"
+          data-error-source="status"
           className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
         >
           <div className="flex items-start gap-2">
@@ -663,7 +918,26 @@ export default function RecoveryEmailVerificationAction() {
             />
 
             <span>
-              {error}
+              {statusError}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {actionError && (
+        <div
+          role="alert"
+          data-error-source="action"
+          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
+        >
+          <div className="flex items-start gap-2">
+            <FiAlertCircle
+              className="mt-0.5 shrink-0"
+              aria-hidden="true"
+            />
+
+            <span>
+              {actionError}
             </span>
           </div>
         </div>

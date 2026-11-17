@@ -1,7 +1,19 @@
 
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 
 const router = express.Router();
+
+const sensitiveSelfServiceLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    message:
+      "Too many sensitive account requests. Please try again later.",
+  },
+});
 
 const {
   getUsers,
@@ -10,6 +22,7 @@ const {
   resendAccountCredentials,
   updateAssignedCompany,
   updateRecoveryEmail,
+  registerOwnRecoveryEmail,
   toggleStatus,
   changePassword,
 } = require("../controllers/userController");
@@ -106,6 +119,22 @@ router.put(
   "/users/change-password",
   verifyToken,
   changePassword
+);
+
+/*
+ * ==================================================
+ * REGISTER OWN RECOVERY EMAIL - SUPER ADMIN ONLY
+ * ==================================================
+ *
+ * This owner-only route must remain before dynamic
+ * /users/:id routes so "me" is never interpreted as
+ * an administrative target ID.
+ */
+router.put(
+  "/users/me/recovery-email",
+  verifyToken,
+  sensitiveSelfServiceLimiter,
+  registerOwnRecoveryEmail
 );
 
 /*

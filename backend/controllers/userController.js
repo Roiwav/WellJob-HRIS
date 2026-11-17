@@ -1020,6 +1020,217 @@ exports.updateRecoveryEmail = async (req, res) => {
 
 /*
  * ==================================================
+ * REGISTER OWN RECOVERY EMAIL - SUPER ADMIN PHASE 1
+ * ==================================================
+ *
+ * Owner-only initial registration. The authenticated
+ * account ID is the only accepted target identity.
+ * Existing registered emails cannot be changed or
+ * removed through this endpoint.
+ */
+exports.registerOwnRecoveryEmail = async (req, res) => {
+  const authenticatedId = parsePositiveUserId(
+    req.user?.id ?? req.user?.userId
+  );
+  const requestedEmail = req.body?.email;
+  const currentPassword = req.body?.currentPassword;
+
+  if (
+    typeof requestedEmail !== "string" ||
+    typeof currentPassword !== "string"
+  ) {
+    return res.status(400).json({
+      message:
+        "A valid recovery email and current password are required.",
+    });
+  }
+
+  if (
+    !currentPassword ||
+    currentPassword.length > PASSWORD_MAX_LENGTH
+  ) {
+    return res.status(400).json({
+      message: "Current password is required.",
+    });
+  }
+
+  const email = requestedEmail.trim().toLowerCase();
+  const parsedEmail = parseRecoveryEmail(requestedEmail);
+
+  if (!email || !parsedEmail.valid || !parsedEmail.email) {
+    return res.status(400).json({
+      message:
+        "Enter a valid recovery email address (maximum 254 characters).",
+    });
+  }
+
+  if (!authenticatedId) {
+    return res.status(401).json({
+      message: "Authentication session is invalid.",
+    });
+  }
+
+  let connection;
+
+  try {
+    connection = await db.promise().getConnection();
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query(
+      `SELECT
+         id,
+         user_id,
+         full_name,
+         username,
+         role,
+         status,
+         password,
+         email,
+         email_verified_at,
+         token_version
+       FROM users
+       WHERE id = ?
+       LIMIT 1
+       FOR UPDATE`,
+      [authenticatedId]
+    );
+
+    const account = rows[0];
+
+    if (
+      !account ||
+      normalizeRole(account.role) !== "SUPER_ADMIN" ||
+      normalizeStatus(account.status) !== "ACTIVE"
+    ) {
+      await connection.rollback();
+
+      return res.status(403).json({
+        message:
+          "This account is not authorized to register a recovery email.",
+      });
+    }
+
+    if (account.email !== null) {
+      await connection.rollback();
+
+      return res.status(409).json({
+        message:
+          "A recovery email is already registered for this account.",
+      });
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      currentPassword,
+      account.password
+    );
+
+    if (!passwordMatches) {
+      await connection.rollback();
+
+      return res.status(401).json({
+        message: "Current password is incorrect.",
+      });
+    }
+
+    const [result] = await connection.query(
+      `UPDATE users
+       SET
+         email = ?,
+         email_verified_at = NULL,
+         email_verification_token_hash = NULL,
+         email_verification_expires_at = NULL,
+         email_verification_requested_at = NULL,
+         password_reset_token_hash = NULL,
+         password_reset_expires_at = NULL,
+         password_reset_requested_at = NULL,
+         token_version = token_version + 1
+       WHERE id = ?
+         AND role = 'SUPER_ADMIN'
+         AND status = 'Active'
+         AND email IS NULL
+         AND token_version = ?`,
+      [
+        parsedEmail.email,
+        authenticatedId,
+        account.token_version,
+      ]
+    );
+
+    if (result.affectedRows !== 1) {
+      await connection.rollback();
+
+      return res.status(409).json({
+        message:
+          "The recovery email registration could not be completed because the account changed. Please sign in again and review the current status.",
+      });
+    }
+
+    const actor = toAuditActor(account);
+
+    await logAudit(
+      {
+        userId: actor.userId,
+        username: actor.username,
+        fullName: actor.fullName,
+        role: actor.role,
+        action: "REGISTER_OWN_RECOVERY_EMAIL",
+        description:
+          `${actor.fullName} registered an unverified recovery email for their own account. Active sessions were revoked.`,
+      },
+      {
+        connection,
+        throwOnError: true,
+      }
+    );
+
+    await connection.commit();
+
+    return res.json({
+      success: true,
+      registered: true,
+      verified: false,
+      sessionInvalidated: true,
+      message:
+        "Recovery email registered but not yet verified. Please sign in again, then send a verification email from Profile & Account Settings.",
+    });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error(
+          "REGISTER OWN RECOVERY EMAIL ROLLBACK ERROR:",
+          rollbackError
+        );
+      }
+    }
+
+    if (
+      error?.code === "ER_DUP_ENTRY" ||
+      Number(error?.errno) === 1062
+    ) {
+      return res.status(409).json({
+        message:
+          "That recovery email cannot be registered. Please use a different email address.",
+      });
+    }
+
+    console.error(
+      "REGISTER OWN RECOVERY EMAIL ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to register the recovery email right now.",
+    });
+  } finally {
+    connection?.release();
+  }
+};
+
+/*
+ * ==================================================
  * UPDATE HR COORDINATOR COMPANY ASSIGNMENT
  * ==================================================
  *

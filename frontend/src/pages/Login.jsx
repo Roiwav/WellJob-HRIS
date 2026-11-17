@@ -110,6 +110,11 @@ export default function Login() {
       location.state
     );
 
+  const sessionNotice =
+    typeof location.state?.notice === "string"
+      ? location.state.notice.trim()
+      : "";
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -629,6 +634,16 @@ export default function Login() {
                   className="login-form space-y-4"
                   noValidate
                 >
+                  {sessionNotice && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center text-sm font-medium leading-5 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300"
+                    >
+                      {sessionNotice}
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <label
                       htmlFor="username"
